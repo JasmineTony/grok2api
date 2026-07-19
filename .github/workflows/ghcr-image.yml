@@ -1,4 +1,4 @@
-name: GHCR Image
+﻿name: Verify and publish GHCR image
 
 on:
   push:
@@ -24,10 +24,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
@@ -40,18 +40,22 @@ jobs:
         working-directory: backend
         run: go vet ./...
 
+      - name: Check reachable Go vulnerabilities
+        working-directory: backend
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+
       - name: Verify Swagger document
         run: |
           make swagger
           git diff --exit-code -- backend/docs/docs.go backend/docs/swagger.json backend/docs/swagger.yaml
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         with:
           version: 11.5.2
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
@@ -61,6 +65,10 @@ jobs:
         working-directory: frontend
         run: pnpm install --frozen-lockfile
 
+      - name: Audit frontend dependencies
+        working-directory: frontend
+        run: pnpm audit --audit-level high
+
       - name: Lint frontend
         working-directory: frontend
         run: pnpm lint
@@ -69,9 +77,9 @@ jobs:
         working-directory: frontend
         run: pnpm build
 
-  check_ghcr_image:
+  check_image:
     name: Build image (${{ matrix.arch }})
-    if: github.event_name != 'push'
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     needs: verify
     strategy:
       fail-fast: false
@@ -87,13 +95,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: ./Dockerfile
@@ -103,9 +111,9 @@ jobs:
           provenance: false
           sbom: false
 
-  build_ghcr_image:
+  publish_image:
     name: Publish image (${{ matrix.arch }})
-    if: github.event_name == 'push'
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     needs: verify
     permissions:
       contents: read
@@ -124,10 +132,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Normalize image name
         id: image
@@ -138,23 +146,22 @@ jobs:
 
       - name: Docker metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ${{ steps.image.outputs.name }}
           tags: |
-            type=ref,event=branch,suffix=-${{ matrix.arch }}
             type=ref,event=tag,suffix=-${{ matrix.arch }}
-            type=raw,value=latest-${{ matrix.arch }},enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=latest-${{ matrix.arch }},enable=${{ !contains(github.ref_name, '-') }}
 
       - name: Login to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and publish
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: ./Dockerfile
@@ -167,11 +174,11 @@ jobs:
           provenance: mode=max
           sbom: true
 
-  merge:
-    name: Merge image
-    if: github.event_name == 'push'
+  merge_manifest:
+    name: Merge image manifest
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     needs:
-      - build_ghcr_image
+      - publish_image
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -179,7 +186,7 @@ jobs:
 
     steps:
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Normalize image name
         id: image
@@ -190,16 +197,15 @@ jobs:
 
       - name: Docker metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ${{ steps.image.outputs.name }}
           tags: |
-            type=ref,event=branch
             type=ref,event=tag
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
 
       - name: Login to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
