@@ -88,7 +88,9 @@ func (s *LocalStore) CommitVideoUpload(ctx context.Context, tempPath, storageKey
 		return err
 	}
 	// 确保临时文件已落盘。
-	file, err := os.Open(tempPath)
+	// Windows requires a writable handle for FlushFileBuffers, which backs os.File.Sync.
+	// Reopen the upload read-write so durability checks work consistently across platforms.
+	file, err := os.OpenFile(tempPath, os.O_RDWR, 0)
 	if err != nil {
 		return fmt.Errorf("打开视频临时文件: %w", err)
 	}

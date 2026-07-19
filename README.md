@@ -13,12 +13,9 @@
 <p align="center">
   <a href="./backend/go.mod"><img alt="Go" src="https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white" /></a>
   <a href="./frontend/package.json"><img alt="React" src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=111827" /></a>
-  <a href="https://github.com/chenyme/grok2api/pkgs/container/grok2api"><img alt="Docker" src="https://img.shields.io/badge/Docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white" /></a>
+  <a href="https://github.com/JasmineTony/grok2api/pkgs/container/grok2api"><img alt="Docker" src="https://img.shields.io/badge/Docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white" /></a>
 </p>
 
-<p align="center">
-  <a href="https://trendshift.io/repositories/19868?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-19868" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/19868" alt="chenyme%2Fgrok2api | Trendshift" width="250" height="55"/></a>
-</p>
 
 > [!TIP]
 > Check out [DEEIX-AI / DEEIX-Chat](https://github.com/DEEIX-AI/DEEIX-Chat), a lightweight, integrated AI platform for model routing, chat, files, tools, billing, identity, and operations.
@@ -26,23 +23,19 @@
 > [!NOTE]
 > This project is for technical research and learning purposes only. Please comply with Grok's official terms of use and local laws when using it; otherwise, you will be solely responsible for all consequences!
 
-## Sponsors
-> [Want to sponsor this project?](mailto:chenyme03@gmail.com)
-
-<table>
-<tr>
-<td width="200" align="center" valign="middle"><a href="https://github.com/DEEIX-AI/DEEIX-Chat"><img src="frontend/public/sponner/deeix-chat_deeix-ai.png" alt="DEEIX AI / DEEIX Chat" width="160"></a></td>
-<td valign="middle">DEEIX-Chat is an open-source, self-hostable AI Chat platform for individuals, teams, and enterprises that need stable, long-term, unified access to multiple models. It brings models, conversations, files, tool calling, and administration together in one deployable and extensible system. Click <a href="https://github.com/DEEIX-AI/DEEIX-Chat">here</a> to start deploying.</td>
-</tr>
-<tr>
-<td width="200" align="center" valign="middle"><a href="https://www.right.codes/register"><img src="frontend/public/sponner/rightcode.jpg" alt="RightCode" width="160"></a></td>
-<td valign="middle">Right Code is an enterprise-grade AI Agent distribution platform that primarily provides stable access services for Claude Code, Codex, Gemini, and other models. It supports invoicing and dedicated one-to-one assistance for enterprises and teams. Thanks to Right Code for providing token support. Click <a href="https://www.right.codes/register">here</a> to register and get started.</td>
-</tr>
-</table>
-
-<br>
 
 Grok2API is a Go-based Grok API gateway with a built-in React admin console. It organizes Grok Build OAuth, Grok Web SSO, and Grok Console SSO credentials into independent account pools, exposes OpenAI- and Anthropic-style APIs, and provides one place to manage model routes, client keys, quotas, media, audits, and egress proxies.
+
+## Maintenance and upstream
+
+This repository is independently maintained by [JasmineTony](https://github.com/JasmineTony) and is derived from [chenyme/grok2api](https://github.com/chenyme/grok2api) under the MIT License. The upstream copyright and license notices are retained.
+
+- `origin`: `git@github.com:JasmineTony/grok2api.git`
+- `upstream`: `https://github.com/chenyme/grok2api.git`
+- Public APIs, configuration, database layout, and the Go module path remain compatible with upstream for this hardening release.
+- Upstream updates are integrated through a dated `sync/upstream-YYYYMMDD` branch and reviewed in a pull request; `main` is never synchronized by an unattended force-push.
+
+See [UPSTREAM.md](./UPSTREAM.md) for the synchronization procedure. Security issues should follow [SECURITY.md](./SECURITY.md).
 
 ## Highlights
 
@@ -136,10 +129,10 @@ frontend/
 
 ### Docker Compose (recommended)
 
-Official GHCR images are published for both `linux/amd64` and `linux/arm64`.
+Release tags publish GHCR images for both `linux/amd64` and `linux/arm64`. Until this repository publishes a release tag, Docker Compose builds the current checkout locally by default.
 
 ```bash
-git clone https://github.com/chenyme/grok2api.git
+git clone https://github.com/JasmineTony/grok2api.git
 cd grok2api
 cp config.example.yaml config.yaml
 ```
@@ -166,14 +159,13 @@ bootstrapAdmin:
 Start the service:
 
 ```bash
-docker compose pull
-docker compose up -d
+docker compose up -d --build
 docker compose logs -f grok2api
 ```
 
 The admin console is available at `http://127.0.0.1:8000` by default.
 
-Compose mounts `config.yaml` read-only and stores the SQLite database and local media in the `grok2api-data` volume. The image already contains the frontend; no separate web deployment is required.
+Compose mounts `config.yaml` read-only and stores the SQLite database and local media in the `grok2api-data` volume. The locally built image contains the frontend; no separate web deployment is required. To use a published release later, set `GROK2API_IMAGE=ghcr.io/jasminetony/grok2api:vX.Y.Z`.
 
 Common maintenance commands:
 

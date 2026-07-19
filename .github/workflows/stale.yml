@@ -1,4 +1,4 @@
-name: Close inactive issues and PRs
+﻿name: Close inactive issues and PRs
 
 on:
   schedule:
@@ -6,17 +6,18 @@ on:
   workflow_dispatch:
 
 permissions:
-  issues: write
-  pull-requests: write
+  contents: read
 
 jobs:
   stale:
     name: Mark and close inactive issues and PRs
     runs-on: ubuntu-latest
-
+    permissions:
+      issues: write
+      pull-requests: write
     steps:
       - name: Process stale issues and PRs
-        uses: actions/stale@v10
+        uses: actions/stale@1e223db275d687790206a7acac4d1a11bd6fe629 # v10
         with:
           days-before-issue-stale: 7
           days-before-pr-stale: 7

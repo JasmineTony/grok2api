@@ -13,12 +13,9 @@
 <p align="center">
   <a href="./backend/go.mod"><img alt="Go" src="https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white" /></a>
   <a href="./frontend/package.json"><img alt="React" src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=111827" /></a>
-  <a href="https://github.com/chenyme/grok2api/pkgs/container/grok2api"><img alt="Docker" src="https://img.shields.io/badge/Docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white" /></a>
+  <a href="https://github.com/JasmineTony/grok2api/pkgs/container/grok2api"><img alt="Docker" src="https://img.shields.io/badge/Docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white" /></a>
 </p>
 
-<p align="center">
-  <a href="https://trendshift.io/repositories/19868?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-19868" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/19868" alt="chenyme%2Fgrok2api | Trendshift" width="250" height="55"/></a>
-</p>
 
 > [!TIP]
 > 推荐个人新项目 [DEEIX-AI / DEEIX-Chat](https://github.com/DEEIX-AI/DEEIX-Chat)：面向多模型路由、对话、文件、工具、计费与运维的一体化轻量 AI 平台。
@@ -26,24 +23,19 @@
 > [!NOTE]
 > 本项目仅供技术研究与学习交流。使用时请务必遵循 Grok 官方的使用条款及当地法律法规，否则一切后果自负！
 
-## 赞助商
-
-> [希望赞助这个项目？](mailto:chenyme03@gmail.com)
-
-<table>
-<tr>
-<td width="200" align="center" valign="middle"><a href="https://github.com/DEEIX-AI/DEEIX-Chat"><img src="frontend/public/sponner/deeix-chat_deeix-ai.png" alt="DEEIX AI / DEEIX Chat" width="160"></a></td>
-<td valign="middle">DEEIX-Chat 是一款开源可部署的 AI Chat 平台，面向需要长期、稳定、统一使用多模型能力的个人、团队与企业，将模型、对话、文件、工具调用与后台管理整合为一套可部署、可扩展的系统。点击 <a href="https://github.com/DEEIX-AI/DEEIX-Chat">此处</a> 开始部署！</td>
-</tr>
-<tr>
-<td width="200" align="center" valign="middle"><a href="https://www.right.codes/register"><img src="frontend/public/sponner/rightcode.jpg" alt="RightCode" width="160"></a></td>
-<td valign="middle">Right Code 是一个企业级 AI Agent 分发平台，主要提供稳定的 Claude Code、Codex、Gemini 等模型的中转服务。充值即可开票，企业、团队用户一对一对接。感谢 Right Code 提供的 Tokens 支持，点击 <a href="https://www.right.codes/register">此处</a> 注册并开始使用！</td>
-</tr>
-</table>
-
-<br>
 
 Grok2API 是一个以 Go 为核心、内置 React 管理端的 Grok API 网关。它将 Grok Build OAuth、Grok Web SSO 与 Grok Console SSO 组织成相互独立的账号池，对外提供 OpenAI 与 Anthropic 风格接口，并统一管理模型路由、客户端密钥、额度、媒体、审计和出口代理。
+
+## 维护关系与上游
+
+本仓库由 [JasmineTony](https://github.com/JasmineTony) 独立维护，基于 MIT 许可证下的 [chenyme/grok2api](https://github.com/chenyme/grok2api)；上游版权与许可证声明予以保留。
+
+- `origin`：`git@github.com:JasmineTony/grok2api.git`
+- `upstream`：`https://github.com/chenyme/grok2api.git`
+- 本轮安全加固保持公开 API、配置、数据库结构以及 Go module 路径与上游兼容。
+- 上游更新通过带日期的 `sync/upstream-YYYYMMDD` 分支和 Pull Request 合入，不允许无人值守地强制覆盖 `main`。
+
+同步步骤见 [UPSTREAM.md](./UPSTREAM.md)，安全问题请遵循 [SECURITY.md](./SECURITY.md)。
 
 ## 功能概览
 
@@ -137,10 +129,10 @@ frontend/
 
 ### Docker Compose（推荐）
 
-官方 GHCR 镜像同时发布 `linux/amd64` 与 `linux/arm64`。
+版本标签会发布 `linux/amd64` 与 `linux/arm64` 的 GHCR 镜像。在本仓库发布首个版本标签前，Docker Compose 默认从当前源码进行本地构建。
 
 ```bash
-git clone https://github.com/chenyme/grok2api.git
+git clone https://github.com/JasmineTony/grok2api.git
 cd grok2api
 cp config.example.yaml config.yaml
 ```
@@ -167,14 +159,13 @@ bootstrapAdmin:
 启动服务：
 
 ```bash
-docker compose pull
-docker compose up -d
+docker compose up -d --build
 docker compose logs -f grok2api
 ```
 
 管理端默认地址：`http://127.0.0.1:8000`。
 
-Compose 会将 `config.yaml` 只读挂载到容器，并使用 `grok2api-data` 保存 SQLite 数据库和本地媒体。镜像已经包含前端，无需单独部署 Web 服务。
+Compose 会将 `config.yaml` 只读挂载到容器，并使用 `grok2api-data` 保存 SQLite 数据库和本地媒体。本地构建的镜像已经包含前端，无需单独部署 Web 服务。后续如需使用已发布版本，可设置 `GROK2API_IMAGE=ghcr.io/jasminetony/grok2api:vX.Y.Z`。
 
 常用维护命令：
 

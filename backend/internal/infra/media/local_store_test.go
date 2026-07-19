@@ -81,3 +81,29 @@ func TestLocalStoreRetriesTemporaryCleanupWithoutDeletingCommittedImage(t *testi
 		t.Fatalf("temporary files were not cleaned: %#v", temporaryFiles)
 	}
 }
+
+func TestLocalStoreCommitsVideoUploadAfterReopen(t *testing.T) {
+	store, err := NewLocalStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tempPath, storageKey, err := store.BeginVideoUpload(context.Background(), "video_windows_sync_00000001", "video/mp4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(tempPath, []byte("video"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CommitVideoUpload(context.Background(), tempPath, storageKey); err != nil {
+		t.Fatal(err)
+	}
+	body, err := store.Open(context.Background(), storageKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, readErr := io.ReadAll(body)
+	_ = body.Close()
+	if readErr != nil || string(data) != "video" {
+		t.Fatalf("committed video = %q, err = %v", data, readErr)
+	}
+}

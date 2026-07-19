@@ -25,6 +25,9 @@ Thumbs.db
 /backend/data/
 *.log
 
+# Workspace-local tool caches
+/.cache/
+
 # Go
 /.gocache/
 /.gocache-*/
