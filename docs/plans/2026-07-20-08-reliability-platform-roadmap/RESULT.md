@@ -71,6 +71,15 @@
 - MCP 首批工具名称已固定：模型、账号健康、用量、最近错误、Egress、版本和配置验证。
 - 配置导出会清空 JWT、凭据加密密钥和管理员密码。
 
+## 新增验证记录
+
+- `go test -p 1 ./...`：通过。
+- `go vet ./...`：通过。
+- govulncheck v1.6.0：未发现代码可达漏洞；发现 1 个仅存在于依赖模块但当前代码不可达的漏洞，需后续依赖跟踪。
+- 前端 `pnpm test`、`pnpm typecheck`、`pnpm lint`、`pnpm build`、`pnpm check:icons`、`pnpm check:bundle`：通过。
+- `pnpm audit --audit-level high`：未发现已知高危漏洞。
+- Swagger 生成器因网络/缓存依赖问题尚未完成无漂移检查；Docker、race、PostgreSQL 集成和 Playwright 三视口验收仍未完成。
+
 ## 尚未完成
 
 - 升级前预检、PostgreSQL/Redis 外部备份钩子和全部通知触发点仍需实现。
