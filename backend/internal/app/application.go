@@ -11,18 +11,19 @@ import (
 	"time"
 
 	accountapp "github.com/chenyme/grok2api/backend/internal/application/account"
-	backupapp "github.com/chenyme/grok2api/backend/internal/application/backup"
 	accountsyncapp "github.com/chenyme/grok2api/backend/internal/application/accountsync"
 	"github.com/chenyme/grok2api/backend/internal/application/adminauth"
 	auditapp "github.com/chenyme/grok2api/backend/internal/application/audit"
+	backupapp "github.com/chenyme/grok2api/backend/internal/application/backup"
 	clientkeyapp "github.com/chenyme/grok2api/backend/internal/application/clientkey"
 	dashboardapp "github.com/chenyme/grok2api/backend/internal/application/dashboard"
 	egressapp "github.com/chenyme/grok2api/backend/internal/application/egress"
 	"github.com/chenyme/grok2api/backend/internal/application/gateway"
 	mediaapp "github.com/chenyme/grok2api/backend/internal/application/media"
-	notificationapp "github.com/chenyme/grok2api/backend/internal/application/notification"
 	modelapp "github.com/chenyme/grok2api/backend/internal/application/model"
+	notificationapp "github.com/chenyme/grok2api/backend/internal/application/notification"
 	quotarecoveryapp "github.com/chenyme/grok2api/backend/internal/application/quotarecovery"
+	requestpolicyapp "github.com/chenyme/grok2api/backend/internal/application/requestpolicy"
 	settingsapp "github.com/chenyme/grok2api/backend/internal/application/settings"
 	updatecheckapp "github.com/chenyme/grok2api/backend/internal/application/updatecheck"
 	"github.com/chenyme/grok2api/backend/internal/buildinfo"
@@ -49,32 +50,33 @@ import (
 
 // Application 管理后端进程生命周期和本地后台任务。
 type Application struct {
-	logger        *slog.Logger
-	database      *relational.Database
-	server        *http.Server
-	metrics       *metricsobs.Metrics
-	metricsConfig metricsobs.PrometheusConfig
-	audits        *auditapp.Service
-	responses     repository.ResponseRepository
-	runtime       io.Closer
-	settingsBus   repository.SettingsChangeBus
-	settings      *settingsapp.Service
-	gateway       *gateway.Service
-	media         *mediaapp.Service
-	quotaRecovery *quotarecoveryapp.Service
-	accounts      *accountapp.Service
-	models        *modelapp.Service
-	clientKeys    *clientkeyapp.Service
-	updates       *updatecheckapp.Service
-	egress        *egressapp.Service
-	usageRollups  repository.UsageRollupRepository
-	backup        *backupapp.Service
-	notifications *notificationapp.Service
-	accountRepo   repository.AccountRepository
-	modelRepo     repository.ModelRepository
-	providers     *provider.Registry
-	web           *webprovider.Adapter
-	startup       *startupState
+	logger          *slog.Logger
+	database        *relational.Database
+	server          *http.Server
+	metrics         *metricsobs.Metrics
+	metricsConfig   metricsobs.PrometheusConfig
+	audits          *auditapp.Service
+	responses       repository.ResponseRepository
+	runtime         io.Closer
+	settingsBus     repository.SettingsChangeBus
+	settings        *settingsapp.Service
+	gateway         *gateway.Service
+	media           *mediaapp.Service
+	quotaRecovery   *quotarecoveryapp.Service
+	accounts        *accountapp.Service
+	models          *modelapp.Service
+	clientKeys      *clientkeyapp.Service
+	updates         *updatecheckapp.Service
+	egress          *egressapp.Service
+	usageRollups    repository.UsageRollupRepository
+	backup          *backupapp.Service
+	notifications   *notificationapp.Service
+	requestPolicies *requestpolicyapp.Service
+	accountRepo     repository.AccountRepository
+	modelRepo       repository.ModelRepository
+	providers       *provider.Registry
+	web             *webprovider.Adapter
+	startup         *startupState
 }
 
 // New 完成数据库、Provider、应用服务和 HTTP 路由装配。
@@ -112,11 +114,28 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	dashboardRepo := relational.NewDashboardRepository(database)
 	usageRollupRepo := relational.NewUsageRollupRepository(database)
 	notificationRepo := relational.NewNotificationRepository(database)
+	requestPolicyRepo := relational.NewRequestPolicyRepository(database)
 	backupService := backupapp.NewService(database, cfg.Media.Local.Path, buildinfo.CurrentVersion())
 	notificationConfig := notificationapp.Config{Cooldown: cfg.Notifications.Cooldown.Value(), Retention: cfg.Notifications.Retention.Value()}
-	if cfg.Notifications.Enabled { notificationConfig.WebhookURL = cfg.Notifications.WebhookURL; notificationConfig.WebhookSecret = cfg.Notifications.WebhookSecret }
+	if cfg.Notifications.Enabled {
+		notificationConfig.WebhookURL = cfg.Notifications.WebhookURL
+		notificationConfig.WebhookSecret = cfg.Notifications.WebhookSecret
+	}
 	notificationService, err := notificationapp.NewService(notificationRepo, notificationConfig, nil)
-	if err != nil { database.Close(); return nil, err }
+	if err != nil {
+		database.Close()
+		return nil, err
+	}
+	requestPolicyService, err := requestpolicyapp.NewService(requestPolicyRepo)
+	if err != nil {
+		database.Close()
+		return nil, err
+	}
+	if err := requestPolicyService.Refresh(ctx); err != nil {
+		database.Close()
+		return nil, err
+	}
+	requestPolicyService.SetNotifications(notificationService)
 	runtimeSettingsRepo := relational.NewRuntimeSettingsRepository(database, cipher)
 	egressRepo := relational.NewEgressRepository(database)
 	mediaJobRepo := relational.NewMediaJobRepository(database)
@@ -322,14 +341,14 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	}
 	metrics := metricsobs.NewMetrics()
 	gatewayService.ConfigureMetrics(metrics)
-	router := httpserver.New(httpserver.Dependencies{Logger: logger, Metrics: metrics, RequestTimeout: cfg.Server.RequestTimeout.Value(), MaxBodyBytes: cfg.Server.MaxBodyBytes, ConcurrencyGate: inferenceConcurrency, SecureCookies: cfg.Auth.SecureCookies, SwaggerEnabled: cfg.Server.SwaggerEnabled, PublicAPIBaseURL: cfg.Frontend.EffectivePublicAPIBaseURL(), FrontendStaticPath: cfg.Frontend.StaticPath, Readiness: readiness, TrafficReady: startup.acceptsTraffic, AdminAuth: adminService, Accounts: accountService, AccountSync: accountSyncService, Models: modelService, ClientKeys: clientKeyService, Audits: auditService, Dashboard: dashboardService, Gateway: gatewayService, Media: mediaService, Settings: settingsService, Egress: egressService, Updates: updateService, Notifications: notificationService})
+	router := httpserver.New(httpserver.Dependencies{Logger: logger, Metrics: metrics, RequestTimeout: cfg.Server.RequestTimeout.Value(), MaxBodyBytes: cfg.Server.MaxBodyBytes, ConcurrencyGate: inferenceConcurrency, SecureCookies: cfg.Auth.SecureCookies, SwaggerEnabled: cfg.Server.SwaggerEnabled, PublicAPIBaseURL: cfg.Frontend.EffectivePublicAPIBaseURL(), FrontendStaticPath: cfg.Frontend.StaticPath, Readiness: readiness, TrafficReady: startup.acceptsTraffic, AdminAuth: adminService, Accounts: accountService, AccountSync: accountSyncService, Models: modelService, ClientKeys: clientKeyService, Audits: auditService, Dashboard: dashboardService, Gateway: gatewayService, Media: mediaService, Settings: settingsService, Egress: egressService, Updates: updateService, Notifications: notificationService, RequestPolicies: requestPolicyService})
 	server := &http.Server{Addr: cfg.Server.Listen, Handler: router, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: cfg.Server.ReadTimeout.Value(), IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
 	return &Application{
 		logger: logger, database: database, server: server,
 		metrics: metrics, metricsConfig: metricsobs.PrometheusConfig{Enabled: cfg.Observability.Prometheus.Enabled, Listen: cfg.Observability.Prometheus.Listen},
 		audits: auditService, responses: responseRepo, runtime: runtimeStore,
 		settingsBus: settingsBus, settings: settingsService, gateway: gatewayService, media: mediaService, quotaRecovery: quotaRecoveryService, accounts: accountService, models: modelService, clientKeys: clientKeyService, updates: updateService, egress: egressService,
-		accountRepo: accountRepo, modelRepo: modelRepo, providers: providers, web: webAdapter, usageRollups: usageRollupRepo, backup: backupService, notifications: notificationService, startup: startup,
+		accountRepo: accountRepo, modelRepo: modelRepo, providers: providers, web: webAdapter, usageRollups: usageRollupRepo, backup: backupService, notifications: notificationService, requestPolicies: requestPolicyService, startup: startup,
 	}, nil
 }
 
@@ -436,7 +455,9 @@ func (a *Application) Run(ctx context.Context) error {
 			}
 			return nil
 		}
-		if err := check(taskCtx); err != nil { a.logger.Warn("release_notification_failed", "error", err) }
+		if err := check(taskCtx); err != nil {
+			a.logger.Warn("release_notification_failed", "error", err)
+		}
 		a.runPeriodicTask(taskCtx, 24*time.Hour, "release_check", check)
 		return nil
 	})

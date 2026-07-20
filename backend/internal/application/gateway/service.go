@@ -57,6 +57,7 @@ type Input struct {
 	PromptCacheSeed    string
 	PreviousResponseID string
 	Operation          audit.Operation
+	ForcedProvider     string
 }
 
 type Usage struct {
@@ -384,6 +385,9 @@ func (s *Service) createResponseAt(ctx context.Context, input Input, path string
 		operation = audit.OperationResponses
 	}
 	routes, aliasEffort, err := s.resolvePublicModelRoutes(ctx, input.PublicModel)
+	if input.ForcedProvider != "" {
+		routes = filterRoutesByProvider(routes, input.ForcedProvider)
+	}
 	if err != nil {
 		return nil, ErrModelNotFound
 	}
@@ -1171,4 +1175,14 @@ func firstError(values ...error) error {
 		}
 	}
 	return errors.New("未知上游错误")
+}
+
+func filterRoutesByProvider(routes []modeldomain.Route, providerValue string) []modeldomain.Route {
+	filtered := make([]modeldomain.Route, 0, len(routes))
+	for _, route := range routes {
+		if string(route.Provider) == providerValue {
+			filtered = append(filtered, route)
+		}
+	}
+	return filtered
 }

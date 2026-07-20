@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -16,9 +17,12 @@ import (
 	clientkeyapp "github.com/chenyme/grok2api/backend/internal/application/clientkey"
 	"github.com/chenyme/grok2api/backend/internal/application/gateway"
 	modelapp "github.com/chenyme/grok2api/backend/internal/application/model"
+	requestpolicyapp "github.com/chenyme/grok2api/backend/internal/application/requestpolicy"
+	"github.com/chenyme/grok2api/backend/internal/domain/audit"
 	clientkeydomain "github.com/chenyme/grok2api/backend/internal/domain/clientkey"
 	mediadomain "github.com/chenyme/grok2api/backend/internal/domain/media"
 	modeldomain "github.com/chenyme/grok2api/backend/internal/domain/model"
+	policydomain "github.com/chenyme/grok2api/backend/internal/domain/requestpolicy"
 	"github.com/chenyme/grok2api/backend/internal/transport/http/middleware"
 	"github.com/gin-gonic/gin"
 )
@@ -29,6 +33,7 @@ type Handler struct {
 	maxBodyBytes     int64
 	publicAPIBaseURL string
 	publicBaseURL    func() string
+	requestPolicies  *requestpolicyapp.Service
 }
 
 const (
@@ -65,6 +70,11 @@ func NewHandler(gatewayService *gateway.Service, models *modelapp.Service, maxBo
 		baseURL = strings.TrimRight(strings.TrimSpace(publicAPIBaseURL[0]), "/")
 	}
 	return &Handler{gateway: gatewayService, models: models, maxBodyBytes: maxBodyBytes, publicAPIBaseURL: baseURL}
+}
+
+func (h *Handler) SetRequestPolicies(service *requestpolicyapp.Service) *Handler {
+	h.requestPolicies = service
+	return h
 }
 
 // SetPublicAPIBaseURLResolver 让视频内容 URL 跟随运行设置热更新。
@@ -222,12 +232,16 @@ func (h *Handler) createChatCompletion(c *gin.Context) {
 		writeOpenAIError(c, http.StatusUnauthorized, "invalid_api_key", "客户端 API Key 无效")
 		return
 	}
+	decision, allowed := h.enforcePolicy(c, clientKey, request.Model, string(audit.OperationChat), false, requestTokenLimit(body), 0)
+	if !allowed {
+		return
+	}
 	requestID, _ := c.Get(middleware.RequestIDKey)
 	requestIDValue, _ := requestID.(string)
 	result, err := h.gateway.CreateChatCompletion(c.Request.Context(), gateway.Input{
 		RequestID: requestIDValue, ClientKey: clientKey, PublicModel: request.Model,
 		Body: body, Streaming: request.Stream, PromptCacheKey: request.PromptCacheKey,
-		PromptCacheSeed: extractPromptCacheSeed(c.Request.Header, body),
+		PromptCacheSeed: extractPromptCacheSeed(c.Request.Header, body), ForcedProvider: decision.ForcedProvider,
 	})
 	if err != nil {
 		writeGatewayError(c, err)
@@ -262,12 +276,16 @@ func (h *Handler) createMessage(c *gin.Context) {
 		writeAnthropicError(c, http.StatusUnauthorized, "authentication_error", "invalid API key")
 		return
 	}
+	decision, allowed := h.enforcePolicy(c, clientKey, request.Model, string(audit.OperationMessages), false, *request.MaxTokens, 0)
+	if !allowed {
+		return
+	}
 	requestID, _ := c.Get(middleware.RequestIDKey)
 	requestIDValue, _ := requestID.(string)
 	result, err := h.gateway.CreateMessage(c.Request.Context(), gateway.Input{
 		RequestID: requestIDValue, ClientKey: clientKey, PublicModel: request.Model,
 		Body: body, Streaming: request.Stream, PromptCacheKey: request.PromptCacheKey,
-		PromptCacheSeed: extractPromptCacheSeed(c.Request.Header, body),
+		PromptCacheSeed: extractPromptCacheSeed(c.Request.Header, body), ForcedProvider: decision.ForcedProvider,
 	})
 	if err != nil {
 		writeGatewayAnthropicError(c, err)
@@ -806,12 +824,20 @@ func (h *Handler) handleCreate(c *gin.Context, compact bool) {
 		writeOpenAIError(c, http.StatusUnauthorized, "invalid_api_key", "客户端 API Key 无效")
 		return
 	}
+	operation := audit.OperationResponses
+	if compact {
+		operation = audit.OperationCompaction
+	}
+	decision, allowed := h.enforcePolicy(c, clientKey, request.Model, string(operation), false, requestTokenLimit(body), 0)
+	if !allowed {
+		return
+	}
 	requestID, _ := c.Get(middleware.RequestIDKey)
 	requestIDValue, _ := requestID.(string)
 	input := gateway.Input{
 		RequestID: requestIDValue, ClientKey: clientKey, PublicModel: request.Model,
 		Body: body, Streaming: request.Stream, PromptCacheKey: request.PromptCacheKey,
-		PromptCacheSeed: extractPromptCacheSeed(c.Request.Header, body), PreviousResponseID: request.PreviousResponseID,
+		PromptCacheSeed: extractPromptCacheSeed(c.Request.Header, body), PreviousResponseID: request.PreviousResponseID, ForcedProvider: decision.ForcedProvider,
 	}
 	var result *gateway.Result
 	if compact {
@@ -824,6 +850,37 @@ func (h *Handler) handleCreate(c *gin.Context, compact bool) {
 		return
 	}
 	h.writeResult(c, result, request.Stream && !compact, streamProtocolResponses)
+}
+
+func (h *Handler) enforcePolicy(c *gin.Context, key clientkeydomain.Key, model, operation string, media bool, tokens, mediaCount int) (policydomain.Decision, bool) {
+	if h.requestPolicies == nil {
+		return policydomain.Decision{Allowed: true}, true
+	}
+	host, _, err := net.SplitHostPort(strings.TrimSpace(c.Request.RemoteAddr))
+	if err != nil {
+		host = strings.TrimSpace(c.Request.RemoteAddr)
+	}
+	decision, err := h.requestPolicies.Evaluate(c.Request.Context(), policydomain.Request{ClientKeyID: key.ID, Model: model, Operation: operation, SourceIP: net.ParseIP(host), Media: media, MediaCount: mediaCount, Tokens: tokens})
+	if err != nil {
+		writeOpenAIError(c, http.StatusInternalServerError, "request_policy_unavailable", "request policy evaluation failed")
+		return decision, false
+	}
+	if !decision.Allowed {
+		writeOpenAIError(c, http.StatusForbidden, "request_policy_denied", decision.Reason)
+		return decision, false
+	}
+	return decision, true
+}
+
+func requestTokenLimit(body []byte) int {
+	var value struct {
+		MaxTokens       int `json:"max_tokens"`
+		MaxOutputTokens int `json:"max_output_tokens"`
+	}
+	if json.Unmarshal(body, &value) != nil {
+		return 0
+	}
+	return max(value.MaxTokens, value.MaxOutputTokens)
 }
 
 func isJSONRequest(c *gin.Context) bool {

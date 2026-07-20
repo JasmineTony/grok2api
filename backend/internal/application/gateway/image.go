@@ -28,6 +28,7 @@ type ImageGenerationInput struct {
 	ResponseFormat string
 	Streaming      bool
 	PartialImages  int
+	ForcedProvider string
 }
 
 // ImageEditInput 表示图片编辑用例已经完成协议校验后的输入。
@@ -44,6 +45,7 @@ type ImageEditInput struct {
 	ResponseFormat string
 	Streaming      bool
 	PartialImages  int
+	ForcedProvider string
 }
 
 type imageProviderSupport func(accountdomain.Provider) bool
@@ -65,7 +67,7 @@ func (s *Service) GenerateImage(ctx context.Context, input ImageGenerationInput)
 			Size: input.Size, AspectRatio: input.AspectRatio, Resolution: input.Resolution,
 			ResponseFormat: input.ResponseFormat, Streaming: input.Streaming, PartialImages: input.PartialImages,
 		})
-	}, input.Streaming, input.Resolution, input.Count, 0)
+	}, input.Streaming, input.Resolution, input.Count, 0, input.ForcedProvider)
 }
 
 // EditImage 选择支持图片编辑的路由和账号，并返回可统一审计的上游响应。
@@ -84,7 +86,7 @@ func (s *Service) EditImage(ctx context.Context, input ImageEditInput) (*Result,
 			Resolution: input.Resolution, ResponseFormat: input.ResponseFormat,
 			Streaming: input.Streaming, PartialImages: input.PartialImages,
 		})
-	}, input.Streaming, input.Resolution, input.Count, len(input.ImageURLs))
+	}, input.Streaming, input.Resolution, input.Count, len(input.ImageURLs), input.ForcedProvider)
 }
 
 func (s *Service) executeImage(
@@ -100,11 +102,15 @@ func (s *Service) executeImage(
 	resolution string,
 	requestedCount int,
 	inputImageCount int,
+	forcedProvider string,
 ) (*Result, error) {
 	ctx, egressTrace := infraegress.WithTrace(ctx)
 	startedAt := time.Now()
 	eventID := newAuditEventID()
 	routes, err := s.models.GetByPublicIDCandidates(ctx, publicModel)
+	if forcedProvider != "" {
+		routes = filterRoutesByProvider(routes, forcedProvider)
+	}
 	if err != nil {
 		return nil, ErrModelNotFound
 	}

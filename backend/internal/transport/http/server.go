@@ -16,8 +16,9 @@ import (
 	egressapp "github.com/chenyme/grok2api/backend/internal/application/egress"
 	"github.com/chenyme/grok2api/backend/internal/application/gateway"
 	mediaapp "github.com/chenyme/grok2api/backend/internal/application/media"
-	notificationapp "github.com/chenyme/grok2api/backend/internal/application/notification"
 	modelapp "github.com/chenyme/grok2api/backend/internal/application/model"
+	notificationapp "github.com/chenyme/grok2api/backend/internal/application/notification"
+	requestpolicyapp "github.com/chenyme/grok2api/backend/internal/application/requestpolicy"
 	settingsapp "github.com/chenyme/grok2api/backend/internal/application/settings"
 	updatecheckapp "github.com/chenyme/grok2api/backend/internal/application/updatecheck"
 	accounthttp "github.com/chenyme/grok2api/backend/internal/transport/http/account"
@@ -28,9 +29,10 @@ import (
 	egresshttp "github.com/chenyme/grok2api/backend/internal/transport/http/egress"
 	"github.com/chenyme/grok2api/backend/internal/transport/http/inference"
 	mediahttp "github.com/chenyme/grok2api/backend/internal/transport/http/media"
-	notificationhttp "github.com/chenyme/grok2api/backend/internal/transport/http/notification"
 	"github.com/chenyme/grok2api/backend/internal/transport/http/middleware"
 	modelhttp "github.com/chenyme/grok2api/backend/internal/transport/http/model"
+	notificationhttp "github.com/chenyme/grok2api/backend/internal/transport/http/notification"
+	requestpolicyhttp "github.com/chenyme/grok2api/backend/internal/transport/http/requestpolicy"
 	settingshttp "github.com/chenyme/grok2api/backend/internal/transport/http/settings"
 	systemhttp "github.com/chenyme/grok2api/backend/internal/transport/http/system"
 	"github.com/gin-gonic/gin"
@@ -49,22 +51,23 @@ type Dependencies struct {
 	PublicAPIBaseURL   string
 	FrontendStaticPath string
 	// Readiness 返回可观测的分层就绪状态。Ready 仅为旧调用方保留。
-	Readiness    func(context.Context) ReadinessSnapshot
-	Ready        func(context.Context) bool
-	TrafficReady func() bool
-	AdminAuth    *adminauthapp.Service
-	Accounts     *accountapp.Service
-	AccountSync  *accountsyncapp.Service
-	Models       *modelapp.Service
-	ClientKeys   *clientkeyapp.Service
-	Audits       *auditapp.Service
-	Dashboard    *dashboardapp.Service
-	Gateway      *gateway.Service
-	Media        *mediaapp.Service
-	Settings     *settingsapp.Service
-	Egress       *egressapp.Service
-	Updates      *updatecheckapp.Service
-	Notifications *notificationapp.Service
+	Readiness       func(context.Context) ReadinessSnapshot
+	Ready           func(context.Context) bool
+	TrafficReady    func() bool
+	AdminAuth       *adminauthapp.Service
+	Accounts        *accountapp.Service
+	AccountSync     *accountsyncapp.Service
+	Models          *modelapp.Service
+	ClientKeys      *clientkeyapp.Service
+	Audits          *auditapp.Service
+	Dashboard       *dashboardapp.Service
+	Gateway         *gateway.Service
+	Media           *mediaapp.Service
+	Settings        *settingsapp.Service
+	Egress          *egressapp.Service
+	Updates         *updatecheckapp.Service
+	Notifications   *notificationapp.Service
+	RequestPolicies *requestpolicyapp.Service
 }
 
 type ReadinessComponent struct {
@@ -153,7 +156,12 @@ func New(deps Dependencies) *gin.Engine {
 	mediaHandler.RegisterAdmin(adminProtected)
 	settingshttp.NewHandler(deps.Settings).Register(adminProtected)
 	egresshttp.NewHandler(deps.Egress).Register(adminProtected)
-	if deps.Notifications != nil { notificationhttp.NewHandler(deps.Notifications).Register(adminProtected) }
+	if deps.Notifications != nil {
+		notificationhttp.NewHandler(deps.Notifications).Register(adminProtected)
+	}
+	if deps.RequestPolicies != nil {
+		requestpolicyhttp.NewHandler(deps.RequestPolicies).Register(adminProtected)
+	}
 	systemhttp.NewHandler(func() string {
 		if deps.Settings != nil {
 			return deps.Settings.PublicAPIBaseURL()
@@ -176,6 +184,7 @@ func New(deps Dependencies) *gin.Engine {
 	}
 	v1.Use(middleware.ClientAuth(deps.ClientKeys))
 	inferenceHandler := inference.NewHandler(deps.Gateway, deps.Models, deps.MaxBodyBytes, deps.PublicAPIBaseURL)
+	inferenceHandler.SetRequestPolicies(deps.RequestPolicies)
 	if deps.Settings != nil {
 		inferenceHandler.SetPublicAPIBaseURLResolver(deps.Settings.PublicAPIBaseURL)
 	}

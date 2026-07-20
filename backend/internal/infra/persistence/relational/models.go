@@ -285,20 +285,36 @@ type billingReservationModel struct {
 func (billingReservationModel) TableName() string { return "billing_reservations" }
 
 type notificationModel struct {
-	ID             uint64     `gorm:"primaryKey;autoIncrement"`
-	EventKey       string     `gorm:"size:100;not null"`
-	Severity       string     `gorm:"size:16;not null;check:chk_notifications_severity,severity IN ('info','warning','error')"`
-	Title          string     `gorm:"size:200;not null"`
-	Body           string     `gorm:"type:text;not null"`
-	DedupKey       string     `gorm:"size:200;not null"`
-	Status         string     `gorm:"size:20;not null;check:chk_notifications_status,status IN ('unread','read','acknowledged')"`
-	CreatedAt      time.Time  `gorm:"not null"`
+	ID             uint64    `gorm:"primaryKey;autoIncrement"`
+	EventKey       string    `gorm:"size:100;not null"`
+	Severity       string    `gorm:"size:16;not null;check:chk_notifications_severity,severity IN ('info','warning','error')"`
+	Title          string    `gorm:"size:200;not null"`
+	Body           string    `gorm:"type:text;not null"`
+	DedupKey       string    `gorm:"size:200;not null"`
+	Status         string    `gorm:"size:20;not null;check:chk_notifications_status,status IN ('unread','read','acknowledged')"`
+	CreatedAt      time.Time `gorm:"not null"`
 	ReadAt         *time.Time
 	AcknowledgedAt *time.Time
 	ExpiresAt      *time.Time
 }
 
 func (notificationModel) TableName() string { return "notifications" }
+
+type requestPolicyModel struct {
+	ID         uint64 `gorm:"primaryKey;autoIncrement"`
+	Name       string `gorm:"size:160;not null;check:chk_request_policies_name,length(trim(name)) BETWEEN 1 AND 160"`
+	Priority   int    `gorm:"not null;default:0;check:chk_request_policies_priority,priority BETWEEN -100000 AND 100000"`
+	Enabled    bool   `gorm:"not null;default:true"`
+	DryRun     bool   `gorm:"not null;default:true"`
+	MatchJSON  string `gorm:"type:text;not null;check:chk_request_policies_match_json,length(match_json) <= 65536"`
+	ActionJSON string `gorm:"type:text;not null;check:chk_request_policies_action_json,length(action_json) <= 65536"`
+	HitCount   uint64 `gorm:"not null;default:0"`
+	LastHitAt  *time.Time
+	CreatedAt  time.Time `gorm:"not null"`
+	UpdatedAt  time.Time `gorm:"not null"`
+}
+
+func (requestPolicyModel) TableName() string { return "request_policies" }
 
 type usageRollupModel struct {
 	ID                    uint64    `gorm:"primaryKey;autoIncrement"`
