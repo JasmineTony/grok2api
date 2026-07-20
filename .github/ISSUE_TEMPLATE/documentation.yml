@@ -48,7 +48,7 @@ body:
     attributes:
       label: 文档位置
       description: 请提供文件路径、页面链接、章节名称或 API 路径。
-      placeholder: "README.md#docker、config.example.yaml、/v1/responses"
+      placeholder: "README.md#快速开始、docs/reference/deployment-and-configuration.md、/v1/responses"
     validations:
       required: true
 
