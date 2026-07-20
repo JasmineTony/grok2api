@@ -525,6 +525,7 @@ attemptLoop:
 		if limited, ok := s.activeTeamModelRateLimit(lease.Credential, route.UpstreamModel, time.Now().UTC()); ok {
 			lease.Release()
 			lastFailure = &UpstreamFailure{
+				Category: FailureRateLimit, Stage: "selection", Retryable: true, AccountImpact: ImpactCooldown,
 				HTTPStatus: http.StatusTooManyRequests, Code: "upstream_rate_limited", PublicMessage: "上游请求频率受限",
 				Fingerprint: "429:team_model_rate_limit", RetryAfter: time.Until(limited.Until),
 			}
@@ -560,7 +561,7 @@ attemptLoop:
 			lease.Release()
 			lastErr = err
 			if ctx.Err() != nil || errors.Is(err, context.Canceled) {
-				lastFailure = &UpstreamFailure{HTTPStatus: 499, Code: "request_canceled", PublicMessage: "请求已取消", AccountID: credential.ID, AccountName: credential.Name, Cause: firstError(ctx.Err(), err)}
+				lastFailure = newCanceledUpstreamFailure(firstError(ctx.Err(), err), credential.ID, credential.Name)
 				break
 			}
 			if isSSOCredentialRejected(err, credential) {
@@ -609,7 +610,7 @@ attemptLoop:
 				if refreshErr != nil {
 					lastFailure = newCredentialUpstreamFailure(refreshErr, credential.ID, credential.Name)
 				} else if ctx.Err() != nil || errors.Is(err, context.Canceled) {
-					lastFailure = &UpstreamFailure{HTTPStatus: 499, Code: "request_canceled", PublicMessage: "请求已取消", AccountID: credential.ID, AccountName: credential.Name, Cause: firstError(ctx.Err(), err)}
+					lastFailure = newCanceledUpstreamFailure(firstError(ctx.Err(), err), credential.ID, credential.Name)
 					break
 				} else {
 					lastFailure = newTransportUpstreamFailure(err, credential.ID, credential.Name)
@@ -670,7 +671,7 @@ attemptLoop:
 					lease.Release()
 					lastErr = err
 					if ctx.Err() != nil || errors.Is(err, context.Canceled) {
-						lastFailure = &UpstreamFailure{HTTPStatus: 499, Code: "request_canceled", PublicMessage: "请求已取消", AccountID: credential.ID, AccountName: credential.Name, Cause: firstError(ctx.Err(), err)}
+						lastFailure = newCanceledUpstreamFailure(firstError(ctx.Err(), err), credential.ID, credential.Name)
 						break attemptLoop
 					}
 					lastFailure = newTransportUpstreamFailure(err, credential.ID, credential.Name)
@@ -705,17 +706,18 @@ attemptLoop:
 					// model-scoped; only an actual credential rejection requires reauth.
 					s.selector.MarkModelAccessDenied(ctx, credential, route.UpstreamModel, retryAfter)
 				} else {
-					_ = s.accounts.MarkReauthRequired(ctx, credential.ID, fmt.Sprintf("%s chat endpoint access denied", credential.Provider))
-					s.selector.MarkQuotaStateChanged(credential.Provider)
+					// A policy/permission denial is not proof that the credential is
+					// invalid. Keep the account degraded instead of forcing reauth.
+					s.selector.MarkUpstreamFailure(ctx, credential, lastFailure)
 				}
 				failureHandled = true
 			} else if s.providers.SupportsCredentialRefresh(credential.Provider) && lastFailure.CredentialRejected {
-				_ = s.accounts.MarkReauthRequired(ctx, credential.ID, fmt.Sprintf("%s credential rejected", credential.Provider))
+				_ = s.accounts.MarkReauthRequired(ctx, credential.ID, lastFailure.StateReason())
 				s.selector.MarkQuotaStateChanged(credential.Provider)
 				failureHandled = true
 			}
 			if lastFailure.AccountScoped && !failureHandled {
-				s.selector.MarkFailure(ctx, credential, response.StatusCode, retryAfter)
+				s.selector.MarkUpstreamFailure(ctx, credential, lastFailure)
 			}
 			lease.Release()
 			lastErr = fmt.Errorf("上游返回 %d", response.StatusCode)

@@ -41,7 +41,9 @@ func TestSchemaAndRepositoryConstraints(t *testing.T) {
 	if err := accountRepo.UpdateObservedModel(context.Background(), created.ID, "grok-observed", observedAt); err != nil {
 		t.Fatal(err)
 	}
-	if err := accountRepo.UpdateHealth(context.Background(), created.ID, 0, nil, "", true); err != nil {
+	if err := accountRepo.TransitionHealth(context.Background(), repository.AccountHealthTransition{
+		AccountID: created.ID, Event: account.EventRequestSucceeded, Success: true, OccurredAt: observedAt,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	value.Name = "updated"
@@ -273,12 +275,17 @@ func TestAccountRepositorySummarizesOperationalStates(t *testing.T) {
 	create(account.ProviderBuild, "build-active")
 	cooldown := create(account.ProviderBuild, "build-cooldown")
 	cooldownUntil := now.Add(time.Hour)
-	if err := repo.UpdateHealth(ctx, cooldown.ID, 1, &cooldownUntil, "cooldown", false); err != nil {
+	if err := repo.TransitionHealth(ctx, repository.AccountHealthTransition{
+		AccountID: cooldown.ID, Event: account.EventCooldownStarted, Reason: "cooldown", FailureCount: 1, CooldownUntil: &cooldownUntil, OccurredAt: now,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	disabled := create(account.ProviderBuild, "build-disabled")
 	disabled.Enabled = false
 	if _, err := repo.Update(ctx, disabled); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.TransitionHealth(ctx, repository.AccountHealthTransition{AccountID: disabled.ID, Event: account.EventDisabled, OccurredAt: now}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -287,8 +294,9 @@ func TestAccountRepositorySummarizesOperationalStates(t *testing.T) {
 		t.Fatal(err)
 	}
 	reauth := create(account.ProviderWeb, "web-reauth")
-	reauth.AuthStatus = account.AuthStatusReauthRequired
-	if _, err := repo.Update(ctx, reauth); err != nil {
+	if err := repo.TransitionHealth(ctx, repository.AccountHealthTransition{
+		AccountID: reauth.ID, Event: account.EventCredentialRejected, Reason: "confirmed token rejection", OccurredAt: now,
+	}); err != nil {
 		t.Fatal(err)
 	}
 

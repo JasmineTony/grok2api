@@ -69,7 +69,6 @@ type AccountRepository interface {
 	NextCredentialRefreshDueAt(ctx context.Context) (*time.Time, error)
 	UpdateCredentialRefreshFailure(ctx context.Context, id uint64, failureCount int, retryAt time.Time, errorCode string, permanent bool) error
 	UpdateObservedModel(ctx context.Context, id uint64, model string, observedAt time.Time) error
-	UpdateHealth(ctx context.Context, id uint64, failureCount int, cooldownUntil *time.Time, lastError string, success bool) error
 	TransitionHealth(ctx context.Context, transition AccountHealthTransition) error
 	ListStateEvents(ctx context.Context, accountID uint64, limit int) ([]account.StateHistoryEvent, error)
 	CountStates(ctx context.Context) (map[account.State]uint64, error)

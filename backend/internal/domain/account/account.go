@@ -139,14 +139,15 @@ func States() []State { return append([]State(nil), states[:]...) }
 type StateEvent string
 
 const (
-	EventRequestSucceeded   StateEvent = "request_succeeded"
-	EventTransientFailure   StateEvent = "transient_failure"
-	EventCooldownStarted    StateEvent = "cooldown_started"
-	EventRateLimited        StateEvent = "rate_limited"
-	EventQuotaExhausted     StateEvent = "quota_exhausted"
-	EventCredentialRejected StateEvent = "credential_rejected"
-	EventDisabled           StateEvent = "disabled"
-	EventEnabled            StateEvent = "enabled"
+	EventRequestSucceeded    StateEvent = "request_succeeded"
+	EventCredentialRefreshed StateEvent = "credential_refreshed"
+	EventTransientFailure    StateEvent = "transient_failure"
+	EventCooldownStarted     StateEvent = "cooldown_started"
+	EventRateLimited         StateEvent = "rate_limited"
+	EventQuotaExhausted      StateEvent = "quota_exhausted"
+	EventCredentialRejected  StateEvent = "credential_rejected"
+	EventDisabled            StateEvent = "disabled"
+	EventEnabled             StateEvent = "enabled"
 )
 
 // StateEventInput ?????????????
@@ -187,6 +188,11 @@ func ApplyStateEvent(current State, enabled bool, input StateEventInput) State {
 			return current
 		}
 		return StateDegraded
+	case EventCredentialRefreshed:
+		if current == StateDisabled {
+			return current
+		}
+		return StateReady
 	case EventRequestSucceeded:
 		if current == StateReauthRequired || current == StateQuotaExhausted || current == StateDisabled {
 			return current

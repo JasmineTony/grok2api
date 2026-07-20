@@ -1111,12 +1111,7 @@ func (r *AccountRepository) UpdateTokens(ctx context.Context, id uint64, accessT
 	if refreshToken != "" {
 		updates["encrypted_refresh"] = refreshToken
 	}
-	if err := r.db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&accountCredentialModel{}).Where("account_id = ?", id).Updates(updates).Error; err != nil {
-			return err
-		}
-		return tx.Model(&accountModel{}).Where("id = ?", id).Updates(map[string]any{"auth_status": string(account.AuthStatusActive), "last_error": ""}).Error
-	}); err != nil {
+	if err := r.db.db.WithContext(ctx).Model(&accountCredentialModel{}).Where("account_id = ?", id).Updates(updates).Error; err != nil {
 		return account.Credential{}, err
 	}
 	return r.Get(ctx, id)
@@ -1240,15 +1235,6 @@ func (r *AccountRepository) MarkBuildAPIFallback(ctx context.Context, id uint64,
 	return nil
 }
 
-func (r *AccountRepository) UpdateHealth(ctx context.Context, id uint64, failureCount int, cooldownUntil *time.Time, lastError string, success bool) error {
-	updates := map[string]any{"failure_count": failureCount, "cooldown_until": cooldownUntil, "last_error": truncate(lastError, 512)}
-	if success {
-		now := time.Now().UTC()
-		updates["last_used_at"] = &now
-	}
-	return r.db.db.WithContext(ctx).Model(&accountModel{}).Where("id = ?", id).Updates(updates).Error
-}
-
 func (r *AccountRepository) TransitionHealth(ctx context.Context, transition repository.AccountHealthTransition) error {
 	if transition.AccountID == 0 || transition.Event == "" || transition.FailureCount < 0 {
 		return repository.ErrConflict
@@ -1276,9 +1262,17 @@ func (r *AccountRepository) TransitionHealth(ctx context.Context, transition rep
 		next := account.ApplyStateEvent(current, row.Enabled, account.StateEventInput{
 			Event: transition.Event, At: when, Reason: transition.Reason, CooldownTo: transition.CooldownUntil,
 		})
+		if transition.Event == account.EventEnabled && row.AuthStatus == string(account.AuthStatusReauthRequired) {
+			next = account.StateReauthRequired
+		}
 		updates := map[string]any{
 			"state": next, "failure_count": transition.FailureCount,
-			"cooldown_until": transition.CooldownUntil, "last_error": truncate(transition.Reason, 512),
+			"cooldown_until": transition.CooldownUntil,
+		}
+		if transition.Event == account.EventRequestSucceeded || transition.Event == account.EventCredentialRefreshed || transition.Event == account.EventEnabled {
+			updates["last_error"] = ""
+		} else if strings.TrimSpace(transition.Reason) != "" {
+			updates["last_error"] = truncate(transition.Reason, 512)
 		}
 		if transition.Success {
 			updates["last_used_at"] = &when
@@ -1288,6 +1282,8 @@ func (r *AccountRepository) TransitionHealth(ctx context.Context, transition rep
 		}
 		if transition.Event == account.EventCredentialRejected {
 			updates["auth_status"] = account.AuthStatusReauthRequired
+		} else if transition.Event == account.EventCredentialRefreshed {
+			updates["auth_status"] = account.AuthStatusActive
 		}
 		if err := tx.Model(&accountModel{}).Where("id = ?", transition.AccountID).Updates(updates).Error; err != nil {
 			return err

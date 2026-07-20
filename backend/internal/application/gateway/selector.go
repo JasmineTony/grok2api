@@ -599,6 +599,41 @@ func (s *Selector) ConsumeQuota(provider account.Provider, accountID uint64, mod
 }
 
 func (s *Selector) MarkFailure(ctx context.Context, credential account.Credential, status int, retryAfter time.Duration) {
+	event := account.EventCooldownStarted
+	switch status {
+	case http.StatusUnauthorized:
+		event = account.EventCredentialRejected
+	case http.StatusPaymentRequired:
+		event = account.EventQuotaExhausted
+	case http.StatusTooManyRequests:
+		event = account.EventRateLimited
+	}
+	s.markFailureEvent(ctx, credential, event, fmt.Sprintf("upstream_status_%d", status), retryAfter)
+}
+
+// MarkUpstreamFailure converts structured provider evidence into one explicit
+// account state event. Credential invalidation is only allowed when the
+// evidence was classified as an actual credential rejection.
+func (s *Selector) MarkUpstreamFailure(ctx context.Context, credential account.Credential, failure *UpstreamFailure) {
+	if failure == nil {
+		s.MarkFailure(ctx, credential, 0, 0)
+		return
+	}
+	event := account.EventCooldownStarted
+	switch {
+	case failure.AccountImpact == ImpactReauth && failure.Category == FailureCredential && failure.CredentialRejected:
+		event = account.EventCredentialRejected
+	case failure.AccountImpact == ImpactQuota || failure.QuotaExhausted:
+		event = account.EventQuotaExhausted
+	case failure.Category == FailureRateLimit:
+		event = account.EventRateLimited
+	case failure.AccountImpact == ImpactDegraded && !failure.AccountScoped:
+		event = account.EventTransientFailure
+	}
+	s.markFailureEvent(ctx, credential, event, failure.StateReason(), failure.RetryAfter)
+}
+
+func (s *Selector) markFailureEvent(ctx context.Context, credential account.Credential, event account.StateEvent, reason string, retryAfter time.Duration) {
 	failureCount := credential.FailureCount + 1
 	_, cooldownBase, cooldownMax, _ := s.routingConfig()
 	cooldown := cooldownBase
@@ -612,22 +647,17 @@ func (s *Selector) MarkFailure(ctx context.Context, credential account.Credentia
 		cooldown = retryAfter
 	}
 	now := time.Now().UTC()
-	until := now.Add(cooldown)
-	event := account.EventCooldownStarted
-	switch status {
-	case http.StatusUnauthorized:
-		event = account.EventCredentialRejected
-	case http.StatusPaymentRequired:
-		event = account.EventQuotaExhausted
-	case http.StatusTooManyRequests:
-		event = account.EventRateLimited
+	var cooldownUntil *time.Time
+	if event != account.EventCredentialRejected && event != account.EventQuotaExhausted && event != account.EventTransientFailure {
+		until := now.Add(cooldown)
+		cooldownUntil = &until
 	}
 	_ = s.accounts.TransitionHealth(ctx, repository.AccountHealthTransition{
-		AccountID: credential.ID, Event: event, Reason: fmt.Sprintf("upstream status %d", status),
-		FailureCount: failureCount, CooldownUntil: &until, OccurredAt: now,
+		AccountID: credential.ID, Event: event, Reason: reason,
+		FailureCount: failureCount, CooldownUntil: cooldownUntil, OccurredAt: now,
 	})
 	s.invalidateCandidates(credential.Provider)
-	if status == 401 || status == 402 || status == 403 || status == 429 {
+	if event == account.EventCredentialRejected || event == account.EventQuotaExhausted || event == account.EventRateLimited || event == account.EventCooldownStarted {
 		_ = s.sticky.DeleteByAccount(ctx, credential.ID)
 	}
 }

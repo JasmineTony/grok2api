@@ -1436,6 +1436,7 @@ func (s *Service) Update(ctx context.Context, id uint64, input UpdateInput) (Vie
 	if err != nil {
 		return View{}, mapRepositoryError(err)
 	}
+	enabledBefore := value.Enabled
 	if input.Name != nil {
 		value.Name = strings.TrimSpace(*input.Name)
 		if value.Name == "" {
@@ -1500,6 +1501,17 @@ func (s *Service) Update(ctx context.Context, id uint64, input UpdateInput) (Vie
 	if err != nil {
 		return View{}, mapRepositoryError(err)
 	}
+	if input.Enabled != nil && enabledBefore != updated.Enabled {
+		event := accountdomain.EventDisabled
+		if updated.Enabled {
+			event = accountdomain.EventEnabled
+		}
+		if err := s.accounts.TransitionHealth(ctx, repository.AccountHealthTransition{
+			AccountID: updated.ID, Event: event, FailureCount: updated.FailureCount, OccurredAt: s.now(),
+		}); err != nil {
+			return View{}, mapRepositoryError(err)
+		}
+	}
 	if !updated.Enabled && s.sticky != nil {
 		_ = s.sticky.DeleteByAccount(ctx, updated.ID)
 	} else if updated.Enabled && s.providers != nil && s.providers.SupportsCredentialRefresh(updated.Provider) {
@@ -1530,12 +1542,10 @@ func (s *Service) MarkReauthRequired(ctx context.Context, id uint64, reason stri
 	if err != nil {
 		return mapRepositoryError(err)
 	}
-	value.AuthStatus = accountdomain.AuthStatusReauthRequired
-	value.LastError = reason
-	if len(value.LastError) > 512 {
-		value.LastError = value.LastError[:512]
-	}
-	if _, err := s.accounts.Update(ctx, value); err != nil {
+	if err := s.accounts.TransitionHealth(ctx, repository.AccountHealthTransition{
+		AccountID: value.ID, Event: accountdomain.EventCredentialRejected, Reason: reason,
+		FailureCount: value.FailureCount, OccurredAt: s.now(),
+	}); err != nil {
 		return mapRepositoryError(err)
 	}
 	if s.sticky != nil {
@@ -1651,6 +1661,15 @@ func (s *Service) ensureCredential(ctx context.Context, value accountdomain.Cred
 			return nil, err
 		}
 		updated, err := s.accounts.UpdateTokens(ctx, latest.ID, refreshed.EncryptedAccessToken, refreshed.EncryptedRefreshToken, refreshed.ExpiresAt)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.accounts.TransitionHealth(ctx, repository.AccountHealthTransition{
+			AccountID: latest.ID, Event: accountdomain.EventCredentialRefreshed, FailureCount: 0, Success: true, OccurredAt: currentTime,
+		}); err != nil {
+			return nil, err
+		}
+		updated, err = s.accounts.Get(ctx, latest.ID)
 		if err != nil {
 			return nil, err
 		}
