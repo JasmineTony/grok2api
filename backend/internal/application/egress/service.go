@@ -10,6 +10,7 @@ import (
 	"time"
 
 	domain "github.com/chenyme/grok2api/backend/internal/domain/egress"
+	notificationdomain "github.com/chenyme/grok2api/backend/internal/domain/notification"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
 	"github.com/chenyme/grok2api/backend/internal/repository"
 )
@@ -45,11 +46,14 @@ type Input struct {
 }
 
 type Service struct {
-	repository repository.EgressRepository
-	cipher     *security.Cipher
-	browserUA  string
-	now        func() time.Time
-	dial       func(context.Context, string, string) (net.Conn, error)
+	repository    repository.EgressRepository
+	cipher        *security.Cipher
+	browserUA     string
+	now           func() time.Time
+	dial          func(context.Context, string, string) (net.Conn, error)
+	notifications interface {
+		Publish(context.Context, notificationdomain.Event) (notificationdomain.Event, bool, error)
+	}
 }
 
 func NewService(repository repository.EgressRepository, cipher *security.Cipher, browserUA string) *Service {
@@ -59,6 +63,10 @@ func NewService(repository repository.EgressRepository, cipher *security.Cipher,
 		dial: dialer.DialContext,
 	}
 }
+
+func (s *Service) SetNotifications(value interface {
+	Publish(context.Context, notificationdomain.Event) (notificationdomain.Event, bool, error)
+}) { s.notifications = value }
 
 func (s *Service) DefaultUserAgents() map[string]string {
 	return map[string]string{
@@ -196,6 +204,9 @@ func (s *Service) Check(ctx context.Context, id uint64) (domain.HealthCheckResul
 	}
 	if _, err := s.repository.UpdateEgressNode(ctx, value); err != nil {
 		return domain.HealthCheckResult{}, err
+	}
+	if !healthy && s.notifications != nil {
+		_, _, _ = s.notifications.Publish(context.WithoutCancel(ctx), notificationdomain.Event{EventKey: "egress_node_unhealthy", Severity: notificationdomain.SeverityWarning, Title: "Egress 节点不可用", Body: "Egress 节点健康检查失败，请在管理端查看错误码和恢复时间。", DedupKey: fmt.Sprintf("egress:%d:%s", value.ID, errorCode)})
 	}
 	if history, ok := s.repository.(repository.EgressHealthRepository); ok {
 		if err := history.RecordEgressHealthCheck(ctx, result); err != nil {

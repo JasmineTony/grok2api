@@ -50,13 +50,52 @@ func TestSQLiteBackupManifestRoundTripAndTamperDetection(t *testing.T) {
 	}
 
 	// Recreate a clean backup and verify restore into stopped, separate paths.
-	if err := os.WriteFile(filepath.Join(backupRoot, "media", "images", "aa", "asset.bin"), []byte("media"), 0o600); err != nil { t.Fatal(err) }
+	if err := os.WriteFile(filepath.Join(backupRoot, "media", "images", "aa", "asset.bin"), []byte("media"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	targetDB := filepath.Join(root, "restored", "backend.db")
 	targetMedia := filepath.Join(root, "restored", "media")
-	if err := os.MkdirAll(targetMedia, 0o700); err != nil { t.Fatal(err) }
-	if err := os.WriteFile(filepath.Join(targetMedia, "old.txt"), []byte("old"), 0o600); err != nil { t.Fatal(err) }
-	if err := service.Restore(ctx, backupRoot, targetDB, targetMedia); err != nil { t.Fatal(err) }
-	if _, err := os.Stat(targetDB); err != nil { t.Fatal(err) }
-	if _, err := os.Stat(filepath.Join(targetMedia, "images", "aa", "asset.bin")); err != nil { t.Fatal(err) }
-	if _, err := os.Stat(targetDB + ".pre-restore-20260720T120000Z"); err == nil { t.Fatal("unexpected database backup was created for a new target") }
+	if err := os.MkdirAll(targetMedia, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(targetMedia, "old.txt"), []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Restore(ctx, backupRoot, targetDB, targetMedia); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(targetDB); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(targetMedia, "images", "aa", "asset.bin")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(targetDB + ".pre-restore-20260720T120000Z"); err == nil {
+		t.Fatal("unexpected database backup was created for a new target")
+	}
+}
+
+func TestPreflightRequiresVerifiedBackup(t *testing.T) {
+	ctx := context.Background()
+	database, err := relational.OpenSQLite(ctx, filepath.Join(t.TempDir(), "preflight.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if err := database.InitializeSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(database, filepath.Join(t.TempDir(), "media"), "v3.1.0")
+	without := service.Preflight(ctx, "")
+	if without.Ready {
+		t.Fatalf("preflight without backup = %#v", without)
+	}
+	root := filepath.Join(t.TempDir(), "backup")
+	if _, err := service.Create(ctx, root); err != nil {
+		t.Fatal(err)
+	}
+	with := service.Preflight(ctx, root)
+	if !with.Ready {
+		t.Fatalf("preflight with backup = %#v", with)
+	}
 }

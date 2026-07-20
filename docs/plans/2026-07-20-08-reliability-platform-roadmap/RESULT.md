@@ -22,6 +22,12 @@
 - 站内通知、去重、冷却、已读、确认、保留期和签名 Webhook 已完成。
 - 维护仓库与上游仓库版本检查已分离。
 
+### 升级前检查与通知补强
+
+- 备份服务新增升级前预检报告，检查数据库连接、媒体目录、备份 manifest 与 SQLite/外部数据库备份责任。
+- 新增管理 API：`GET /api/admin/v1/system/upgrade/preflight`。
+- 账号重认证、额度耗尽、Egress 节点健康检查失败和策略拒绝已接入去重通知。
+
 ### 本轮新增：类型化请求策略
 
 - 新增领域模型：`backend/internal/domain/requestpolicy`。
@@ -39,6 +45,12 @@
 - `go vet ./...`：通过
 - 新增请求策略领域、仓储和入口接线测试：通过
 - 前端此前的 test、typecheck、lint、build、图标检查和包体检查：通过
+
+### 协议转换查看器
+
+- 新增离线协议规范化预览：OpenAI Responses、Chat Completions 与 Anthropic Messages。
+- 新增管理 API：`POST /api/admin/v1/protocol/conversions/preview`。
+- 预览限制单条 256 KiB，不联网、不回放、不保存请求正文。
 
 ## 尚未完成
 

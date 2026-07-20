@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/chenyme/grok2api/backend/internal/domain/account"
+	notificationdomain "github.com/chenyme/grok2api/backend/internal/domain/notification"
 	"github.com/chenyme/grok2api/backend/internal/pkg/resultcache"
 	"github.com/chenyme/grok2api/backend/internal/repository"
 	"golang.org/x/sync/singleflight"
@@ -107,10 +108,17 @@ type Selector struct {
 	candidates           map[candidateCacheKey]candidateSnapshot
 	candidateLoads       singleflight.Group
 	concurrencySnapshots *resultcache.Cache[[32]byte, map[string]int]
-	tierOrders           interface {
+	notifications        interface {
+		Publish(context.Context, notificationdomain.Event) (notificationdomain.Event, bool, error)
+	}
+	tierOrders interface {
 		TierOrder(account.Provider, string) []account.WebTier
 	}
 }
+
+func (s *Selector) SetNotifications(value interface {
+	Publish(context.Context, notificationdomain.Event) (notificationdomain.Event, bool, error)
+}) { s.notifications = value }
 
 func NewSelector(accounts repository.AccountRepository, concurrency repository.ConcurrencyLimiter, sticky repository.StickySessionRepository, tierOrders interface {
 	TierOrder(account.Provider, string) []account.WebTier
@@ -659,6 +667,15 @@ func (s *Selector) markFailureEvent(ctx context.Context, credential account.Cred
 	s.invalidateCandidates(credential.Provider)
 	if event == account.EventCredentialRejected || event == account.EventQuotaExhausted || event == account.EventRateLimited || event == account.EventCooldownStarted {
 		_ = s.sticky.DeleteByAccount(ctx, credential.ID)
+	}
+	if s.notifications != nil && (event == account.EventCredentialRejected || event == account.EventQuotaExhausted) {
+		eventKey := "account_reauth_required"
+		title := "账号需要重新认证"
+		if event == account.EventQuotaExhausted {
+			eventKey = "account_quota_exhausted"
+			title = "账号额度已耗尽"
+		}
+		_, _, _ = s.notifications.Publish(context.WithoutCancel(ctx), notificationdomain.Event{EventKey: eventKey, Severity: notificationdomain.SeverityWarning, Title: title, Body: "账号状态已更新，请在管理端查看原因和恢复时间。", DedupKey: eventKey + ":" + fmt.Sprint(credential.ID)})
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	accountsyncapp "github.com/chenyme/grok2api/backend/internal/application/accountsync"
 	adminauthapp "github.com/chenyme/grok2api/backend/internal/application/adminauth"
 	auditapp "github.com/chenyme/grok2api/backend/internal/application/audit"
+	backupapp "github.com/chenyme/grok2api/backend/internal/application/backup"
 	clientkeyapp "github.com/chenyme/grok2api/backend/internal/application/clientkey"
 	dashboardapp "github.com/chenyme/grok2api/backend/internal/application/dashboard"
 	egressapp "github.com/chenyme/grok2api/backend/internal/application/egress"
@@ -32,6 +33,7 @@ import (
 	"github.com/chenyme/grok2api/backend/internal/transport/http/middleware"
 	modelhttp "github.com/chenyme/grok2api/backend/internal/transport/http/model"
 	notificationhttp "github.com/chenyme/grok2api/backend/internal/transport/http/notification"
+	protocolviewhttp "github.com/chenyme/grok2api/backend/internal/transport/http/protocolview"
 	requestpolicyhttp "github.com/chenyme/grok2api/backend/internal/transport/http/requestpolicy"
 	settingshttp "github.com/chenyme/grok2api/backend/internal/transport/http/settings"
 	systemhttp "github.com/chenyme/grok2api/backend/internal/transport/http/system"
@@ -67,6 +69,7 @@ type Dependencies struct {
 	Egress          *egressapp.Service
 	Updates         *updatecheckapp.Service
 	Notifications   *notificationapp.Service
+	Backup          *backupapp.Service
 	RequestPolicies *requestpolicyapp.Service
 }
 
@@ -162,12 +165,13 @@ func New(deps Dependencies) *gin.Engine {
 	if deps.RequestPolicies != nil {
 		requestpolicyhttp.NewHandler(deps.RequestPolicies).Register(adminProtected)
 	}
+	protocolviewhttp.NewHandler().Register(adminProtected)
 	systemhttp.NewHandler(func() string {
 		if deps.Settings != nil {
 			return deps.Settings.PublicAPIBaseURL()
 		}
 		return deps.PublicAPIBaseURL
-	}, deps.Updates).Register(adminProtected)
+	}, deps.Updates, deps.Backup).Register(adminProtected)
 
 	v1 := router.Group("/v1")
 	v1.Use(deps.ConcurrencyGate.Middleware())

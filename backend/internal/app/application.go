@@ -284,11 +284,13 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	accountSyncService.SetBulkPool(importPool)
 	accountSyncService.UpdateConcurrency(cfg.Batch.ImportConcurrency)
 	egressService := egressapp.NewService(egressRepo, cipher, infraegress.DefaultUserAgent)
+	egressService.SetNotifications(notificationService)
 	clientKeyService := clientkeyapp.NewService(clientKeyRepo, rateLimiter, concurrency, cfg.ClientKeyDefaults.RPMLimit, cfg.ClientKeyDefaults.MaxConcurrent, cipher)
 	auditService := auditapp.NewService(auditRepo, logger, cfg.Audit.BufferSize, cfg.Audit.BatchSize, cfg.Audit.FlushInterval.Value())
 	dashboardService := dashboardapp.NewService(dashboardRepo)
 	selector := gateway.NewSelector(accountRepo, concurrency, sticky, providers, cfg.Routing.StickyTTL.Value(), cfg.Routing.CooldownBase.Value(), cfg.Routing.CooldownMax.Value(), cfg.Routing.CapacityWait.Value())
 	selector.UpdatePreferFreeBuild(cfg.Routing.PreferFreeBuild)
+	selector.SetNotifications(notificationService)
 	gatewayService := gateway.NewService(modelService, auditService, accountService, clientKeyService, providers, selector, responseRepo, cfg.Routing.MaxAttempts)
 	gatewayService.SetLogger(logger)
 	gatewayService.ConfigureMedia(mediaJobRepo, cfg.Provider.Web.MediaConcurrency)
@@ -341,7 +343,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	}
 	metrics := metricsobs.NewMetrics()
 	gatewayService.ConfigureMetrics(metrics)
-	router := httpserver.New(httpserver.Dependencies{Logger: logger, Metrics: metrics, RequestTimeout: cfg.Server.RequestTimeout.Value(), MaxBodyBytes: cfg.Server.MaxBodyBytes, ConcurrencyGate: inferenceConcurrency, SecureCookies: cfg.Auth.SecureCookies, SwaggerEnabled: cfg.Server.SwaggerEnabled, PublicAPIBaseURL: cfg.Frontend.EffectivePublicAPIBaseURL(), FrontendStaticPath: cfg.Frontend.StaticPath, Readiness: readiness, TrafficReady: startup.acceptsTraffic, AdminAuth: adminService, Accounts: accountService, AccountSync: accountSyncService, Models: modelService, ClientKeys: clientKeyService, Audits: auditService, Dashboard: dashboardService, Gateway: gatewayService, Media: mediaService, Settings: settingsService, Egress: egressService, Updates: updateService, Notifications: notificationService, RequestPolicies: requestPolicyService})
+	router := httpserver.New(httpserver.Dependencies{Logger: logger, Metrics: metrics, RequestTimeout: cfg.Server.RequestTimeout.Value(), MaxBodyBytes: cfg.Server.MaxBodyBytes, ConcurrencyGate: inferenceConcurrency, SecureCookies: cfg.Auth.SecureCookies, SwaggerEnabled: cfg.Server.SwaggerEnabled, PublicAPIBaseURL: cfg.Frontend.EffectivePublicAPIBaseURL(), FrontendStaticPath: cfg.Frontend.StaticPath, Readiness: readiness, TrafficReady: startup.acceptsTraffic, AdminAuth: adminService, Accounts: accountService, AccountSync: accountSyncService, Models: modelService, ClientKeys: clientKeyService, Audits: auditService, Dashboard: dashboardService, Gateway: gatewayService, Media: mediaService, Settings: settingsService, Egress: egressService, Updates: updateService, Notifications: notificationService, Backup: backupService, RequestPolicies: requestPolicyService})
 	server := &http.Server{Addr: cfg.Server.Listen, Handler: router, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: cfg.Server.ReadTimeout.Value(), IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
 	return &Application{
 		logger: logger, database: database, server: server,

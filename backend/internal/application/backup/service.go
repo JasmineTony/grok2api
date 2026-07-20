@@ -44,11 +44,80 @@ type Result struct {
 	Manifest     Manifest
 }
 
+type PreflightCheck struct {
+	Name   string `json:"name"`
+	OK     bool   `json:"ok"`
+	Detail string `json:"detail,omitempty"`
+}
+
+type PreflightReport struct {
+	ApplicationVersion     string           `json:"applicationVersion"`
+	DatabaseDriver         string           `json:"databaseDriver"`
+	RestoreRequiresStop    bool             `json:"restoreRequiresStop"`
+	ExternalBackupRequired bool             `json:"externalBackupRequired"`
+	Checks                 []PreflightCheck `json:"checks"`
+	Ready                  bool             `json:"ready"`
+}
+
+// Preflight validates the locally observable upgrade and backup prerequisites.
+// PostgreSQL and Redis are deliberately reported as external responsibilities.
+func (s *Service) SetExternalBackupCheck(check func(context.Context) error) {
+	s.externalBackupCheck = check
+}
+
+func (s *Service) Preflight(ctx context.Context, backupRoot string) PreflightReport {
+	report := PreflightReport{ApplicationVersion: s.version, RestoreRequiresStop: true}
+	if s == nil || s.database == nil {
+		report.Ready = false
+		report.Checks = []PreflightCheck{{Name: "database", OK: false, Detail: "database is not configured"}}
+		return report
+	}
+	report.DatabaseDriver = s.database.Driver()
+	report.ExternalBackupRequired = s.database.Driver() != "sqlite"
+	add := func(name string, ok bool, detail string) {
+		report.Checks = append(report.Checks, PreflightCheck{Name: name, OK: ok, Detail: detail})
+	}
+	add("database", true, s.database.Driver()+" connection is available")
+	if s.database.Driver() == "sqlite" {
+		add("database_snapshot", true, "VACUUM INTO snapshot is supported")
+	} else if s.externalBackupCheck == nil {
+		add("external_database_backup", false, "external database backup hook is required")
+	} else if err := s.externalBackupCheck(ctx); err != nil {
+		add("external_database_backup", false, err.Error())
+	} else {
+		add("external_database_backup", true, "external database backup hook verified")
+	}
+	if strings.TrimSpace(s.mediaRoot) == "" {
+		add("media_root", false, "media root is empty")
+	} else if err := os.MkdirAll(s.mediaRoot, 0o700); err != nil {
+		add("media_root", false, err.Error())
+	} else {
+		add("media_root", true, s.mediaRoot)
+	}
+	if strings.TrimSpace(backupRoot) != "" {
+		if _, err := s.Verify(ctx, backupRoot); err != nil {
+			add("backup_manifest", false, err.Error())
+		} else {
+			add("backup_manifest", true, "backup manifest and checksums verified")
+		}
+	} else {
+		add("backup_manifest", false, "no backup manifest supplied")
+	}
+	report.Ready = true
+	for _, check := range report.Checks {
+		if !check.OK && (check.Name == "database" || check.Name == "media_root" || check.Name == "backup_manifest" || check.Name == "external_database_backup") {
+			report.Ready = false
+		}
+	}
+	return report
+}
+
 type Service struct {
-	database  *relational.Database
-	mediaRoot string
-	version   string
-	now       func() time.Time
+	database            *relational.Database
+	mediaRoot           string
+	version             string
+	now                 func() time.Time
+	externalBackupCheck func(context.Context) error
 }
 
 func NewService(database *relational.Database, mediaRoot, version string) *Service {
@@ -141,46 +210,85 @@ func (s *Service) Verify(ctx context.Context, backupRoot string) (Manifest, erro
 // Existing paths are renamed to a timestamped .pre-restore sibling before replacement.
 func (s *Service) Restore(ctx context.Context, backupRoot, targetDatabase, targetMedia string) error {
 	manifest, err := s.Verify(ctx, backupRoot)
-	if err != nil { return err }
-	if manifest.DatabaseDriver != "sqlite" || manifest.DatabaseSnapshot == "" { return errors.New("restore requires a SQLite snapshot; use the external database backup procedure for PostgreSQL") }
+	if err != nil {
+		return err
+	}
+	if manifest.DatabaseDriver != "sqlite" || manifest.DatabaseSnapshot == "" {
+		return errors.New("restore requires a SQLite snapshot; use the external database backup procedure for PostgreSQL")
+	}
 	targetDatabase, err = filepath.Abs(filepath.Clean(strings.TrimSpace(targetDatabase)))
-	if err != nil || targetDatabase == "" { return errors.New("restore database path is invalid") }
+	if err != nil || targetDatabase == "" {
+		return errors.New("restore database path is invalid")
+	}
 	targetMedia, err = filepath.Abs(filepath.Clean(strings.TrimSpace(targetMedia)))
-	if err != nil || targetMedia == "" { return errors.New("restore media path is invalid") }
-	if err := ctx.Err(); err != nil { return err }
+	if err != nil || targetMedia == "" {
+		return errors.New("restore media path is invalid")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	timestamp := s.now().UTC().Format("20060102T150405Z")
 	stagedDatabase := targetDatabase + ".restore-" + timestamp
-	if err := copyFile(filepath.Join(filepath.Clean(backupRoot), filepath.FromSlash(manifest.DatabaseSnapshot)), stagedDatabase); err != nil { return fmt.Errorf("stage database restore: %w", err) }
-	if err := replacePathWithBackup(stagedDatabase, targetDatabase, timestamp); err != nil { _ = os.Remove(stagedDatabase); return err }
+	if err := copyFile(filepath.Join(filepath.Clean(backupRoot), filepath.FromSlash(manifest.DatabaseSnapshot)), stagedDatabase); err != nil {
+		return fmt.Errorf("stage database restore: %w", err)
+	}
+	if err := replacePathWithBackup(stagedDatabase, targetDatabase, timestamp); err != nil {
+		_ = os.Remove(stagedDatabase)
+		return err
+	}
 	stagedMedia := targetMedia + ".restore-" + timestamp
-	if err := copyTree(filepath.Join(filepath.Clean(backupRoot), "media"), stagedMedia); err != nil { return fmt.Errorf("stage media restore: %w", err) }
-	if err := replacePathWithBackup(stagedMedia, targetMedia, timestamp); err != nil { return err }
+	if err := copyTree(filepath.Join(filepath.Clean(backupRoot), "media"), stagedMedia); err != nil {
+		return fmt.Errorf("stage media restore: %w", err)
+	}
+	if err := replacePathWithBackup(stagedMedia, targetMedia, timestamp); err != nil {
+		return err
+	}
 	return nil
 }
 
 func replacePathWithBackup(staged, target, timestamp string) error {
-	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil { return err }
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		return err
+	}
 	if _, err := os.Stat(target); err == nil {
 		backup := target + ".pre-restore-" + timestamp
-		if err := os.Rename(target, backup); err != nil { return fmt.Errorf("preserve existing restore target: %w", err) }
-	} else if !errors.Is(err, os.ErrNotExist) { return err }
-	if err := os.Rename(staged, target); err != nil { return fmt.Errorf("activate restore target: %w", err) }
+		if err := os.Rename(target, backup); err != nil {
+			return fmt.Errorf("preserve existing restore target: %w", err)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.Rename(staged, target); err != nil {
+		return fmt.Errorf("activate restore target: %w", err)
+	}
 	return nil
 }
 
 func copyTree(source, destination string) error {
-	if err := os.MkdirAll(destination, 0o700); err != nil { return err }
+	if err := os.MkdirAll(destination, 0o700); err != nil {
+		return err
+	}
 	return filepath.WalkDir(source, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil { return walkErr }
-		relative, err := filepath.Rel(source, path); if err != nil { return err }
-		if relative == "." { return nil }
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(source, path)
+		if err != nil {
+			return err
+		}
+		if relative == "." {
+			return nil
+		}
 		target := filepath.Join(destination, relative)
-		if entry.IsDir() { return os.MkdirAll(target, 0o700) }
-		if entry.Type().IsRegular() { return copyFile(path, target) }
+		if entry.IsDir() {
+			return os.MkdirAll(target, 0o700)
+		}
+		if entry.Type().IsRegular() {
+			return copyFile(path, target)
+		}
 		return nil
 	})
 }
-
 
 func cleanDestination(value string) (string, error) {
 	value = strings.TrimSpace(value)
