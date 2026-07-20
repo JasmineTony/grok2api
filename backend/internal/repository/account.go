@@ -71,6 +71,7 @@ type AccountRepository interface {
 	UpdateObservedModel(ctx context.Context, id uint64, model string, observedAt time.Time) error
 	UpdateHealth(ctx context.Context, id uint64, failureCount int, cooldownUntil *time.Time, lastError string, success bool) error
 	TransitionHealth(ctx context.Context, transition AccountHealthTransition) error
+	ListStateEvents(ctx context.Context, accountID uint64, limit int) ([]account.StateHistoryEvent, error)
 	// MarkBuildAPIFallback 幂等写入 Build 账号的 XAI 推理回退标记；非 Build 账号返回错误。
 	MarkBuildAPIFallback(ctx context.Context, id uint64, enabled bool) error
 	// MarkWebNSFWEnabled 幂等记录 Web 账号首次确认 NSFW 已开启的时间。

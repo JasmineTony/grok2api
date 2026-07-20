@@ -549,6 +549,14 @@ func (s *Service) CleanupAccounts(ctx context.Context, providerValue accountdoma
 	return deleted, nil
 }
 
+func (s *Service) ListStateEvents(ctx context.Context, id uint64, limit int) ([]accountdomain.StateHistoryEvent, error) {
+	values, err := s.accounts.ListStateEvents(ctx, id, limit)
+	if err != nil {
+		return nil, mapRepositoryError(err)
+	}
+	return values, nil
+}
+
 func (s *Service) Get(ctx context.Context, id uint64) (View, error) {
 	value, err := s.accounts.Get(ctx, id)
 	if err != nil {

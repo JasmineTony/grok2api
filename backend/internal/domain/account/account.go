@@ -153,6 +153,17 @@ type StateEventInput struct {
 	CooldownTo *time.Time
 }
 
+// StateHistoryEvent is a persisted, credential-free account state transition.
+type StateHistoryEvent struct {
+	ID        uint64
+	AccountID uint64
+	FromState State
+	ToState   State
+	Event     StateEvent
+	Reason    string
+	CreatedAt time.Time
+}
+
 // ApplyStateEvent ?????????????????????????
 func ApplyStateEvent(current State, enabled bool, input StateEventInput) State {
 	if !enabled || input.Event == EventDisabled {
@@ -205,6 +216,7 @@ type Credential struct {
 	Enabled                   bool
 	AuthStatus                AuthStatus
 	State                     State
+	StateChangedAt            *time.Time
 	Priority                  int
 	MaxConcurrent             int
 	MinimumRemaining          float64

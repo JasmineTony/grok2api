@@ -791,6 +791,7 @@ func upsertKnownAccountByIdentity(tx *gorm.DB, value account.Credential, existin
 		row.MinimumRemaining = existing.MinimumRemaining
 		row.FailureCount = existing.FailureCount
 		row.State = existing.State
+		row.StateChangedAt = existing.StateChangedAt
 		row.CooldownUntil = existing.CooldownUntil
 		row.LastError = existing.LastError
 		row.LastUsedAt = existing.LastUsedAt
@@ -1282,6 +1283,9 @@ func (r *AccountRepository) TransitionHealth(ctx context.Context, transition rep
 		if transition.Success {
 			updates["last_used_at"] = &when
 		}
+		if next != current {
+			updates["state_changed_at"] = &when
+		}
 		if transition.Event == account.EventCredentialRejected {
 			updates["auth_status"] = account.AuthStatusReauthRequired
 		}
@@ -1296,6 +1300,27 @@ func (r *AccountRepository) TransitionHealth(ctx context.Context, transition rep
 			Event: string(transition.Event), Reason: truncate(transition.Reason, 512), CreatedAt: when,
 		}).Error
 	})
+}
+
+func (r *AccountRepository) ListStateEvents(ctx context.Context, accountID uint64, limit int) ([]account.StateHistoryEvent, error) {
+	if accountID == 0 {
+		return nil, repository.ErrNotFound
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	var rows []accountStateEventModel
+	if err := r.db.db.WithContext(ctx).Where("account_id = ?", accountID).Order("created_at DESC, id DESC").Limit(limit).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	result := make([]account.StateHistoryEvent, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, account.StateHistoryEvent{
+			ID: row.ID, AccountID: row.AccountID, FromState: account.State(row.FromState), ToState: account.State(row.ToState),
+			Event: account.StateEvent(row.Event), Reason: row.Reason, CreatedAt: row.CreatedAt,
+		})
+	}
+	return result, nil
 }
 
 func (r *AccountRepository) UpsertModelQuotaBlock(ctx context.Context, value account.ModelQuotaBlock) error {

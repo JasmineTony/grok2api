@@ -553,7 +553,7 @@ func TestAccountRepositoryTransitionHealthPersistsStateEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.State != account.StateCooldown || stored.AuthStatus != account.AuthStatusActive || stored.FailureCount != 1 {
+	if stored.State != account.StateCooldown || stored.StateChangedAt == nil || stored.AuthStatus != account.AuthStatusActive || stored.FailureCount != 1 {
 		t.Fatalf("stored = %#v", stored)
 	}
 	var events []accountStateEventModel
@@ -562,6 +562,10 @@ func TestAccountRepositoryTransitionHealthPersistsStateEvent(t *testing.T) {
 	}
 	if len(events) != 1 || events[0].FromState != string(account.StateReady) || events[0].ToState != string(account.StateCooldown) || events[0].Event != string(account.EventCooldownStarted) {
 		t.Fatalf("events = %#v", events)
+	}
+	history, err := repo.ListStateEvents(ctx, created.ID, 10)
+	if err != nil || len(history) != 1 || history[0].ToState != account.StateCooldown {
+		t.Fatalf("history = %#v, err = %v", history, err)
 	}
 }
 

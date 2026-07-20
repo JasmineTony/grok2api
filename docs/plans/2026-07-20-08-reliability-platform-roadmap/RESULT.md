@@ -16,6 +16,7 @@
 - 当前后端串行全量测试与 go vet 通过。
 - 管理 API 已新增兼容字段 `state`，前端账号列表按 disabled/reauth_required/degraded/quota_exhausted/cooldown/ready 显示，并保留旧 authStatus 兼容判断。
 - 账号 upsert 已保留现有运行状态，避免凭据刷新或重新导入将状态误重置为 ready；后端 DTO 测试、前端 typecheck/lint 通过。
+- 新增 `stateChangedAt`、`GET /api/admin/v1/accounts/:id/state-events` 与管理端状态记录对话框，可查看状态、原因、变化时间和最近事件；接口与数据库测试通过。
 
 ## 交付内容
 
