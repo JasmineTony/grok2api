@@ -1,0 +1,7 @@
+event: message_start
+data: {"id":"msg_fixture","type":"message_start","message":{"model":"grok-3","usage":{"input_tokens":1}}}
+
+event: content_block_delta
+data: {"index":0,"delta":{"type":"text_delta","text":"ok"}}
+
+data: [DONE]

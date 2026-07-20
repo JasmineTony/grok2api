@@ -35,6 +35,7 @@ type accountModel struct {
 	SourceKey        string  `gorm:"size:512;not null;check:chk_accounts_source_key,length(trim(source_key)) BETWEEN 1 AND 512;index:idx_accounts_provider_source,priority:2"`
 	Enabled          bool    `gorm:"not null"`
 	AuthStatus       string  `gorm:"size:32;not null;check:chk_accounts_auth_status,auth_status IN ('active','reauthRequired')"`
+	State            string  `gorm:"size:32;not null;default:ready;check:chk_accounts_state,state IN ('ready','degraded','cooldown','quota_exhausted','reauth_required','disabled')"`
 	Priority         int     `gorm:"not null;default:1"`
 	MaxConcurrent    int     `gorm:"not null;default:8;check:chk_accounts_max_concurrent,max_concurrent BETWEEN 1 AND 256"`
 	MinimumRemaining float64 `gorm:"not null;check:chk_accounts_minimum_remaining,minimum_remaining >= 0"`
@@ -57,6 +58,18 @@ type accountModel struct {
 }
 
 func (accountModel) TableName() string { return "provider_accounts" }
+
+type accountStateEventModel struct {
+	ID        uint64    `gorm:"primaryKey;autoIncrement"`
+	AccountID uint64    `gorm:"not null;index:idx_account_state_events_account_created,priority:1"`
+	FromState string    `gorm:"size:32;not null"`
+	ToState   string    `gorm:"size:32;not null"`
+	Event     string    `gorm:"size:64;not null"`
+	Reason    string    `gorm:"size:512"`
+	CreatedAt time.Time `gorm:"not null;index:idx_account_state_events_account_created,priority:2,sort:desc"`
+}
+
+func (accountStateEventModel) TableName() string { return "account_state_events" }
 
 type accountCredentialModel struct {
 	AccountID                 uint64 `gorm:"primaryKey"`

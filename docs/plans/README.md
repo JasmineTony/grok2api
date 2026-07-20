@@ -34,6 +34,7 @@ Templates are available in [`templates/`](./templates/).
 | 2026-07-20 04 — Final acceptance | [Plan](./2026-07-20-04-final-acceptance/PLAN.md) | [Result](./2026-07-20-04-final-acceptance/RESULT.md) | Complete |
 | 2026-07-20 05 — Plan documentation standard | [Plan](./2026-07-20-05-plan-documentation-standard/PLAN.md) | [Result](./2026-07-20-05-plan-documentation-standard/RESULT.md) | Complete |
 | 2026-07-20 06 — SSH agent and Chinese-first README | [Plan](./2026-07-20-06-ssh-agent-readme-simplification/PLAN.md) | [Result](./2026-07-20-06-ssh-agent-readme-simplification/RESULT.md) | Complete |
+| 2026-07-20 07 — Reliability platform foundation | [Plan](./2026-07-20-07-reliability-platform-foundation/PLAN.md) | [Result](./2026-07-20-07-reliability-platform-foundation/RESULT.md) | In progress |
 
 ## Creating the next iteration
 

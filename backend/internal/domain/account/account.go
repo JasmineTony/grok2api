@@ -110,6 +110,77 @@ const (
 	AuthStatusReauthRequired AuthStatus = "reauthRequired"
 )
 
+// State ???????????????AuthStatus ????????? API?
+type State string
+
+const (
+	StateReady          State = "ready"
+	StateDegraded       State = "degraded"
+	StateCooldown       State = "cooldown"
+	StateQuotaExhausted State = "quota_exhausted"
+	StateReauthRequired State = "reauth_required"
+	StateDisabled       State = "disabled"
+)
+
+func (s State) IsValid() bool {
+	switch s {
+	case StateReady, StateDegraded, StateCooldown, StateQuotaExhausted, StateReauthRequired, StateDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
+// StateEvent ??????????????????? ApplyStateEvent ?????
+type StateEvent string
+
+const (
+	EventRequestSucceeded   StateEvent = "request_succeeded"
+	EventTransientFailure   StateEvent = "transient_failure"
+	EventRateLimited        StateEvent = "rate_limited"
+	EventQuotaExhausted     StateEvent = "quota_exhausted"
+	EventCredentialRejected StateEvent = "credential_rejected"
+	EventDisabled           StateEvent = "disabled"
+	EventEnabled            StateEvent = "enabled"
+)
+
+// StateEventInput ?????????????
+type StateEventInput struct {
+	Event      StateEvent
+	At         time.Time
+	Reason     string
+	CooldownTo *time.Time
+}
+
+// ApplyStateEvent ?????????????????????????
+func ApplyStateEvent(current State, enabled bool, input StateEventInput) State {
+	if !enabled || input.Event == EventDisabled {
+		return StateDisabled
+	}
+	switch input.Event {
+	case EventEnabled:
+		return StateReady
+	case EventCredentialRejected:
+		return StateReauthRequired
+	case EventQuotaExhausted:
+		return StateQuotaExhausted
+	case EventRateLimited:
+		return StateCooldown
+	case EventTransientFailure:
+		if current == StateReauthRequired || current == StateQuotaExhausted {
+			return current
+		}
+		return StateDegraded
+	case EventRequestSucceeded:
+		if current == StateReauthRequired || current == StateQuotaExhausted || current == StateDisabled {
+			return current
+		}
+		return StateReady
+	default:
+		return current
+	}
+}
+
 // Credential 表示持久化的上游 OAuth 账号。
 type Credential struct {
 	ID                        uint64
@@ -132,6 +203,7 @@ type Credential struct {
 	RefreshPermanent          bool
 	Enabled                   bool
 	AuthStatus                AuthStatus
+	State                     State
 	Priority                  int
 	MaxConcurrent             int
 	MinimumRemaining          float64

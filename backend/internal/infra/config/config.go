@@ -50,6 +50,7 @@ type Config struct {
 	Routing           RoutingConfig           `yaml:"routing"`
 	Audit             AuditConfig             `yaml:"audit"`
 	ClientKeyDefaults ClientKeyDefaultsConfig `yaml:"clientKeyDefaults"`
+	Observability     ObservabilityConfig     `yaml:"observability"`
 }
 
 type ServerConfig struct {
@@ -192,6 +193,16 @@ type AuditConfig struct {
 	BufferSize    int      `yaml:"bufferSize"`
 	BatchSize     int      `yaml:"batchSize"`
 	FlushInterval Duration `yaml:"flushInterval"`
+}
+
+// ObservabilityConfig controls optional local metrics exposure.
+type ObservabilityConfig struct {
+	Prometheus PrometheusConfig `yaml:"prometheus"`
+}
+
+type PrometheusConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Listen  string `yaml:"listen"`
 }
 
 type ClientKeyDefaultsConfig struct {
@@ -553,6 +564,7 @@ func defaultConfig() Config {
 		},
 		Audit:             AuditConfig{BufferSize: 16384, BatchSize: 256, FlushInterval: Duration(250 * time.Millisecond)},
 		ClientKeyDefaults: ClientKeyDefaultsConfig{RPMLimit: clientkeydomain.DefaultRPMLimit, MaxConcurrent: clientkeydomain.DefaultMaxConcurrent},
+		Observability:     ObservabilityConfig{Prometheus: PrometheusConfig{Enabled: false, Listen: "127.0.0.1:9090"}},
 	}
 }
 

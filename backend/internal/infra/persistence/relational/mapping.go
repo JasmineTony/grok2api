@@ -75,7 +75,7 @@ func toAccountDomain(value accountModel) account.Credential {
 		EncryptedAccessToken: encryptedPrimary, EncryptedRefreshToken: encryptedRefresh, EncryptedCloudflareCookie: encryptedCloudflareCookie,
 		ExpiresAt: expiresAt, RefreshDueAt: refreshDueAt, LastRefreshAt: lastRefreshAt,
 		RefreshFailureCount: refreshFailures, LastRefreshErrorCode: lastRefreshError, RefreshPermanent: refreshPermanent,
-		Enabled: value.Enabled, AuthStatus: account.AuthStatus(value.AuthStatus), Priority: value.Priority,
+		Enabled: value.Enabled, AuthStatus: account.AuthStatus(value.AuthStatus), State: account.State(value.State), Priority: value.Priority,
 		MaxConcurrent: value.MaxConcurrent, MinimumRemaining: value.MinimumRemaining, FailureCount: value.FailureCount,
 		CooldownUntil: value.CooldownUntil, LastError: value.LastError, LastUsedAt: value.LastUsedAt,
 		ObservedModel: value.ObservedModel, ObservedModelAt: value.ObservedModelAt, WebTier: webTier, WebTierSyncedAt: webTierSyncedAt,
@@ -87,6 +87,18 @@ func toAccountDomain(value accountModel) account.Credential {
 }
 
 func fromAccountDomain(value account.Credential) accountModel {
+	// ?????????? State?????? ready??????? upsert ???
+	state := value.State
+	if !state.IsValid() {
+		if !value.Enabled {
+			state = account.StateDisabled
+		} else if value.AuthStatus == account.AuthStatusReauthRequired {
+			state = account.StateReauthRequired
+		} else {
+			state = account.StateReady
+		}
+	}
+
 	// entitlement、推理地址与 XAI 回退标记仅对 grok_build 有意义。
 	buildAPIFallback := value.BuildAPIFallback && value.Provider == account.ProviderBuild
 	buildSuperEntitled := value.BuildSuperEntitled && value.Provider == account.ProviderBuild
@@ -97,7 +109,7 @@ func fromAccountDomain(value account.Credential) accountModel {
 	return accountModel{
 		ID: value.ID, IdentityKey: accountIdentity(value), Provider: string(value.Provider), Name: value.Name, Email: value.Email,
 		UserID: value.UserID, TeamID: value.TeamID, SourceKey: value.SourceKey,
-		Enabled: value.Enabled, AuthStatus: string(value.AuthStatus), Priority: value.Priority,
+		Enabled: value.Enabled, AuthStatus: string(value.AuthStatus), State: string(state), Priority: value.Priority,
 		MaxConcurrent: value.MaxConcurrent, MinimumRemaining: value.MinimumRemaining, FailureCount: value.FailureCount,
 		CooldownUntil: value.CooldownUntil, LastError: value.LastError, LastUsedAt: value.LastUsedAt,
 		ObservedModel: value.ObservedModel, ObservedModelAt: value.ObservedModelAt,
