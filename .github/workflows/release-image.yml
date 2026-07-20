@@ -1,0 +1,253 @@
+name: Release container image
+
+on:
+  release:
+    types:
+      - published
+
+concurrency:
+  group: release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Validate release
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.release.outputs.image }}
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+
+      - name: Validate tag and VERSION
+        id: release
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          version="$(tr -d '\r\n' < VERSION)"
+          if [[ "$RELEASE_TAG" != "$version" ]]; then
+            echo "Release tag $RELEASE_TAG does not match VERSION ($version)" >&2
+            exit 1
+          fi
+          semver_prerelease='((0|[1-9][0-9]*)|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
+          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-${semver_prerelease}(\.${semver_prerelease})*)?$ ]]; then
+            echo "Release tag must match vMAJOR.MINOR.PATCH with an optional SemVer prerelease suffix: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          has_prerelease=false
+          [[ "$RELEASE_TAG" == *-* ]] && has_prerelease=true
+          if [[ "$has_prerelease" != "$RELEASE_PRERELEASE" ]]; then
+            echo "GitHub release prerelease flag does not match the tag: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          tag_sha="$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")"
+          main_sha="$(git rev-parse --verify refs/remotes/origin/main)"
+          git merge-base --is-ancestor "$tag_sha" "$main_sha"
+          image="ghcr.io/${REPOSITORY,,}"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "Validated $RELEASE_TAG at $tag_sha; main is $main_sha"
+
+  publish_image:
+    name: Publish image (${{ matrix.arch }})
+    needs: preflight
+    environment: release
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          ref: ${{ needs.preflight.outputs.tag }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ needs.preflight.outputs.image }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=release-${{ matrix.arch }}
+          cache-to: type=gha,scope=release-${{ matrix.arch }},mode=max
+          provenance: mode=max
+          sbom: true
+
+      - name: Attest image provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-name: ${{ needs.preflight.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Export image digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload image digest
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: digests-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge_manifest:
+    name: Publish final tags
+    needs:
+      - preflight
+      - publish_image
+    environment: release
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download image digests
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          pattern: digests-*
+          path: /tmp/digests
+          merge-multiple: true
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish release tags
+        shell: bash
+        env:
+          IMAGE: ${{ needs.preflight.outputs.image }}
+          RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
+        run: |
+          set -euo pipefail
+          sources=()
+          for digest_file in /tmp/digests/*; do
+            sources+=("${IMAGE}@sha256:$(basename "$digest_file")")
+          done
+          test "${#sources[@]}" -eq 2
+
+          tags=("${IMAGE}:${RELEASE_TAG}")
+          if [[ "$RELEASE_TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            major="${BASH_REMATCH[1]}"
+            minor="${BASH_REMATCH[2]}"
+            patch="${BASH_REMATCH[3]}"
+            tags+=("${IMAGE}:${major}.${minor}.${patch}")
+            tags+=("${IMAGE}:${major}.${minor}")
+            tags+=("${IMAGE}:${major}")
+            tags+=("${IMAGE}:latest")
+          fi
+
+          for tag in "${tags[@]}"; do
+            docker buildx imagetools create -t "$tag" "${sources[@]}"
+          done
+
+      - name: Inspect published image
+        env:
+          IMAGE: ${{ needs.preflight.outputs.image }}
+          RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
+        run: docker buildx imagetools inspect "${IMAGE}:${RELEASE_TAG}"
+
+  smoke_test:
+    name: Smoke test release image
+    needs:
+      - preflight
+      - merge_manifest
+    environment: release
+    permissions:
+      contents: read
+      packages: read
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          ref: ${{ needs.preflight.outputs.tag }}
+
+      - name: Login to GHCR
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull release image
+        env:
+          IMAGE: ${{ needs.preflight.outputs.image }}
+          RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
+        run: docker pull "${IMAGE}:${RELEASE_TAG}"
+
+      - name: Start and check health endpoint
+        env:
+          IMAGE: ${{ needs.preflight.outputs.image }}
+          RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          config="$RUNNER_TEMP/grok2api-config.yaml"
+          cp config.example.yaml "$config"
+          sed -i 's#replace-with-at-least-32-characters#01234567890123456789012345678901#' "$config"
+          sed -i 's#replace-with-base64-key#MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=#' "$config"
+          sed -i 's#replace-with-a-strong-password#SmokeTest-Only-Password-123!#' "$config"
+          container="grok2api-smoke-${GITHUB_RUN_ID}"
+          cleanup() { docker rm -f "$container" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          docker run -d --name "$container" -p 18000:8000 -v "$config:/app/config.yaml:ro" "${IMAGE}:${RELEASE_TAG}"
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:18000/healthz >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs "$container"
+          exit 1

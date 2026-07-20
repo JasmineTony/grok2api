@@ -15,8 +15,8 @@ upstream https://github.com/chenyme/grok2api.git
 2. Fetch `origin` and `upstream`, including upstream tags for comparison only.
 3. Create `sync/upstream-YYYYMMDD` from `origin/main`.
 4. Merge the selected `upstream/main` commit into the synchronization branch. Do not force-push `main`.
-5. Resolve conflicts while retaining this repository's security policy, release-only GHCR publishing, documentation, and independent-maintenance notice.
+5. Resolve conflicts while retaining this repository's security policy, published-release-only GHCR workflow, documentation, and independent-maintenance notice.
 6. Run backend tests and vet, Swagger verification, frontend frozen install/lint/build, vulnerability checks, and Docker validation.
 7. Push the synchronization branch and merge it through a reviewed pull request.
 
-Upstream tags are not mirrored automatically. A release tag for this repository is created only after the synchronized code and local hardening changes pass this repository's checks.
+Upstream tags are not mirrored automatically. A local release tag is created only after synchronized code and hardening changes pass this repository's checks. Pushing a tag does not publish a container: a maintainer must publish a GitHub Release, and the protected `release` environment must authorize the registry-writing jobs.
