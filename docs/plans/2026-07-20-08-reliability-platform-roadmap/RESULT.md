@@ -52,6 +52,13 @@
 - 新增管理 API：`POST /api/admin/v1/protocol/conversions/preview`。
 - 预览限制单条 256 KiB，不联网、不回放、不保存请求正文。
 
+### CLI 与只读 MCP 基础
+
+- 保持无子命令启动兼容，并新增 `serve`、`version`、`doctor`、`config validate/export`、`backup create/verify/restore`、`egress check`。
+- 新增 `mcp serve` 本地 stdio JSON-RPC 基础，工具目录只读且明确禁止输出凭据、请求正文、客户端密钥和代理秘密。
+- MCP 首批工具名称已固定：模型、账号健康、用量、最近错误、Egress、版本和配置验证。
+- 配置导出会清空 JWT、凭据加密密钥和管理员密码。
+
 ## 尚未完成
 
 - 升级前预检、PostgreSQL/Redis 外部备份钩子和全部通知触发点仍需实现。

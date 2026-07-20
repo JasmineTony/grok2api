@@ -22,6 +22,12 @@ func TestDefaultConfigPathFindsRepositoryRoot(t *testing.T) {
 	}
 }
 
+func TestRunCommandVersion(t *testing.T) {
+	if err := runCommand([]string{"version"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestParseOptionsSupportsContainerListenOverride(t *testing.T) {
 	options, err := parseOptions([]string{"--config", "/app/config.yaml", "--listen", "0.0.0.0:8000"})
 	if err != nil {
