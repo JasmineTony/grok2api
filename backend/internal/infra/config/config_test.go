@@ -51,6 +51,9 @@ bootstrapAdmin:
 	if cfg.Routing.PreferFreeBuild {
 		t.Fatal("preferFreeBuild should retain its false default when omitted from YAML")
 	}
+	if cfg.Observability.Prometheus.Enabled || cfg.Observability.Prometheus.Listen != "127.0.0.1:9090" {
+		t.Fatalf("prometheus defaults = %#v", cfg.Observability.Prometheus)
+	}
 	if !cfg.Routing.ReasoningReplayEnabled || cfg.Routing.ReasoningReplayTTL.Value() != time.Hour || cfg.Routing.ReasoningReplayMaxEntries != 10240 {
 		t.Fatalf("reasoning replay defaults = %#v", cfg.Routing)
 	}

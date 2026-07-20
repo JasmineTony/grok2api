@@ -11,7 +11,7 @@ const Table = React.forwardRef<HTMLTableElement, TableProps>(({ className, viewp
   <div
     data-slot="table-scroll-container"
     className={cn(
-      "relative w-full overflow-auto",
+      "relative w-full overflow-auto overscroll-x-contain [mask-image:linear-gradient(to_right,transparent,black_1rem,black_calc(100%_-_1rem),transparent)]",
       viewportRows && "[&_thead]:sticky [&_thead]:top-0 [&_thead]:z-30 [&_thead]:bg-background"
     )}
     style={viewportRows && rowHeight ? { maxHeight: 36 + viewportRows * rowHeight } : undefined}

@@ -1,15 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { DashboardActivity } from "@/features/dashboard/dashboard-activity";
 import { getDashboard, type DashboardPeriod } from "@/features/dashboard/dashboard-api";
 import { DashboardOverview, DashboardResources } from "@/features/dashboard/dashboard-overview";
-import { DashboardProviderDistribution } from "@/features/dashboard/dashboard-provider-distribution";
-import { DashboardTopModels } from "@/features/dashboard/dashboard-top-models";
-import { DashboardTrend } from "@/features/dashboard/dashboard-trend";
+
 import { VersionUpdateBanner } from "@/features/system/version-update";
 import { ErrorState } from "@/shared/components/data-state";
 import { PeriodSelector } from "@/shared/components/period-selector";
@@ -19,6 +17,17 @@ type DashboardPreferences = { periodDays: PeriodDays };
 
 const DASHBOARD_PREFERENCES_KEY = "grok2api:dashboard-preferences";
 const DEFAULT_DASHBOARD_PREFERENCES: DashboardPreferences = { periodDays: 30 };
+
+const DashboardCharts = lazy(() => import("@/features/dashboard/dashboard-charts").then((module) => ({ default: module.DashboardCharts })));
+
+function DashboardChartsFallback() {
+  return (
+    <div className="grid gap-2 xl:grid-cols-[minmax(0,3fr)_minmax(360px,2fr)]" aria-hidden="true">
+      <div className="h-[21rem] animate-pulse rounded-lg border bg-muted/30" />
+      <div className="h-[21rem] animate-pulse rounded-lg border bg-muted/30" />
+    </div>
+  );
+}
 
 export function DashboardPage() {
   const { t, i18n } = useTranslation();
@@ -89,21 +98,13 @@ export function DashboardPage() {
 
       <DashboardOverview dashboard={dashboard} locale={i18n.language} loading={loading} />
 
-      <div className="grid items-stretch gap-2 xl:grid-cols-[minmax(0,3fr)_minmax(360px,2fr)]">
-        <DashboardTrend
-          dashboard={dashboard}
-          locale={i18n.language}
-          loading={loading}
-        />
-        <DashboardProviderDistribution dashboard={dashboard} locale={i18n.language} loading={loading} />
-      </div>
+      <Suspense fallback={<DashboardChartsFallback />}>
+        <DashboardCharts dashboard={dashboard} locale={i18n.language} loading={loading} />
+      </Suspense>
 
-      <div className="grid items-stretch gap-2 xl:grid-cols-[minmax(0,3fr)_minmax(360px,2fr)]">
-        <DashboardTopModels dashboard={dashboard} locale={i18n.language} loading={loading} />
-        <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2 xl:h-full">
-          <DashboardActivity dashboard={dashboard} locale={i18n.language} loading={loading} />
-          <DashboardResources dashboard={dashboard} locale={i18n.language} loading={loading} />
-        </div>
+      <div className="grid min-h-0 gap-2 xl:grid-cols-[minmax(0,3fr)_minmax(360px,2fr)]">
+        <DashboardActivity dashboard={dashboard} locale={i18n.language} loading={loading} />
+        <DashboardResources dashboard={dashboard} locale={i18n.language} loading={loading} />
       </div>
     </div>
   );

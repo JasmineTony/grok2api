@@ -11,8 +11,39 @@ import (
 	"unicode"
 )
 
-// UpstreamFailure 保存可安全暴露给下游和审计的上游失败分类，不包含响应正文或凭据。
+// FailureCategory ?? Provider ???????????????????????
+type FailureCategory string
+
+const (
+	FailureCredential FailureCategory = "credential"
+	FailureQuota      FailureCategory = "quota"
+	FailureRateLimit  FailureCategory = "rate_limit"
+	FailurePolicy     FailureCategory = "policy"
+	FailureNetwork    FailureCategory = "network"
+	FailureTimeout    FailureCategory = "timeout"
+	FailureUpstream   FailureCategory = "upstream"
+	FailureProtocol   FailureCategory = "protocol"
+	FailureInternal   FailureCategory = "internal"
+)
+
+type FailureImpact string
+
+const (
+	ImpactNone     FailureImpact = "none"
+	ImpactDegraded FailureImpact = "degraded"
+	ImpactCooldown FailureImpact = "cooldown"
+	ImpactQuota    FailureImpact = "quota_exhausted"
+	ImpactReauth   FailureImpact = "reauth_required"
+)
+
+// UpstreamFailure ????????????????????????????????
 type UpstreamFailure struct {
+	Category               FailureCategory
+	Stage                  string
+	Provider               string
+	Retryable              bool
+	AccountImpact          FailureImpact
+	SanitizedDetail        string
 	HTTPStatus             int
 	Code                   string
 	PublicMessage          string
@@ -76,11 +107,13 @@ func newHTTPUpstreamFailure(status int, body []byte, accountID uint64, accountNa
 		failure.PublicMessage = "上游账号认证失败"
 		failure.AccountScoped = true
 		failure.CredentialRejected = true
+		failure.Category, failure.AccountImpact, failure.Retryable = FailureCredential, ImpactReauth, false
 	case http.StatusPaymentRequired:
 		failure.Code = "upstream_payment_required"
 		failure.PublicMessage = "上游账号额度不足"
 		failure.AccountScoped = true
 		failure.QuotaExhausted = true
+		failure.Category, failure.AccountImpact, failure.Retryable = FailureQuota, ImpactQuota, false
 	case http.StatusForbidden:
 		failure.Code = "upstream_forbidden"
 		failure.PublicMessage = "上游拒绝了该请求"
@@ -90,6 +123,16 @@ func newHTTPUpstreamFailure(status int, body []byte, accountID uint64, accountNa
 		failure.QuotaExhausted = failure.FreeQuotaExhausted || isPaidQuotaExhaustion(metadataText)
 		failure.CredentialRejected = !failure.QuotaExhausted && containsAny(metadataText, "authentication", "unauthorized", "invalid token", "token expired")
 		failure.AccountScoped = failure.PermanentAccountDenial || failure.QuotaExhausted || failure.CredentialRejected || isAccountScopedForbidden(metadataText)
+		switch {
+		case failure.CredentialRejected:
+			failure.Category, failure.AccountImpact, failure.Retryable = FailureCredential, ImpactReauth, false
+		case failure.QuotaExhausted:
+			failure.Category, failure.AccountImpact, failure.Retryable = FailureQuota, ImpactQuota, false
+		case failure.PermanentAccountDenial:
+			failure.Category, failure.AccountImpact, failure.Retryable = FailurePolicy, ImpactDegraded, false
+		default:
+			failure.Category, failure.AccountImpact, failure.Retryable = FailureUpstream, ImpactDegraded, false
+		}
 	case http.StatusTooManyRequests:
 		failure.Code = "upstream_rate_limited"
 		failure.PublicMessage = "上游请求频率受限"
@@ -97,6 +140,7 @@ func newHTTPUpstreamFailure(status int, body []byte, accountID uint64, accountNa
 		failure.ModelQuotaExhausted = isModelQuotaExhaustion(metadataText)
 		failure.FreeQuotaExhausted = failure.ModelQuotaExhausted || isFreeQuotaExhaustion(metadataText)
 		failure.QuotaExhausted = failure.FreeQuotaExhausted || isPaidQuotaExhaustion(metadataText)
+		failure.Category, failure.AccountImpact, failure.Retryable = FailureRateLimit, ImpactCooldown, true
 	default:
 		failure.Code = "upstream_server_error"
 		failure.PublicMessage = "上游服务暂时异常"
@@ -114,7 +158,12 @@ func newTransportUpstreamFailure(err error, accountID uint64, accountName string
 	if errors.Is(err, context.DeadlineExceeded) {
 		code, message = "upstream_timeout", "上游服务响应超时"
 	}
+	category := FailureNetwork
+	if errors.Is(err, context.DeadlineExceeded) {
+		category = FailureTimeout
+	}
 	return &UpstreamFailure{
+		Category: category, Stage: "transport", Retryable: true, AccountImpact: ImpactCooldown,
 		HTTPStatus: http.StatusBadGateway, Code: code, PublicMessage: message,
 		AccountID: accountID, AccountName: accountName, Fingerprint: code, Cause: err,
 	}
@@ -124,6 +173,19 @@ func newCredentialUpstreamFailure(err error, accountID uint64, accountName strin
 	return &UpstreamFailure{
 		HTTPStatus: http.StatusBadGateway, Code: "upstream_credential_unavailable", PublicMessage: "上游账号凭据不可用",
 		AccountID: accountID, AccountName: accountName, AccountScoped: true, Cause: err,
+	}
+}
+
+// Normalized ???????????????????
+func (e *UpstreamFailure) Normalized() map[string]any {
+	if e == nil {
+		return map[string]any{"category": string(FailureInternal), "code": "unknown"}
+	}
+	return map[string]any{
+		"category": string(e.Category), "stage": e.Stage, "code": e.AuditCode(),
+		"http_status": e.HTTPStatus, "retryable": e.Retryable,
+		"account_impact": string(e.AccountImpact),
+		"detail":         truncateFailureCode(normalizeFailureCode(e.SanitizedDetail)),
 	}
 }
 

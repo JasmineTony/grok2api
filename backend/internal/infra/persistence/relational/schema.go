@@ -10,6 +10,7 @@ var schemaModels = []any{
 	&adminModel{},
 	&adminSessionModel{},
 	&accountModel{},
+	&accountStateEventModel{},
 	&accountCredentialModel{},
 	&accountProviderLinkModel{},
 	&webConsoleAccountLinkModel{},
@@ -45,6 +46,7 @@ var schemaIndexes = []string{
 	"CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_accounts_identity_key ON provider_accounts(identity_key)",
 	"CREATE INDEX IF NOT EXISTS idx_accounts_routing ON provider_accounts(provider, enabled, auth_status, priority DESC, id ASC)",
 	"CREATE INDEX IF NOT EXISTS idx_accounts_created_id ON provider_accounts(created_at DESC, id DESC)",
+	"CREATE INDEX IF NOT EXISTS idx_account_state_events_account_created ON account_state_events(account_id, created_at DESC, id DESC)",
 	"CREATE INDEX IF NOT EXISTS idx_account_credentials_refresh_due ON account_credentials(refresh_due_at, account_id)",
 	"CREATE INDEX IF NOT EXISTS idx_quota_windows_due ON account_quota_windows(remaining, reset_at, account_id)",
 	"CREATE UNIQUE INDEX IF NOT EXISTS idx_model_routes_public_id ON model_routes(public_id)",
@@ -140,6 +142,7 @@ type consoleConstraint struct {
 func (d *Database) ensureConsoleConstraints(ctx context.Context) error {
 	return d.ensureNamedConstraints(ctx, []consoleConstraint{
 		{model: &accountModel{}, table: "provider_accounts", name: "chk_accounts_provider"},
+		{model: &accountModel{}, table: "provider_accounts", name: "chk_accounts_state"},
 		{model: &modelRouteModel{}, table: "model_routes", name: "chk_model_routes_provider"},
 		{model: &requestAuditModel{}, table: "request_audits", name: "chk_request_audits_provider"},
 		{model: &responseOwnershipModel{}, table: "response_ownership", name: "chk_response_ownership_provider"},

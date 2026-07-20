@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -62,5 +63,19 @@ func TestRetryableResponseHonorsUpstreamRetryVeto(t *testing.T) {
 	response.Header.Set("X-Should-Retry", "unknown")
 	if !isRetryableResponse(response) {
 		t.Fatal("未知 x-should-retry 值应按未提供处理")
+	}
+}
+
+func TestFailureCategoryDoesNotTreatUnknownForbiddenAsCredential(t *testing.T) {
+	failure := newHTTPUpstreamFailure(http.StatusForbidden, []byte(`{"error":"edge policy rejected this request"}`), 42, "build")
+	if failure.Category == FailureCredential || failure.CredentialRejected {
+		t.Fatalf("unknown forbidden response must not reauthenticate: %#v", failure)
+	}
+}
+
+func TestTransportFailureIsRetryableButNotCredentialFailure(t *testing.T) {
+	failure := newTransportUpstreamFailure(context.DeadlineExceeded, 42, "build")
+	if failure.Category != FailureTimeout || !failure.Retryable || failure.AccountImpact == ImpactReauth {
+		t.Fatalf("unexpected transport classification: %#v", failure)
 	}
 }

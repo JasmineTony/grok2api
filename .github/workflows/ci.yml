@@ -50,12 +50,12 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@b0f76dfb45f55f8421693e4803ac7bb65143bd34 # v6
         with:
-          version: 11.5.2
+          version: 11.15.1
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
@@ -67,13 +67,29 @@ jobs:
         working-directory: frontend
         run: pnpm audit --audit-level high
 
+      - name: Type-check frontend
+        working-directory: frontend
+        run: pnpm typecheck
+
+      - name: Test frontend
+        working-directory: frontend
+        run: pnpm test
+
       - name: Lint frontend
         working-directory: frontend
         run: pnpm lint
 
+      - name: Check icon imports
+        working-directory: frontend
+        run: pnpm check:icons
+
       - name: Build frontend
         working-directory: frontend
         run: pnpm build
+
+      - name: Check frontend bundle budgets
+        working-directory: frontend
+        run: pnpm check:bundle
 
   build_image:
     name: Build image (${{ matrix.arch }})

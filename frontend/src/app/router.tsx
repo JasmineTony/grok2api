@@ -2,15 +2,18 @@ import { Navigate, createBrowserRouter } from "react-router-dom";
 
 import { AnonymousBoundary, AuthBoundary } from "@/app/auth-boundary";
 import { DeferredAccountsPage, DeferredApiDocsPage, DeferredAppShell, DeferredClientKeysPage, DeferredCreativeConsolePage, DeferredDashboardPage, DeferredGalleryPage, DeferredModelsPage, DeferredRequestAuditsPage, DeferredSettingsPage, DeferredVideoGalleryPage } from "@/app/deferred-pages";
+import { RouteErrorBoundary } from "@/app/route-error-boundary";
 import { LoginPage } from "@/features/auth/login-page";
 
 export const router = createBrowserRouter([
   {
     element: <AnonymousBoundary />,
+    errorElement: <RouteErrorBoundary />,
     children: [{ path: "/login", element: <LoginPage /> }],
   },
   {
     element: <AuthBoundary />,
+    errorElement: <RouteErrorBoundary />,
     children: [
       {
         element: <DeferredAppShell />,
@@ -31,5 +34,5 @@ export const router = createBrowserRouter([
       },
     ],
   },
-  { path: "*", element: <Navigate to="/dashboard" replace /> },
+  { path: "*", element: <Navigate to="/dashboard" replace />, errorElement: <RouteErrorBoundary /> },
 ]);

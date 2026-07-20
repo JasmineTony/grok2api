@@ -36,6 +36,7 @@ import (
 	"github.com/chenyme/grok2api/backend/internal/infra/runtime/memory"
 	redisruntime "github.com/chenyme/grok2api/backend/internal/infra/runtime/redis"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
+	metricsobs "github.com/chenyme/grok2api/backend/internal/observability"
 	"github.com/chenyme/grok2api/backend/internal/pkg/batch"
 	"github.com/chenyme/grok2api/backend/internal/pkg/reasoningreplay"
 	"github.com/chenyme/grok2api/backend/internal/repository"
@@ -48,6 +49,8 @@ type Application struct {
 	logger        *slog.Logger
 	database      *relational.Database
 	server        *http.Server
+	metrics       *metricsobs.Metrics
+	metricsConfig metricsobs.PrometheusConfig
 	audits        *auditapp.Service
 	responses     repository.ResponseRepository
 	runtime       io.Closer
@@ -307,6 +310,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	server := &http.Server{Addr: cfg.Server.Listen, Handler: router, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: cfg.Server.ReadTimeout.Value(), IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
 	return &Application{
 		logger: logger, database: database, server: server,
+		metrics: metricsobs.NewMetrics(), metricsConfig: metricsobs.PrometheusConfig{Enabled: cfg.Observability.Prometheus.Enabled, Listen: cfg.Observability.Prometheus.Listen},
 		audits: auditService, responses: responseRepo, runtime: runtimeStore,
 		settingsBus: settingsBus, settings: settingsService, gateway: gatewayService, media: mediaService, quotaRecovery: quotaRecoveryService, accounts: accountService, models: modelService, clientKeys: clientKeyService, updates: updateService,
 		accountRepo: accountRepo, modelRepo: modelRepo, providers: providers, web: webAdapter, startup: startup,
@@ -371,6 +375,12 @@ func (a *Application) Run(ctx context.Context) error {
 			defer background.Done()
 			a.runSupervisedTask(runCtx, name, task)
 		}()
+	}
+	if a.metricsConfig.Enabled {
+		startBackground("prometheus", func(taskCtx context.Context) error {
+			a.logger.Info("prometheus_started", "listen", a.metricsConfig.Listen)
+			return metricsobs.Serve(taskCtx, a.metricsConfig, a.metrics)
+		})
 	}
 	startBackground("settings_reconcile", func(taskCtx context.Context) error {
 		a.runPeriodicTask(taskCtx, 30*time.Second, "settings_reconcile", func(runCtx context.Context) error {

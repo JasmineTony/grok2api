@@ -216,14 +216,14 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen bg-background">
-        <aside className="fixed inset-y-0 left-0 z-30 hidden h-screen w-[288px] flex-col overflow-hidden bg-sidebar px-4 py-6 lg:flex">
+        <aside className="fixed inset-y-0 left-0 z-30 hidden h-screen w-[240px] flex-col xl:w-[288px] overflow-hidden bg-sidebar px-4 py-6 lg:flex">
           <div className="flex h-7 shrink-0 items-center justify-between px-2.5">
             <Link to="/dashboard" className="flex h-7 items-baseline gap-2 text-base font-semibold text-foreground">
               <span>{t("appName")}</span>
               <CurrentVersionLabel />
             </Link>
             <Button variant="ghost" size="icon" className="size-7 text-muted-foreground [&_svg]:size-[15px]" asChild>
-              <a href="https://github.com/chenyme/grok2api" target="_blank" rel="noreferrer" aria-label="GitHub">
+              <a href="https://github.com/JasmineTony/grok2api" target="_blank" rel="noreferrer" aria-label="GitHub">
                 <GitHubMark />
               </a>
             </Button>
@@ -232,7 +232,7 @@ export function AppShell() {
           <div className="relative z-10 mt-4 shrink-0 bg-sidebar pt-4">{accountControl}</div>
         </aside>
 
-        <div className="flex min-h-screen flex-col lg:pl-[288px]">
+        <div className="flex min-h-screen flex-col lg:pl-[240px] xl:pl-[288px]">
           <header className="flex h-12 items-center justify-between border-b px-4 lg:hidden">
             <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
               <SheetTrigger asChild><Button variant="ghost" size="icon" className="size-8" aria-label={t("shell.openNavigation")}><Menu className="size-4" /></Button></SheetTrigger>
@@ -247,13 +247,13 @@ export function AppShell() {
             </Sheet>
             <span className="flex items-baseline gap-2 text-sm font-semibold"><span>{t("appName")}</span><CurrentVersionLabel /></span>
             <Button variant="ghost" size="icon" className="size-8 text-muted-foreground hover:text-foreground" asChild>
-              <a href="https://github.com/chenyme/grok2api" target="_blank" rel="noreferrer" aria-label="GitHub">
+              <a href="https://github.com/JasmineTony/grok2api" target="_blank" rel="noreferrer" aria-label="GitHub">
                 <GitHubMark />
               </a>
             </Button>
           </header>
 
-          <main className={cn("mx-auto w-full max-w-[1280px] flex-1 px-5 sm:px-8", isMediaWorkspace ? "pt-8 pb-0 lg:pt-20" : "py-8 lg:py-20")}>
+          <main className={cn("mx-auto w-full max-w-[1440px] flex-1 px-5 sm:px-8", isMediaWorkspace ? "pt-8 pb-0 lg:pt-20" : "py-8 lg:py-20")}>
             <Outlet />
           </main>
           {!isMediaWorkspace ? <SiteFooter /> : null}
