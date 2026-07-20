@@ -316,6 +316,21 @@ type requestPolicyModel struct {
 
 func (requestPolicyModel) TableName() string { return "request_policies" }
 
+type requestSnapshotModel struct {
+	ID               string    `gorm:"size:64;primaryKey"`
+	RequestID        string    `gorm:"size:128;not null;default:''"`
+	Protocol         string    `gorm:"size:40;not null"`
+	Operation        string    `gorm:"size:40;not null"`
+	Model            string    `gorm:"size:255;not null;default:''"`
+	EncryptedPayload string    `gorm:"type:text;not null"`
+	PayloadSHA256    string    `gorm:"size:64;not null"`
+	PayloadBytes     int       `gorm:"not null"`
+	CreatedAt        time.Time `gorm:"not null"`
+	ExpiresAt        time.Time `gorm:"not null"`
+}
+
+func (requestSnapshotModel) TableName() string { return "request_snapshots" }
+
 type usageRollupModel struct {
 	ID                    uint64    `gorm:"primaryKey;autoIncrement"`
 	BucketKind            string    `gorm:"size:8;not null;check:chk_usage_rollups_bucket_kind,bucket_kind IN ('hour','day')"`

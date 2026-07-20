@@ -52,6 +52,12 @@
 - 新增管理 API：`POST /api/admin/v1/protocol/conversions/preview`。
 - 预览限制单条 256 KiB，不联网、不回放、不保存请求正文。
 
+### 安全请求快照
+
+- 新增 `request_snapshots` 表和管理 API。
+- 快照在保存前递归脱敏、gzip 压缩、AES-256-GCM 加密并记录 SHA-256，单条上限 256 KiB，默认 TTL 24 小时。
+- 默认关闭；查看和回放均为 dry-run。实际回放明确拒绝，等待独立安全评审，不访问上游。
+
 ### CLI 与只读 MCP 基础
 
 - 保持无子命令启动兼容，并新增 `serve`、`version`、`doctor`、`config validate/export`、`backup create/verify/restore`、`egress check`。
@@ -62,7 +68,7 @@
 ## 尚未完成
 
 - 升级前预检、PostgreSQL/Redis 外部备份钩子和全部通知触发点仍需实现。
-- 请求快照、协议转换查看器、安全回放仍需实现。
+- 请求快照与协议转换查看器基础已实现；实际回放仍需独立安全评审，当前明确关闭。
 - CLI 子命令、配置即代码和只读 stdio MCP 仍需实现。
 - govulncheck、pnpm audit、Swagger 无漂移、race、PostgreSQL 集成、多架构 Docker 和三视口 Playwright 验收仍未完成。
 - 假设与默认值尚未逐项核对；当前不允许推送或创建 PR。

@@ -20,6 +20,7 @@ import (
 	modelapp "github.com/chenyme/grok2api/backend/internal/application/model"
 	notificationapp "github.com/chenyme/grok2api/backend/internal/application/notification"
 	requestpolicyapp "github.com/chenyme/grok2api/backend/internal/application/requestpolicy"
+	requestsnapshotapp "github.com/chenyme/grok2api/backend/internal/application/requestsnapshot"
 	settingsapp "github.com/chenyme/grok2api/backend/internal/application/settings"
 	updatecheckapp "github.com/chenyme/grok2api/backend/internal/application/updatecheck"
 	accounthttp "github.com/chenyme/grok2api/backend/internal/transport/http/account"
@@ -35,6 +36,7 @@ import (
 	notificationhttp "github.com/chenyme/grok2api/backend/internal/transport/http/notification"
 	protocolviewhttp "github.com/chenyme/grok2api/backend/internal/transport/http/protocolview"
 	requestpolicyhttp "github.com/chenyme/grok2api/backend/internal/transport/http/requestpolicy"
+	requestsnapshothttp "github.com/chenyme/grok2api/backend/internal/transport/http/requestsnapshot"
 	settingshttp "github.com/chenyme/grok2api/backend/internal/transport/http/settings"
 	systemhttp "github.com/chenyme/grok2api/backend/internal/transport/http/system"
 	"github.com/gin-gonic/gin"
@@ -53,24 +55,25 @@ type Dependencies struct {
 	PublicAPIBaseURL   string
 	FrontendStaticPath string
 	// Readiness 返回可观测的分层就绪状态。Ready 仅为旧调用方保留。
-	Readiness       func(context.Context) ReadinessSnapshot
-	Ready           func(context.Context) bool
-	TrafficReady    func() bool
-	AdminAuth       *adminauthapp.Service
-	Accounts        *accountapp.Service
-	AccountSync     *accountsyncapp.Service
-	Models          *modelapp.Service
-	ClientKeys      *clientkeyapp.Service
-	Audits          *auditapp.Service
-	Dashboard       *dashboardapp.Service
-	Gateway         *gateway.Service
-	Media           *mediaapp.Service
-	Settings        *settingsapp.Service
-	Egress          *egressapp.Service
-	Updates         *updatecheckapp.Service
-	Notifications   *notificationapp.Service
-	Backup          *backupapp.Service
-	RequestPolicies *requestpolicyapp.Service
+	Readiness        func(context.Context) ReadinessSnapshot
+	Ready            func(context.Context) bool
+	TrafficReady     func() bool
+	AdminAuth        *adminauthapp.Service
+	Accounts         *accountapp.Service
+	AccountSync      *accountsyncapp.Service
+	Models           *modelapp.Service
+	ClientKeys       *clientkeyapp.Service
+	Audits           *auditapp.Service
+	Dashboard        *dashboardapp.Service
+	Gateway          *gateway.Service
+	Media            *mediaapp.Service
+	Settings         *settingsapp.Service
+	Egress           *egressapp.Service
+	Updates          *updatecheckapp.Service
+	Notifications    *notificationapp.Service
+	Backup           *backupapp.Service
+	RequestPolicies  *requestpolicyapp.Service
+	RequestSnapshots *requestsnapshotapp.Service
 }
 
 type ReadinessComponent struct {
@@ -166,6 +169,9 @@ func New(deps Dependencies) *gin.Engine {
 		requestpolicyhttp.NewHandler(deps.RequestPolicies).Register(adminProtected)
 	}
 	protocolviewhttp.NewHandler().Register(adminProtected)
+	if deps.RequestSnapshots != nil {
+		requestsnapshothttp.NewHandler(deps.RequestSnapshots).Register(adminProtected)
+	}
 	systemhttp.NewHandler(func() string {
 		if deps.Settings != nil {
 			return deps.Settings.PublicAPIBaseURL()

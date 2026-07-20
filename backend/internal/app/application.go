@@ -24,6 +24,7 @@ import (
 	notificationapp "github.com/chenyme/grok2api/backend/internal/application/notification"
 	quotarecoveryapp "github.com/chenyme/grok2api/backend/internal/application/quotarecovery"
 	requestpolicyapp "github.com/chenyme/grok2api/backend/internal/application/requestpolicy"
+	requestsnapshotapp "github.com/chenyme/grok2api/backend/internal/application/requestsnapshot"
 	settingsapp "github.com/chenyme/grok2api/backend/internal/application/settings"
 	updatecheckapp "github.com/chenyme/grok2api/backend/internal/application/updatecheck"
 	"github.com/chenyme/grok2api/backend/internal/buildinfo"
@@ -115,6 +116,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	usageRollupRepo := relational.NewUsageRollupRepository(database)
 	notificationRepo := relational.NewNotificationRepository(database)
 	requestPolicyRepo := relational.NewRequestPolicyRepository(database)
+	requestSnapshotRepo := relational.NewRequestSnapshotRepository(database)
 	backupService := backupapp.NewService(database, cfg.Media.Local.Path, buildinfo.CurrentVersion())
 	notificationConfig := notificationapp.Config{Cooldown: cfg.Notifications.Cooldown.Value(), Retention: cfg.Notifications.Retention.Value()}
 	if cfg.Notifications.Enabled {
@@ -136,6 +138,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 		return nil, err
 	}
 	requestPolicyService.SetNotifications(notificationService)
+	requestSnapshotService, err := requestsnapshotapp.NewService(requestSnapshotRepo, cipher, cfg.RequestSnapshots.Enabled, cfg.RequestSnapshots.TTL.Value())
+	if err != nil {
+		database.Close()
+		return nil, err
+	}
 	runtimeSettingsRepo := relational.NewRuntimeSettingsRepository(database, cipher)
 	egressRepo := relational.NewEgressRepository(database)
 	mediaJobRepo := relational.NewMediaJobRepository(database)
@@ -343,7 +350,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	}
 	metrics := metricsobs.NewMetrics()
 	gatewayService.ConfigureMetrics(metrics)
-	router := httpserver.New(httpserver.Dependencies{Logger: logger, Metrics: metrics, RequestTimeout: cfg.Server.RequestTimeout.Value(), MaxBodyBytes: cfg.Server.MaxBodyBytes, ConcurrencyGate: inferenceConcurrency, SecureCookies: cfg.Auth.SecureCookies, SwaggerEnabled: cfg.Server.SwaggerEnabled, PublicAPIBaseURL: cfg.Frontend.EffectivePublicAPIBaseURL(), FrontendStaticPath: cfg.Frontend.StaticPath, Readiness: readiness, TrafficReady: startup.acceptsTraffic, AdminAuth: adminService, Accounts: accountService, AccountSync: accountSyncService, Models: modelService, ClientKeys: clientKeyService, Audits: auditService, Dashboard: dashboardService, Gateway: gatewayService, Media: mediaService, Settings: settingsService, Egress: egressService, Updates: updateService, Notifications: notificationService, Backup: backupService, RequestPolicies: requestPolicyService})
+	router := httpserver.New(httpserver.Dependencies{Logger: logger, Metrics: metrics, RequestTimeout: cfg.Server.RequestTimeout.Value(), MaxBodyBytes: cfg.Server.MaxBodyBytes, ConcurrencyGate: inferenceConcurrency, SecureCookies: cfg.Auth.SecureCookies, SwaggerEnabled: cfg.Server.SwaggerEnabled, PublicAPIBaseURL: cfg.Frontend.EffectivePublicAPIBaseURL(), FrontendStaticPath: cfg.Frontend.StaticPath, Readiness: readiness, TrafficReady: startup.acceptsTraffic, AdminAuth: adminService, Accounts: accountService, AccountSync: accountSyncService, Models: modelService, ClientKeys: clientKeyService, Audits: auditService, Dashboard: dashboardService, Gateway: gatewayService, Media: mediaService, Settings: settingsService, Egress: egressService, Updates: updateService, Notifications: notificationService, Backup: backupService, RequestPolicies: requestPolicyService, RequestSnapshots: requestSnapshotService})
 	server := &http.Server{Addr: cfg.Server.Listen, Handler: router, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: cfg.Server.ReadTimeout.Value(), IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
 	return &Application{
 		logger: logger, database: database, server: server,
