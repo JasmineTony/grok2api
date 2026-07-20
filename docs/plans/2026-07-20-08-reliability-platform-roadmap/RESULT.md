@@ -61,3 +61,8 @@
 - 新增 egress_health_checks 增量表、节点/时间索引、仓储查询和重复迁移兼容；管理端设置页可立即检查并查看最近历史。
 - 新增应用服务与 HTTP API 回归测试；前端 typecheck、lint、生产构建和包体预算通过。
 - 当前健康检查验证代理端点连通性，不伪装为完整上游协议探测；Provider 级业务探测、后台定时调度和跨实例熔断协调仍待后续实现。
+## Token 与缓存语义本地推进（未推送）
+
+- 网关在写入审计和成本估算前统一规范 usage：input/output/reasoning 不得为负，cached_input_tokens 被限制为 input_tokens 的子集；上游未提供 total_tokens 时按规范化字段补齐。
+- 新增回归测试覆盖缓存 Token 超出输入、负数输出和上游 total_tokens 保留行为。
+- 实际成本与估算成本仍使用独立字段和独立 Prometheus 指标；小时/日汇总表、请求级缓存命中率和多维成本视图仍待后续实现。

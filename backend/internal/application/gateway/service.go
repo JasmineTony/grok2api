@@ -751,6 +751,7 @@ attemptLoop:
 				record.AccountID = &accountID
 				record.AccountName = credential.Name
 				record.StatusCode = response.StatusCode
+				usage = normalizeUsage(usage)
 				record.InputTokens = usage.InputTokens
 				record.CachedInputTokens = usage.CachedInputTokens
 				record.OutputTokens = usage.OutputTokens
@@ -853,6 +854,18 @@ attemptLoop:
 		s.logger.Error("request_usage_write_failed", "event_id", record.EventID, "request_id", input.RequestID, "error", err)
 	}
 	return nil, fmt.Errorf("%w: %w", ErrNoAvailableAccount, lastErr)
+}
+
+func normalizeUsage(usage Usage) Usage {
+	usage.InputTokens = max(int64(0), usage.InputTokens)
+	usage.CachedInputTokens = min(usage.InputTokens, max(int64(0), usage.CachedInputTokens))
+	usage.OutputTokens = max(int64(0), usage.OutputTokens)
+	usage.ReasoningTokens = max(int64(0), usage.ReasoningTokens)
+	usage.TotalTokens = max(int64(0), usage.TotalTokens)
+	if usage.TotalTokens == 0 {
+		usage.TotalTokens = usage.InputTokens + usage.OutputTokens + usage.ReasoningTokens
+	}
+	return usage
 }
 
 func recordGatewayUsageMetrics(metrics gatewayMetrics, usage Usage, actualCostTicks, estimatedCostTicks int64) {
