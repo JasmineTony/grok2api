@@ -14,3 +14,11 @@ Every implementation iteration in this repository must be documented under `docs
 8. A future agent must not declare an iteration complete until its `RESULT.md` and the plan index are current.
 
 Use the templates in `docs/plans/templates/` for every new iteration.
+
+## Push and pull request gate
+
+1. Treat the currently accepted PLAN.md as the delivery unit. Do not push a branch or create an intermediate pull request for partial files, modules, checkpoints, or sub-phases.
+2. Local checkpoint commits are allowed, but the plan branch stays local until every in-scope implementation item, test and acceptance criterion, and assumption/default check is complete.
+3. After final local acceptance, synchronize with the latest main, run the complete verification suite, update RESULT.md, then push once and create the final pull request.
+4. If CI fails, fix locally and push only the required final-plan corrections to the same branch; do not create additional partial-delivery branches.
+5. Exceptions require a separate plan and explicit user approval, such as an urgent security fix or external validation that cannot be performed locally.

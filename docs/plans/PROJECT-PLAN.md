@@ -24,6 +24,14 @@ Maintain `JasmineTony/grok2api` as an independent, security-conscious derivative
 6. Credentials and sensitive runtime data are never placed in repository documentation.
 7. Every future implementation cycle must have an iteration directory under `docs/plans/` containing `PLAN.md` and `RESULT.md`.
 
+## Plan-level push gate
+
+- A current accepted plan is the unit of delivery, not an individual file or sub-phase.
+- Keep its working branch local until scope, tests and acceptance, and assumptions/defaults are all complete.
+- Local checkpoint commits are permitted; intermediate remote branches and pull requests are not.
+- Perform one final synchronization and verification pass, complete RESULT.md, then push once and open the final pull request.
+- CI-only corrections stay on the same final plan branch.
+
 ## Completed phases
 
 - Independent repository initialization and legacy history preservation.
