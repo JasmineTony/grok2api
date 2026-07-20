@@ -48,7 +48,7 @@ body:
     attributes:
       label: 版本信息
       description: 请提供版本号、Docker 镜像标签或 Commit SHA。
-      placeholder: "v0.2.99、ghcr.io/jasminetony/grok2api:v3.0.5、main@abcdef1"
+      placeholder: "VERSION 文件内容、main@abcdef1、或已正式发布的镜像标签"
     validations:
       required: true
 
