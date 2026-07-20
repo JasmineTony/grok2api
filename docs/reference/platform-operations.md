@@ -25,7 +25,7 @@ SQLite uses a consistent snapshot. PostgreSQL and Redis are not presented as loc
 - POST /api/admin/v1/request-snapshots/:id/replay
 - POST /api/admin/v1/protocol/conversions/preview
 
-Snapshots are disabled by default. When enabled they are redacted, compressed, encrypted with AES-256-GCM, limited to 256 KiB, and retained for 24 hours by default. Replay is dry-run only until a separate security review.
+Snapshots are disabled by default. When enabled they are redacted, compressed, encrypted with AES-256-GCM, limited to 256 KiB, and retained for 24 hours by default. Replay is dry-run by default. Actual replay requires allowActualReplay, explicit administrator confirmation, a temporary client API key, a new replay request ID, and a second request-policy evaluation.
 
 ## CLI and MCP
 

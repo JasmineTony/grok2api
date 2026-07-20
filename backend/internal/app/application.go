@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -32,7 +33,10 @@ import (
 	updatecheckapp "github.com/chenyme/grok2api/backend/internal/application/updatecheck"
 	"github.com/chenyme/grok2api/backend/internal/buildinfo"
 	"github.com/chenyme/grok2api/backend/internal/domain/account"
+	"github.com/chenyme/grok2api/backend/internal/domain/audit"
 	notificationdomain "github.com/chenyme/grok2api/backend/internal/domain/notification"
+	requestpolicydomain "github.com/chenyme/grok2api/backend/internal/domain/requestpolicy"
+	requestsnapshotdomain "github.com/chenyme/grok2api/backend/internal/domain/requestsnapshot"
 	"github.com/chenyme/grok2api/backend/internal/infra/config"
 	infraegress "github.com/chenyme/grok2api/backend/internal/infra/egress"
 	inframedia "github.com/chenyme/grok2api/backend/internal/infra/media"
@@ -141,7 +145,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 		return nil, err
 	}
 	requestPolicyService.SetNotifications(notificationService)
-	requestSnapshotService, err := requestsnapshotapp.NewService(requestSnapshotRepo, cipher, cfg.RequestSnapshots.Enabled, cfg.RequestSnapshots.TTL.Value())
+	requestSnapshotService, err := requestsnapshotapp.NewService(requestSnapshotRepo, cipher, cfg.RequestSnapshots.Enabled, cfg.RequestSnapshots.TTL.Value(), cfg.RequestSnapshots.AllowActualReplay)
 	if err != nil {
 		database.Close()
 		return nil, err
@@ -321,6 +325,67 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	gatewayService.SetLogger(logger)
 	gatewayService.ConfigureMedia(mediaJobRepo, cfg.Provider.Web.MediaConcurrency)
 	gatewayService.ConfigureMediaAssets(mediaService)
+	requestSnapshotService.SetReplaySender(func(replayCtx context.Context, snapshot requestsnapshotdomain.Snapshot, payload []byte, replayID, rawClientKey string) error {
+		clientKey, release, authErr := clientKeyService.Authenticate(replayCtx, rawClientKey)
+		if authErr != nil {
+			return errors.New("replay client authentication failed")
+		}
+		defer release()
+		var envelope struct {
+			Model string `json:"model"`
+		}
+		if err := json.Unmarshal(payload, &envelope); err != nil || strings.TrimSpace(envelope.Model) == "" {
+			return errors.New("replay payload does not contain a valid model")
+		}
+		operation := audit.OperationResponses
+		switch snapshot.Protocol {
+		case "openai_chat_completions":
+			operation = audit.OperationChat
+		case "anthropic_messages":
+			operation = audit.OperationMessages
+		case "openai_responses":
+		default:
+			return errors.New("unsupported replay protocol")
+		}
+		decision, policyErr := requestPolicyService.Evaluate(replayCtx, requestpolicydomain.Request{ClientKeyID: clientKey.ID, Model: envelope.Model, Operation: string(operation)})
+		if policyErr != nil {
+			return errors.New("replay policy evaluation failed")
+		}
+		if !decision.Allowed {
+			return errors.New("replay denied by request policy")
+		}
+		var bodyMap map[string]any
+		if json.Unmarshal(payload, &bodyMap) == nil {
+			bodyMap["stream"] = false
+			if normalized, err := json.Marshal(bodyMap); err == nil {
+				payload = normalized
+			}
+		}
+		input := gateway.Input{RequestID: replayID, ClientKey: clientKey, PublicModel: envelope.Model, Body: payload, Streaming: false, ForcedProvider: decision.ForcedProvider}
+		var result *gateway.Result
+		var callErr error
+		switch snapshot.Protocol {
+		case "openai_chat_completions":
+			result, callErr = gatewayService.CreateChatCompletion(replayCtx, input)
+		case "anthropic_messages":
+			result, callErr = gatewayService.CreateMessage(replayCtx, input)
+		default:
+			result, callErr = gatewayService.CreateResponse(replayCtx, input)
+		}
+		if callErr != nil {
+			return callErr
+		}
+		if result == nil || result.Body == nil {
+			return errors.New("replay returned no result")
+		}
+		defer result.Body.Close()
+		_, _ = io.Copy(io.Discard, io.LimitReader(result.Body, 1<<20))
+		result.Finalize(gateway.Usage{}, "", "")
+		if result.StatusCode < 200 || result.StatusCode >= 300 {
+			return fmt.Errorf("replay upstream returned HTTP %d", result.StatusCode)
+		}
+		return nil
+	})
 	quotaRecoveryService := quotarecoveryapp.NewService(logger, quotaQueue, accountService, cfg.Provider.Web.RecoveryBackoffBase.Value(), cfg.Provider.Web.RecoveryBackoffMax.Value())
 	quotaRecoveryService.SetBulkPool(syncPool)
 	inferenceConcurrency := httpmiddleware.NewConcurrencyGate(cfg.Server.MaxConcurrentRequests)

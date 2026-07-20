@@ -89,6 +89,7 @@ observability:
 requestSnapshots:
   # 默认关闭；开启前请先完成脱敏与保留期评审。
   enabled: false
+  allowActualReplay: false
   ttl: 24h
 
 backup:

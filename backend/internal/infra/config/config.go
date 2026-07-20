@@ -214,8 +214,9 @@ type BackupConfig struct {
 }
 
 type RequestSnapshotConfig struct {
-	Enabled bool     `yaml:"enabled"`
-	TTL     Duration `yaml:"ttl"`
+	Enabled           bool     `yaml:"enabled"`
+	AllowActualReplay bool     `yaml:"allowActualReplay"`
+	TTL               Duration `yaml:"ttl"`
 }
 
 type NotificationConfig struct {

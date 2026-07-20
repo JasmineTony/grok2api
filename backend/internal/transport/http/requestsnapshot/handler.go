@@ -48,7 +48,8 @@ func (h *Handler) view(c *gin.Context) {
 }
 
 type replayRequest struct {
-	Confirm bool `json:"confirm"`
+	Confirm      bool   `json:"confirm"`
+	ClientAPIKey string `json:"clientApiKey,omitempty"`
 }
 
 func (h *Handler) replay(c *gin.Context) {
@@ -57,7 +58,7 @@ func (h *Handler) replay(c *gin.Context) {
 		response.Error(c, 400, "invalidReplayRequest", "invalid replay request")
 		return
 	}
-	preview, err := h.service.Replay(c.Request.Context(), c.Param("id"), value.Confirm)
+	preview, err := h.service.Replay(c.Request.Context(), c.Param("id"), value.Confirm, value.ClientAPIKey)
 	if err != nil {
 		response.Error(c, http.StatusForbidden, "requestReplayDisabled", err.Error())
 		return

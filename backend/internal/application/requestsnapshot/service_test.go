@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	requestsnapshot "github.com/chenyme/grok2api/backend/internal/domain/requestsnapshot"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
 	"path/filepath"
@@ -43,7 +45,7 @@ func TestCaptureRedactsEncryptsAndViews(t *testing.T) {
 	if !view.DryRun || strings.Contains(string(mustJSON(view.Payload)), "private") {
 		t.Fatalf("view leaked content: %#v", view.Payload)
 	}
-	if _, err := service.Replay(ctx, value.ID, true); err == nil {
+	if _, err := service.Replay(ctx, value.ID, true, ""); err == nil {
 		t.Fatal("actual replay unexpectedly enabled")
 	}
 }
@@ -58,4 +60,41 @@ func openSnapshotDB(t *testing.T) *relational.Database {
 		t.Fatal(err)
 	}
 	return db
+}
+
+func TestConfirmedReplayRequiresExplicitSenderAndCreatesNewRequestID(t *testing.T) {
+	ctx := context.Background()
+	db := openSnapshotDB(t)
+	defer db.Close()
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		t.Fatal(err)
+	}
+	cipher, err := security.NewCipher(base64.StdEncoding.EncodeToString(key))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(relational.NewRequestSnapshotRepository(db), cipher, true, time.Hour, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := service.Capture(ctx, "req", "openai_responses", "responses", "grok-4", []byte(`{"model":"grok-4","input":"secret"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	service.SetReplaySender(func(_ context.Context, _ requestsnapshot.Snapshot, payload []byte, replayID, clientKey string) error {
+		called = true
+		if replayID == "" || clientKey != "client-key" || len(payload) == 0 {
+			return errors.New("bad sender input")
+		}
+		return nil
+	})
+	view, err := service.Replay(ctx, value.ID, true, "client-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !called || view.DryRun || view.ReplayRequestID == "" {
+		t.Fatalf("view=%#v called=%v", view, called)
+	}
 }

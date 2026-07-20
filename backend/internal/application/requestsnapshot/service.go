@@ -20,22 +20,30 @@ import (
 
 const maxPayloadBytes = 256 << 10
 
+type ReplaySender func(context.Context, domain.Snapshot, []byte, string, string) error
+
 type Service struct {
-	repository repository.RequestSnapshotRepository
-	cipher     *security.Cipher
-	enabled    bool
-	ttl        time.Duration
-	now        func() time.Time
+	repository        repository.RequestSnapshotRepository
+	cipher            *security.Cipher
+	enabled           bool
+	allowActualReplay bool
+	ttl               time.Duration
+	now               func() time.Time
+	sender            ReplaySender
 }
 
-func NewService(repo repository.RequestSnapshotRepository, cipher *security.Cipher, enabled bool, ttl time.Duration) (*Service, error) {
+func NewService(repo repository.RequestSnapshotRepository, cipher *security.Cipher, enabled bool, ttl time.Duration, allowActualReplay ...bool) (*Service, error) {
 	if repo == nil || cipher == nil {
 		return nil, errors.New("request snapshot repository and cipher are required")
 	}
 	if ttl <= 0 {
 		ttl = 24 * time.Hour
 	}
-	return &Service{repository: repo, cipher: cipher, enabled: enabled, ttl: ttl, now: time.Now}, nil
+	allowReplay := false
+	if len(allowActualReplay) > 0 {
+		allowReplay = allowActualReplay[0]
+	}
+	return &Service{repository: repo, cipher: cipher, enabled: enabled, allowActualReplay: allowReplay, ttl: ttl, now: time.Now}, nil
 }
 func (s *Service) Capture(ctx context.Context, requestID, protocol, operation, model string, payload []byte) (domain.Snapshot, error) {
 	if !s.enabled {
@@ -92,14 +100,55 @@ func (s *Service) View(ctx context.Context, id string) (domain.View, error) {
 	value.EncryptedPayload = ""
 	return domain.View{Snapshot: value, Payload: decoded, DryRun: true}, nil
 }
-func (s *Service) Replay(ctx context.Context, id string, confirm bool) (domain.View, error) {
-	view, err := s.View(ctx, id)
+func (s *Service) SetReplaySender(sender ReplaySender) { s.sender = sender }
+
+func (s *Service) Replay(ctx context.Context, id string, confirm bool, clientAPIKey string) (domain.View, error) {
+	value, err := s.repository.GetRequestSnapshot(ctx, strings.TrimSpace(id), s.now())
 	if err != nil {
 		return domain.View{}, err
 	}
-	if confirm {
+	encoded, err := s.cipher.Decrypt(value.EncryptedPayload)
+	if err != nil {
+		return domain.View{}, err
+	}
+	compressed, err := base64.RawStdEncoding.DecodeString(encoded)
+	if err != nil {
+		return domain.View{}, err
+	}
+	payload, err := decompress(compressed)
+	if err != nil {
+		return domain.View{}, err
+	}
+	hash := sha256.Sum256(payload)
+	if hex.EncodeToString(hash[:]) != value.PayloadSHA256 {
+		return domain.View{}, errors.New("request snapshot checksum mismatch")
+	}
+	var decoded any
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		return domain.View{}, err
+	}
+	publicSnapshot := value
+	publicSnapshot.EncryptedPayload = ""
+	view := domain.View{Snapshot: publicSnapshot, Payload: decoded, DryRun: true}
+	if !confirm {
+		return view, nil
+	}
+	if !s.allowActualReplay || s.sender == nil {
 		return domain.View{}, errors.New("actual replay is disabled pending a separate security review")
 	}
+	if strings.TrimSpace(clientAPIKey) == "" {
+		return domain.View{}, errors.New("client API key is required for confirmed replay")
+	}
+	replayID, err := security.NewOpaqueToken(18)
+	if err != nil {
+		return domain.View{}, err
+	}
+	replayID = "replay_" + replayID
+	if err := s.sender(ctx, value, payload, replayID, clientAPIKey); err != nil {
+		return domain.View{}, err
+	}
+	view.DryRun = false
+	view.ReplayRequestID = replayID
 	return view, nil
 }
 func (s *Service) Prune(ctx context.Context, limit int) (int64, error) {

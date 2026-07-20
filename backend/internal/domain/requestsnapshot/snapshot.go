@@ -15,7 +15,8 @@ type Snapshot struct {
 	ExpiresAt        time.Time `json:"expiresAt"`
 }
 type View struct {
-	Snapshot Snapshot `json:"snapshot"`
-	Payload  any      `json:"payload"`
-	DryRun   bool     `json:"dryRun"`
+	Snapshot        Snapshot `json:"snapshot"`
+	Payload         any      `json:"payload"`
+	DryRun          bool     `json:"dryRun"`
+	ReplayRequestID string   `json:"replayRequestId,omitempty"`
 }

@@ -91,7 +91,7 @@
 ## 尚未完成
 
 - 升级前预检、PostgreSQL/Redis 外部备份钩子和主要通知触发点已实现；仍需在 CI 中取得 PostgreSQL、race、Swagger、Docker 的远程检查证据。
-- 请求快照与协议转换查看器基础已实现；实际回放仍需独立安全评审，当前明确关闭。
+- 请求快照、协议转换查看器和显式确认回放路径已实现；实际回放默认关闭，启用前仍需单独安全评审。
 - CLI、只读 stdio MCP 和配置即代码的真实非破坏性 apply 已实现；MCP 写操作和实际回放继续保持关闭。
 - govulncheck、pnpm audit、Swagger 无漂移、race、PostgreSQL 集成、多架构 Docker 和三视口 Playwright 验收仍未完成。
 - 假设与默认值尚未逐项核对；当前不允许推送或创建 PR。
