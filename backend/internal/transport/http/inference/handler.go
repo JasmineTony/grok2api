@@ -860,7 +860,8 @@ func (h *Handler) enforcePolicy(c *gin.Context, key clientkeydomain.Key, model, 
 	if err != nil {
 		host = strings.TrimSpace(c.Request.RemoteAddr)
 	}
-	decision, err := h.requestPolicies.Evaluate(c.Request.Context(), policydomain.Request{ClientKeyID: key.ID, Model: model, Operation: operation, SourceIP: net.ParseIP(host), Media: media, MediaCount: mediaCount, Tokens: tokens})
+	baseRequest := policydomain.Request{ClientKeyID: key.ID, Model: model, Operation: operation, SourceIP: net.ParseIP(host), Media: media, MediaCount: mediaCount, Tokens: tokens}
+	decision, err := h.requestPolicies.Evaluate(c.Request.Context(), baseRequest)
 	if err != nil {
 		writeOpenAIError(c, http.StatusInternalServerError, "request_policy_unavailable", "request policy evaluation failed")
 		return decision, false
@@ -868,6 +869,41 @@ func (h *Handler) enforcePolicy(c *gin.Context, key clientkeydomain.Key, model, 
 	if !decision.Allowed {
 		writeOpenAIError(c, http.StatusForbidden, "request_policy_denied", decision.Reason)
 		return decision, false
+	}
+	// Evaluate provider-specific rules against the model candidates. If only a subset
+	// remains, pin the request to one deterministic allowed provider without changing
+	// the public API or exposing provider/account details to the client.
+	if h.models != nil {
+		if routes, routeErr := h.models.GetByPublicIDCandidates(c.Request.Context(), model); routeErr == nil && len(routes) > 0 {
+			allowed := make([]string, 0, len(routes))
+			seen := map[string]bool{}
+			for _, route := range routes {
+				providerValue := string(route.Provider)
+				if providerValue == "" || seen[providerValue] {
+					continue
+				}
+				seen[providerValue] = true
+				baseRequest.Provider = providerValue
+				providerDecision, evalErr := h.requestPolicies.Evaluate(c.Request.Context(), baseRequest)
+				if evalErr != nil {
+					writeOpenAIError(c, http.StatusInternalServerError, "request_policy_unavailable", "request policy evaluation failed")
+					return decision, false
+				}
+				if providerDecision.Allowed {
+					allowed = append(allowed, providerValue)
+					if decision.ForcedProvider == "" && providerDecision.ForcedProvider != "" {
+						decision.ForcedProvider = providerDecision.ForcedProvider
+					}
+				}
+			}
+			if len(allowed) == 0 {
+				writeOpenAIError(c, http.StatusForbidden, "request_policy_denied", "no provider satisfies the request policy")
+				return decision, false
+			}
+			if decision.ForcedProvider == "" && len(allowed) == 1 {
+				decision.ForcedProvider = allowed[0]
+			}
+		}
 	}
 	return decision, true
 }
