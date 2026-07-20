@@ -13,7 +13,7 @@ func TestReadOnlyStdioTools(t *testing.T) {
 	if err := (&Server{}).Serve(input, &out); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "config.validate") {
+	if !strings.Contains(out.String(), "config.validate") || strings.Contains(out.String(), "write") {
 		t.Fatalf("unexpected MCP output: %s", out.String())
 	}
 }

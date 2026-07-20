@@ -80,11 +80,19 @@
 - `pnpm audit --audit-level high`：未发现已知高危漏洞。
 - Swagger 生成器因网络/缓存依赖问题尚未完成无漂移检查；Docker、race、PostgreSQL 集成和 Playwright 三视口验收仍未完成。
 
+## 本轮新增进展
+
+- 外部备份钩子已支持：应用直接执行可配置可执行文件，不经过 shell，不把钩子输出写入日志；升级预检和外部数据库备份责任保持显式。
+- 配置即代码 `config apply` 已支持模型启用状态、Egress 节点和请求策略的幂等写入；默认不删除未声明对象，Secret 只允许 `env:VAR` 引用。
+- MCP 只读工具已绑定模型、账号状态、24 小时用量、最近错误、Egress 健康、版本和配置校验数据，禁止返回凭据和完整正文。
+- Playwright 已加入 Windows 视觉回归 CI，覆盖 375x812、768x1024、1440x900 以及亮色/暗色主题；登录页维护仓库链接已切换到 JasmineTony。
+- CI 已增加 PostgreSQL 服务、race 检查和多架构构建前的视觉门禁。
+
 ## 尚未完成
 
-- 升级前预检、PostgreSQL/Redis 外部备份钩子和全部通知触发点仍需实现。
+- 升级前预检、PostgreSQL/Redis 外部备份钩子和主要通知触发点已实现；仍需在 CI 中取得 PostgreSQL、race、Swagger、Docker 的远程检查证据。
 - 请求快照与协议转换查看器基础已实现；实际回放仍需独立安全评审，当前明确关闭。
-- CLI 与只读 stdio MCP 基础已实现；配置即代码的真实仓储 apply、MCP 数据提供器和写操作仍需后续安全评审。
+- CLI、只读 stdio MCP 和配置即代码的真实非破坏性 apply 已实现；MCP 写操作和实际回放继续保持关闭。
 - govulncheck、pnpm audit、Swagger 无漂移、race、PostgreSQL 集成、多架构 Docker 和三视口 Playwright 验收仍未完成。
 - 假设与默认值尚未逐项核对；当前不允许推送或创建 PR。
 

@@ -53,6 +53,7 @@ type Config struct {
 	Observability     ObservabilityConfig     `yaml:"observability"`
 	Notifications     NotificationConfig      `yaml:"notifications"`
 	RequestSnapshots  RequestSnapshotConfig   `yaml:"requestSnapshots"`
+	Backup            BackupConfig            `yaml:"backup"`
 }
 
 type ServerConfig struct {
@@ -205,6 +206,11 @@ type ObservabilityConfig struct {
 type PrometheusConfig struct {
 	Enabled bool   `yaml:"enabled"`
 	Listen  string `yaml:"listen"`
+}
+
+type BackupConfig struct {
+	ExternalHook string   `yaml:"externalHook"`
+	HookTimeout  Duration `yaml:"hookTimeout"`
 }
 
 type RequestSnapshotConfig struct {
@@ -599,6 +605,7 @@ func defaultConfig() Config {
 		Observability:     ObservabilityConfig{Prometheus: PrometheusConfig{Enabled: false, Listen: "127.0.0.1:9090"}},
 		Notifications:     NotificationConfig{Enabled: true, Cooldown: Duration(15 * time.Minute), Retention: Duration(30 * 24 * time.Hour)},
 		RequestSnapshots:  RequestSnapshotConfig{Enabled: false, TTL: Duration(24 * time.Hour)},
+		Backup:            BackupConfig{HookTimeout: Duration(2 * time.Minute)},
 	}
 }
 

@@ -149,6 +149,11 @@ func (s *Service) Create(ctx context.Context, destination string) (Result, error
 		manifest.DatabaseSHA256 = entry.SHA256
 	} else {
 		manifest.ExternalBackupRequired = true
+		if s.externalBackupCheck != nil {
+			if err := s.externalBackupCheck(ctx); err != nil {
+				return Result{}, fmt.Errorf("external backup hook: %w", err)
+			}
+		}
 	}
 	mediaDestination := filepath.Join(root, "media")
 	if err := copyMediaTree(ctx, s.mediaRoot, mediaDestination); err != nil {

@@ -13,7 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check:bundle": "node scripts/check-bundle-budget.mjs",
-    "check:icons": "node scripts/check-icon-imports.mjs"
+    "check:icons": "node scripts/check-icon-imports.mjs",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
@@ -51,6 +52,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "1.61.1",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/jest-dom": "6.9.1",
     "@testing-library/react": "16.3.2",

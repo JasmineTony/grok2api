@@ -7,6 +7,9 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
+	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -202,6 +205,22 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	default:
 		database.Close()
 		return nil, fmt.Errorf("不支持的运行态驱动: %s", cfg.RuntimeStore.Driver)
+	}
+	if hook := strings.TrimSpace(cfg.Backup.ExternalHook); hook != "" {
+		hookTimeout := cfg.Backup.HookTimeout.Value()
+		if hookTimeout <= 0 {
+			hookTimeout = 2 * time.Minute
+		}
+		backupService.SetExternalBackupCheck(func(hookCtx context.Context) error {
+			callCtx, cancel := context.WithTimeout(hookCtx, hookTimeout)
+			defer cancel()
+			command := exec.CommandContext(callCtx, hook, "verify", cfg.Database.Driver, cfg.RuntimeStore.Driver)
+			command.Env = append(os.Environ(), "GROK2API_BACKUP_DRIVER="+cfg.Database.Driver, "GROK2API_RUNTIME_STORE="+cfg.RuntimeStore.Driver)
+			if err := command.Run(); err != nil {
+				return fmt.Errorf("external backup hook failed: %w", err)
+			}
+			return nil
+		})
 	}
 	mediaService := mediaapp.NewServiceWithTickets(mediaAssetRepo, mediaJobRepo, mediaUploadTicketRepo, localMediaStore, refreshLock, mediaConfig(cfg))
 

@@ -45,6 +45,8 @@ Thumbs.db
 /frontend/node_modules/
 /frontend/dist/
 /frontend/.cache/
+/frontend/test-results/
+/frontend/playwright-report/
 /frontend/*.tsbuildinfo
 
 # Temporary files
