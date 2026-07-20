@@ -486,4 +486,15 @@ type accountEgressPolicyModel struct {
 }
 
 func (accountEgressPolicyModel) TableName() string { return "account_egress_policies" }
-func (egressNodeModel) TableName() string          { return "egress_nodes" }
+
+type egressHealthCheckModel struct {
+	ID         uint64    `gorm:"primaryKey;autoIncrement"`
+	NodeID     uint64    `gorm:"not null;index;check:chk_egress_health_checks_node_id,node_id > 0"`
+	Healthy    bool      `gorm:"not null"`
+	DurationMS int64     `gorm:"not null;check:chk_egress_health_checks_duration,duration_ms >= 0"`
+	ErrorCode  string    `gorm:"size:64;not null;default:'';check:chk_egress_health_checks_error,length(error_code) <= 64"`
+	CheckedAt  time.Time `gorm:"not null;index"`
+}
+
+func (egressHealthCheckModel) TableName() string { return "egress_health_checks" }
+func (egressNodeModel) TableName() string        { return "egress_nodes" }

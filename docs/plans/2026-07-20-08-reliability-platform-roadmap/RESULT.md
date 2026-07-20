@@ -54,3 +54,10 @@
 - 新增管理端 GET/PUT /api/admin/v1/accounts/:id/egress-policy，并在账号页增加出口策略对话框；敏感代理地址仍不会回显。
 - 新增 Egress Manager、仓储和 HTTP API 回归测试；Go 全量测试、go vet、前端 typecheck、lint、Vitest、构建与 raw/gzip 包体预算均通过。
 - 仍未实现主动出口健康探测、历史记录、Provider 级节点优先级和批量账号策略；这些继续作为路线图 B 的后续本地工作。
+## 出口主动健康检查本地推进（未推送）
+
+- 新增 POST /api/admin/v1/egress-nodes/:id/check 与 GET /api/admin/v1/egress-nodes/:id/health-checks；检查结果只保存健康状态、耗时、稳定错误码和时间，不保存代理凭据。
+- 主动检查对代理主机执行有超时的 TCP 连通性探测；成功恢复健康度并清除冷却，失败按连续次数降低健康度并进入指数冷却。
+- 新增 egress_health_checks 增量表、节点/时间索引、仓储查询和重复迁移兼容；管理端设置页可立即检查并查看最近历史。
+- 新增应用服务与 HTTP API 回归测试；前端 typecheck、lint、生产构建和包体预算通过。
+- 当前健康检查验证代理端点连通性，不伪装为完整上游协议探测；Provider 级业务探测、后台定时调度和跨实例熔断协调仍待后续实现。

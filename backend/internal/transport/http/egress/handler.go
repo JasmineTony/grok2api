@@ -22,6 +22,8 @@ func (h *Handler) Register(router *gin.RouterGroup) {
 	router.POST("/egress-nodes", h.create)
 	router.PUT("/egress-nodes/:id", h.update)
 	router.DELETE("/egress-nodes/:id", h.delete)
+	router.POST("/egress-nodes/:id/check", h.check)
+	router.GET("/egress-nodes/:id/health-checks", h.healthChecks)
 	router.GET("/accounts/:id/egress-policy", h.getAccountPolicy)
 	router.PUT("/accounts/:id/egress-policy", h.updateAccountPolicy)
 }
@@ -39,6 +41,15 @@ type accountPolicyResponse struct {
 	AllowDirectFallback bool      `json:"allowDirectFallback"`
 	CreatedAt           time.Time `json:"createdAt,omitempty"`
 	UpdatedAt           time.Time `json:"updatedAt,omitempty"`
+}
+
+type healthCheckResponse struct {
+	ID         uint64    `json:"id,string"`
+	NodeID     uint64    `json:"nodeId,string"`
+	Healthy    bool      `json:"healthy"`
+	DurationMS int64     `json:"durationMs"`
+	ErrorCode  string    `json:"errorCode,omitempty"`
+	CheckedAt  time.Time `json:"checkedAt"`
 }
 
 type nodeRequest struct {
@@ -71,6 +82,52 @@ func (value nodeRequest) input() egressapp.Input {
 		Name: value.Name, Scope: egressdomain.Scope(value.Scope), Enabled: value.Enabled,
 		ProxyURL: value.ProxyURL, ClearProxyURL: value.ClearProxyURL, UserAgent: value.UserAgent,
 		CloudflareCookies: value.CloudflareCookies, ClearCookies: value.ClearCookies,
+	}
+}
+
+func (h *Handler) check(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		return
+	}
+	value, err := h.service.Check(c.Request.Context(), id)
+	if err != nil {
+		h.writeError(c, err)
+		return
+	}
+	response.Success(c, http.StatusOK, newHealthCheckResponse(value))
+}
+
+func (h *Handler) healthChecks(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		return
+	}
+	limit := 20
+	if raw := c.Query("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 100 {
+			response.Error(c, http.StatusBadRequest, "invalidLimit", "limit must be between 1 and 100")
+			return
+		}
+		limit = parsed
+	}
+	values, err := h.service.ListHealthChecks(c.Request.Context(), id, limit)
+	if err != nil {
+		h.writeError(c, err)
+		return
+	}
+	items := make([]healthCheckResponse, 0, len(values))
+	for _, value := range values {
+		items = append(items, newHealthCheckResponse(value))
+	}
+	response.Success(c, http.StatusOK, gin.H{"items": items})
+}
+
+func newHealthCheckResponse(value egressdomain.HealthCheckResult) healthCheckResponse {
+	return healthCheckResponse{
+		ID: value.ID, NodeID: value.NodeID, Healthy: value.Healthy, DurationMS: value.DurationMS,
+		ErrorCode: value.ErrorCode, CheckedAt: value.CheckedAt,
 	}
 }
 

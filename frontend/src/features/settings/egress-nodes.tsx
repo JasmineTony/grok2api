@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { Activity, History, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -14,19 +14,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableActionCell, TableActionHead, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table";
-import { createEgressNode, deleteEgressNode, listEgressNodes, updateEgressNode, type EgressNodeDTO, type EgressNodeInput, type EgressScope } from "@/features/settings/settings-api";
+import { checkEgressNode, createEgressNode, deleteEgressNode, listEgressHealthChecks, listEgressNodes, updateEgressNode, type EgressNodeDTO, type EgressNodeInput, type EgressScope } from "@/features/settings/settings-api";
 import { SortableTableHead } from "@/shared/components/sortable-table-head";
-import { ErrorState } from "@/shared/components/data-state";
+import { EmptyState, ErrorState, LoadingState } from "@/shared/components/data-state";
+import { formatDateTime } from "@/shared/lib/format";
 import { nextTableSort, type SortOrder, type TableSort } from "@/shared/lib/table-sort";
 
 const emptyInput: EgressNodeInput = { name: "", scope: "grok_build", enabled: true, proxyURL: "", userAgent: "", cloudflareCookies: "" };
 
 export function EgressNodes() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<EgressNodeDTO | null | undefined>(undefined);
   const [form, setForm] = useState<EgressNodeInput>(emptyInput);
   const [sort, setSort] = useState<TableSort>({ field: "", order: "asc" });
+  const [historyNode, setHistoryNode] = useState<EgressNodeDTO | null>(null);
   const query = useQuery({ queryKey: ["egress-nodes", sort.field, sort.order], queryFn: () => listEgressNodes({ sortBy: sort.field || undefined, sortOrder: sort.field ? sort.order : undefined }) });
   const save = useMutation({
     mutationFn: () => {
@@ -45,6 +47,20 @@ export function EgressNodes() {
     mutationFn: deleteEgressNode,
     onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ["egress-nodes"] }); toast.success(t("settings.egress.deleted")); },
     onError: (error) => showError(error, t("settings.egress.operationFailed")),
+  });
+  const check = useMutation({
+    mutationFn: checkEgressNode,
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ["egress-nodes"] });
+      void queryClient.invalidateQueries({ queryKey: ["egress-health-checks", result.nodeId] });
+      toast[result.healthy ? "success" : "error"](t(result.healthy ? "settings.egress.healthy" : "settings.egress.unhealthy"));
+    },
+    onError: (error) => showError(error, t("settings.egress.healthCheckFailed")),
+  });
+  const historyQuery = useQuery({
+    queryKey: ["egress-health-checks", historyNode?.id],
+    queryFn: () => listEgressHealthChecks(historyNode?.id ?? ""),
+    enabled: Boolean(historyNode),
   });
 
   function openCreate() {
@@ -99,7 +115,7 @@ export function EgressNodes() {
                 <TableCell className="text-center text-xs tabular-nums">{Math.round(node.health * 100)}%</TableCell>
                 <TableActionCell>
                   <DropdownMenu><DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon" className="size-8" aria-label={t("common.actions")}><MoreHorizontal /></Button></DropdownMenuTrigger><DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => openEdit(node)}><Pencil />{t("common.edit")}</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => remove.mutate(node.id)}><Trash2 />{t("common.delete")}</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => openEdit(node)}><Pencil />{t("common.edit")}</DropdownMenuItem><DropdownMenuItem disabled={check.isPending} onClick={() => check.mutate(node.id)}><Activity />{t("settings.egress.check")}</DropdownMenuItem><DropdownMenuItem onClick={() => setHistoryNode(node)}><History />{t("settings.egress.history")}</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => remove.mutate(node.id)}><Trash2 />{t("common.delete")}</DropdownMenuItem>
                   </DropdownMenuContent></DropdownMenu>
                 </TableActionCell>
               </TableRow>
@@ -107,6 +123,16 @@ export function EgressNodes() {
           </TableBody>
         </Table>
       </div>}
+
+      <Dialog open={Boolean(historyNode)} onOpenChange={(open) => !open && setHistoryNode(null)}>
+        <DialogContent className="max-w-[560px]">
+          <DialogHeader><DialogTitle>{t("settings.egress.history")}</DialogTitle><DialogDescription>{historyNode?.name}</DialogDescription></DialogHeader>
+          {historyQuery.isPending ? <LoadingState className="min-h-32" /> : null}
+          {historyQuery.isError ? <ErrorState message={historyQuery.error.message} onRetry={() => void historyQuery.refetch()} /> : null}
+          {historyQuery.data?.items.length === 0 ? <EmptyState message={t("settings.egress.noHistory")} /> : null}
+          {historyQuery.data?.items.length ? <div className="max-h-[50vh] space-y-2 overflow-y-auto pr-1">{historyQuery.data.items.map((item) => <div key={item.id} className="flex items-center justify-between gap-3 rounded-md border p-3 text-xs"><div><Badge variant={item.healthy ? "secondary" : "destructive"}>{t(item.healthy ? "settings.egress.healthy" : "settings.egress.unhealthy")}</Badge>{item.errorCode ? <span className="ml-2 text-muted-foreground">{item.errorCode}</span> : null}</div><div className="text-right text-muted-foreground"><div>{item.durationMs} ms</div><div>{formatDateTime(item.checkedAt, i18n.language)}</div></div></div>)}</div> : null}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={editing !== undefined} onOpenChange={(open) => { if (!open) setEditing(undefined); }}>
         <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-[520px]">

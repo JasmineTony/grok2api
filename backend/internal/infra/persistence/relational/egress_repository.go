@@ -165,6 +165,36 @@ func fromAccountEgressPolicyDomain(value egress.AccountPolicy) accountEgressPoli
 	}
 }
 
+func (r *EgressRepository) RecordEgressHealthCheck(ctx context.Context, value egress.HealthCheckResult) error {
+	if value.NodeID == 0 || value.DurationMS < 0 || value.CheckedAt.IsZero() {
+		return repository.ErrConflict
+	}
+	row := egressHealthCheckModel{
+		NodeID: value.NodeID, Healthy: value.Healthy, DurationMS: value.DurationMS,
+		ErrorCode: truncate(value.ErrorCode, 64), CheckedAt: value.CheckedAt.UTC(),
+	}
+	return r.db.db.WithContext(ctx).Create(&row).Error
+}
+
+func (r *EgressRepository) ListEgressHealthChecks(ctx context.Context, nodeID uint64, limit int) ([]egress.HealthCheckResult, error) {
+	if nodeID == 0 {
+		return nil, repository.ErrNotFound
+	}
+	limit = max(1, min(limit, 100))
+	var rows []egressHealthCheckModel
+	if err := r.db.db.WithContext(ctx).Where("node_id = ?", nodeID).Order("checked_at DESC, id DESC").Limit(limit).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	values := make([]egress.HealthCheckResult, 0, len(rows))
+	for _, row := range rows {
+		values = append(values, egress.HealthCheckResult{
+			ID: row.ID, NodeID: row.NodeID, Healthy: row.Healthy, DurationMS: row.DurationMS,
+			ErrorCode: row.ErrorCode, CheckedAt: row.CheckedAt,
+		})
+	}
+	return values, nil
+}
+
 func toEgressDomain(row egressNodeModel) egress.Node {
 	return egress.Node{
 		ID: row.ID, Name: row.Name, Scope: egress.Scope(row.Scope), Enabled: row.Enabled,

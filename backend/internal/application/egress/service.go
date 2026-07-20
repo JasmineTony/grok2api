@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
+	"time"
 
 	domain "github.com/chenyme/grok2api/backend/internal/domain/egress"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
@@ -46,10 +48,16 @@ type Service struct {
 	repository repository.EgressRepository
 	cipher     *security.Cipher
 	browserUA  string
+	now        func() time.Time
+	dial       func(context.Context, string, string) (net.Conn, error)
 }
 
 func NewService(repository repository.EgressRepository, cipher *security.Cipher, browserUA string) *Service {
-	return &Service{repository: repository, cipher: cipher, browserUA: strings.TrimSpace(browserUA)}
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	return &Service{
+		repository: repository, cipher: cipher, browserUA: strings.TrimSpace(browserUA), now: func() time.Time { return time.Now().UTC() },
+		dial: dialer.DialContext,
+	}
 }
 
 func (s *Service) DefaultUserAgents() map[string]string {
@@ -141,6 +149,96 @@ func (s *Service) UpdateAccountPolicy(ctx context.Context, accountID uint64, inp
 		return domain.AccountPolicy{}, ErrInvalidInput
 	}
 	return value, err
+}
+
+func (s *Service) Check(ctx context.Context, id uint64) (domain.HealthCheckResult, error) {
+	value, err := s.repository.GetEgressNode(ctx, id)
+	if errors.Is(err, repository.ErrNotFound) {
+		return domain.HealthCheckResult{}, ErrNotFound
+	}
+	if err != nil {
+		return domain.HealthCheckResult{}, err
+	}
+	checkedAt := s.now()
+	startedAt := time.Now()
+	healthy, errorCode := true, ""
+	if strings.TrimSpace(value.EncryptedProxyURL) != "" {
+		proxyURL, decryptErr := s.cipher.Decrypt(value.EncryptedProxyURL)
+		if decryptErr != nil {
+			healthy, errorCode = false, "proxy_config_invalid"
+		} else if address, addressErr := proxyDialAddress(proxyURL); addressErr != nil {
+			healthy, errorCode = false, "proxy_config_invalid"
+		} else {
+			connection, dialErr := s.dial(ctx, "tcp", address)
+			if dialErr != nil {
+				healthy, errorCode = false, "proxy_dial_failed"
+			} else {
+				_ = connection.Close()
+			}
+		}
+	}
+	result := domain.HealthCheckResult{
+		NodeID: value.ID, Healthy: healthy, DurationMS: max(0, time.Since(startedAt).Milliseconds()),
+		ErrorCode: errorCode, CheckedAt: checkedAt,
+	}
+	if healthy {
+		value.Health = min(1, value.Health+0.1)
+		value.FailureCount = 0
+		value.CooldownUntil = nil
+		value.LastError = ""
+	} else {
+		value.FailureCount++
+		value.Health = max(0.05, value.Health*0.7)
+		cooldown := min(10*time.Minute, 30*time.Second*time.Duration(1<<min(value.FailureCount-1, 4)))
+		until := checkedAt.Add(cooldown)
+		value.CooldownUntil = &until
+		value.LastError = errorCode
+	}
+	if _, err := s.repository.UpdateEgressNode(ctx, value); err != nil {
+		return domain.HealthCheckResult{}, err
+	}
+	if history, ok := s.repository.(repository.EgressHealthRepository); ok {
+		if err := history.RecordEgressHealthCheck(ctx, result); err != nil {
+			return domain.HealthCheckResult{}, err
+		}
+	}
+	return result, nil
+}
+
+func (s *Service) ListHealthChecks(ctx context.Context, id uint64, limit int) ([]domain.HealthCheckResult, error) {
+	if _, err := s.repository.GetEgressNode(ctx, id); errors.Is(err, repository.ErrNotFound) {
+		return nil, ErrNotFound
+	} else if err != nil {
+		return nil, err
+	}
+	history, ok := s.repository.(repository.EgressHealthRepository)
+	if !ok {
+		return nil, errors.New("egress health repository is unavailable")
+	}
+	return history.ListEgressHealthChecks(ctx, id, limit)
+}
+
+func proxyDialAddress(raw string) (string, error) {
+	normalized, err := NormalizeProxyURL(raw)
+	if err != nil || normalized == "" {
+		return "", errors.New("proxy address is invalid")
+	}
+	parsed, err := url.Parse(normalized)
+	if err != nil || parsed.Hostname() == "" {
+		return "", errors.New("proxy address is invalid")
+	}
+	port := parsed.Port()
+	if port == "" {
+		switch strings.ToLower(parsed.Scheme) {
+		case "http":
+			port = "80"
+		case "https":
+			port = "443"
+		default:
+			port = "1080"
+		}
+	}
+	return net.JoinHostPort(parsed.Hostname(), port), nil
 }
 
 func (s *Service) applyInput(value domain.Node, input Input, create bool) (domain.Node, error) {

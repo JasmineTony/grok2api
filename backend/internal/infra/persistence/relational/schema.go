@@ -37,6 +37,7 @@ var schemaModels = []any{
 	&runtimeSettingsModel{},
 	&egressNodeModel{},
 	&accountEgressPolicyModel{},
+	&egressHealthCheckModel{},
 }
 
 var schemaIndexes = []string{
@@ -63,6 +64,7 @@ var schemaIndexes = []string{
 	"CREATE INDEX IF NOT EXISTS idx_billing_reservations_expiry ON billing_reservations(expires_at, client_key_id)",
 	"CREATE INDEX IF NOT EXISTS idx_egress_nodes_scope_health ON egress_nodes(scope, enabled, health DESC, id ASC)",
 	"CREATE INDEX IF NOT EXISTS idx_account_egress_policies_node ON account_egress_policies(egress_node_id)",
+	"CREATE INDEX IF NOT EXISTS idx_egress_health_checks_node_checked ON egress_health_checks(node_id, checked_at DESC, id DESC)",
 	"CREATE INDEX IF NOT EXISTS idx_audits_created_id ON request_audits(created_at DESC, id DESC)",
 	"CREATE UNIQUE INDEX IF NOT EXISTS idx_audits_event_id ON request_audits(event_id) WHERE event_id <> ''",
 	"CREATE INDEX IF NOT EXISTS idx_audits_account_created_id ON request_audits(account_id, created_at DESC, id DESC)",

@@ -58,6 +58,15 @@ type Node struct {
 	UpdatedAt                 time.Time
 }
 
+type HealthCheckResult struct {
+	ID         uint64
+	NodeID     uint64
+	Healthy    bool
+	DurationMS int64
+	ErrorCode  string
+	CheckedAt  time.Time
+}
+
 type PublicNode struct {
 	ID               uint64
 	Name             string

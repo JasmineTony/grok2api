@@ -71,4 +71,18 @@ func TestAccountEgressPolicyEndpointsRoundTrip(t *testing.T) {
 	if recorder.Code != http.StatusOK || !bytes.Contains(recorder.Body.Bytes(), []byte("\"strategy\":\"node\"")) {
 		t.Fatalf("GET status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
+
+	request = httptest.NewRequest(http.MethodPost, "/api/admin/v1/egress-nodes/"+strconv.FormatUint(node.ID, 10)+"/check", nil)
+	recorder = httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK || !bytes.Contains(recorder.Body.Bytes(), []byte("\"healthy\":true")) {
+		t.Fatalf("check status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodGet, "/api/admin/v1/egress-nodes/"+strconv.FormatUint(node.ID, 10)+"/health-checks", nil)
+	recorder = httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK || !bytes.Contains(recorder.Body.Bytes(), []byte("\"items\":[{")) {
+		t.Fatalf("history status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+
 }

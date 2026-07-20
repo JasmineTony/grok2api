@@ -21,3 +21,10 @@ type AccountEgressPolicyRepository interface {
 	UpsertAccountEgressPolicy(ctx context.Context, value egress.AccountPolicy) (egress.AccountPolicy, error)
 	DeleteAccountEgressPolicy(ctx context.Context, accountID uint64) error
 }
+
+
+// EgressHealthRepository stores bounded active-check history without secrets.
+type EgressHealthRepository interface {
+	RecordEgressHealthCheck(ctx context.Context, value egress.HealthCheckResult) error
+	ListEgressHealthChecks(ctx context.Context, nodeID uint64, limit int) ([]egress.HealthCheckResult, error)
+}
