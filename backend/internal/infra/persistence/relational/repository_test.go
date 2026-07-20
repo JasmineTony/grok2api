@@ -531,3 +531,59 @@ func openTestDatabase(t *testing.T) *Database {
 	t.Cleanup(func() { _ = database.Close() })
 	return database
 }
+
+func TestAccountRepositoryTransitionHealthPersistsStateEvent(t *testing.T) {
+	database := openTestDatabase(t)
+	repo := NewAccountRepository(database)
+	ctx := context.Background()
+	created, _, err := repo.UpsertByIdentity(ctx, account.Credential{
+		Provider: account.ProviderBuild, Name: "state", SourceKey: "state", EncryptedAccessToken: testEncryptedToken,
+		Enabled: true, AuthStatus: account.AuthStatusActive,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	until := time.Now().UTC().Add(time.Minute)
+	if err := repo.TransitionHealth(ctx, repository.AccountHealthTransition{
+		AccountID: created.ID, Event: account.EventCooldownStarted, Reason: "upstream timeout", FailureCount: 1, CooldownUntil: &until,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := repo.Get(ctx, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.State != account.StateCooldown || stored.AuthStatus != account.AuthStatusActive || stored.FailureCount != 1 {
+		t.Fatalf("stored = %#v", stored)
+	}
+	var events []accountStateEventModel
+	if err := database.db.Where("account_id = ?", created.ID).Order("id ASC").Find(&events).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].FromState != string(account.StateReady) || events[0].ToState != string(account.StateCooldown) || events[0].Event != string(account.EventCooldownStarted) {
+		t.Fatalf("events = %#v", events)
+	}
+}
+
+func TestAccountRepositoryCredentialEventUpdatesCompatibilityStatus(t *testing.T) {
+	database := openTestDatabase(t)
+	repo := NewAccountRepository(database)
+	ctx := context.Background()
+	created, _, err := repo.UpsertByIdentity(ctx, account.Credential{
+		Provider: account.ProviderBuild, Name: "credential", SourceKey: "credential", EncryptedAccessToken: testEncryptedToken,
+		Enabled: true, AuthStatus: account.AuthStatusActive,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.TransitionHealth(ctx, repository.AccountHealthTransition{AccountID: created.ID, Event: account.EventCredentialRejected, Reason: "confirmed token rejection", FailureCount: 1}); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := repo.Get(ctx, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.State != account.StateReauthRequired || stored.AuthStatus != account.AuthStatusReauthRequired {
+		t.Fatalf("stored = %#v", stored)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -61,5 +62,33 @@ func TestSecurityHeaders(t *testing.T) {
 		if value := response.Header().Get(name); value != expected {
 			t.Fatalf("%s = %q", name, value)
 		}
+	}
+}
+
+type requestMetricsRecorder struct {
+	result, category, kind string
+	duration               time.Duration
+}
+
+func (r *requestMetricsRecorder) IncRequest(result, category string) {
+	r.result, r.category = result, category
+}
+func (r *requestMetricsRecorder) ObserveDuration(kind string, duration time.Duration) {
+	r.kind, r.duration = kind, duration
+}
+
+func TestMetricsUsesLowCardinalityOutcomeLabels(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := &requestMetricsRecorder{}
+	router := gin.New()
+	router.Use(Metrics(recorder))
+	router.GET("/accounts/:id", func(c *gin.Context) { time.Sleep(time.Millisecond); c.Status(http.StatusTooManyRequests) })
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/accounts/secret-account-id", nil))
+	if recorder.result != "error" || recorder.category != "rate_limit" || recorder.kind != "http" || recorder.duration <= 0 {
+		t.Fatalf("metrics = %#v", recorder)
+	}
+	if strings.Contains(recorder.category, "secret") || strings.Contains(recorder.kind, "accounts") {
+		t.Fatalf("high-cardinality value leaked: %#v", recorder)
 	}
 }

@@ -137,6 +137,7 @@ type StateEvent string
 const (
 	EventRequestSucceeded   StateEvent = "request_succeeded"
 	EventTransientFailure   StateEvent = "transient_failure"
+	EventCooldownStarted    StateEvent = "cooldown_started"
 	EventRateLimited        StateEvent = "rate_limited"
 	EventQuotaExhausted     StateEvent = "quota_exhausted"
 	EventCredentialRejected StateEvent = "credential_rejected"
@@ -164,7 +165,7 @@ func ApplyStateEvent(current State, enabled bool, input StateEventInput) State {
 		return StateReauthRequired
 	case EventQuotaExhausted:
 		return StateQuotaExhausted
-	case EventRateLimited:
+	case EventCooldownStarted, EventRateLimited:
 		return StateCooldown
 	case EventTransientFailure:
 		if current == StateReauthRequired || current == StateQuotaExhausted {

@@ -1247,6 +1247,56 @@ func (r *AccountRepository) UpdateHealth(ctx context.Context, id uint64, failure
 	return r.db.db.WithContext(ctx).Model(&accountModel{}).Where("id = ?", id).Updates(updates).Error
 }
 
+func (r *AccountRepository) TransitionHealth(ctx context.Context, transition repository.AccountHealthTransition) error {
+	if transition.AccountID == 0 || transition.Event == "" || transition.FailureCount < 0 {
+		return repository.ErrConflict
+	}
+	when := transition.OccurredAt.UTC()
+	if when.IsZero() {
+		when = time.Now().UTC()
+	}
+	return r.db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var row accountModel
+		if err := tx.Select("id", "enabled", "auth_status", "state").Where("id = ?", transition.AccountID).Take(&row).Error; err != nil {
+			return mapError(err)
+		}
+		current := account.State(row.State)
+		if !current.IsValid() {
+			switch {
+			case !row.Enabled:
+				current = account.StateDisabled
+			case row.AuthStatus == string(account.AuthStatusReauthRequired):
+				current = account.StateReauthRequired
+			default:
+				current = account.StateReady
+			}
+		}
+		next := account.ApplyStateEvent(current, row.Enabled, account.StateEventInput{
+			Event: transition.Event, At: when, Reason: transition.Reason, CooldownTo: transition.CooldownUntil,
+		})
+		updates := map[string]any{
+			"state": next, "failure_count": transition.FailureCount,
+			"cooldown_until": transition.CooldownUntil, "last_error": truncate(transition.Reason, 512),
+		}
+		if transition.Success {
+			updates["last_used_at"] = &when
+		}
+		if transition.Event == account.EventCredentialRejected {
+			updates["auth_status"] = account.AuthStatusReauthRequired
+		}
+		if err := tx.Model(&accountModel{}).Where("id = ?", transition.AccountID).Updates(updates).Error; err != nil {
+			return err
+		}
+		if next == current {
+			return nil
+		}
+		return tx.Create(&accountStateEventModel{
+			AccountID: transition.AccountID, FromState: string(current), ToState: string(next),
+			Event: string(transition.Event), Reason: truncate(transition.Reason, 512), CreatedAt: when,
+		}).Error
+	})
+}
+
 func (r *AccountRepository) UpsertModelQuotaBlock(ctx context.Context, value account.ModelQuotaBlock) error {
 	value.UpstreamModel = strings.TrimSpace(value.UpstreamModel)
 	value.Reason = strings.TrimSpace(value.Reason)

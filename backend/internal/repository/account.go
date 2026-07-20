@@ -20,6 +20,18 @@ type AccountUpsertResult struct {
 	Created bool
 }
 
+// AccountHealthTransition is the single write model for account runtime health.
+// Event drives the next state; callers must not compose State/AuthStatus updates.
+type AccountHealthTransition struct {
+	AccountID     uint64
+	Event         account.StateEvent
+	Reason        string
+	FailureCount  int
+	CooldownUntil *time.Time
+	Success       bool
+	OccurredAt    time.Time
+}
+
 // AccountRepository 定义 OAuth 账号和额度快照持久化能力。
 type AccountRepository interface {
 	List(ctx context.Context, query AccountListQuery) ([]account.Credential, int64, error)
@@ -58,6 +70,7 @@ type AccountRepository interface {
 	UpdateCredentialRefreshFailure(ctx context.Context, id uint64, failureCount int, retryAt time.Time, errorCode string, permanent bool) error
 	UpdateObservedModel(ctx context.Context, id uint64, model string, observedAt time.Time) error
 	UpdateHealth(ctx context.Context, id uint64, failureCount int, cooldownUntil *time.Time, lastError string, success bool) error
+	TransitionHealth(ctx context.Context, transition AccountHealthTransition) error
 	// MarkBuildAPIFallback 幂等写入 Build 账号的 XAI 推理回退标记；非 Build 账号返回错误。
 	MarkBuildAPIFallback(ctx context.Context, id uint64, enabled bool) error
 	// MarkWebNSFWEnabled 幂等记录 Web 账号首次确认 NSFW 已开启的时间。

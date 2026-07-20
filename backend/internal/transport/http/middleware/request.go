@@ -15,6 +15,49 @@ import (
 const RequestIDKey = "requestId"
 const maxRequestIDLength = 64
 
+// RequestMetrics accepts only low-cardinality labels.
+type RequestMetrics interface {
+	IncRequest(result, category string)
+	ObserveDuration(kind string, duration time.Duration)
+}
+
+// Metrics records coarse HTTP outcomes without paths, IDs, account names or models.
+func Metrics(metrics RequestMetrics) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		startedAt := time.Now()
+		c.Next()
+		if metrics == nil {
+			return
+		}
+		status := c.Writer.Status()
+		result := "success"
+		if status >= http.StatusBadRequest {
+			result = "error"
+		}
+		metrics.IncRequest(result, httpFailureCategory(status))
+		metrics.ObserveDuration("http", time.Since(startedAt))
+	}
+}
+
+func httpFailureCategory(status int) string {
+	switch {
+	case status < http.StatusBadRequest:
+		return "none"
+	case status == http.StatusUnauthorized:
+		return "credential"
+	case status == http.StatusForbidden:
+		return "policy"
+	case status == http.StatusTooManyRequests:
+		return "rate_limit"
+	case status == http.StatusRequestTimeout || status == http.StatusGatewayTimeout:
+		return "timeout"
+	case status >= http.StatusInternalServerError:
+		return "internal"
+	default:
+		return "protocol"
+	}
+}
+
 // RequestID 为每个请求生成稳定关联 ID，并写入响应头。
 func RequestID() gin.HandlerFunc {
 	return func(c *gin.Context) {

@@ -25,3 +25,9 @@ func TestApplyStateEventDisabledWins(t *testing.T) {
 		t.Fatalf("got %s, want disabled", got)
 	}
 }
+
+func TestApplyStateEventCooldownDoesNotReauth(t *testing.T) {
+	if got := ApplyStateEvent(StateReady, true, StateEventInput{Event: EventCooldownStarted}); got != StateCooldown {
+		t.Fatalf("got %s, want cooldown", got)
+	}
+}

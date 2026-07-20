@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -483,7 +484,9 @@ func (s *Selector) markSuccess(ctx context.Context, credential account.Credentia
 	}
 	s.mu.Unlock()
 	if persist {
-		_ = s.accounts.UpdateHealth(ctx, credential.ID, 0, nil, "", true)
+		_ = s.accounts.TransitionHealth(ctx, repository.AccountHealthTransition{
+			AccountID: credential.ID, Event: account.EventRequestSucceeded, FailureCount: 0, Success: true, OccurredAt: now,
+		})
 	}
 	if quotaProbe {
 		_ = s.accounts.ClearQuotaRecovery(ctx, credential.ID)
@@ -608,8 +611,21 @@ func (s *Selector) MarkFailure(ctx context.Context, credential account.Credentia
 	if retryAfter > cooldown {
 		cooldown = retryAfter
 	}
-	until := time.Now().UTC().Add(cooldown)
-	_ = s.accounts.UpdateHealth(ctx, credential.ID, failureCount, &until, fmt.Sprintf("upstream status %d", status), false)
+	now := time.Now().UTC()
+	until := now.Add(cooldown)
+	event := account.EventCooldownStarted
+	switch status {
+	case http.StatusUnauthorized:
+		event = account.EventCredentialRejected
+	case http.StatusPaymentRequired:
+		event = account.EventQuotaExhausted
+	case http.StatusTooManyRequests:
+		event = account.EventRateLimited
+	}
+	_ = s.accounts.TransitionHealth(ctx, repository.AccountHealthTransition{
+		AccountID: credential.ID, Event: event, Reason: fmt.Sprintf("upstream status %d", status),
+		FailureCount: failureCount, CooldownUntil: &until, OccurredAt: now,
+	})
 	s.invalidateCandidates(credential.Provider)
 	if status == 401 || status == 402 || status == 403 || status == 429 {
 		_ = s.sticky.DeleteByAccount(ctx, credential.ID)
