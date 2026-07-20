@@ -17,7 +17,8 @@ import (
 )
 
 const (
-	latestReleaseAPI = "https://api.github.com/repos/chenyme/grok2api/releases/latest"
+	latestReleaseAPI = "https://api.github.com/repos/JasmineTony/grok2api/releases/latest"
+	upstreamLatestReleaseAPI = "https://api.github.com/repos/chenyme/grok2api/releases/latest"
 	maxReleaseBytes  = 1 << 20
 	maxNotesRunes    = 4096
 )
@@ -39,7 +40,12 @@ type Snapshot struct {
 	CheckedAt       *time.Time `json:"checkedAt"`
 	ReleaseURL      string     `json:"releaseUrl"`
 	ReleaseNotes    string     `json:"releaseNotes"`
-	Error           string     `json:"error"`
+	Error                 string     `json:"error"`
+	Repository            string     `json:"repository"`
+	UpstreamRepository    string     `json:"upstreamRepository"`
+	UpstreamLatestVersion string     `json:"upstreamLatestVersion"`
+	UpstreamReleaseURL    string     `json:"upstreamReleaseUrl"`
+	UpstreamError         string     `json:"upstreamError"`
 }
 
 type Service struct {
@@ -66,7 +72,7 @@ func NewService(currentVersion string, client *http.Client) *Service {
 		now:     time.Now,
 		snapshot: Snapshot{
 			CurrentVersion: currentVersion,
-			Status:         StatusUnchecked,
+			Status:         StatusUnchecked, Repository: "JasmineTony/grok2api", UpstreamRepository: "chenyme/grok2api",
 		},
 	}
 }
@@ -79,7 +85,7 @@ func (s *Service) Snapshot() Snapshot {
 
 func (s *Service) Check(ctx context.Context) Snapshot {
 	result, err, _ := s.checks.Do("latest", func() (any, error) {
-		return s.fetchLatest(ctx)
+		return s.fetchLatestFrom(ctx, latestReleaseAPI)
 	})
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -113,6 +119,25 @@ func (s *Service) Check(ctx context.Context) Snapshot {
 	return cloneSnapshot(s.snapshot)
 }
 
+// CheckUpstream refreshes the source repository version separately from the maintained repository.
+// An upstream outage never hides a successful target release check.
+func (s *Service) CheckUpstream(ctx context.Context) Snapshot {
+	result, err, _ := s.checks.Do("upstream", func() (any, error) {
+		return s.fetchLatestFrom(ctx, upstreamLatestReleaseAPI)
+	})
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err != nil {
+		s.snapshot.UpstreamError = err.Error()
+		return cloneSnapshot(s.snapshot)
+	}
+	release := result.(latestRelease)
+	s.snapshot.UpstreamLatestVersion = release.Tag
+	s.snapshot.UpstreamReleaseURL = release.URL
+	s.snapshot.UpstreamError = ""
+	return cloneSnapshot(s.snapshot)
+}
+
 type latestRelease struct {
 	Tag   string
 	URL   string
@@ -120,7 +145,11 @@ type latestRelease struct {
 }
 
 func (s *Service) fetchLatest(ctx context.Context) (latestRelease, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, latestReleaseAPI, nil)
+	return s.fetchLatestFrom(ctx, latestReleaseAPI)
+}
+
+func (s *Service) fetchLatestFrom(ctx context.Context, endpoint string) (latestRelease, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return latestRelease{}, err
 	}
@@ -155,9 +184,17 @@ func (s *Service) fetchLatest(ctx context.Context) (latestRelease, error) {
 	}
 	return latestRelease{
 		Tag:   payload.Tag,
-		URL:   "https://github.com/chenyme/grok2api/releases/tag/" + url.PathEscape(payload.Tag),
+		URL:   releasePageURL(endpoint, payload.Tag),
 		Notes: truncateRunes(strings.TrimSpace(payload.Body), maxNotesRunes),
 	}, nil
+}
+
+func releasePageURL(endpoint, tag string) string {
+	repository := strings.TrimSuffix(strings.TrimPrefix(endpoint, "https://api.github.com/repos/"), "/releases/latest")
+	if repository == "" || repository == endpoint {
+		return ""
+	}
+	return "https://github.com/" + repository + "/releases/tag/" + url.PathEscape(tag)
 }
 
 type semanticVersion struct {

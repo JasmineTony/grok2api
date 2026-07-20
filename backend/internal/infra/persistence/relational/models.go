@@ -284,6 +284,22 @@ type billingReservationModel struct {
 
 func (billingReservationModel) TableName() string { return "billing_reservations" }
 
+type notificationModel struct {
+	ID             uint64     `gorm:"primaryKey;autoIncrement"`
+	EventKey       string     `gorm:"size:100;not null"`
+	Severity       string     `gorm:"size:16;not null;check:chk_notifications_severity,severity IN ('info','warning','error')"`
+	Title          string     `gorm:"size:200;not null"`
+	Body           string     `gorm:"type:text;not null"`
+	DedupKey       string     `gorm:"size:200;not null"`
+	Status         string     `gorm:"size:20;not null;check:chk_notifications_status,status IN ('unread','read','acknowledged')"`
+	CreatedAt      time.Time  `gorm:"not null"`
+	ReadAt         *time.Time
+	AcknowledgedAt *time.Time
+	ExpiresAt      *time.Time
+}
+
+func (notificationModel) TableName() string { return "notifications" }
+
 type usageRollupModel struct {
 	ID                    uint64    `gorm:"primaryKey;autoIncrement"`
 	BucketKind            string    `gorm:"size:8;not null;check:chk_usage_rollups_bucket_kind,bucket_kind IN ('hour','day')"`

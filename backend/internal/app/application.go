@@ -11,6 +11,7 @@ import (
 	"time"
 
 	accountapp "github.com/chenyme/grok2api/backend/internal/application/account"
+	backupapp "github.com/chenyme/grok2api/backend/internal/application/backup"
 	accountsyncapp "github.com/chenyme/grok2api/backend/internal/application/accountsync"
 	"github.com/chenyme/grok2api/backend/internal/application/adminauth"
 	auditapp "github.com/chenyme/grok2api/backend/internal/application/audit"
@@ -19,12 +20,14 @@ import (
 	egressapp "github.com/chenyme/grok2api/backend/internal/application/egress"
 	"github.com/chenyme/grok2api/backend/internal/application/gateway"
 	mediaapp "github.com/chenyme/grok2api/backend/internal/application/media"
+	notificationapp "github.com/chenyme/grok2api/backend/internal/application/notification"
 	modelapp "github.com/chenyme/grok2api/backend/internal/application/model"
 	quotarecoveryapp "github.com/chenyme/grok2api/backend/internal/application/quotarecovery"
 	settingsapp "github.com/chenyme/grok2api/backend/internal/application/settings"
 	updatecheckapp "github.com/chenyme/grok2api/backend/internal/application/updatecheck"
 	"github.com/chenyme/grok2api/backend/internal/buildinfo"
 	"github.com/chenyme/grok2api/backend/internal/domain/account"
+	notificationdomain "github.com/chenyme/grok2api/backend/internal/domain/notification"
 	"github.com/chenyme/grok2api/backend/internal/infra/config"
 	infraegress "github.com/chenyme/grok2api/backend/internal/infra/egress"
 	inframedia "github.com/chenyme/grok2api/backend/internal/infra/media"
@@ -65,6 +68,8 @@ type Application struct {
 	updates       *updatecheckapp.Service
 	egress        *egressapp.Service
 	usageRollups  repository.UsageRollupRepository
+	backup        *backupapp.Service
+	notifications *notificationapp.Service
 	accountRepo   repository.AccountRepository
 	modelRepo     repository.ModelRepository
 	providers     *provider.Registry
@@ -106,6 +111,12 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	responseRepo := relational.NewResponseRepository(database)
 	dashboardRepo := relational.NewDashboardRepository(database)
 	usageRollupRepo := relational.NewUsageRollupRepository(database)
+	notificationRepo := relational.NewNotificationRepository(database)
+	backupService := backupapp.NewService(database, cfg.Media.Local.Path, buildinfo.CurrentVersion())
+	notificationConfig := notificationapp.Config{Cooldown: cfg.Notifications.Cooldown.Value(), Retention: cfg.Notifications.Retention.Value()}
+	if cfg.Notifications.Enabled { notificationConfig.WebhookURL = cfg.Notifications.WebhookURL; notificationConfig.WebhookSecret = cfg.Notifications.WebhookSecret }
+	notificationService, err := notificationapp.NewService(notificationRepo, notificationConfig, nil)
+	if err != nil { database.Close(); return nil, err }
 	runtimeSettingsRepo := relational.NewRuntimeSettingsRepository(database, cipher)
 	egressRepo := relational.NewEgressRepository(database)
 	mediaJobRepo := relational.NewMediaJobRepository(database)
@@ -311,14 +322,14 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	}
 	metrics := metricsobs.NewMetrics()
 	gatewayService.ConfigureMetrics(metrics)
-	router := httpserver.New(httpserver.Dependencies{Logger: logger, Metrics: metrics, RequestTimeout: cfg.Server.RequestTimeout.Value(), MaxBodyBytes: cfg.Server.MaxBodyBytes, ConcurrencyGate: inferenceConcurrency, SecureCookies: cfg.Auth.SecureCookies, SwaggerEnabled: cfg.Server.SwaggerEnabled, PublicAPIBaseURL: cfg.Frontend.EffectivePublicAPIBaseURL(), FrontendStaticPath: cfg.Frontend.StaticPath, Readiness: readiness, TrafficReady: startup.acceptsTraffic, AdminAuth: adminService, Accounts: accountService, AccountSync: accountSyncService, Models: modelService, ClientKeys: clientKeyService, Audits: auditService, Dashboard: dashboardService, Gateway: gatewayService, Media: mediaService, Settings: settingsService, Egress: egressService, Updates: updateService})
+	router := httpserver.New(httpserver.Dependencies{Logger: logger, Metrics: metrics, RequestTimeout: cfg.Server.RequestTimeout.Value(), MaxBodyBytes: cfg.Server.MaxBodyBytes, ConcurrencyGate: inferenceConcurrency, SecureCookies: cfg.Auth.SecureCookies, SwaggerEnabled: cfg.Server.SwaggerEnabled, PublicAPIBaseURL: cfg.Frontend.EffectivePublicAPIBaseURL(), FrontendStaticPath: cfg.Frontend.StaticPath, Readiness: readiness, TrafficReady: startup.acceptsTraffic, AdminAuth: adminService, Accounts: accountService, AccountSync: accountSyncService, Models: modelService, ClientKeys: clientKeyService, Audits: auditService, Dashboard: dashboardService, Gateway: gatewayService, Media: mediaService, Settings: settingsService, Egress: egressService, Updates: updateService, Notifications: notificationService})
 	server := &http.Server{Addr: cfg.Server.Listen, Handler: router, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: cfg.Server.ReadTimeout.Value(), IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
 	return &Application{
 		logger: logger, database: database, server: server,
 		metrics: metrics, metricsConfig: metricsobs.PrometheusConfig{Enabled: cfg.Observability.Prometheus.Enabled, Listen: cfg.Observability.Prometheus.Listen},
 		audits: auditService, responses: responseRepo, runtime: runtimeStore,
 		settingsBus: settingsBus, settings: settingsService, gateway: gatewayService, media: mediaService, quotaRecovery: quotaRecoveryService, accounts: accountService, models: modelService, clientKeys: clientKeyService, updates: updateService, egress: egressService,
-		accountRepo: accountRepo, modelRepo: modelRepo, providers: providers, web: webAdapter, usageRollups: usageRollupRepo, startup: startup,
+		accountRepo: accountRepo, modelRepo: modelRepo, providers: providers, web: webAdapter, usageRollups: usageRollupRepo, backup: backupService, notifications: notificationService, startup: startup,
 	}, nil
 }
 
@@ -416,13 +427,25 @@ func (a *Application) Run(ctx context.Context) error {
 		return nil
 	})
 	startBackground("release_check", func(taskCtx context.Context) error {
-		a.updates.Check(taskCtx)
-		a.runPeriodicTask(taskCtx, 24*time.Hour, "release_check", func(checkCtx context.Context) error {
-			a.updates.Check(checkCtx)
+		check := func(checkCtx context.Context) error {
+			snapshot := a.updates.Check(checkCtx)
+			a.updates.CheckUpstream(checkCtx)
+			if snapshot.UpdateAvailable && a.notifications != nil {
+				_, _, err := a.notifications.Publish(checkCtx, notificationdomain.Event{EventKey: "version_update_available", Severity: notificationdomain.SeverityInfo, Title: "发现可用更新", Body: fmt.Sprintf("维护仓库已发布 %s，当前运行 %s。", snapshot.LatestVersion, snapshot.CurrentVersion), DedupKey: "version:" + snapshot.LatestVersion})
+				return err
+			}
 			return nil
-		})
+		}
+		if err := check(taskCtx); err != nil { a.logger.Warn("release_notification_failed", "error", err) }
+		a.runPeriodicTask(taskCtx, 24*time.Hour, "release_check", check)
 		return nil
 	})
+	if a.notifications != nil {
+		startBackground("notification_cleanup", func(taskCtx context.Context) error {
+			a.runPeriodicTask(taskCtx, time.Hour, "notification_cleanup", func(runCtx context.Context) error { _, err := a.notifications.Prune(runCtx, 1000); return err })
+			return nil
+		})
+	}
 	startBackground("billing_reservation_cleanup", func(taskCtx context.Context) error {
 		a.runPeriodicTask(taskCtx, 10*time.Minute, "billing_reservation_cleanup", func(runCtx context.Context) error {
 			_, err := a.clientKeys.CleanupExpiredBilling(runCtx, 1000)

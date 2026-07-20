@@ -35,7 +35,8 @@ func (h *Handler) version(c *gin.Context) {
 }
 
 func (h *Handler) checkUpdate(c *gin.Context) {
-	response.Success(c, http.StatusOK, h.updates.Check(c.Request.Context()))
+	h.updates.Check(c.Request.Context())
+	response.Success(c, http.StatusOK, h.updates.CheckUpstream(c.Request.Context()))
 }
 
 func (h *Handler) get(c *gin.Context) {

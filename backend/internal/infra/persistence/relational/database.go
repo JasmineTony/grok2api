@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	glebarezsqlite "github.com/glebarez/sqlite"
@@ -72,4 +73,18 @@ func (d *Database) Close() error {
 		return err
 	}
 	return sqlDB.Close()
+}
+
+// Driver returns the configured relational driver without exposing the GORM handle.
+func (d *Database) Driver() string { return d.dialect }
+
+// BackupSQLite writes a transactionally consistent SQLite snapshot using VACUUM INTO.
+func (d *Database) BackupSQLite(ctx context.Context, destination string) error {
+	if d.dialect != "sqlite" {
+		return fmt.Errorf("SQLite backup requested for %s database", d.dialect)
+	}
+	if strings.TrimSpace(destination) == "" {
+		return fmt.Errorf("SQLite backup destination is empty")
+	}
+	return d.db.WithContext(ctx).Exec("VACUUM INTO ?", destination).Error
 }

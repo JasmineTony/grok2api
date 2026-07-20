@@ -51,6 +51,7 @@ type Config struct {
 	Audit             AuditConfig             `yaml:"audit"`
 	ClientKeyDefaults ClientKeyDefaultsConfig `yaml:"clientKeyDefaults"`
 	Observability     ObservabilityConfig     `yaml:"observability"`
+	Notifications     NotificationConfig     `yaml:"notifications"`
 }
 
 type ServerConfig struct {
@@ -205,6 +206,15 @@ type PrometheusConfig struct {
 	Listen  string `yaml:"listen"`
 }
 
+
+type NotificationConfig struct {
+	Enabled       bool     `yaml:"enabled"`
+	Cooldown      Duration `yaml:"cooldown"`
+	Retention     Duration `yaml:"retention"`
+	WebhookURL    string   `yaml:"webhookUrl"`
+	WebhookSecret string   `yaml:"-"`
+}
+
 type ClientKeyDefaultsConfig struct {
 	RPMLimit      int `yaml:"rpmLimit"`
 	MaxConcurrent int `yaml:"maxConcurrent"`
@@ -271,6 +281,9 @@ func Load(path string) (Config, error) {
 				return Config{}, errors.New("配置文件只能包含一个 YAML 文档")
 			}
 		}
+	}
+	if secret := strings.TrimSpace(os.Getenv("GROK2API_NOTIFICATION_WEBHOOK_SECRET")); secret != "" {
+		cfg.Notifications.WebhookSecret = secret
 	}
 	if loadedFrom != "" {
 		if err := resolveRelativePaths(&cfg, loadedFrom); err != nil {
@@ -366,6 +379,20 @@ func (c Config) Validate() error {
 		}
 	default:
 		return errors.New("runtimeStore.driver 必须是 memory 或 redis")
+	}
+	if c.Notifications.Enabled {
+		if c.Notifications.Cooldown.Value() < time.Minute || c.Notifications.Cooldown.Value() > 24*time.Hour {
+			return errors.New("notifications.cooldown 必须在 1 分钟到 24 小时之间")
+		}
+		if c.Notifications.Retention.Value() < 24*time.Hour || c.Notifications.Retention.Value() > 365*24*time.Hour {
+			return errors.New("notifications.retention 必须在 1 天到 365 天之间")
+		}
+		if strings.TrimSpace(c.Notifications.WebhookURL) != "" {
+			parsed, err := url.ParseRequestURI(strings.TrimSpace(c.Notifications.WebhookURL))
+			if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || strings.TrimSpace(c.Notifications.WebhookSecret) == "" {
+				return errors.New("notifications.webhookUrl 必须是 HTTP(S) 地址且必须通过环境变量提供签名密钥")
+			}
+		}
 	}
 	if c.Media.Driver != "local" {
 		return errors.New("media.driver 当前仅支持 local")
@@ -565,6 +592,7 @@ func defaultConfig() Config {
 		Audit:             AuditConfig{BufferSize: 16384, BatchSize: 256, FlushInterval: Duration(250 * time.Millisecond)},
 		ClientKeyDefaults: ClientKeyDefaultsConfig{RPMLimit: clientkeydomain.DefaultRPMLimit, MaxConcurrent: clientkeydomain.DefaultMaxConcurrent},
 		Observability:     ObservabilityConfig{Prometheus: PrometheusConfig{Enabled: false, Listen: "127.0.0.1:9090"}},
+		Notifications:     NotificationConfig{Enabled: true, Cooldown: Duration(15 * time.Minute), Retention: Duration(30 * 24 * time.Hour)},
 	}
 }
 

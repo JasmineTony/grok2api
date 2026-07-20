@@ -70,7 +70,7 @@ export function VersionUpdateSection() {
   const version = versionQuery.data;
   const requestError = versionQuery.error instanceof Error ? versionQuery.error.message : "";
   const checkError = checkMutation.error instanceof Error ? checkMutation.error.message : "";
-  const error = version?.error || checkError || requestError;
+  const error = version?.error || version?.upstreamError || checkError || requestError;
 
   return (
     <div className="w-full space-y-8">
@@ -96,6 +96,15 @@ export function VersionUpdateSection() {
           </VersionField>
           <VersionField label={t("updates.latestVersion")} description={t("updates.latestVersionHelp")}>
             <VersionValue>{version?.latestVersion || t("updates.notChecked")}</VersionValue>
+          </VersionField>
+          <VersionField label={t("updates.repository")} description={t("updates.repositoryHelp")}>
+            <VersionValue>{version?.repository || "JasmineTony/grok2api"}</VersionValue>
+          </VersionField>
+          <VersionField label={t("updates.upstreamVersion")} description={t("updates.upstreamVersionHelp", { repository: version?.upstreamRepository || "chenyme/grok2api" })}>
+            <VersionValue>
+              <span>{version?.upstreamLatestVersion || t("updates.notChecked")}</span>
+              {version?.upstreamReleaseUrl ? <a className="ml-auto text-muted-foreground hover:text-foreground" href={version.upstreamReleaseUrl} target="_blank" rel="noreferrer"><ArrowUpRight className="size-3.5" /></a> : null}
+            </VersionValue>
           </VersionField>
           <VersionField label={t("updates.statusLabel")} description={t("updates.statusLabelHelp")}>
             <VersionValue>
