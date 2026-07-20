@@ -4,7 +4,8 @@
 - 状态：待 Pull Request 合并
 - 基线提交：`ac13042a692455148a58d80bad0f91ef271f98c8`
 - 工作分支：`codex/ssh-agent-readme`
-- Pull Request：待创建
+- Pull Request：`JasmineTony/grok2api#14`
+- 首个分支提交：`1ce4dfdbcdd9cca2bcd5dea0036f573e6285584b`
 
 ## 已交付
 
@@ -40,7 +41,7 @@
 
 ## 待完成
 
-1. 提交并推送本分支。
-2. 创建 PR，等待 CI、CodeQL、Markdown 检查和 Docker 检查。
+1. 分支已提交并通过 Windows ssh-agent 无口令推送。
+2. PR #14 已创建，等待 CI、CodeQL 和 Docker 检查。
 3. 检查全部成功后 squash 合并、删除远程分支并同步本地 `main`。
-4. 回填 PR、最终提交和合并后的验证结果。
+4. 合并后完成远程标签、GHCR、工作区和发布工作流最终验收。
