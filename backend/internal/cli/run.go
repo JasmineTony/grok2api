@@ -13,6 +13,7 @@ import (
 
 	"github.com/chenyme/grok2api/backend/internal/app"
 	backupapp "github.com/chenyme/grok2api/backend/internal/application/backup"
+	configcode "github.com/chenyme/grok2api/backend/internal/application/configcode"
 	egressapp "github.com/chenyme/grok2api/backend/internal/application/egress"
 	"github.com/chenyme/grok2api/backend/internal/buildinfo"
 	"github.com/chenyme/grok2api/backend/internal/infra/config"
@@ -98,7 +99,21 @@ func runCommand(args []string) error {
 }
 func runConfigCommand(args []string) error {
 	if len(args) < 1 {
-		return errors.New("config requires validate or export")
+		return errors.New("config requires validate, export, plan, or apply")
+	}
+	if args[0] == "plan" || args[0] == "apply" {
+		if len(args) < 2 {
+			return errors.New("config plan/apply requires a YAML file")
+		}
+		desired, err := configcode.Load(args[1])
+		if err != nil {
+			return err
+		}
+		changes := configcode.Plan(desired)
+		if args[0] == "apply" {
+			return printJSON(map[string]any{"applied": false, "dryRun": true, "changes": changes, "reason": "resource application requires an explicit repository binding; no undeclared objects are deleted"})
+		}
+		return printJSON(map[string]any{"changes": changes, "destructive": false})
 	}
 	options, err := parseOptions(args[1:])
 	if err != nil {

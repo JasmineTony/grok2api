@@ -52,6 +52,12 @@
 - 新增管理 API：`POST /api/admin/v1/protocol/conversions/preview`。
 - 预览限制单条 256 KiB，不联网、不回放、不保存请求正文。
 
+### 配置即代码基础
+
+- 新增声明式 YAML 结构校验，支持模型、Egress、策略和通知对象。
+- Secret 字段只接受 `env:VAR` 引用；`config plan` 输出非破坏性差异。
+- `config apply` 当前明确以 dry-run 返回，不删除未声明对象，待绑定真实仓储和独立运维确认后再开放写入。
+
 ### 安全请求快照
 
 - 新增 `request_snapshots` 表和管理 API。
@@ -69,7 +75,7 @@
 
 - 升级前预检、PostgreSQL/Redis 外部备份钩子和全部通知触发点仍需实现。
 - 请求快照与协议转换查看器基础已实现；实际回放仍需独立安全评审，当前明确关闭。
-- CLI 子命令、配置即代码和只读 stdio MCP 仍需实现。
+- CLI 与只读 stdio MCP 基础已实现；配置即代码的真实仓储 apply、MCP 数据提供器和写操作仍需后续安全评审。
 - govulncheck、pnpm audit、Swagger 无漂移、race、PostgreSQL 集成、多架构 Docker 和三视口 Playwright 验收仍未完成。
 - 假设与默认值尚未逐项核对；当前不允许推送或创建 PR。
 
