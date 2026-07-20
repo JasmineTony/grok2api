@@ -569,6 +569,25 @@ func TestAccountRepositoryTransitionHealthPersistsStateEvent(t *testing.T) {
 	}
 }
 
+func TestAccountRepositoryCountStates(t *testing.T) {
+	database := openTestDatabase(t)
+	repo := NewAccountRepository(database)
+	ctx := context.Background()
+	for _, name := range []string{"ready-1", "ready-2", "disabled"} {
+		value := account.Credential{Provider: account.ProviderBuild, Name: name, SourceKey: name, EncryptedAccessToken: testEncryptedToken, Enabled: name != "disabled", AuthStatus: account.AuthStatusActive}
+		if _, _, err := repo.UpsertByIdentity(ctx, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	counts, err := repo.CountStates(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts[account.StateReady] != 2 || counts[account.StateDisabled] != 1 {
+		t.Fatalf("counts = %#v", counts)
+	}
+}
+
 func TestAccountRepositoryCredentialEventUpdatesCompatibilityStatus(t *testing.T) {
 	database := openTestDatabase(t)
 	repo := NewAccountRepository(database)

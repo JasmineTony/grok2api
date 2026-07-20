@@ -103,6 +103,12 @@ type accountModelSyncer interface {
 }
 
 // Service 负责模型路由、账号选择、故障切换与审计收口。
+type gatewayMetrics interface {
+	IncRetry(category string)
+	AddTokens(kind string, count uint64)
+	AddCost(kind string, amount float64)
+}
+
 type Service struct {
 	models         routeResolver
 	audits         auditRecorder
@@ -125,12 +131,15 @@ type Service struct {
 	rateLimitTeams map[uint64]string
 	modelSyncMu    sync.Mutex
 	modelSyncing   map[uint64]struct{}
+	metrics        gatewayMetrics
 }
 
 type teamModelRateLimit struct {
 	TeamFingerprint string
 	Until           time.Time
 }
+
+func (s *Service) ConfigureMetrics(metrics gatewayMetrics) { s.metrics = metrics }
 
 func (s *Service) ConfigureMedia(repository repository.MediaJobRepository, concurrency int) {
 	if concurrency <= 0 {
@@ -717,6 +726,9 @@ attemptLoop:
 					break
 				}
 			}
+			if s.metrics != nil {
+				s.metrics.IncRetry(string(lastFailure.Category))
+			}
 			continue
 		}
 		if response.StatusCode >= 200 && response.StatusCode < 300 {
@@ -757,6 +769,7 @@ attemptLoop:
 					record.PricingModel = tokenPricing.Model
 					record.PricingVersion = audit.OfficialPricingAsOf
 				}
+				recordGatewayUsageMetrics(s.metrics, usage, record.CostInUSDTicks, record.EstimatedCostInUSDTicks)
 				record.NumSourcesUsed = usage.NumSourcesUsed
 				record.NumServerSideToolsUsed = usage.NumServerSideToolsUsed
 				record.ContextInputTokens = usage.ContextInputTokens
@@ -838,6 +851,24 @@ attemptLoop:
 		s.logger.Error("request_usage_write_failed", "event_id", record.EventID, "request_id", input.RequestID, "error", err)
 	}
 	return nil, fmt.Errorf("%w: %w", ErrNoAvailableAccount, lastErr)
+}
+
+func recordGatewayUsageMetrics(metrics gatewayMetrics, usage Usage, actualCostTicks, estimatedCostTicks int64) {
+	if metrics == nil {
+		return
+	}
+	inputTokens := max(int64(0), usage.InputTokens)
+	cachedTokens := min(inputTokens, max(int64(0), usage.CachedInputTokens))
+	metrics.AddTokens("input", uint64(inputTokens))
+	metrics.AddTokens("cached_input", uint64(cachedTokens))
+	metrics.AddTokens("output", uint64(max(int64(0), usage.OutputTokens)))
+	metrics.AddTokens("reasoning", uint64(max(int64(0), usage.ReasoningTokens)))
+	if actualCostTicks > 0 {
+		metrics.AddCost("actual", float64(actualCostTicks)/10_000_000_000)
+	}
+	if estimatedCostTicks > 0 {
+		metrics.AddCost("estimated", float64(estimatedCostTicks)/10_000_000_000)
+	}
 }
 
 func isUpstreamStreamFailure(errorCode string) bool {

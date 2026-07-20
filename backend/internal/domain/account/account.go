@@ -131,6 +131,10 @@ func (s State) IsValid() bool {
 	}
 }
 
+var states = [...]State{StateReady, StateDegraded, StateCooldown, StateQuotaExhausted, StateReauthRequired, StateDisabled}
+
+func States() []State { return append([]State(nil), states[:]...) }
+
 // StateEvent ??????????????????? ApplyStateEvent ?????
 type StateEvent string
 

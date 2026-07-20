@@ -63,6 +63,7 @@ type Application struct {
 	models        *modelapp.Service
 	clientKeys    *clientkeyapp.Service
 	updates       *updatecheckapp.Service
+	egress        *egressapp.Service
 	accountRepo   repository.AccountRepository
 	modelRepo     repository.ModelRepository
 	providers     *provider.Registry
@@ -307,13 +308,14 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 		return readinessSnapshot(readyCtx, startup, runtimeHealth, modelRepo, accountRepo, providers)
 	}
 	metrics := metricsobs.NewMetrics()
+	gatewayService.ConfigureMetrics(metrics)
 	router := httpserver.New(httpserver.Dependencies{Logger: logger, Metrics: metrics, RequestTimeout: cfg.Server.RequestTimeout.Value(), MaxBodyBytes: cfg.Server.MaxBodyBytes, ConcurrencyGate: inferenceConcurrency, SecureCookies: cfg.Auth.SecureCookies, SwaggerEnabled: cfg.Server.SwaggerEnabled, PublicAPIBaseURL: cfg.Frontend.EffectivePublicAPIBaseURL(), FrontendStaticPath: cfg.Frontend.StaticPath, Readiness: readiness, TrafficReady: startup.acceptsTraffic, AdminAuth: adminService, Accounts: accountService, AccountSync: accountSyncService, Models: modelService, ClientKeys: clientKeyService, Audits: auditService, Dashboard: dashboardService, Gateway: gatewayService, Media: mediaService, Settings: settingsService, Egress: egressService, Updates: updateService})
 	server := &http.Server{Addr: cfg.Server.Listen, Handler: router, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: cfg.Server.ReadTimeout.Value(), IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
 	return &Application{
 		logger: logger, database: database, server: server,
 		metrics: metrics, metricsConfig: metricsobs.PrometheusConfig{Enabled: cfg.Observability.Prometheus.Enabled, Listen: cfg.Observability.Prometheus.Listen},
 		audits: auditService, responses: responseRepo, runtime: runtimeStore,
-		settingsBus: settingsBus, settings: settingsService, gateway: gatewayService, media: mediaService, quotaRecovery: quotaRecoveryService, accounts: accountService, models: modelService, clientKeys: clientKeyService, updates: updateService,
+		settingsBus: settingsBus, settings: settingsService, gateway: gatewayService, media: mediaService, quotaRecovery: quotaRecoveryService, accounts: accountService, models: modelService, clientKeys: clientKeyService, updates: updateService, egress: egressService,
 		accountRepo: accountRepo, modelRepo: modelRepo, providers: providers, web: webAdapter, startup: startup,
 	}, nil
 }
@@ -383,6 +385,14 @@ func (a *Application) Run(ctx context.Context) error {
 			return metricsobs.Serve(taskCtx, a.metricsConfig, a.metrics)
 		})
 	}
+	startBackground("metrics_refresh", func(taskCtx context.Context) error {
+		a.refreshOperationalMetrics(taskCtx)
+		a.runPeriodicTask(taskCtx, 30*time.Second, "metrics_refresh", func(runCtx context.Context) error {
+			a.refreshOperationalMetrics(runCtx)
+			return nil
+		})
+		return nil
+	})
 	startBackground("settings_reconcile", func(taskCtx context.Context) error {
 		a.runPeriodicTask(taskCtx, 30*time.Second, "settings_reconcile", func(runCtx context.Context) error {
 			return a.settings.ReloadPersisted(runCtx)
@@ -482,6 +492,42 @@ func (a *Application) Run(ctx context.Context) error {
 			return nil
 		}
 		return err
+	}
+}
+
+func (a *Application) refreshOperationalMetrics(ctx context.Context) {
+	if a.metrics == nil {
+		return
+	}
+	if states, err := a.accountRepo.CountStates(ctx); err == nil {
+		for _, state := range account.States() {
+			a.metrics.SetAccountState(string(state), states[state])
+		}
+	} else {
+		a.logger.Warn("account_state_metrics_failed", "error", err)
+	}
+	if a.egress == nil {
+		return
+	}
+	nodes, err := a.egress.List(ctx, "", repository.SortQuery{})
+	if err != nil {
+		a.logger.Warn("egress_metrics_failed", "error", err)
+		return
+	}
+	counts := map[string]uint64{"healthy": 0, "cooldown": 0, "disabled": 0}
+	now := time.Now().UTC()
+	for _, node := range nodes {
+		switch {
+		case !node.Enabled:
+			counts["disabled"]++
+		case node.CooldownUntil != nil && now.Before(*node.CooldownUntil):
+			counts["cooldown"]++
+		default:
+			counts["healthy"]++
+		}
+	}
+	for state, count := range counts {
+		a.metrics.SetEgressHealth(state, count)
 	}
 }
 

@@ -1302,6 +1302,24 @@ func (r *AccountRepository) TransitionHealth(ctx context.Context, transition rep
 	})
 }
 
+func (r *AccountRepository) CountStates(ctx context.Context) (map[account.State]uint64, error) {
+	var rows []struct {
+		State string
+		Count int64
+	}
+	if err := r.db.db.WithContext(ctx).Model(&accountModel{}).Select("state, COUNT(*) AS count").Group("state").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[account.State]uint64, len(rows))
+	for _, row := range rows {
+		state := account.State(row.State)
+		if state.IsValid() && row.Count > 0 {
+			result[state] = uint64(row.Count)
+		}
+	}
+	return result, nil
+}
+
 func (r *AccountRepository) ListStateEvents(ctx context.Context, accountID uint64, limit int) ([]account.StateHistoryEvent, error) {
 	if accountID == 0 {
 		return nil, repository.ErrNotFound
