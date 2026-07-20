@@ -1,0 +1,1 @@
+{"id":"chatcmpl_fixture","created":1710000000,"object":"chat.completion","model":"grok-3","choices":[{"index":0,"message":{"role":"assistant","content":"Hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":12,"completion_tokens":4,"total_tokens":16}}

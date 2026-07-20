@@ -1,0 +1,23 @@
+event: message_start
+data: {
+  "id": "<normalized>",
+  "message": {
+    "model": "grok-3",
+    "usage": {
+      "input_tokens": 1
+    }
+  },
+  "type": "message_start"
+}
+
+event: content_block_delta
+data: {
+  "delta": {
+    "text": "ok",
+    "type": "text_delta"
+  },
+  "index": 0
+}
+
+data: [DONE]
+

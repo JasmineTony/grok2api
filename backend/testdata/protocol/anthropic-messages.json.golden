@@ -1,0 +1,16 @@
+{
+  "content": [
+    {
+      "text": "Hello",
+      "type": "text"
+    }
+  ],
+  "id": "<normalized>",
+  "model": "claude-compatible",
+  "role": "assistant",
+  "type": "message",
+  "usage": {
+    "input_tokens": 12,
+    "output_tokens": 4
+  }
+}

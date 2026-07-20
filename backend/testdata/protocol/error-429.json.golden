@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "rate_limit_exceeded",
+    "message": "rate limited",
+    "type": "rate_limit_error"
+  },
+  "retry_after": 30
+}
