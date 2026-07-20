@@ -382,3 +382,4 @@ make swagger
 - [简体中文 README](./README.zh-CN.md)
 - [Backend guide](./backend/README.md)
 - [Frontend guide](./frontend/README.md)
+- [Project plans and iteration archive](./docs/plans/README.md)
