@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, ClipboardPaste, Compass, Download, ExternalLink, FileUp, History, Link, MoreHorizontal, Pencil, Plus, RefreshCw, RotateCw, Search, SquareTerminal, Trash2, TriangleAlert, Webhook } from "lucide-react";
+import { ArrowRight, ClipboardPaste, Compass, Download, ExternalLink, FileUp, History, Link, MoreHorizontal, Network, Pencil, Plus, RefreshCw, RotateCw, Search, SquareTerminal, Trash2, TriangleAlert, Webhook } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
@@ -33,6 +33,7 @@ import { useDebouncedValue } from "@/shared/hooks/use-debounced-value";
 import { cn } from "@/shared/lib/cn";
 import { formatDateTime, formatNumber } from "@/shared/lib/format";
 import { nextTableSort, type SortOrder, type TableSort } from "@/shared/lib/table-sort";
+import { AccountEgressPolicyDialog } from "@/features/accounts/account-egress-policy-dialog";
 import {
   acceptWebAccountTerms,
   cleanupAccounts,
@@ -139,6 +140,7 @@ export function AccountsPage() {
   const [editing, setEditing] = useState<AccountDTO | null>(null);
   const [deleting, setDeleting] = useState<AccountDTO | null>(null);
   const [stateHistoryAccount, setStateHistoryAccount] = useState<AccountDTO | null>(null);
+  const [egressPolicyAccount, setEgressPolicyAccount] = useState<AccountDTO | null>(null);
   const [deviceOpen, setDeviceOpen] = useState(false);
   const [deviceSession, setDeviceSession] = useState<DeviceSessionDTO | null>(null);
   const [deviceStatus, setDeviceStatus] = useState<"starting" | "pending" | "failed">("starting");
@@ -885,6 +887,7 @@ export function AccountsPage() {
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => beginEdit(account)}><Pencil />{t("common.edit")}</DropdownMenuItem>
                           <DropdownMenuItem onClick={() => setStateHistoryAccount(account)}><History />{t("accounts.stateHistory")}</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setEgressPolicyAccount(account)}><Network />{t("accounts.egressPolicy")}</DropdownMenuItem>
                           {provider === "grok_web" ? <DropdownMenuItem onClick={() => openWebConversion([account.id])}><ArrowRight />{t("accountConversion.action")}</DropdownMenuItem> : null}
                           {provider === "grok_web" ? (
                             <WebAccountSettingsMenu
@@ -1131,6 +1134,8 @@ export function AccountsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <AccountEgressPolicyDialog account={egressPolicyAccount} onOpenChange={(open) => !open && setEgressPolicyAccount(null)} />
 
       <Dialog open={Boolean(stateHistoryAccount)} onOpenChange={(open) => !open && setStateHistoryAccount(null)}>
         <DialogContent className="max-w-[620px]">

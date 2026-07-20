@@ -22,6 +22,23 @@ func (h *Handler) Register(router *gin.RouterGroup) {
 	router.POST("/egress-nodes", h.create)
 	router.PUT("/egress-nodes/:id", h.update)
 	router.DELETE("/egress-nodes/:id", h.delete)
+	router.GET("/accounts/:id/egress-policy", h.getAccountPolicy)
+	router.PUT("/accounts/:id/egress-policy", h.updateAccountPolicy)
+}
+
+type accountPolicyRequest struct {
+	Strategy            string  `json:"strategy"`
+	EgressNodeID        *uint64 `json:"egressNodeId,string"`
+	AllowDirectFallback bool    `json:"allowDirectFallback"`
+}
+
+type accountPolicyResponse struct {
+	AccountID           uint64    `json:"accountId,string"`
+	Strategy            string    `json:"strategy"`
+	EgressNodeID        *uint64   `json:"egressNodeId,omitempty,string"`
+	AllowDirectFallback bool      `json:"allowDirectFallback"`
+	CreatedAt           time.Time `json:"createdAt,omitempty"`
+	UpdatedAt           time.Time `json:"updatedAt,omitempty"`
 }
 
 type nodeRequest struct {
@@ -54,6 +71,47 @@ func (value nodeRequest) input() egressapp.Input {
 		Name: value.Name, Scope: egressdomain.Scope(value.Scope), Enabled: value.Enabled,
 		ProxyURL: value.ProxyURL, ClearProxyURL: value.ClearProxyURL, UserAgent: value.UserAgent,
 		CloudflareCookies: value.CloudflareCookies, ClearCookies: value.ClearCookies,
+	}
+}
+
+func (h *Handler) getAccountPolicy(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		return
+	}
+	value, err := h.service.GetAccountPolicy(c.Request.Context(), id)
+	if err != nil {
+		h.writePolicyError(c, err)
+		return
+	}
+	response.Success(c, http.StatusOK, newAccountPolicyResponse(value))
+}
+
+func (h *Handler) updateAccountPolicy(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		return
+	}
+	var request accountPolicyRequest
+	if c.ShouldBindJSON(&request) != nil {
+		response.Error(c, http.StatusBadRequest, "invalidRequest", "请求参数无效")
+		return
+	}
+	value, err := h.service.UpdateAccountPolicy(c.Request.Context(), id, egressapp.AccountPolicyInput{
+		Strategy: egressdomain.AccountPolicyStrategy(request.Strategy), EgressNodeID: request.EgressNodeID,
+		AllowDirectFallback: request.AllowDirectFallback,
+	})
+	if err != nil {
+		h.writePolicyError(c, err)
+		return
+	}
+	response.Success(c, http.StatusOK, newAccountPolicyResponse(value))
+}
+
+func newAccountPolicyResponse(value egressdomain.AccountPolicy) accountPolicyResponse {
+	return accountPolicyResponse{
+		AccountID: value.AccountID, Strategy: string(value.Strategy), EgressNodeID: value.EgressNodeID,
+		AllowDirectFallback: value.AllowDirectFallback, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt,
 	}
 }
 
@@ -129,6 +187,17 @@ func (h *Handler) delete(c *gin.Context) {
 		return
 	}
 	response.Success(c, http.StatusOK, gin.H{"deleted": true})
+}
+
+func (h *Handler) writePolicyError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, egressapp.ErrInvalidInput):
+		response.Error(c, http.StatusBadRequest, "invalidAccountEgressPolicy", err.Error())
+	case errors.Is(err, egressapp.ErrNotFound):
+		response.Error(c, http.StatusNotFound, "accountOrEgressPolicyNotFound", err.Error())
+	default:
+		response.Error(c, http.StatusInternalServerError, "accountEgressPolicyOperationFailed", "账号出口策略操作失败")
+	}
 }
 
 func (h *Handler) writeError(c *gin.Context, err error) {

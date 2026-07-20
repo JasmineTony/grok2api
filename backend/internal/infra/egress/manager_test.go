@@ -579,3 +579,95 @@ func (egressRepositoryTestStub) UpdateEgressNode(context.Context, domain.Node) (
 func (egressRepositoryTestStub) DeleteEgressNode(context.Context, uint64) error {
 	return errors.New("unsupported")
 }
+
+func TestAcquireCredentialUsesBoundEgressNode(t *testing.T) {
+	cipher, err := security.NewCipher("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodeID := uint64(2)
+	repositoryValue := &policyEgressRepository{
+		egressRepositoryTestStub: egressRepositoryTestStub{nodes: []domain.Node{
+			{ID: 1, Name: "pool-default", Scope: domain.ScopeWeb, Enabled: true, Health: 1},
+			{ID: nodeID, Name: "account-bound", Scope: domain.ScopeWeb, Enabled: true, Health: 1},
+		}},
+		policy: domain.AccountPolicy{AccountID: 42, Strategy: domain.AccountPolicyNode, EgressNodeID: &nodeID},
+	}
+	manager := NewManager(repositoryValue, cipher)
+	lease, err := manager.AcquireCredential(context.Background(), domain.ScopeWeb, accountdomain.Credential{ID: 42, Provider: accountdomain.ProviderWeb})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Release()
+	if lease.NodeID != nodeID || lease.NodeName != "account-bound" {
+		t.Fatalf("lease = %#v", lease)
+	}
+}
+
+func TestAcquireCredentialPolicyCanExplicitlyFallBackToDirect(t *testing.T) {
+	cipher, err := security.NewCipher("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodeID := uint64(2)
+	cooldown := time.Now().UTC().Add(time.Hour)
+	repositoryValue := &policyEgressRepository{
+		egressRepositoryTestStub: egressRepositoryTestStub{nodes: []domain.Node{{
+			ID: nodeID, Name: "cooling", Scope: domain.ScopeWeb, Enabled: true, Health: 0.2, CooldownUntil: &cooldown,
+		}}},
+		policy: domain.AccountPolicy{AccountID: 42, Strategy: domain.AccountPolicyNode, EgressNodeID: &nodeID, AllowDirectFallback: true},
+	}
+	manager := NewManager(repositoryValue, cipher)
+	lease, err := manager.AcquireCredential(context.Background(), domain.ScopeWeb, accountdomain.Credential{ID: 42, Provider: accountdomain.ProviderWeb})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Release()
+	if lease.NodeID != 0 || lease.NodeName != "direct" {
+		t.Fatalf("lease = %#v", lease)
+	}
+}
+
+func TestAcquireCredentialDirectPolicyBypassesProviderPool(t *testing.T) {
+	cipher, err := security.NewCipher("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repositoryValue := &policyEgressRepository{
+		egressRepositoryTestStub: egressRepositoryTestStub{nodes: []domain.Node{{ID: 1, Name: "pool", Scope: domain.ScopeWeb, Enabled: true, Health: 1}}},
+		policy:                   domain.AccountPolicy{AccountID: 42, Strategy: domain.AccountPolicyDirect},
+	}
+	manager := NewManager(repositoryValue, cipher)
+	lease, err := manager.AcquireCredential(context.Background(), domain.ScopeWeb, accountdomain.Credential{ID: 42, Provider: accountdomain.ProviderWeb})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Release()
+	if lease.NodeID != 0 {
+		t.Fatalf("lease = %#v", lease)
+	}
+}
+
+type policyEgressRepository struct {
+	egressRepositoryTestStub
+	policy domain.AccountPolicy
+}
+
+func (r *policyEgressRepository) GetAccountEgressPolicy(_ context.Context, accountID uint64) (domain.AccountPolicy, error) {
+	if r.policy.AccountID != accountID {
+		return domain.AccountPolicy{}, repository.ErrNotFound
+	}
+	return r.policy, nil
+}
+
+func (r *policyEgressRepository) UpsertAccountEgressPolicy(_ context.Context, value domain.AccountPolicy) (domain.AccountPolicy, error) {
+	r.policy = value
+	return value, nil
+}
+
+func (r *policyEgressRepository) DeleteAccountEgressPolicy(_ context.Context, accountID uint64) error {
+	if r.policy.AccountID == accountID {
+		r.policy = domain.AccountPolicy{}
+	}
+	return nil
+}

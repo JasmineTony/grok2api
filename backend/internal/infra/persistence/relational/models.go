@@ -476,4 +476,14 @@ type egressNodeModel struct {
 	UpdatedAt                 time.Time `gorm:"not null"`
 }
 
-func (egressNodeModel) TableName() string { return "egress_nodes" }
+type accountEgressPolicyModel struct {
+	AccountID           uint64    `gorm:"primaryKey;check:chk_account_egress_policy_account_id,account_id > 0"`
+	Strategy            string    `gorm:"size:16;not null;default:'inherit';check:chk_account_egress_policy_strategy,strategy IN ('inherit','node','direct')"`
+	EgressNodeID        *uint64   `gorm:"check:chk_account_egress_policy_node_id,egress_node_id IS NULL OR egress_node_id > 0"`
+	AllowDirectFallback bool      `gorm:"not null;default:false"`
+	CreatedAt           time.Time `gorm:"not null"`
+	UpdatedAt           time.Time `gorm:"not null"`
+}
+
+func (accountEgressPolicyModel) TableName() string { return "account_egress_policies" }
+func (egressNodeModel) TableName() string          { return "egress_nodes" }

@@ -115,6 +115,21 @@ export type AccountStateEventDTO = {
   createdAt: string;
 };
 
+export type AccountEgressPolicyStrategy = "inherit" | "node" | "direct";
+export type AccountEgressPolicyDTO = {
+  accountId: string;
+  strategy: AccountEgressPolicyStrategy;
+  egressNodeId?: string;
+  allowDirectFallback: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+export type AccountEgressPolicyInput = {
+  strategy: AccountEgressPolicyStrategy;
+  egressNodeId?: string;
+  allowDirectFallback: boolean;
+};
+
 export type LinkedAccountDTO = {
   id: string;
   provider: "grok_build" | "grok_web" | "grok_console";
@@ -187,6 +202,10 @@ const quotaWindowValidator = hasShape({
   windowSeconds: isNumber, resetAt: isOptional(isString), syncedAt: isOptional(isString), source: isOneOf("default", "estimated", "upstream"),
 });
 const linkedAccountValidator = hasShape({ id: isString, provider: isOneOf("grok_build", "grok_web", "grok_console"), name: isString, email: isOptional(isString), userId: isOptional(isString) });
+const accountEgressPolicyValidator = hasShape({
+  accountId: isString, strategy: isOneOf("inherit", "node", "direct"), egressNodeId: isOptional(isString),
+  allowDirectFallback: isBoolean, createdAt: isOptional(isString), updatedAt: isOptional(isString),
+});
 const accountStateEventValidator = hasShape({ id: isString, fromState: isOneOf("ready", "degraded", "cooldown", "quota_exhausted", "reauth_required", "disabled"), toState: isOneOf("ready", "degraded", "cooldown", "quota_exhausted", "reauth_required", "disabled"), event: isString, reason: isOptional(isString), createdAt: isString });
 const accountValidator = hasShape({
   id: isString, provider: isOneOf("grok_build", "grok_web", "grok_console"), authType: isOneOf("oauth", "sso"), webTier: isOptional(isOneOf("auto", "basic", "super", "heavy")),
@@ -201,6 +220,7 @@ const accountValidator = hasShape({
 const decodeBilling = createValidatedDecoder<BillingDTO>("billing", billingValidator);
 const decodeAccount = createValidatedDecoder<AccountDTO>("account", accountValidator);
 const decodeAccountStateEvents = createValidatedDecoder<AccountStateEventDTO[]>("account state events", isArrayOf(accountStateEventValidator));
+const decodeAccountEgressPolicy = createValidatedDecoder<AccountEgressPolicyDTO>("account egress policy", accountEgressPolicyValidator);
 const decodeAccountPage = createPaginatedDecoder<AccountDTO>(accountValidator);
 const decodeAccountSummary = createObjectDecoder<AccountSummaryDTO>("account summary", {
   total: isNumber, available: isNumber, recovering: isNumber, attention: isNumber, risk: isNumber,
@@ -491,4 +511,13 @@ export function pollDeviceAuthorization(sessionId: string, signal: AbortSignal):
 
 export function listAccountStateEvents(id: string, limit = 20): Promise<AccountStateEventDTO[]> {
   return apiRequest(`/api/admin/v1/accounts/${id}/state-events?limit=${Math.min(Math.max(limit, 1), 100)}`, {}, decodeAccountStateEvents);
+}
+
+
+export function getAccountEgressPolicy(id: string): Promise<AccountEgressPolicyDTO> {
+  return apiRequest(`/api/admin/v1/accounts/${id}/egress-policy`, {}, decodeAccountEgressPolicy);
+}
+
+export function updateAccountEgressPolicy(id: string, input: AccountEgressPolicyInput): Promise<AccountEgressPolicyDTO> {
+  return apiRequest(`/api/admin/v1/accounts/${id}/egress-policy`, { method: "PUT", body: input }, decodeAccountEgressPolicy);
 }

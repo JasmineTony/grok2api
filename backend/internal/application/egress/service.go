@@ -25,6 +25,12 @@ const (
 	proxyAccountSentinel     = "grok2api_account_placeholder"
 )
 
+type AccountPolicyInput struct {
+	Strategy            domain.AccountPolicyStrategy
+	EgressNodeID        *uint64
+	AllowDirectFallback bool
+}
+
 type Input struct {
 	Name              string
 	Scope             domain.Scope
@@ -99,6 +105,42 @@ func (s *Service) Delete(ctx context.Context, id uint64) error {
 		return ErrNotFound
 	}
 	return err
+}
+
+func (s *Service) GetAccountPolicy(ctx context.Context, accountID uint64) (domain.AccountPolicy, error) {
+	policyRepository, ok := s.repository.(repository.AccountEgressPolicyRepository)
+	if !ok {
+		return domain.AccountPolicy{}, errors.New("account egress policy repository is unavailable")
+	}
+	value, err := policyRepository.GetAccountEgressPolicy(ctx, accountID)
+	if errors.Is(err, repository.ErrNotFound) {
+		return domain.AccountPolicy{}, ErrNotFound
+	}
+	return value, err
+}
+
+func (s *Service) UpdateAccountPolicy(ctx context.Context, accountID uint64, input AccountPolicyInput) (domain.AccountPolicy, error) {
+	if accountID == 0 || !input.Strategy.IsValid() {
+		return domain.AccountPolicy{}, ErrInvalidInput
+	}
+	if input.Strategy == domain.AccountPolicyNode && (input.EgressNodeID == nil || *input.EgressNodeID == 0) {
+		return domain.AccountPolicy{}, fmt.Errorf("%w: node strategy requires egressNodeId", ErrInvalidInput)
+	}
+	policyRepository, ok := s.repository.(repository.AccountEgressPolicyRepository)
+	if !ok {
+		return domain.AccountPolicy{}, errors.New("account egress policy repository is unavailable")
+	}
+	value, err := policyRepository.UpsertAccountEgressPolicy(ctx, domain.AccountPolicy{
+		AccountID: accountID, Strategy: input.Strategy, EgressNodeID: input.EgressNodeID,
+		AllowDirectFallback: input.AllowDirectFallback,
+	})
+	if errors.Is(err, repository.ErrNotFound) {
+		return domain.AccountPolicy{}, ErrNotFound
+	}
+	if errors.Is(err, repository.ErrConflict) {
+		return domain.AccountPolicy{}, ErrInvalidInput
+	}
+	return value, err
 }
 
 func (s *Service) applyInput(value domain.Node, input Input, create bool) (domain.Node, error) {

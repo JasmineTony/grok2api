@@ -46,3 +46,11 @@
 - 前端包体预算已收紧为主入口 350 kB raw / 115 kB gzip、Dashboard 及图表块 350 kB raw / 100 kB gzip、Lucide 100 kB raw、CSS 90 kB raw；当前 pnpm check:bundle 通过。
 - Swagger 重新生成尚未完成：本地缓存缺少生成器的间接模块，联网补依赖尝试失败；该项仍是最终验收阻塞项，不能据此标记计划完成。
 - go test -race 尚未完成：当前环境要求启用 cgo，需后续在具备 cgo 的 Windows 工具链中复验。
+## 本轮第二阶段本地推进（未推送）
+
+- 增加账号级 Egress 策略：inherit 继承 Provider 节点池、node 固定出口节点、direct 强制直连；固定节点可显式允许不可用时直连回退。
+- 新增 account_egress_policies 增量表、SQLite/PostgreSQL 兼容的 GORM 模型、索引、重复初始化测试和作用域校验；不改变已有账号字段或现有 Egress 节点表。
+- Egress Manager 在 AcquireCredential 时读取账号策略，保持旧账号和旧测试替身的 Provider 池行为不变；绑定节点按账号身份选择，Web 账号只允许绑定主 Web 节点，避免只配置资源节点导致聊天请求失效。
+- 新增管理端 GET/PUT /api/admin/v1/accounts/:id/egress-policy，并在账号页增加出口策略对话框；敏感代理地址仍不会回显。
+- 新增 Egress Manager、仓储和 HTTP API 回归测试；Go 全量测试、go vet、前端 typecheck、lint、Vitest、构建与 raw/gzip 包体预算均通过。
+- 仍未实现主动出口健康探测、历史记录、Provider 级节点优先级和批量账号策略；这些继续作为路线图 B 的后续本地工作。
