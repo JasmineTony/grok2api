@@ -14,6 +14,8 @@
 - 未知 403 保持账号凭据有效并进入 cooldown；新增持久化事件与兼容 AuthStatus 回归测试。
 - 已将低基数 HTTP 请求量、错误分类和耗时指标接入统一中间件，并复用 Prometheus registry。
 - 当前后端串行全量测试与 go vet 通过。
+- 管理 API 已新增兼容字段 `state`，前端账号列表按 disabled/reauth_required/degraded/quota_exhausted/cooldown/ready 显示，并保留旧 authStatus 兼容判断。
+- 账号 upsert 已保留现有运行状态，避免凭据刷新或重新导入将状态误重置为 ready；后端 DTO 测试、前端 typecheck/lint 通过。
 
 ## 交付内容
 

@@ -6,6 +6,7 @@ import type { SortOrder } from "@/shared/lib/table-sort";
 export type AccountProvider = "grok_build" | "grok_web" | "grok_console";
 export type BuildRouteMode = "auto" | "build" | "xai";
 export type AccountCleanupStatus = "cooldown" | "disabled" | "reauthRequired";
+export type AccountState = "ready" | "degraded" | "cooldown" | "quota_exhausted" | "reauth_required" | "disabled";
 
 export type BillingDTO = {
   planCode?: string;
@@ -75,6 +76,7 @@ export type AccountDTO = {
   teamId?: string;
   enabled: boolean;
   authStatus: "active" | "reauthRequired";
+  state: AccountState;
   expiresAt?: string;
   refreshable: boolean;
   cloudflareCookieConfigured: boolean;
@@ -178,7 +180,7 @@ const linkedAccountValidator = hasShape({ id: isString, provider: isOneOf("grok_
 const accountValidator = hasShape({
   id: isString, provider: isOneOf("grok_build", "grok_web", "grok_console"), authType: isOneOf("oauth", "sso"), webTier: isOptional(isOneOf("auto", "basic", "super", "heavy")),
   webTierSyncedAt: isOptional(isString), nsfwEnabledAt: isOptional(isString), termsAcceptedAt: isOptional(isString), name: isString, email: isOptional(isString), userId: isOptional(isString), teamId: isOptional(isString),
-  enabled: isBoolean, authStatus: isOneOf("active", "reauthRequired"), expiresAt: isOptional(isString), refreshable: isBoolean, cloudflareCookieConfigured: isBoolean,
+  enabled: isBoolean, authStatus: isOneOf("active", "reauthRequired"), state: isOneOf("ready", "degraded", "cooldown", "quota_exhausted", "reauth_required", "disabled"), expiresAt: isOptional(isString), refreshable: isBoolean, cloudflareCookieConfigured: isBoolean,
   buildSuperEntitled: isBoolean, buildRouteMode: isOneOf("auto", "build", "xai"), buildBotFlagged: isBoolean, modelSyncFailed: isOptional(isBoolean), refreshDueAt: isOptional(isString), lastRefreshAt: isOptional(isString), refreshFailureCount: isNumber,
   lastRefreshErrorCode: isOptional(isString), priority: isNumber, maxConcurrent: isNumber, minimumRemaining: isNumber,
   failureCount: isNumber, cooldownUntil: isOptional(isString), lastError: isOptional(isString), lastUsedAt: isOptional(isString),

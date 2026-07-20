@@ -790,6 +790,7 @@ func upsertKnownAccountByIdentity(tx *gorm.DB, value account.Credential, existin
 		row.MaxConcurrent = existing.MaxConcurrent
 		row.MinimumRemaining = existing.MinimumRemaining
 		row.FailureCount = existing.FailureCount
+		row.State = existing.State
 		row.CooldownUntil = existing.CooldownUntil
 		row.LastError = existing.LastError
 		row.LastUsedAt = existing.LastUsedAt

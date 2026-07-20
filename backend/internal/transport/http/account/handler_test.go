@@ -48,6 +48,15 @@ func TestNewAccountResponseExposesAllLinkedAccounts(t *testing.T) {
 	}
 }
 
+func TestNewAccountResponseExposesRuntimeState(t *testing.T) {
+	response := newAccountResponse(accountapp.View{Credential: accountdomain.Credential{
+		Provider: accountdomain.ProviderBuild, State: accountdomain.StateDegraded, AuthStatus: accountdomain.AuthStatusActive,
+	}})
+	if response.State != string(accountdomain.StateDegraded) || response.AuthStatus != string(accountdomain.AuthStatusActive) {
+		t.Fatalf("response = %#v", response)
+	}
+}
+
 type accountSynchronizerStub struct {
 	accountIDs []uint64
 }

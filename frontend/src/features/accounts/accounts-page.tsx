@@ -1220,11 +1220,17 @@ function AccountTypeText({ label, title, variant }: { label: string; title?: str
 
 function AccountStatus({ account }: { account: AccountDTO }) {
   const { t } = useTranslation();
-  if (!account.enabled) {
+  if (!account.enabled || account.state === "disabled") {
     return <Badge variant="outline" className="text-muted-foreground">{t("accounts.statusDisabled")}</Badge>;
   }
-  if (account.authStatus === "reauthRequired") {
+  if (account.authStatus === "reauthRequired" || account.state === "reauth_required") {
     return <Badge variant="destructive">{t("accounts.statusReauthRequired")}</Badge>;
+  }
+  if (account.state === "degraded") {
+    return <Badge variant="secondary" className="bg-orange-500/10 text-orange-700 dark:text-orange-300">{t("accounts.statusDegraded")}</Badge>;
+  }
+  if (account.state === "quota_exhausted") {
+    return <Badge variant="secondary" className="bg-amber-500/10 text-amber-700 dark:text-amber-300">{t("accounts.waitingReset")}</Badge>;
   }
   if (account.provider === "grok_console" && account.quotaWindows?.some((window) => window.mode === "console" && window.remaining <= 0)) {
     return <Badge variant="secondary" className="bg-amber-500/10 text-amber-700 dark:text-amber-300">{t("accounts.waitingReset")}</Badge>;
@@ -1235,7 +1241,7 @@ function AccountStatus({ account }: { account: AccountDTO }) {
   if (account.quota.status === "probing") {
     return <Badge variant="secondary" className="bg-sky-500/10 text-sky-700 dark:text-sky-300">{t("accounts.probing")}</Badge>;
   }
-  if (account.cooldownUntil && new Date(account.cooldownUntil) > new Date()) {
+  if (account.state === "cooldown" || (account.cooldownUntil && new Date(account.cooldownUntil) > new Date())) {
     return <Badge variant="secondary" className="bg-amber-500/10 text-amber-700 dark:text-amber-300">{t("accounts.statusCooldown")}</Badge>;
   }
   return <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">{t("accounts.statusActive")}</Badge>;
