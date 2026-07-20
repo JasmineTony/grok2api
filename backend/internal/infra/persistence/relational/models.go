@@ -284,6 +284,43 @@ type billingReservationModel struct {
 
 func (billingReservationModel) TableName() string { return "billing_reservations" }
 
+type usageRollupModel struct {
+	ID                    uint64    `gorm:"primaryKey;autoIncrement"`
+	BucketKind            string    `gorm:"size:8;not null;check:chk_usage_rollups_bucket_kind,bucket_kind IN ('hour','day')"`
+	BucketStart           time.Time `gorm:"not null"`
+	Provider              string    `gorm:"size:32;not null"`
+	Model                 string    `gorm:"size:255;not null"`
+	AccountID             uint64    `gorm:"not null;default:0"`
+	ClientKeyID           uint64    `gorm:"not null;default:0"`
+	Requests              int64     `gorm:"not null;default:0;check:chk_usage_rollups_metrics,requests >= 0 AND successful_requests >= 0 AND failed_requests >= 0 AND successful_requests + failed_requests = requests AND input_tokens >= 0 AND cached_input_tokens >= 0 AND cached_input_tokens <= input_tokens AND output_tokens >= 0 AND reasoning_tokens >= 0 AND total_tokens >= 0 AND actual_cost_usd_ticks >= 0 AND billed_cost_usd_ticks >= 0 AND estimated_cost_usd_ticks >= 0 AND request_cache_eligible >= 0 AND request_cache_hits >= 0 AND request_cache_hits <= request_cache_eligible AND duration_ms >= 0"`
+	SuccessfulRequests    int64     `gorm:"not null;default:0"`
+	FailedRequests        int64     `gorm:"not null;default:0"`
+	InputTokens           int64     `gorm:"not null;default:0"`
+	CachedInputTokens     int64     `gorm:"not null;default:0"`
+	OutputTokens          int64     `gorm:"not null;default:0"`
+	ReasoningTokens       int64     `gorm:"not null;default:0"`
+	TotalTokens           int64     `gorm:"not null;default:0"`
+	ActualCostUSDTicks    int64     `gorm:"not null;default:0"`
+	BilledCostUSDTicks    int64     `gorm:"not null;default:0"`
+	EstimatedCostUSDTicks int64     `gorm:"not null;default:0"`
+	RequestCacheEligible  int64     `gorm:"not null;default:0"`
+	RequestCacheHits      int64     `gorm:"not null;default:0"`
+	DurationMS            int64     `gorm:"not null;default:0"`
+	CreatedAt             time.Time `gorm:"not null"`
+	UpdatedAt             time.Time `gorm:"not null"`
+}
+
+func (usageRollupModel) TableName() string { return "usage_rollups" }
+
+type usageRollupCheckpointModel struct {
+	ID           uint64    `gorm:"primaryKey"`
+	CoveredFrom  time.Time `gorm:"not null"`
+	CoveredUntil time.Time `gorm:"not null"`
+	UpdatedAt    time.Time `gorm:"not null"`
+}
+
+func (usageRollupCheckpointModel) TableName() string { return "usage_rollup_checkpoints" }
+
 type requestAuditModel struct {
 	ID                      uint64    `gorm:"primaryKey;autoIncrement"`
 	EventID                 string    `gorm:"size:64;check:chk_request_audits_event_id,event_id = '' OR length(event_id) BETWEEN 16 AND 64"`
@@ -314,6 +351,8 @@ type requestAuditModel struct {
 	TotalTokens             int64     `gorm:"not null;default:0"`
 	CostInUSDTicks          int64     `gorm:"not null;default:0"`
 	EstimatedCostInUSDTicks int64     `gorm:"not null;default:0"`
+	RequestCacheEligible    bool      `gorm:"not null;default:false;check:chk_request_audits_request_cache,NOT request_cache_hit OR request_cache_eligible"`
+	RequestCacheHit         bool      `gorm:"not null;default:false"`
 	PricingModel            string    `gorm:"size:100;check:chk_request_audits_pricing_model,length(pricing_model) <= 100"`
 	PricingVersion          string    `gorm:"size:20;check:chk_request_audits_pricing_version,length(pricing_version) <= 20"`
 	NumSourcesUsed          int64     `gorm:"not null;default:0"`

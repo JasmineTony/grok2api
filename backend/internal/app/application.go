@@ -64,6 +64,7 @@ type Application struct {
 	clientKeys    *clientkeyapp.Service
 	updates       *updatecheckapp.Service
 	egress        *egressapp.Service
+	usageRollups  repository.UsageRollupRepository
 	accountRepo   repository.AccountRepository
 	modelRepo     repository.ModelRepository
 	providers     *provider.Registry
@@ -104,6 +105,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	auditRepo := relational.NewAuditRepository(database)
 	responseRepo := relational.NewResponseRepository(database)
 	dashboardRepo := relational.NewDashboardRepository(database)
+	usageRollupRepo := relational.NewUsageRollupRepository(database)
 	runtimeSettingsRepo := relational.NewRuntimeSettingsRepository(database, cipher)
 	egressRepo := relational.NewEgressRepository(database)
 	mediaJobRepo := relational.NewMediaJobRepository(database)
@@ -316,7 +318,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 		metrics: metrics, metricsConfig: metricsobs.PrometheusConfig{Enabled: cfg.Observability.Prometheus.Enabled, Listen: cfg.Observability.Prometheus.Listen},
 		audits: auditService, responses: responseRepo, runtime: runtimeStore,
 		settingsBus: settingsBus, settings: settingsService, gateway: gatewayService, media: mediaService, quotaRecovery: quotaRecoveryService, accounts: accountService, models: modelService, clientKeys: clientKeyService, updates: updateService, egress: egressService,
-		accountRepo: accountRepo, modelRepo: modelRepo, providers: providers, web: webAdapter, startup: startup,
+		accountRepo: accountRepo, modelRepo: modelRepo, providers: providers, web: webAdapter, usageRollups: usageRollupRepo, startup: startup,
 	}, nil
 }
 
@@ -385,6 +387,20 @@ func (a *Application) Run(ctx context.Context) error {
 			return metricsobs.Serve(taskCtx, a.metricsConfig, a.metrics)
 		})
 	}
+	startBackground("usage_rollup", func(taskCtx context.Context) error {
+		refresh := func(runCtx context.Context) error {
+			result, err := a.usageRollups.Refresh(runCtx, time.Now().UTC())
+			if err == nil {
+				a.logger.Debug("usage_rollup_refreshed", "covered_from", result.CoveredFrom, "covered_until", result.CoveredUntil, "hour_rows", result.HourRows, "day_rows", result.DayRows)
+			}
+			return err
+		}
+		if err := refresh(taskCtx); err != nil {
+			a.logger.Warn("usage_rollup_startup_failed", "error", err)
+		}
+		a.runPeriodicTask(taskCtx, 5*time.Minute, "usage_rollup", refresh)
+		return nil
+	})
 	startBackground("metrics_refresh", func(taskCtx context.Context) error {
 		a.refreshOperationalMetrics(taskCtx)
 		a.runPeriodicTask(taskCtx, 30*time.Second, "metrics_refresh", func(runCtx context.Context) error {

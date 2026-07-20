@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -54,9 +55,9 @@ func TestDashboardRepositorySnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	audits := []requestAuditModel{
-		{RequestID: "success-1", ClientKeyID: 1, ModelRouteID: 1, ModelPublicID: "grok-primary", Provider: "grok_build", Operation: "responses", UsageSource: "upstream", StatusCode: 200, TotalTokens: 100, CreatedAt: now.Add(-23 * time.Hour)},
-		{RequestID: "success-2", ClientKeyID: 1, ModelRouteID: 1, ModelPublicID: "grok-secondary", Provider: "grok_web", Operation: "responses", UsageSource: "upstream", StatusCode: 201, TotalTokens: 50, CreatedAt: now.Add(-time.Hour)},
-		{RequestID: "failed", ClientKeyID: 1, ModelRouteID: 1, ModelPublicID: "grok-primary", Provider: "grok_build", Operation: "responses", UsageSource: "upstream", StatusCode: 500, TotalTokens: 10, CreatedAt: now.Add(-2 * time.Hour)},
+		{RequestID: "success-1", ClientKeyID: 1, AccountID: &active.ID, ModelRouteID: 1, ModelPublicID: "grok-primary", Provider: "grok_build", Operation: "responses", UsageSource: "upstream", StatusCode: 200, TotalTokens: 100, CreatedAt: now.Add(-23 * time.Hour)},
+		{RequestID: "success-2", ClientKeyID: 1, AccountID: &active.ID, ModelRouteID: 1, ModelPublicID: "grok-secondary", Provider: "grok_web", Operation: "responses", UsageSource: "upstream", StatusCode: 201, TotalTokens: 50, CreatedAt: now.Add(-time.Hour)},
+		{RequestID: "failed", ClientKeyID: 1, AccountID: &active.ID, ModelRouteID: 1, ModelPublicID: "grok-primary", Provider: "grok_build", Operation: "responses", UsageSource: "upstream", StatusCode: 500, TotalTokens: 10, CreatedAt: now.Add(-2 * time.Hour)},
 		{RequestID: "outside", ClientKeyID: 1, ModelRouteID: 1, Provider: "grok_build", Operation: "responses", UsageSource: "upstream", StatusCode: 200, TotalTokens: 999, CreatedAt: now.Add(-25 * time.Hour)},
 	}
 	for index := range audits {
@@ -102,6 +103,22 @@ func TestDashboardRepositorySnapshot(t *testing.T) {
 	}
 	if activityRequests != 3 {
 		t.Fatalf("activity buckets = %#v", snapshot.ActivityBuckets)
+	}
+	if _, err := NewUsageRollupRepository(database).Refresh(ctx, now); err != nil {
+		t.Fatal(err)
+	}
+	rolledSnapshot, err := NewDashboardRepository(database).Snapshot(ctx, testDashboardWindow(boundaries), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rolledSnapshot.TopAccounts) != 1 || rolledSnapshot.TopAccounts[0].AccountID != active.ID || rolledSnapshot.TopAccounts[0].Usage.Requests != 3 {
+		t.Fatalf("top accounts = %#v", rolledSnapshot.TopAccounts)
+	}
+	if len(rolledSnapshot.TopClientKeys) != 1 || rolledSnapshot.TopClientKeys[0].ClientKeyID != 1 || rolledSnapshot.TopClientKeys[0].Usage.Requests != 3 {
+		t.Fatalf("top client keys = %#v", rolledSnapshot.TopClientKeys)
+	}
+	if !reflect.DeepEqual(snapshot, rolledSnapshot) {
+		t.Fatalf("rollup snapshot mismatch\nraw:    %#v\nrollup: %#v", snapshot, rolledSnapshot)
 	}
 }
 

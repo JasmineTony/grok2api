@@ -34,6 +34,8 @@ export type AuditDTO = {
   totalTokens: number;
   costInUsdTicks: number;
   estimatedCostInUsdTicks: number;
+  requestCacheEligible: boolean;
+  requestCacheHit: boolean;
   pricingModel?: string;
   pricingVersion?: string;
   numSourcesUsed: number;
@@ -95,7 +97,13 @@ export type AuditSummaryDTO = {
     totalTokens: number;
     averageDurationMs: number;
     successRate: number;
+    costInUsdTicks: number;
     estimatedCostInUsdTicks: number;
+    billedCostInUsdTicks: number;
+    requestCacheEligibleRequests: number;
+    requestCacheHits: number;
+    tokenCacheHitRate: number;
+    requestCacheHitRate: number;
   };
   pricing: {
     source: string;
@@ -117,7 +125,7 @@ const auditValidator = hasShape({
   statusCode: isNumber, streaming: isBoolean,
   mediaInputImages: isNumber, mediaOutputImages: isNumber, mediaOutputSeconds: isNumber, inputTokens: isNumber,
   cachedInputTokens: isNumber, outputTokens: isNumber, reasoningTokens: isNumber, totalTokens: isNumber,
-  costInUsdTicks: isNumber, estimatedCostInUsdTicks: isNumber, pricingModel: isOptional(isString), pricingVersion: isOptional(isString),
+  costInUsdTicks: isNumber, estimatedCostInUsdTicks: isNumber, requestCacheEligible: isBoolean, requestCacheHit: isBoolean, pricingModel: isOptional(isString), pricingVersion: isOptional(isString),
   numSourcesUsed: isNumber, numServerSideToolsUsed: isNumber, contextInputTokens: isNumber, contextOutputTokens: isNumber,
   durationMs: isNumber, errorCode: isOptional(isString), attemptCount: isNumber, createdAt: isString,
 });
@@ -136,7 +144,8 @@ const decodeAuditSummary = createObjectDecoder<AuditSummaryDTO>("audit summary",
   usage: hasShape({
     requests: isNumber, successfulRequests: isNumber, failedRequests: isNumber, inputTokens: isNumber,
     cachedInputTokens: isNumber, outputTokens: isNumber, reasoningTokens: isNumber, totalTokens: isNumber,
-    averageDurationMs: isNumber, successRate: isNumber, estimatedCostInUsdTicks: isNumber,
+    averageDurationMs: isNumber, successRate: isNumber, costInUsdTicks: isNumber, estimatedCostInUsdTicks: isNumber, billedCostInUsdTicks: isNumber,
+    requestCacheEligibleRequests: isNumber, requestCacheHits: isNumber, tokenCacheHitRate: isNumber, requestCacheHitRate: isNumber,
   }),
   pricing: hasShape({
     source: isString, asOf: isString, pricedRequests: isNumber, unpricedRequests: isNumber, pricedTokens: isNumber, unpricedTokens: isNumber,

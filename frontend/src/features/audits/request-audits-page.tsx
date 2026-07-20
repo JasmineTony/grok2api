@@ -62,9 +62,11 @@ export function RequestAuditsPage() {
   const result = auditsQuery.data;
   const summary = summaryQuery.data;
   const summaryLoading = summaryQuery.isPending || summaryQuery.isPlaceholderData;
-  const cacheRate = summary?.usage.inputTokens ? summary.usage.cachedInputTokens / summary.usage.inputTokens * 100 : 0;
-  const estimatedCostTicks = summary?.usage.estimatedCostInUsdTicks ?? 0;
-  const hasEstimatedCost = (summary?.pricing.pricedRequests ?? 0) > 0;
+  const tokenCacheHitRate = summary?.usage.tokenCacheHitRate ?? 0;
+  const requestCacheAvailable = (summary?.usage.requestCacheEligibleRequests ?? 0) > 0;
+  const requestCacheHitRate = summary?.usage.requestCacheHitRate ?? 0;
+  const billedCostTicks = summary?.usage.billedCostInUsdTicks ?? 0;
+  const hasCost = billedCostTicks > 0 || (summary?.pricing.pricedRequests ?? 0) > 0;
 
   function refreshAll(): void {
     setManualRefreshing(true);
@@ -100,15 +102,15 @@ export function RequestAuditsPage() {
       <section className="space-y-2" aria-label={t("audits.usageSummary")}>
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           <AuditMetric icon={Activity} loading={summaryLoading} label={t("audits.totalRequests")} value={formatNumber(summary?.usage.requests ?? 0, i18n.language, 0)} detail={t("audits.requestBreakdown", { success: formatNumber(summary?.usage.successfulRequests ?? 0, i18n.language, 0), failed: formatNumber(summary?.usage.failedRequests ?? 0, i18n.language, 0) })} />
-          <AuditMetric icon={WholeWord} loading={summaryLoading} label={t("audits.totalTokens")} value={formatNumber(summary?.usage.totalTokens ?? 0, i18n.language, 0)} detail={t("audits.tokenEfficiency", { cacheRate: formatNumber(cacheRate, i18n.language, 1) })} />
+          <AuditMetric icon={WholeWord} loading={summaryLoading} label={t("audits.totalTokens")} value={formatNumber(summary?.usage.totalTokens ?? 0, i18n.language, 0)} detail={requestCacheAvailable ? t("audits.cacheEfficiency", { tokenRate: formatNumber(tokenCacheHitRate, i18n.language, 1), requestRate: formatNumber(requestCacheHitRate, i18n.language, 1) }) : t("audits.cacheEfficiencyUnavailable", { tokenRate: formatNumber(tokenCacheHitRate, i18n.language, 1) })} />
           <AuditMetric icon={CircleCheck} loading={summaryLoading} label={t("audits.successRate")} value={`${formatNumber(summary?.usage.successRate ?? 0, i18n.language, 1)}%`} detail={t("audits.averageDuration", { duration: formatDuration(summary?.usage.averageDurationMs ?? 0) })} />
           <AuditMetric
             icon={CircleDollarSign}
             loading={summaryLoading}
-            label={t("audits.estimatedCost")}
-            value={hasEstimatedCost ? formatUSDCost(estimatedCostTicks, 2) : "-"}
-            fullValue={hasEstimatedCost ? formatUSDCost(estimatedCostTicks, 10) : undefined}
-            detail={t("audits.pricingCoverage", { priced: formatNumber(summary?.pricing.pricedRequests ?? 0, i18n.language, 0), unpriced: formatNumber(summary?.pricing.unpricedRequests ?? 0, i18n.language, 0) })}
+            label={t("audits.billedCost")}
+            value={hasCost ? formatUSDCost(billedCostTicks, 2) : "-"}
+            fullValue={hasCost ? formatUSDCost(billedCostTicks, 10) : undefined}
+            detail={t("audits.costComposition", { actual: formatUSDCost(summary?.usage.costInUsdTicks ?? 0, 2), estimated: formatUSDCost(summary?.usage.estimatedCostInUsdTicks ?? 0, 2) })}
             tooltip={t("audits.pricingDescription")}
           />
         </div>

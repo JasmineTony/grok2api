@@ -13,8 +13,30 @@ export type DashboardUsageDTO = {
   outputTokens: number;
   reasoningTokens: number;
   tokens: number;
+  actualCostUsdTicks: number;
+  estimatedCostUsdTicks: number;
   billedCostUsdTicks: number;
+  requestCacheEligibleRequests: number;
+  requestCacheHits: number;
   successRate: number;
+  tokenCacheHitRate: number;
+  requestCacheHitRate: number;
+};
+
+export type DashboardDimensionUsageDTO = {
+  requests: number;
+  successfulRequests: number;
+  failedRequests: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  tokens: number;
+  actualCostUsdTicks: number;
+  estimatedCostUsdTicks: number;
+  billedCostUsdTicks: number;
+  requestCacheEligibleRequests: number;
+  requestCacheHits: number;
 };
 
 export type DashboardDTO = {
@@ -33,24 +55,34 @@ export type DashboardDTO = {
 	totalClientKeys: number;
   };
   usage: DashboardUsageDTO;
-  series: Array<{ start: string; end: string; requests: number; inputTokens: number; cachedInputTokens: number; outputTokens: number; reasoningTokens: number; tokens: number; billedCostUsdTicks: number }>;
+  series: Array<{ start: string; end: string; requests: number; inputTokens: number; cachedInputTokens: number; outputTokens: number; reasoningTokens: number; tokens: number; actualCostUsdTicks: number; estimatedCostUsdTicks: number; billedCostUsdTicks: number; requestCacheEligibleRequests: number; requestCacheHits: number }>;
   activity: Array<{ start: string; requests: number }>;
-  topModels: Array<{ model: string; requests: number; inputTokens: number; cachedInputTokens: number; outputTokens: number; reasoningTokens: number; tokens: number; billedCostUsdTicks: number }>;
-  providers: Array<{ provider: string; requests: number; successfulRequests: number; tokens: number }>;
+  topModels: Array<{ model: string; requests: number; inputTokens: number; cachedInputTokens: number; outputTokens: number; reasoningTokens: number; tokens: number; actualCostUsdTicks: number; estimatedCostUsdTicks: number; billedCostUsdTicks: number; requestCacheEligibleRequests: number; requestCacheHits: number }>;
+  providers: Array<{ provider: string; requests: number; successfulRequests: number; tokens: number; actualCostUsdTicks: number; estimatedCostUsdTicks: number; billedCostUsdTicks: number; requestCacheEligibleRequests: number; requestCacheHits: number }>;
+  topAccounts: Array<{ accountId: string; accountName: string; provider: string; usage: DashboardDimensionUsageDTO }>;
+  topClientKeys: Array<{ clientKeyId: string; clientKeyName: string; usage: DashboardDimensionUsageDTO }>;
 };
 
 const dashboardSeriesItem = hasShape({
   start: isString, end: isString, requests: isNumber, inputTokens: isNumber, cachedInputTokens: isNumber,
-  outputTokens: isNumber, reasoningTokens: isNumber, tokens: isNumber, billedCostUsdTicks: isNumber,
+  outputTokens: isNumber, reasoningTokens: isNumber, tokens: isNumber, actualCostUsdTicks: isNumber, estimatedCostUsdTicks: isNumber, billedCostUsdTicks: isNumber,
+  requestCacheEligibleRequests: isNumber, requestCacheHits: isNumber,
 });
 const dashboardUsage = hasShape({
   requests: isNumber, successfulRequests: isNumber, failedRequests: isNumber, inputTokens: isNumber,
   cachedInputTokens: isNumber, outputTokens: isNumber, reasoningTokens: isNumber, tokens: isNumber,
-  billedCostUsdTicks: isNumber, successRate: isNumber,
+  actualCostUsdTicks: isNumber, estimatedCostUsdTicks: isNumber, billedCostUsdTicks: isNumber,
+  requestCacheEligibleRequests: isNumber, requestCacheHits: isNumber, successRate: isNumber, tokenCacheHitRate: isNumber, requestCacheHitRate: isNumber,
 });
 const dashboardModelItem = hasShape({
   model: isString, requests: isNumber, inputTokens: isNumber, cachedInputTokens: isNumber,
   outputTokens: isNumber, reasoningTokens: isNumber, tokens: isNumber, billedCostUsdTicks: isNumber,
+});
+const dashboardDimensionUsage = hasShape({
+  requests: isNumber, successfulRequests: isNumber, failedRequests: isNumber, inputTokens: isNumber,
+  cachedInputTokens: isNumber, outputTokens: isNumber, reasoningTokens: isNumber, tokens: isNumber,
+  actualCostUsdTicks: isNumber, estimatedCostUsdTicks: isNumber, billedCostUsdTicks: isNumber,
+  requestCacheEligibleRequests: isNumber, requestCacheHits: isNumber,
 });
 const decodeDashboard = createObjectDecoder<DashboardDTO>("dashboard", {
   period: isOneOf("24h", "7d", "30d", "90d"),
@@ -64,7 +96,9 @@ const decodeDashboard = createObjectDecoder<DashboardDTO>("dashboard", {
   series: isArrayOf(dashboardSeriesItem),
   activity: isArrayOf(hasShape({ start: isString, requests: isNumber })),
   topModels: isArrayOf(dashboardModelItem),
-  providers: isArrayOf(hasShape({ provider: isString, requests: isNumber, successfulRequests: isNumber, tokens: isNumber })),
+  providers: isArrayOf(hasShape({ provider: isString, requests: isNumber, successfulRequests: isNumber, tokens: isNumber, actualCostUsdTicks: isNumber, estimatedCostUsdTicks: isNumber, billedCostUsdTicks: isNumber, requestCacheEligibleRequests: isNumber, requestCacheHits: isNumber })),
+  topAccounts: isArrayOf(hasShape({ accountId: isString, accountName: isString, provider: isString, usage: dashboardDimensionUsage })),
+  topClientKeys: isArrayOf(hasShape({ clientKeyId: isString, clientKeyName: isString, usage: dashboardDimensionUsage })),
 });
 
 export function getDashboard(period: DashboardPeriod, timezone: string, refresh = false): Promise<DashboardDTO> {
