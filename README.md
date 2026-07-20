@@ -37,6 +37,13 @@ This repository is independently maintained by [JasmineTony](https://github.com/
 
 See [UPSTREAM.md](./UPSTREAM.md) for the synchronization procedure. Security issues should follow [SECURITY.md](./SECURITY.md).
 
+### CI and container releases
+
+- `.github/workflows/ci.yml` validates pull requests, `main`, and manual runs without registry write permission. It tests and vets the backend, checks reachable Go vulnerabilities and Swagger drift, audits/lints/builds the frontend, and builds amd64/arm64 containers with `push: false`.
+- A tag push alone does not publish a container. `.github/workflows/release-image.yml` runs only after a GitHub Release is published from a strict `vMAJOR.MINOR.PATCH` tag (an optional SemVer prerelease suffix is supported), the tag matches `VERSION`, and the tagged commit is contained in `main`.
+- Registry writes are isolated behind the protected `release` environment. Images are assembled from architecture digests, include SBOM and provenance attestations, and must pass manifest inspection plus a `/healthz` smoke test.
+- Stable releases publish the exact `vX.Y.Z` tag, `X.Y.Z`, `X.Y`, `X`, and `latest`. Prereleases publish only their exact version tag. Architecture-only tags are not exposed.
+
 ## Highlights
 
 - **Three Providers**: Build, Web, and Console keep credentials, quotas, health, cooldowns, concurrency, and model capabilities separate
@@ -129,7 +136,7 @@ frontend/
 
 ### Docker Compose (recommended)
 
-Release tags publish GHCR images for both `linux/amd64` and `linux/arm64`. Until this repository publishes a release tag, Docker Compose builds the current checkout locally by default.
+Published GitHub Releases create GHCR images for both `linux/amd64` and `linux/arm64`; pushing a tag by itself does not publish. Until this repository publishes its first Release, Docker Compose builds the current checkout locally by default.
 
 ```bash
 git clone https://github.com/JasmineTony/grok2api.git
