@@ -1,103 +1,111 @@
 # 第 08 轮迭代结果：可靠性治理与平台能力演进
 
 - 计划日期：2026-07-20
-- 当前状态：本地实施中，尚未推送、尚未创建 PR
-- 本地分支：`codex/reliability-platform-roadmap`
-- 交付规则：所有路线图、测试验收、假设与默认值核对完成后，才统一推送一次并创建唯一 PR
+- 当前状态：本地实现与本地验收完成，等待统一推送和 GitHub 远程门禁
+- 基线：main@c4a29a183e5065823c2356406f9002b310b62819
+- 功能分支：codex/reliability-platform-roadmap
+- 远程 main 核验：2026-07-20 仍为 c4a29a183e5065823c2356406f9002b310b62819
+- legacy-initial：039c9f092610a4fe8e47b6471850bf5594d020c5
 
-## 本轮已完成
+## 已交付能力
 
-### 可靠性基础与治理
+### 可靠性与账号治理
 
-- 统一账号错误分类与状态机基础已完成，并保留旧 API 字段兼容映射。
-- Prometheus 低基数请求、错误、重试、账号状态、Egress、Token 与成本指标已接入。
-- 协议黄金文件测试已扩展为 JSON、SSE、工具调用、usage、媒体和常见上游错误场景。
-- Recharts、Vite 分块、前端包体预算和 Dashboard 聚合优化已完成，后端测试与前端检查此前均通过。
+- 统一错误分类、账号状态机和显式状态事件。
+- 超时、网络、代理、5xx 和未知 403 不会误杀凭据。
+- 账号级 Egress 策略、主动健康检查、熔断冷却和恢复探测。
+- Token、缓存命中率、实际/估算成本语义和小时/日用量汇总。
+- Prometheus 低基数请求、错误、重试、账号状态、Egress、Token 与成本指标。
 
-### Egress、用量与通知
+### 版本、备份和通知
 
-- 账号级 Egress 策略、节点主动健康检查、失败冷却与恢复探测已完成。
-- Token 规范化、请求缓存与 Token 缓存命中语义已拆分，小时/日 rollup 已完成。
-- SQLite 一致性备份、manifest、校验、停服恢复和 PostgreSQL 外部备份声明已完成。
-- 站内通知、去重、冷却、已读、确认、保留期和签名 Webhook 已完成。
-- 维护仓库与上游仓库版本检查已分离。
+- 维护仓库与上游仓库版本检查分离。
+- SQLite 一致性快照、媒体备份、manifest、SHA-256 校验和停服恢复。
+- PostgreSQL/Redis 外部备份钩子直接执行，不经过 shell，不记录钩子输出和秘密。
+- 升级前检查覆盖数据库、媒体、备份 manifest 和外部备份责任。
+- 站内通知、去重、冷却、已读、确认、保留期与 HMAC Webhook。
 
-### 升级前检查与通知补强
+### 请求策略、快照和协议
 
-- 备份服务新增升级前预检报告，检查数据库连接、媒体目录、备份 manifest 与 SQLite/外部数据库备份责任。
-- 新增管理 API：`GET /api/admin/v1/system/upgrade/preflight`。
-- 账号重认证、额度耗尽、Egress 节点健康检查失败和策略拒绝已接入去重通知。
+- 类型化请求策略支持客户端密钥、模型、Provider、操作、CIDR 和媒体条件。
+- 动作包括 allow、deny、limit_tokens、limit_media、force_provider、require_audit。
+- 默认无规则时允许；dry-run 只记录命中；Provider 级规则会过滤路由候选。
+- 协议黄金文件覆盖 Responses、Chat Completions、Anthropic Messages、JSON/SSE、工具调用、usage、媒体和常见错误。
+- 协议转换查看器支持三类协议的离线规范化预览。
+- 请求快照默认关闭；开启后执行脱敏、gzip、AES-256-GCM、SHA-256、256 KiB 限制和 TTL。
+- 实际回放默认关闭；启用时必须同时满足 allowActualReplay、管理员 confirm、临时客户端 API Key、新 replay request ID 和再次请求策略评估。
 
-### 本轮新增：类型化请求策略
+### CLI、配置即代码和 MCP
 
-- 新增领域模型：`backend/internal/domain/requestpolicy`。
-- 支持客户端密钥、模型、Provider、操作、来源 CIDR 和媒体条件。
-- 支持 allow、deny、limit_tokens、limit_media、force_provider、require_audit 动作。
-- 规则按 priority、id 稳定排序；dry-run 只统计命中、不阻断请求。
-- 新增持久化表 `request_policies`、命中计数和最后命中时间。
-- 新增管理 API：`/api/admin/v1/request-policies` 及 evaluate 端点。
-- Responses、Chat Completions、Anthropic Messages、图片和视频入口已接入策略评估；默认无规则时保持允许。
-- 固定 Provider 可限制路由候选；策略拒绝使用稳定错误码 `request_policy_denied`，且不记录正文或凭据。
+- 保持无子命令启动兼容，并新增 serve、version、doctor、config、backup、egress、mcp 子命令。
+- 配置即代码支持模型、Egress、策略和通知定义；Secret 只允许 env:VAR 引用。
+- config apply 幂等写入，不删除未声明对象。
+- MCP 仅使用本地 stdio，首版只读，绑定模型、账号状态、24 小时用量、最近错误、Egress、版本和配置校验。
+- MCP 不返回凭据、Token、Cookie、客户端密钥、代理密码或完整请求正文。
 
-## 本地验证
+### 前端与性能
 
-- `go test -p 1 ./...`：通过
-- `go vet ./...`：通过
-- 新增请求策略领域、仓储和入口接线测试：通过
-- 前端此前的 test、typecheck、lint、build、图标检查和包体检查：通过
+- Node.js 24.13.0、pnpm 11.15.1、Vite 8.1.5、TypeScript 6.0.2、Recharts 3.9.2。
+- Dashboard 图表异步分块、Lucide 导入检查和包体预算。
+- Playwright 覆盖 375x812、768x1024、1440x900 以及亮色/暗色主题。
+- 登录页维护仓库链接已修正为 JasmineTony/grok2api。
 
-### 协议转换查看器
+## 本地测试与验收
 
-- 新增离线协议规范化预览：OpenAI Responses、Chat Completions 与 Anthropic Messages。
-- 新增管理 API：`POST /api/admin/v1/protocol/conversions/preview`。
-- 预览限制单条 256 KiB，不联网、不回放、不保存请求正文。
+已通过：
 
-### 配置即代码基础
+- go test -p 1 ./...
+- go vet ./...
+- govulncheck v1.6.0：0 个代码可达漏洞；1 个模块漏洞当前不可达
+- Swagger 重新生成且 docs.go、swagger.json、swagger.yaml 无漂移
+- pnpm install --frozen-lockfile
+- pnpm test
+- pnpm typecheck
+- pnpm lint
+- pnpm build
+- pnpm check:icons
+- pnpm check:bundle
+- pnpm audit --audit-level high：无已知高危漏洞
+- Playwright：6/6 通过
+- git diff --check
+- YAML 解析检查
+- 敏感信息模式扫描
 
-- 新增声明式 YAML 结构校验，支持模型、Egress、策略和通知对象。
-- Secret 字段只接受 `env:VAR` 引用；`config plan` 输出非破坏性差异。
-- `config apply` 当前明确以 dry-run 返回，不删除未声明对象，待绑定真实仓储和独立运维确认后再开放写入。
+前端关键包体：
 
-### 安全请求快照
+- 主入口约 116.00 kB raw / 35.39 kB gzip
+- Dashboard 图表约 17.04 kB raw / 5.29 kB gzip
+- CSS 约 89.93 kB raw / 15.64 kB gzip
 
-- 新增 `request_snapshots` 表和管理 API。
-- 快照在保存前递归脱敏、gzip 压缩、AES-256-GCM 加密并记录 SHA-256，单条上限 256 KiB，默认 TTL 24 小时。
-- 默认关闭；查看和回放均为 dry-run。实际回放明确拒绝，等待独立安全评审，不访问上游。
+本机限制：
 
-### CLI 与只读 MCP 基础
+- Windows 本机没有 CGO 编译器，race 由 GitHub Ubuntu CI 执行。
+- 本机没有 PostgreSQL 服务，PostgreSQL 新库/迁移幂等由 GitHub CI 服务容器执行。
+- 本机没有 Docker，amd64/arm64 镜像构建由 GitHub Actions 执行。
 
-- 保持无子命令启动兼容，并新增 `serve`、`version`、`doctor`、`config validate/export`、`backup create/verify/restore`、`egress check`。
-- 新增 `mcp serve` 本地 stdio JSON-RPC 基础，工具目录只读且明确禁止输出凭据、请求正文、客户端密钥和代理秘密。
-- MCP 首批工具名称已固定：模型、账号健康、用量、最近错误、Egress、版本和配置验证。
-- 配置导出会清空 JWT、凭据加密密钥和管理员密码。
+## 假设与默认值核对
 
-## 新增验证记录
+- TypeScript 7 未进入生产构建：符合。
+- Recharts 3 已通过构建、包体和截图回归：符合。
+- Go module 路径保持 github.com/chenyme/grok2api/backend：符合。
+- 公开 /v1/*、配置既有语义和数据库既有字段未删除或重命名：符合。
+- 数据库变更只增加表、索引和兼容字段：符合。
+- Prometheus 外部监听默认关闭：符合。
+- 请求快照默认关闭：符合。
+- 实际回放默认关闭：符合。
+- 请求策略默认无规则时允许：符合。
+- Webhook 外发仅在显式配置后启用：符合。
+- MCP 为本地 stdio、只读：符合。
+- 配置 apply 默认不删除未声明资源：符合。
+- 未推送版本标签、未触发 GHCR 发布：符合。
 
-- `go test -p 1 ./...`：通过。
-- `go vet ./...`：通过。
-- govulncheck v1.6.0：未发现代码可达漏洞；发现 1 个仅存在于依赖模块但当前代码不可达的漏洞，需后续依赖跟踪。
-- 前端 `pnpm test`、`pnpm typecheck`、`pnpm lint`、`pnpm build`、`pnpm check:icons`、`pnpm check:bundle`：通过。
-- `pnpm audit --audit-level high`：未发现已知高危漏洞。
-- Swagger 生成器因网络/缓存依赖问题尚未完成无漂移检查；Docker、race、PostgreSQL 集成和 Playwright 三视口验收仍未完成。
+## 远程门禁
 
-## 本轮新增进展
+首次统一推送后必须通过：
 
-- 外部备份钩子已支持：应用直接执行可配置可执行文件，不经过 shell，不把钩子输出写入日志；升级预检和外部数据库备份责任保持显式。
-- 配置即代码 `config apply` 已支持模型启用状态、Egress 节点和请求策略的幂等写入；默认不删除未声明对象，Secret 只允许 `env:VAR` 引用。
-- MCP 只读工具已绑定模型、账号状态、24 小时用量、最近错误、Egress 健康、版本和配置校验数据，禁止返回凭据和完整正文。
-- Playwright 已加入 Windows 视觉回归 CI，覆盖 375x812、768x1024、1440x900 以及亮色/暗色主题；登录页维护仓库链接已切换到 JasmineTony。
-- CI 已增加 PostgreSQL 服务、race 检查和多架构构建前的视觉门禁。
+- Verify：Go test/vet/race、PostgreSQL、govulncheck、Swagger、前端测试/构建/审计。
+- Visual regression：Windows Playwright 三视口亮暗主题。
+- Build image：linux/amd64 与 linux/arm64，只构建不发布。
+- CodeQL。
 
-## 尚未完成
-
-- 升级前预检、PostgreSQL/Redis 外部备份钩子和主要通知触发点已实现；仍需在 CI 中取得 PostgreSQL、race、Swagger、Docker 的远程检查证据。
-- 请求快照、协议转换查看器和显式确认回放路径已实现；实际回放默认关闭，启用前仍需单独安全评审。
-- CLI、只读 stdio MCP 和配置即代码的真实非破坏性 apply 已实现；MCP 写操作和实际回放继续保持关闭。
-- govulncheck、pnpm audit、Swagger 无漂移、race、PostgreSQL 集成、多架构 Docker 和三视口 Playwright 验收仍未完成。
-- 假设与默认值尚未逐项核对；当前不允许推送或创建 PR。
-
-## 安全与兼容声明
-
-- 未修改公开 `/v1/*` 协议、Go module 路径、数据库既有字段或发布策略。
-- 请求策略默认无规则即允许；高风险能力继续默认关闭或仅 dry-run。
-- 不读取、保存或发送 GitHub 密码、SSH 口令或其他秘密。
+任何失败均在同一分支修复，不绕过检查、不强制合并。全部通过后 Squash 合并并删除远程功能分支。
