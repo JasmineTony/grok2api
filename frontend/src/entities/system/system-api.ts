@@ -22,6 +22,11 @@ export type VersionInfoDTO = {
   releaseUrl: string;
   releaseNotes: string;
   error: string;
+  repository: string;
+  upstreamRepository: string;
+  upstreamLatestVersion: string;
+  upstreamReleaseUrl: string;
+  upstreamError: string;
 };
 
 const isNullableString: ValueValidator = (value) => value === null || isString(value);
@@ -34,6 +39,7 @@ const decodeVersionInfo = createObjectDecoder<VersionInfoDTO>("version info", {
   releaseUrl: isString,
   releaseNotes: isString,
   error: isString,
+  repository: isString, upstreamRepository: isString, upstreamLatestVersion: isString, upstreamReleaseUrl: isString, upstreamError: isString,
 });
 
 export function getVersionInfo(): Promise<VersionInfoDTO> {

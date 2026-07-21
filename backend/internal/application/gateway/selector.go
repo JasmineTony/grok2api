@@ -6,11 +6,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/chenyme/grok2api/backend/internal/domain/account"
+	notificationdomain "github.com/chenyme/grok2api/backend/internal/domain/notification"
 	"github.com/chenyme/grok2api/backend/internal/pkg/resultcache"
 	"github.com/chenyme/grok2api/backend/internal/repository"
 	"golang.org/x/sync/singleflight"
@@ -106,10 +108,17 @@ type Selector struct {
 	candidates           map[candidateCacheKey]candidateSnapshot
 	candidateLoads       singleflight.Group
 	concurrencySnapshots *resultcache.Cache[[32]byte, map[string]int]
-	tierOrders           interface {
+	notifications        interface {
+		Publish(context.Context, notificationdomain.Event) (notificationdomain.Event, bool, error)
+	}
+	tierOrders interface {
 		TierOrder(account.Provider, string) []account.WebTier
 	}
 }
+
+func (s *Selector) SetNotifications(value interface {
+	Publish(context.Context, notificationdomain.Event) (notificationdomain.Event, bool, error)
+}) { s.notifications = value }
 
 func NewSelector(accounts repository.AccountRepository, concurrency repository.ConcurrencyLimiter, sticky repository.StickySessionRepository, tierOrders interface {
 	TierOrder(account.Provider, string) []account.WebTier
@@ -483,7 +492,9 @@ func (s *Selector) markSuccess(ctx context.Context, credential account.Credentia
 	}
 	s.mu.Unlock()
 	if persist {
-		_ = s.accounts.UpdateHealth(ctx, credential.ID, 0, nil, "", true)
+		_ = s.accounts.TransitionHealth(ctx, repository.AccountHealthTransition{
+			AccountID: credential.ID, Event: account.EventRequestSucceeded, FailureCount: 0, Success: true, OccurredAt: now,
+		})
 	}
 	if quotaProbe {
 		_ = s.accounts.ClearQuotaRecovery(ctx, credential.ID)
@@ -596,6 +607,41 @@ func (s *Selector) ConsumeQuota(provider account.Provider, accountID uint64, mod
 }
 
 func (s *Selector) MarkFailure(ctx context.Context, credential account.Credential, status int, retryAfter time.Duration) {
+	event := account.EventCooldownStarted
+	switch status {
+	case http.StatusUnauthorized:
+		event = account.EventCredentialRejected
+	case http.StatusPaymentRequired:
+		event = account.EventQuotaExhausted
+	case http.StatusTooManyRequests:
+		event = account.EventRateLimited
+	}
+	s.markFailureEvent(ctx, credential, event, fmt.Sprintf("upstream_status_%d", status), retryAfter)
+}
+
+// MarkUpstreamFailure converts structured provider evidence into one explicit
+// account state event. Credential invalidation is only allowed when the
+// evidence was classified as an actual credential rejection.
+func (s *Selector) MarkUpstreamFailure(ctx context.Context, credential account.Credential, failure *UpstreamFailure) {
+	if failure == nil {
+		s.MarkFailure(ctx, credential, 0, 0)
+		return
+	}
+	event := account.EventCooldownStarted
+	switch {
+	case failure.AccountImpact == ImpactReauth && failure.Category == FailureCredential && failure.CredentialRejected:
+		event = account.EventCredentialRejected
+	case failure.AccountImpact == ImpactQuota || failure.QuotaExhausted:
+		event = account.EventQuotaExhausted
+	case failure.Category == FailureRateLimit:
+		event = account.EventRateLimited
+	case failure.AccountImpact == ImpactDegraded && !failure.AccountScoped:
+		event = account.EventTransientFailure
+	}
+	s.markFailureEvent(ctx, credential, event, failure.StateReason(), failure.RetryAfter)
+}
+
+func (s *Selector) markFailureEvent(ctx context.Context, credential account.Credential, event account.StateEvent, reason string, retryAfter time.Duration) {
 	failureCount := credential.FailureCount + 1
 	_, cooldownBase, cooldownMax, _ := s.routingConfig()
 	cooldown := cooldownBase
@@ -608,11 +654,28 @@ func (s *Selector) MarkFailure(ctx context.Context, credential account.Credentia
 	if retryAfter > cooldown {
 		cooldown = retryAfter
 	}
-	until := time.Now().UTC().Add(cooldown)
-	_ = s.accounts.UpdateHealth(ctx, credential.ID, failureCount, &until, fmt.Sprintf("upstream status %d", status), false)
+	now := time.Now().UTC()
+	var cooldownUntil *time.Time
+	if event != account.EventCredentialRejected && event != account.EventQuotaExhausted && event != account.EventTransientFailure {
+		until := now.Add(cooldown)
+		cooldownUntil = &until
+	}
+	_ = s.accounts.TransitionHealth(ctx, repository.AccountHealthTransition{
+		AccountID: credential.ID, Event: event, Reason: reason,
+		FailureCount: failureCount, CooldownUntil: cooldownUntil, OccurredAt: now,
+	})
 	s.invalidateCandidates(credential.Provider)
-	if status == 401 || status == 402 || status == 403 || status == 429 {
+	if event == account.EventCredentialRejected || event == account.EventQuotaExhausted || event == account.EventRateLimited || event == account.EventCooldownStarted {
 		_ = s.sticky.DeleteByAccount(ctx, credential.ID)
+	}
+	if s.notifications != nil && (event == account.EventCredentialRejected || event == account.EventQuotaExhausted) {
+		eventKey := "account_reauth_required"
+		title := "账号需要重新认证"
+		if event == account.EventQuotaExhausted {
+			eventKey = "account_quota_exhausted"
+			title = "账号额度已耗尽"
+		}
+		_, _, _ = s.notifications.Publish(context.WithoutCancel(ctx), notificationdomain.Event{EventKey: eventKey, Severity: notificationdomain.SeverityWarning, Title: title, Body: "账号状态已更新，请在管理端查看原因和恢复时间。", DedupKey: eventKey + ":" + fmt.Sprint(credential.ID)})
 	}
 }
 

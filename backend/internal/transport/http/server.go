@@ -11,12 +11,16 @@ import (
 	accountsyncapp "github.com/chenyme/grok2api/backend/internal/application/accountsync"
 	adminauthapp "github.com/chenyme/grok2api/backend/internal/application/adminauth"
 	auditapp "github.com/chenyme/grok2api/backend/internal/application/audit"
+	backupapp "github.com/chenyme/grok2api/backend/internal/application/backup"
 	clientkeyapp "github.com/chenyme/grok2api/backend/internal/application/clientkey"
 	dashboardapp "github.com/chenyme/grok2api/backend/internal/application/dashboard"
 	egressapp "github.com/chenyme/grok2api/backend/internal/application/egress"
 	"github.com/chenyme/grok2api/backend/internal/application/gateway"
 	mediaapp "github.com/chenyme/grok2api/backend/internal/application/media"
 	modelapp "github.com/chenyme/grok2api/backend/internal/application/model"
+	notificationapp "github.com/chenyme/grok2api/backend/internal/application/notification"
+	requestpolicyapp "github.com/chenyme/grok2api/backend/internal/application/requestpolicy"
+	requestsnapshotapp "github.com/chenyme/grok2api/backend/internal/application/requestsnapshot"
 	settingsapp "github.com/chenyme/grok2api/backend/internal/application/settings"
 	updatecheckapp "github.com/chenyme/grok2api/backend/internal/application/updatecheck"
 	accounthttp "github.com/chenyme/grok2api/backend/internal/transport/http/account"
@@ -29,6 +33,10 @@ import (
 	mediahttp "github.com/chenyme/grok2api/backend/internal/transport/http/media"
 	"github.com/chenyme/grok2api/backend/internal/transport/http/middleware"
 	modelhttp "github.com/chenyme/grok2api/backend/internal/transport/http/model"
+	notificationhttp "github.com/chenyme/grok2api/backend/internal/transport/http/notification"
+	protocolviewhttp "github.com/chenyme/grok2api/backend/internal/transport/http/protocolview"
+	requestpolicyhttp "github.com/chenyme/grok2api/backend/internal/transport/http/requestpolicy"
+	requestsnapshothttp "github.com/chenyme/grok2api/backend/internal/transport/http/requestsnapshot"
 	settingshttp "github.com/chenyme/grok2api/backend/internal/transport/http/settings"
 	systemhttp "github.com/chenyme/grok2api/backend/internal/transport/http/system"
 	"github.com/gin-gonic/gin"
@@ -38,6 +46,7 @@ import (
 
 type Dependencies struct {
 	Logger             *slog.Logger
+	Metrics            middleware.RequestMetrics
 	RequestTimeout     time.Duration
 	MaxBodyBytes       int64
 	ConcurrencyGate    *middleware.ConcurrencyGate
@@ -46,21 +55,25 @@ type Dependencies struct {
 	PublicAPIBaseURL   string
 	FrontendStaticPath string
 	// Readiness 返回可观测的分层就绪状态。Ready 仅为旧调用方保留。
-	Readiness    func(context.Context) ReadinessSnapshot
-	Ready        func(context.Context) bool
-	TrafficReady func() bool
-	AdminAuth    *adminauthapp.Service
-	Accounts     *accountapp.Service
-	AccountSync  *accountsyncapp.Service
-	Models       *modelapp.Service
-	ClientKeys   *clientkeyapp.Service
-	Audits       *auditapp.Service
-	Dashboard    *dashboardapp.Service
-	Gateway      *gateway.Service
-	Media        *mediaapp.Service
-	Settings     *settingsapp.Service
-	Egress       *egressapp.Service
-	Updates      *updatecheckapp.Service
+	Readiness        func(context.Context) ReadinessSnapshot
+	Ready            func(context.Context) bool
+	TrafficReady     func() bool
+	AdminAuth        *adminauthapp.Service
+	Accounts         *accountapp.Service
+	AccountSync      *accountsyncapp.Service
+	Models           *modelapp.Service
+	ClientKeys       *clientkeyapp.Service
+	Audits           *auditapp.Service
+	Dashboard        *dashboardapp.Service
+	Gateway          *gateway.Service
+	Media            *mediaapp.Service
+	Settings         *settingsapp.Service
+	Egress           *egressapp.Service
+	Updates          *updatecheckapp.Service
+	Notifications    *notificationapp.Service
+	Backup           *backupapp.Service
+	RequestPolicies  *requestpolicyapp.Service
+	RequestSnapshots *requestsnapshotapp.Service
 }
 
 type ReadinessComponent struct {
@@ -111,7 +124,7 @@ func New(deps Dependencies) *gin.Engine {
 		deps.Logger = slog.Default()
 	}
 	router := gin.New()
-	router.Use(gin.Recovery(), middleware.RequestID(), middleware.SecurityHeaders(), middleware.MaxBodyBytes(deps.MaxBodyBytes), middleware.Timeout(deps.RequestTimeout), middleware.AccessLog(deps.Logger))
+	router.Use(gin.Recovery(), middleware.RequestID(), middleware.SecurityHeaders(), middleware.MaxBodyBytes(deps.MaxBodyBytes), middleware.Timeout(deps.RequestTimeout), middleware.Metrics(deps.Metrics), middleware.AccessLog(deps.Logger))
 	router.GET("/healthz", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) })
 	router.GET("/readyz", func(c *gin.Context) {
 		if deps.Readiness != nil {
@@ -149,12 +162,22 @@ func New(deps Dependencies) *gin.Engine {
 	mediaHandler.RegisterAdmin(adminProtected)
 	settingshttp.NewHandler(deps.Settings).Register(adminProtected)
 	egresshttp.NewHandler(deps.Egress).Register(adminProtected)
+	if deps.Notifications != nil {
+		notificationhttp.NewHandler(deps.Notifications).Register(adminProtected)
+	}
+	if deps.RequestPolicies != nil {
+		requestpolicyhttp.NewHandler(deps.RequestPolicies).Register(adminProtected)
+	}
+	protocolviewhttp.NewHandler().Register(adminProtected)
+	if deps.RequestSnapshots != nil {
+		requestsnapshothttp.NewHandler(deps.RequestSnapshots).Register(adminProtected)
+	}
 	systemhttp.NewHandler(func() string {
 		if deps.Settings != nil {
 			return deps.Settings.PublicAPIBaseURL()
 		}
 		return deps.PublicAPIBaseURL
-	}, deps.Updates).Register(adminProtected)
+	}, deps.Updates, deps.Backup).Register(adminProtected)
 
 	v1 := router.Group("/v1")
 	v1.Use(deps.ConcurrencyGate.Middleware())
@@ -171,6 +194,7 @@ func New(deps Dependencies) *gin.Engine {
 	}
 	v1.Use(middleware.ClientAuth(deps.ClientKeys))
 	inferenceHandler := inference.NewHandler(deps.Gateway, deps.Models, deps.MaxBodyBytes, deps.PublicAPIBaseURL)
+	inferenceHandler.SetRequestPolicies(deps.RequestPolicies)
 	if deps.Settings != nil {
 		inferenceHandler.SetPublicAPIBaseURLResolver(deps.Settings.PublicAPIBaseURL)
 	}

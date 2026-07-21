@@ -1,6 +1,7 @@
 import { DashboardProviderDistribution } from "@/features/dashboard/dashboard-provider-distribution";
 import { DashboardTopModels } from "@/features/dashboard/dashboard-top-models";
 import { DashboardTrend } from "@/features/dashboard/dashboard-trend";
+import { DashboardUsageGovernance } from "@/features/dashboard/dashboard-usage-governance";
 import type { DashboardDTO } from "@/features/dashboard/dashboard-api";
 
 type DashboardChartsProps = {
@@ -19,6 +20,7 @@ export function DashboardCharts({ dashboard, locale, loading }: DashboardChartsP
       <div className="grid items-stretch gap-2 xl:grid-cols-[minmax(0,3fr)_minmax(360px,2fr)]">
         <DashboardTopModels dashboard={dashboard} locale={locale} loading={loading} />
       </div>
+      <DashboardUsageGovernance dashboard={dashboard} locale={locale} loading={loading} />
     </>
   );
 }

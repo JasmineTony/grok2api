@@ -29,14 +29,15 @@ const (
 )
 
 type VideoInput struct {
-	RequestID     string
-	ClientKey     clientkey.Key
-	PublicModel   string
-	Prompt        string
-	Duration      int
-	AspectRatio   string
-	Resolution    string
-	ReferenceURLs []string
+	RequestID      string
+	ClientKey      clientkey.Key
+	PublicModel    string
+	Prompt         string
+	Duration       int
+	AspectRatio    string
+	Resolution     string
+	ReferenceURLs  []string
+	ForcedProvider string
 }
 
 func (s *Service) CreateVideo(ctx context.Context, input VideoInput) (media.Job, error) {
@@ -47,6 +48,9 @@ func (s *Service) CreateVideo(ctx context.Context, input VideoInput) (media.Job,
 		return media.Job{}, fmt.Errorf("文本生视频必须提供 prompt；图片生视频可以省略 prompt")
 	}
 	routes, err := s.models.GetByPublicIDCandidates(ctx, input.PublicModel)
+	if input.ForcedProvider != "" {
+		routes = filterRoutesByProvider(routes, input.ForcedProvider)
+	}
 	if err != nil {
 		return media.Job{}, ErrModelNotFound
 	}

@@ -30,7 +30,7 @@ func TestCheckFindsLatestRelease(t *testing.T) {
 	if snapshot.Status != StatusUpdateAvailable || !snapshot.UpdateAvailable || snapshot.LatestVersion != "v3.0.1" || snapshot.CheckedAt == nil || !snapshot.CheckedAt.Equal(now) {
 		t.Fatalf("snapshot = %#v", snapshot)
 	}
-	if snapshot.ReleaseURL != "https://github.com/chenyme/grok2api/releases/tag/v3.0.1" || snapshot.ReleaseNotes != "Release notes" {
+	if snapshot.ReleaseURL != "https://github.com/JasmineTony/grok2api/releases/tag/v3.0.1" || snapshot.ReleaseNotes != "Release notes" {
 		t.Fatalf("release = %#v", snapshot)
 	}
 }
@@ -64,5 +64,19 @@ func TestSemanticVersionComparison(t *testing.T) {
 	}
 	if _, ok := parseSemanticVersion("dev"); ok {
 		t.Fatal("development version was accepted as semver")
+	}
+}
+
+func TestCheckUpstreamIsIndependentFromMaintainedRelease(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.URL.String() != upstreamLatestReleaseAPI {
+			t.Fatalf("upstream request = %s", request.URL.String())
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"tag_name":"v9.9.9","body":"upstream"}`)), Header: make(http.Header)}, nil
+	})}
+	service := NewService("v3.0.0", client)
+	snapshot := service.CheckUpstream(context.Background())
+	if snapshot.UpstreamLatestVersion != "v9.9.9" || snapshot.UpstreamReleaseURL != "https://github.com/chenyme/grok2api/releases/tag/v9.9.9" || snapshot.Repository != "JasmineTony/grok2api" || snapshot.UpstreamRepository != "chenyme/grok2api" {
+		t.Fatalf("snapshot = %#v", snapshot)
 	}
 }

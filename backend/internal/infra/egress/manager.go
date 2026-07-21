@@ -92,7 +92,7 @@ func NewManager(repository repository.EgressRepository, cipher *security.Cipher)
 }
 
 func (m *Manager) Acquire(ctx context.Context, scope domain.Scope, affinity string) (*Lease, error) {
-	lease, _, err := m.acquire(ctx, scope, affinity, true, "")
+	lease, _, err := m.acquire(ctx, scope, affinity, true, "", nil)
 	return lease, err
 }
 
@@ -124,47 +124,73 @@ func (m *Manager) AcquireCredential(ctx context.Context, scope domain.Scope, cre
 		identity = "sso_" + security.HashToken(token)[:32]
 	}
 	ctx = WithAccountIdentity(ctx, identity)
-	lease, _, err := m.acquire(ctx, scope, strconv.FormatUint(credential.ID, 10), true, credentialCookies)
+	var policy *domain.AccountPolicy
+	if policies, ok := m.repository.(repository.AccountEgressPolicyRepository); ok {
+		value, policyErr := policies.GetAccountEgressPolicy(ctx, credential.ID)
+		if policyErr != nil && !errors.Is(policyErr, repository.ErrNotFound) {
+			return nil, policyErr
+		}
+		if policyErr == nil && value.Strategy != domain.AccountPolicyInherit {
+			policy = &value
+		}
+	}
+	lease, _, err := m.acquire(ctx, scope, strconv.FormatUint(credential.ID, 10), true, credentialCookies, policy)
 	return lease, err
 }
 
 func (m *Manager) AcquireIfConfigured(ctx context.Context, scope domain.Scope, affinity string) (*Lease, bool, error) {
-	return m.acquire(ctx, scope, affinity, false, "")
+	return m.acquire(ctx, scope, affinity, false, "", nil)
 }
 
-func (m *Manager) acquire(ctx context.Context, scope domain.Scope, affinity string, allowDirect bool, credentialCookies string) (*Lease, bool, error) {
+func (m *Manager) acquire(ctx context.Context, scope domain.Scope, affinity string, allowDirect bool, credentialCookies string, policy *domain.AccountPolicy) (*Lease, bool, error) {
 	now := time.Now().UTC()
 	configured := false
 	var available []domain.Node
-	for _, candidateScope := range fallbackScopes(scope) {
-		nodes, err := m.listNodes(ctx, candidateScope, now)
-		if err != nil {
-			return nil, false, err
-		}
-		candidateAvailable := make([]domain.Node, 0, len(nodes))
-		for _, node := range nodes {
-			if !node.Enabled {
-				continue
-			}
-			configured = true
-			if node.CooldownUntil == nil || !now.Before(*node.CooldownUntil) {
-				candidateAvailable = append(candidateAvailable, node)
-			}
-		}
-		if len(candidateAvailable) > 0 {
-			available = candidateAvailable
-			break
-		}
-	}
-	if len(available) == 0 {
-		if configured {
-			return nil, false, fmt.Errorf("当前没有可用的 %s 出口节点", scope)
-		}
-		if !allowDirect {
-			recordSelection(ctx, Selection{NodeName: "direct", Scope: scope})
-			return nil, false, nil
-		}
+	if policy != nil && policy.Strategy == domain.AccountPolicyDirect {
 		available = []domain.Node{{ID: 0, Name: "direct", Scope: scope, Enabled: true, Health: 1}}
+	} else {
+		for _, candidateScope := range fallbackScopes(scope) {
+			nodes, err := m.listNodes(ctx, candidateScope, now)
+			if err != nil {
+				return nil, false, err
+			}
+			candidateAvailable := make([]domain.Node, 0, len(nodes))
+			for _, node := range nodes {
+				if policy != nil && policy.Strategy == domain.AccountPolicyNode {
+					if policy.EgressNodeID == nil || node.ID != *policy.EgressNodeID {
+						continue
+					}
+					configured = true
+				}
+				if !node.Enabled {
+					continue
+				}
+				configured = true
+				if node.CooldownUntil == nil || !now.Before(*node.CooldownUntil) {
+					candidateAvailable = append(candidateAvailable, node)
+				}
+			}
+			if len(candidateAvailable) > 0 {
+				available = candidateAvailable
+				break
+			}
+		}
+		if len(available) == 0 {
+			if policy != nil && policy.Strategy == domain.AccountPolicyNode {
+				if policy.AllowDirectFallback {
+					available = []domain.Node{{ID: 0, Name: "direct", Scope: scope, Enabled: true, Health: 1}}
+				} else {
+					return nil, false, fmt.Errorf("account-bound egress node is unavailable for %s", scope)
+				}
+			} else if configured {
+				return nil, false, fmt.Errorf("当前没有可用的 %s 出口节点", scope)
+			} else if !allowDirect {
+				recordSelection(ctx, Selection{NodeName: "direct", Scope: scope})
+				return nil, false, nil
+			} else {
+				available = []domain.Node{{ID: 0, Name: "direct", Scope: scope, Enabled: true, Health: 1}}
+			}
+		}
 	}
 	sort.SliceStable(available, func(i, j int) bool { return available[i].ID < available[j].ID })
 	selected := m.selectNode(available, affinity)

@@ -1,16 +1,24 @@
-import { readdirSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
 
 const assetsDir = fileURLToPath(new URL("../dist/assets/", import.meta.url));
 const budgets = [
-  { pattern: /^index-.*\.js$/, maxBytes: 470_000, label: "entry JavaScript" },
-  { pattern: /^dashboard-page-.*\.js$/, maxBytes: 470_000, label: "dashboard route" },
-  { pattern: /^createLucideIcon-.*\.js$/, maxBytes: 270_000, label: "Lucide shared chunk" },
-  { pattern: /^index-.*\.css$/, maxBytes: 95_000, label: "application CSS" },
+  { pattern: /^index-.*\.js$/, maxRaw: 350_000, maxGzip: 115_000, label: "entry JavaScript" },
+  { pattern: /^dashboard-page-.*\.js$/, maxRaw: 350_000, maxGzip: 100_000, label: "dashboard route" },
+  { pattern: /^dashboard-charts-.*\.js$/, maxRaw: 350_000, maxGzip: 100_000, label: "dashboard charts" },
+  { pattern: /^vendor-(recharts|chart-runtime)-.*\.js$/, maxRaw: 350_000, maxGzip: 100_000, label: "chart vendor chunk" },
+  { pattern: /^createLucideIcon-.*\.js$/, maxRaw: 100_000, maxGzip: 35_000, label: "Lucide shared chunk" },
+  { pattern: /^index-.*\.css$/, maxRaw: 90_000, maxGzip: 20_000, label: "application CSS" },
 ];
 
-const files = readdirSync(assetsDir).map((name) => ({ name, bytes: statSync(`${assetsDir}/${name}`).size }));
+const files = readdirSync(assetsDir).map((name) => {
+  const filePath = `${assetsDir}/${name}`;
+  const raw = statSync(filePath).size;
+  const gzip = gzipSync(readFileSync(filePath)).length;
+  return { name, raw, gzip };
+});
 const failures = [];
 for (const budget of budgets) {
   const matching = files.filter((file) => budget.pattern.test(basename(file.name)));
@@ -19,7 +27,8 @@ for (const budget of budgets) {
     continue;
   }
   for (const file of matching) {
-    if (file.bytes > budget.maxBytes) failures.push(`${budget.label}: ${file.name} is ${file.bytes} bytes (budget ${budget.maxBytes})`);
+    if (file.raw > budget.maxRaw) failures.push(`${budget.label}: ${file.name} is ${file.raw} raw bytes (budget ${budget.maxRaw})`);
+    if (file.gzip > budget.maxGzip) failures.push(`${budget.label}: ${file.name} is ${file.gzip} gzip bytes (budget ${budget.maxGzip})`);
   }
 }
 if (failures.length) {

@@ -183,8 +183,8 @@ func TestSummaryUsesOfficialPricesAndExcludesUnknownModels(t *testing.T) {
 	repository := relational.NewAuditRepository(database)
 	now := time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC)
 	if err := repository.CreateBatch(ctx, []auditdomain.Record{
-		{RequestID: "priced", ClientKeyID: 1, ModelRouteID: 1, ModelUpstreamModel: "grok-build-0.1", StatusCode: 200, InputTokens: 1_000_000, CachedInputTokens: 200_000, OutputTokens: 500_000, TotalTokens: 1_500_000, EstimatedCostInUSDTicks: 36_800_000_000, PricingModel: "grok-build-0.1", PricingVersion: auditdomain.OfficialPricingAsOf, DurationMS: 100, CreatedAt: now.Add(-time.Hour)},
-		{RequestID: "unknown", ClientKeyID: 1, ModelRouteID: 1, ModelUpstreamModel: "grok-4.5-build-free", StatusCode: 500, InputTokens: 100, OutputTokens: 50, TotalTokens: 150, DurationMS: 300, CreatedAt: now.Add(-2 * time.Hour)},
+		{RequestID: "priced", ClientKeyID: 1, ModelRouteID: 1, ModelUpstreamModel: "grok-build-0.1", StatusCode: 200, InputTokens: 1_000_000, CachedInputTokens: 200_000, OutputTokens: 500_000, TotalTokens: 1_500_000, CostInUSDTicks: 2_000_000_000, EstimatedCostInUSDTicks: 36_800_000_000, RequestCacheEligible: true, RequestCacheHit: true, PricingModel: "grok-build-0.1", PricingVersion: auditdomain.OfficialPricingAsOf, DurationMS: 100, CreatedAt: now.Add(-time.Hour)},
+		{RequestID: "unknown", ClientKeyID: 1, ModelRouteID: 1, ModelUpstreamModel: "grok-4.5-build-free", StatusCode: 500, InputTokens: 100, OutputTokens: 50, TotalTokens: 150, RequestCacheEligible: true, DurationMS: 300, CreatedAt: now.Add(-2 * time.Hour)},
 		{RequestID: "outside", ClientKeyID: 1, ModelRouteID: 1, ModelUpstreamModel: "grok-build-0.1", StatusCode: 200, TotalTokens: 999, CreatedAt: now.Add(-25 * time.Hour)},
 	}); err != nil {
 		t.Fatal(err)
@@ -198,10 +198,10 @@ func TestSummaryUsesOfficialPricesAndExcludesUnknownModels(t *testing.T) {
 	if result.Usage.Requests != 2 || result.Usage.SuccessfulRequests != 1 || result.Usage.TotalTokens != 1_500_150 {
 		t.Fatalf("usage = %#v", result.Usage)
 	}
-	if result.Usage.EstimatedCostInUSDTicks != 36_800_000_000 || result.Usage.PricedRequests != 1 || result.Usage.UnpricedRequests != 1 {
+	if result.Usage.CostInUSDTicks != 2_000_000_000 || result.Usage.EstimatedCostInUSDTicks != 36_800_000_000 || result.Usage.BilledCostInUSDTicks != 2_000_000_000 || result.Usage.RequestCacheEligible != 2 || result.Usage.RequestCacheHits != 1 || result.Usage.PricedRequests != 1 || result.Usage.UnpricedRequests != 1 {
 		t.Fatalf("pricing = %#v", result.Usage)
 	}
-	if result.Usage.AverageDurationMS != 200 || result.Usage.SuccessRate != 50 {
+	if result.Usage.AverageDurationMS != 200 || result.Usage.SuccessRate != 50 || result.Usage.TokenCacheHitRate < 19.99 || result.Usage.TokenCacheHitRate > 20.0 || result.Usage.RequestCacheHitRate != 50 {
 		t.Fatalf("rates = %#v", result.Usage)
 	}
 }

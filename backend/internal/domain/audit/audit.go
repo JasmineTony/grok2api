@@ -96,6 +96,8 @@ type Record struct {
 	TotalTokens             int64
 	CostInUSDTicks          int64
 	EstimatedCostInUSDTicks int64
+	RequestCacheEligible    bool
+	RequestCacheHit         bool
 	PricingModel            string
 	PricingVersion          string
 	NumSourcesUsed          int64
@@ -120,7 +122,11 @@ type Summary struct {
 	ReasoningTokens         int64
 	TotalTokens             int64
 	DurationMS              int64
+	CostInUSDTicks          int64
 	EstimatedCostInUSDTicks int64
+	BilledCostInUSDTicks    int64
+	RequestCacheEligible    int64
+	RequestCacheHits        int64
 	PricedRequests          int64
 	UnpricedRequests        int64
 	PricedTokens            int64

@@ -2,11 +2,15 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
+	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,17 +18,25 @@ import (
 	accountsyncapp "github.com/chenyme/grok2api/backend/internal/application/accountsync"
 	"github.com/chenyme/grok2api/backend/internal/application/adminauth"
 	auditapp "github.com/chenyme/grok2api/backend/internal/application/audit"
+	backupapp "github.com/chenyme/grok2api/backend/internal/application/backup"
 	clientkeyapp "github.com/chenyme/grok2api/backend/internal/application/clientkey"
 	dashboardapp "github.com/chenyme/grok2api/backend/internal/application/dashboard"
 	egressapp "github.com/chenyme/grok2api/backend/internal/application/egress"
 	"github.com/chenyme/grok2api/backend/internal/application/gateway"
 	mediaapp "github.com/chenyme/grok2api/backend/internal/application/media"
 	modelapp "github.com/chenyme/grok2api/backend/internal/application/model"
+	notificationapp "github.com/chenyme/grok2api/backend/internal/application/notification"
 	quotarecoveryapp "github.com/chenyme/grok2api/backend/internal/application/quotarecovery"
+	requestpolicyapp "github.com/chenyme/grok2api/backend/internal/application/requestpolicy"
+	requestsnapshotapp "github.com/chenyme/grok2api/backend/internal/application/requestsnapshot"
 	settingsapp "github.com/chenyme/grok2api/backend/internal/application/settings"
 	updatecheckapp "github.com/chenyme/grok2api/backend/internal/application/updatecheck"
 	"github.com/chenyme/grok2api/backend/internal/buildinfo"
 	"github.com/chenyme/grok2api/backend/internal/domain/account"
+	"github.com/chenyme/grok2api/backend/internal/domain/audit"
+	notificationdomain "github.com/chenyme/grok2api/backend/internal/domain/notification"
+	requestpolicydomain "github.com/chenyme/grok2api/backend/internal/domain/requestpolicy"
+	requestsnapshotdomain "github.com/chenyme/grok2api/backend/internal/domain/requestsnapshot"
 	"github.com/chenyme/grok2api/backend/internal/infra/config"
 	infraegress "github.com/chenyme/grok2api/backend/internal/infra/egress"
 	inframedia "github.com/chenyme/grok2api/backend/internal/infra/media"
@@ -46,28 +58,33 @@ import (
 
 // Application 管理后端进程生命周期和本地后台任务。
 type Application struct {
-	logger        *slog.Logger
-	database      *relational.Database
-	server        *http.Server
-	metrics       *metricsobs.Metrics
-	metricsConfig metricsobs.PrometheusConfig
-	audits        *auditapp.Service
-	responses     repository.ResponseRepository
-	runtime       io.Closer
-	settingsBus   repository.SettingsChangeBus
-	settings      *settingsapp.Service
-	gateway       *gateway.Service
-	media         *mediaapp.Service
-	quotaRecovery *quotarecoveryapp.Service
-	accounts      *accountapp.Service
-	models        *modelapp.Service
-	clientKeys    *clientkeyapp.Service
-	updates       *updatecheckapp.Service
-	accountRepo   repository.AccountRepository
-	modelRepo     repository.ModelRepository
-	providers     *provider.Registry
-	web           *webprovider.Adapter
-	startup       *startupState
+	logger          *slog.Logger
+	database        *relational.Database
+	server          *http.Server
+	metrics         *metricsobs.Metrics
+	metricsConfig   metricsobs.PrometheusConfig
+	audits          *auditapp.Service
+	responses       repository.ResponseRepository
+	runtime         io.Closer
+	settingsBus     repository.SettingsChangeBus
+	settings        *settingsapp.Service
+	gateway         *gateway.Service
+	media           *mediaapp.Service
+	quotaRecovery   *quotarecoveryapp.Service
+	accounts        *accountapp.Service
+	models          *modelapp.Service
+	clientKeys      *clientkeyapp.Service
+	updates         *updatecheckapp.Service
+	egress          *egressapp.Service
+	usageRollups    repository.UsageRollupRepository
+	backup          *backupapp.Service
+	notifications   *notificationapp.Service
+	requestPolicies *requestpolicyapp.Service
+	accountRepo     repository.AccountRepository
+	modelRepo       repository.ModelRepository
+	providers       *provider.Registry
+	web             *webprovider.Adapter
+	startup         *startupState
 }
 
 // New 完成数据库、Provider、应用服务和 HTTP 路由装配。
@@ -103,6 +120,37 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	auditRepo := relational.NewAuditRepository(database)
 	responseRepo := relational.NewResponseRepository(database)
 	dashboardRepo := relational.NewDashboardRepository(database)
+	usageRollupRepo := relational.NewUsageRollupRepository(database)
+	notificationRepo := relational.NewNotificationRepository(database)
+	requestPolicyRepo := relational.NewRequestPolicyRepository(database)
+	requestSnapshotRepo := relational.NewRequestSnapshotRepository(database)
+	backupService := backupapp.NewService(database, cfg.Media.Local.Path, buildinfo.CurrentVersion())
+	backupService.SetManagedRoot(cfg.Backup.Root)
+	notificationConfig := notificationapp.Config{Cooldown: cfg.Notifications.Cooldown.Value(), Retention: cfg.Notifications.Retention.Value()}
+	if cfg.Notifications.Enabled {
+		notificationConfig.WebhookURL = cfg.Notifications.WebhookURL
+		notificationConfig.WebhookSecret = cfg.Notifications.WebhookSecret
+	}
+	notificationService, err := notificationapp.NewService(notificationRepo, notificationConfig, nil)
+	if err != nil {
+		database.Close()
+		return nil, err
+	}
+	requestPolicyService, err := requestpolicyapp.NewService(requestPolicyRepo)
+	if err != nil {
+		database.Close()
+		return nil, err
+	}
+	if err := requestPolicyService.Refresh(ctx); err != nil {
+		database.Close()
+		return nil, err
+	}
+	requestPolicyService.SetNotifications(notificationService)
+	requestSnapshotService, err := requestsnapshotapp.NewService(requestSnapshotRepo, cipher, cfg.RequestSnapshots.Enabled, cfg.RequestSnapshots.TTL.Value(), cfg.RequestSnapshots.AllowActualReplay)
+	if err != nil {
+		database.Close()
+		return nil, err
+	}
 	runtimeSettingsRepo := relational.NewRuntimeSettingsRepository(database, cipher)
 	egressRepo := relational.NewEgressRepository(database)
 	mediaJobRepo := relational.NewMediaJobRepository(database)
@@ -162,6 +210,22 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	default:
 		database.Close()
 		return nil, fmt.Errorf("不支持的运行态驱动: %s", cfg.RuntimeStore.Driver)
+	}
+	if hook := strings.TrimSpace(cfg.Backup.ExternalHook); hook != "" {
+		hookTimeout := cfg.Backup.HookTimeout.Value()
+		if hookTimeout <= 0 {
+			hookTimeout = 2 * time.Minute
+		}
+		backupService.SetExternalBackupCheck(func(hookCtx context.Context) error {
+			callCtx, cancel := context.WithTimeout(hookCtx, hookTimeout)
+			defer cancel()
+			command := exec.CommandContext(callCtx, hook, "verify", cfg.Database.Driver, cfg.RuntimeStore.Driver)
+			command.Env = append(os.Environ(), "GROK2API_BACKUP_DRIVER="+cfg.Database.Driver, "GROK2API_RUNTIME_STORE="+cfg.RuntimeStore.Driver)
+			if err := command.Run(); err != nil {
+				return fmt.Errorf("external backup hook failed: %w", err)
+			}
+			return nil
+		})
 	}
 	mediaService := mediaapp.NewServiceWithTickets(mediaAssetRepo, mediaJobRepo, mediaUploadTicketRepo, localMediaStore, refreshLock, mediaConfig(cfg))
 
@@ -251,15 +315,78 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	accountSyncService.SetBulkPool(importPool)
 	accountSyncService.UpdateConcurrency(cfg.Batch.ImportConcurrency)
 	egressService := egressapp.NewService(egressRepo, cipher, infraegress.DefaultUserAgent)
+	egressService.SetNotifications(notificationService)
 	clientKeyService := clientkeyapp.NewService(clientKeyRepo, rateLimiter, concurrency, cfg.ClientKeyDefaults.RPMLimit, cfg.ClientKeyDefaults.MaxConcurrent, cipher)
 	auditService := auditapp.NewService(auditRepo, logger, cfg.Audit.BufferSize, cfg.Audit.BatchSize, cfg.Audit.FlushInterval.Value())
 	dashboardService := dashboardapp.NewService(dashboardRepo)
 	selector := gateway.NewSelector(accountRepo, concurrency, sticky, providers, cfg.Routing.StickyTTL.Value(), cfg.Routing.CooldownBase.Value(), cfg.Routing.CooldownMax.Value(), cfg.Routing.CapacityWait.Value())
 	selector.UpdatePreferFreeBuild(cfg.Routing.PreferFreeBuild)
+	selector.SetNotifications(notificationService)
 	gatewayService := gateway.NewService(modelService, auditService, accountService, clientKeyService, providers, selector, responseRepo, cfg.Routing.MaxAttempts)
 	gatewayService.SetLogger(logger)
 	gatewayService.ConfigureMedia(mediaJobRepo, cfg.Provider.Web.MediaConcurrency)
 	gatewayService.ConfigureMediaAssets(mediaService)
+	requestSnapshotService.SetReplaySender(func(replayCtx context.Context, snapshot requestsnapshotdomain.Snapshot, payload []byte, replayID, rawClientKey string) error {
+		clientKey, release, authErr := clientKeyService.Authenticate(replayCtx, rawClientKey)
+		if authErr != nil {
+			return errors.New("replay client authentication failed")
+		}
+		defer release()
+		var envelope struct {
+			Model string `json:"model"`
+		}
+		if err := json.Unmarshal(payload, &envelope); err != nil || strings.TrimSpace(envelope.Model) == "" {
+			return errors.New("replay payload does not contain a valid model")
+		}
+		operation := audit.OperationResponses
+		switch snapshot.Protocol {
+		case "openai_chat_completions":
+			operation = audit.OperationChat
+		case "anthropic_messages":
+			operation = audit.OperationMessages
+		case "openai_responses":
+		default:
+			return errors.New("unsupported replay protocol")
+		}
+		decision, policyErr := requestPolicyService.Evaluate(replayCtx, requestpolicydomain.Request{ClientKeyID: clientKey.ID, Model: envelope.Model, Operation: string(operation)})
+		if policyErr != nil {
+			return errors.New("replay policy evaluation failed")
+		}
+		if !decision.Allowed {
+			return errors.New("replay denied by request policy")
+		}
+		var bodyMap map[string]any
+		if json.Unmarshal(payload, &bodyMap) == nil {
+			bodyMap["stream"] = false
+			if normalized, err := json.Marshal(bodyMap); err == nil {
+				payload = normalized
+			}
+		}
+		input := gateway.Input{RequestID: replayID, ClientKey: clientKey, PublicModel: envelope.Model, Body: payload, Streaming: false, ForcedProvider: decision.ForcedProvider}
+		var result *gateway.Result
+		var callErr error
+		switch snapshot.Protocol {
+		case "openai_chat_completions":
+			result, callErr = gatewayService.CreateChatCompletion(replayCtx, input)
+		case "anthropic_messages":
+			result, callErr = gatewayService.CreateMessage(replayCtx, input)
+		default:
+			result, callErr = gatewayService.CreateResponse(replayCtx, input)
+		}
+		if callErr != nil {
+			return callErr
+		}
+		if result == nil || result.Body == nil {
+			return errors.New("replay returned no result")
+		}
+		defer result.Body.Close()
+		_, _ = io.Copy(io.Discard, io.LimitReader(result.Body, 1<<20))
+		result.Finalize(gateway.Usage{}, "", "")
+		if result.StatusCode < 200 || result.StatusCode >= 300 {
+			return fmt.Errorf("replay upstream returned HTTP %d", result.StatusCode)
+		}
+		return nil
+	})
 	quotaRecoveryService := quotarecoveryapp.NewService(logger, quotaQueue, accountService, cfg.Provider.Web.RecoveryBackoffBase.Value(), cfg.Provider.Web.RecoveryBackoffMax.Value())
 	quotaRecoveryService.SetBulkPool(syncPool)
 	inferenceConcurrency := httpmiddleware.NewConcurrencyGate(cfg.Server.MaxConcurrentRequests)
@@ -306,14 +433,16 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	readiness := func(readyCtx context.Context) httpserver.ReadinessSnapshot {
 		return readinessSnapshot(readyCtx, startup, runtimeHealth, modelRepo, accountRepo, providers)
 	}
-	router := httpserver.New(httpserver.Dependencies{Logger: logger, RequestTimeout: cfg.Server.RequestTimeout.Value(), MaxBodyBytes: cfg.Server.MaxBodyBytes, ConcurrencyGate: inferenceConcurrency, SecureCookies: cfg.Auth.SecureCookies, SwaggerEnabled: cfg.Server.SwaggerEnabled, PublicAPIBaseURL: cfg.Frontend.EffectivePublicAPIBaseURL(), FrontendStaticPath: cfg.Frontend.StaticPath, Readiness: readiness, TrafficReady: startup.acceptsTraffic, AdminAuth: adminService, Accounts: accountService, AccountSync: accountSyncService, Models: modelService, ClientKeys: clientKeyService, Audits: auditService, Dashboard: dashboardService, Gateway: gatewayService, Media: mediaService, Settings: settingsService, Egress: egressService, Updates: updateService})
+	metrics := metricsobs.NewMetrics()
+	gatewayService.ConfigureMetrics(metrics)
+	router := httpserver.New(httpserver.Dependencies{Logger: logger, Metrics: metrics, RequestTimeout: cfg.Server.RequestTimeout.Value(), MaxBodyBytes: cfg.Server.MaxBodyBytes, ConcurrencyGate: inferenceConcurrency, SecureCookies: cfg.Auth.SecureCookies, SwaggerEnabled: cfg.Server.SwaggerEnabled, PublicAPIBaseURL: cfg.Frontend.EffectivePublicAPIBaseURL(), FrontendStaticPath: cfg.Frontend.StaticPath, Readiness: readiness, TrafficReady: startup.acceptsTraffic, AdminAuth: adminService, Accounts: accountService, AccountSync: accountSyncService, Models: modelService, ClientKeys: clientKeyService, Audits: auditService, Dashboard: dashboardService, Gateway: gatewayService, Media: mediaService, Settings: settingsService, Egress: egressService, Updates: updateService, Notifications: notificationService, Backup: backupService, RequestPolicies: requestPolicyService, RequestSnapshots: requestSnapshotService})
 	server := &http.Server{Addr: cfg.Server.Listen, Handler: router, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: cfg.Server.ReadTimeout.Value(), IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
 	return &Application{
 		logger: logger, database: database, server: server,
-		metrics: metricsobs.NewMetrics(), metricsConfig: metricsobs.PrometheusConfig{Enabled: cfg.Observability.Prometheus.Enabled, Listen: cfg.Observability.Prometheus.Listen},
+		metrics: metrics, metricsConfig: metricsobs.PrometheusConfig{Enabled: cfg.Observability.Prometheus.Enabled, Listen: cfg.Observability.Prometheus.Listen},
 		audits: auditService, responses: responseRepo, runtime: runtimeStore,
-		settingsBus: settingsBus, settings: settingsService, gateway: gatewayService, media: mediaService, quotaRecovery: quotaRecoveryService, accounts: accountService, models: modelService, clientKeys: clientKeyService, updates: updateService,
-		accountRepo: accountRepo, modelRepo: modelRepo, providers: providers, web: webAdapter, startup: startup,
+		settingsBus: settingsBus, settings: settingsService, gateway: gatewayService, media: mediaService, quotaRecovery: quotaRecoveryService, accounts: accountService, models: modelService, clientKeys: clientKeyService, updates: updateService, egress: egressService,
+		accountRepo: accountRepo, modelRepo: modelRepo, providers: providers, web: webAdapter, usageRollups: usageRollupRepo, backup: backupService, notifications: notificationService, requestPolicies: requestPolicyService, startup: startup,
 	}, nil
 }
 
@@ -382,6 +511,28 @@ func (a *Application) Run(ctx context.Context) error {
 			return metricsobs.Serve(taskCtx, a.metricsConfig, a.metrics)
 		})
 	}
+	startBackground("usage_rollup", func(taskCtx context.Context) error {
+		refresh := func(runCtx context.Context) error {
+			result, err := a.usageRollups.Refresh(runCtx, time.Now().UTC())
+			if err == nil {
+				a.logger.Debug("usage_rollup_refreshed", "covered_from", result.CoveredFrom, "covered_until", result.CoveredUntil, "hour_rows", result.HourRows, "day_rows", result.DayRows)
+			}
+			return err
+		}
+		if err := refresh(taskCtx); err != nil {
+			a.logger.Warn("usage_rollup_startup_failed", "error", err)
+		}
+		a.runPeriodicTask(taskCtx, 5*time.Minute, "usage_rollup", refresh)
+		return nil
+	})
+	startBackground("metrics_refresh", func(taskCtx context.Context) error {
+		a.refreshOperationalMetrics(taskCtx)
+		a.runPeriodicTask(taskCtx, 30*time.Second, "metrics_refresh", func(runCtx context.Context) error {
+			a.refreshOperationalMetrics(runCtx)
+			return nil
+		})
+		return nil
+	})
 	startBackground("settings_reconcile", func(taskCtx context.Context) error {
 		a.runPeriodicTask(taskCtx, 30*time.Second, "settings_reconcile", func(runCtx context.Context) error {
 			return a.settings.ReloadPersisted(runCtx)
@@ -389,13 +540,27 @@ func (a *Application) Run(ctx context.Context) error {
 		return nil
 	})
 	startBackground("release_check", func(taskCtx context.Context) error {
-		a.updates.Check(taskCtx)
-		a.runPeriodicTask(taskCtx, 24*time.Hour, "release_check", func(checkCtx context.Context) error {
-			a.updates.Check(checkCtx)
+		check := func(checkCtx context.Context) error {
+			snapshot := a.updates.Check(checkCtx)
+			a.updates.CheckUpstream(checkCtx)
+			if snapshot.UpdateAvailable && a.notifications != nil {
+				_, _, err := a.notifications.Publish(checkCtx, notificationdomain.Event{EventKey: "version_update_available", Severity: notificationdomain.SeverityInfo, Title: "发现可用更新", Body: fmt.Sprintf("维护仓库已发布 %s，当前运行 %s。", snapshot.LatestVersion, snapshot.CurrentVersion), DedupKey: "version:" + snapshot.LatestVersion})
+				return err
+			}
 			return nil
-		})
+		}
+		if err := check(taskCtx); err != nil {
+			a.logger.Warn("release_notification_failed", "error", err)
+		}
+		a.runPeriodicTask(taskCtx, 24*time.Hour, "release_check", check)
 		return nil
 	})
+	if a.notifications != nil {
+		startBackground("notification_cleanup", func(taskCtx context.Context) error {
+			a.runPeriodicTask(taskCtx, time.Hour, "notification_cleanup", func(runCtx context.Context) error { _, err := a.notifications.Prune(runCtx, 1000); return err })
+			return nil
+		})
+	}
 	startBackground("billing_reservation_cleanup", func(taskCtx context.Context) error {
 		a.runPeriodicTask(taskCtx, 10*time.Minute, "billing_reservation_cleanup", func(runCtx context.Context) error {
 			_, err := a.clientKeys.CleanupExpiredBilling(runCtx, 1000)
@@ -481,6 +646,42 @@ func (a *Application) Run(ctx context.Context) error {
 			return nil
 		}
 		return err
+	}
+}
+
+func (a *Application) refreshOperationalMetrics(ctx context.Context) {
+	if a.metrics == nil {
+		return
+	}
+	if states, err := a.accountRepo.CountStates(ctx); err == nil {
+		for _, state := range account.States() {
+			a.metrics.SetAccountState(string(state), states[state])
+		}
+	} else {
+		a.logger.Warn("account_state_metrics_failed", "error", err)
+	}
+	if a.egress == nil {
+		return
+	}
+	nodes, err := a.egress.List(ctx, "", repository.SortQuery{})
+	if err != nil {
+		a.logger.Warn("egress_metrics_failed", "error", err)
+		return
+	}
+	counts := map[string]uint64{"healthy": 0, "cooldown": 0, "disabled": 0}
+	now := time.Now().UTC()
+	for _, node := range nodes {
+		switch {
+		case !node.Enabled:
+			counts["disabled"]++
+		case node.CooldownUntil != nil && now.Before(*node.CooldownUntil):
+			counts["cooldown"]++
+		default:
+			counts["healthy"]++
+		}
+	}
+	for state, count := range counts {
+		a.metrics.SetEgressHealth(state, count)
 	}
 }
 

@@ -54,6 +54,8 @@ type auditResponse struct {
 	TotalTokens             int64     `json:"totalTokens"`
 	CostInUSDTicks          int64     `json:"costInUsdTicks"`
 	EstimatedCostInUSDTicks int64     `json:"estimatedCostInUsdTicks"`
+	RequestCacheEligible    bool      `json:"requestCacheEligible"`
+	RequestCacheHit         bool      `json:"requestCacheHit"`
 	PricingModel            string    `json:"pricingModel,omitempty"`
 	PricingVersion          string    `json:"pricingVersion,omitempty"`
 	NumSourcesUsed          int64     `json:"numSourcesUsed"`
@@ -199,17 +201,23 @@ type summaryRangeResponse struct {
 }
 
 type summaryUsageResponse struct {
-	Requests                int64   `json:"requests"`
-	SuccessfulRequests      int64   `json:"successfulRequests"`
-	FailedRequests          int64   `json:"failedRequests"`
-	InputTokens             int64   `json:"inputTokens"`
-	CachedInputTokens       int64   `json:"cachedInputTokens"`
-	OutputTokens            int64   `json:"outputTokens"`
-	ReasoningTokens         int64   `json:"reasoningTokens"`
-	TotalTokens             int64   `json:"totalTokens"`
-	AverageDurationMS       float64 `json:"averageDurationMs"`
-	SuccessRate             float64 `json:"successRate"`
-	EstimatedCostInUSDTicks int64   `json:"estimatedCostInUsdTicks"`
+	Requests                     int64   `json:"requests"`
+	SuccessfulRequests           int64   `json:"successfulRequests"`
+	FailedRequests               int64   `json:"failedRequests"`
+	InputTokens                  int64   `json:"inputTokens"`
+	CachedInputTokens            int64   `json:"cachedInputTokens"`
+	OutputTokens                 int64   `json:"outputTokens"`
+	ReasoningTokens              int64   `json:"reasoningTokens"`
+	TotalTokens                  int64   `json:"totalTokens"`
+	AverageDurationMS            float64 `json:"averageDurationMs"`
+	SuccessRate                  float64 `json:"successRate"`
+	CostInUSDTicks               int64   `json:"costInUsdTicks"`
+	EstimatedCostInUSDTicks      int64   `json:"estimatedCostInUsdTicks"`
+	BilledCostInUSDTicks         int64   `json:"billedCostInUsdTicks"`
+	RequestCacheEligibleRequests int64   `json:"requestCacheEligibleRequests"`
+	RequestCacheHits             int64   `json:"requestCacheHits"`
+	TokenCacheHitRate            float64 `json:"tokenCacheHitRate"`
+	RequestCacheHitRate          float64 `json:"requestCacheHitRate"`
 }
 
 type pricingResponse struct {
@@ -245,7 +253,7 @@ func (h *Handler) summary(c *gin.Context) {
 			Requests: result.Usage.Requests, SuccessfulRequests: result.Usage.SuccessfulRequests, FailedRequests: result.Usage.FailedRequests,
 			InputTokens: result.Usage.InputTokens, CachedInputTokens: result.Usage.CachedInputTokens, OutputTokens: result.Usage.OutputTokens,
 			ReasoningTokens: result.Usage.ReasoningTokens, TotalTokens: result.Usage.TotalTokens, AverageDurationMS: result.Usage.AverageDurationMS,
-			SuccessRate: result.Usage.SuccessRate, EstimatedCostInUSDTicks: result.Usage.EstimatedCostInUSDTicks,
+			SuccessRate: result.Usage.SuccessRate, CostInUSDTicks: result.Usage.CostInUSDTicks, EstimatedCostInUSDTicks: result.Usage.EstimatedCostInUSDTicks, BilledCostInUSDTicks: result.Usage.BilledCostInUSDTicks, RequestCacheEligibleRequests: result.Usage.RequestCacheEligible, RequestCacheHits: result.Usage.RequestCacheHits, TokenCacheHitRate: result.Usage.TokenCacheHitRate, RequestCacheHitRate: result.Usage.RequestCacheHitRate,
 		},
 		Pricing: pricingResponse{
 			Source: auditdomain.OfficialPricingSource, AsOf: auditdomain.OfficialPricingAsOf,
@@ -274,7 +282,7 @@ func newAuditResponse(value auditdomain.Record) auditResponse {
 		MediaInputImages: value.MediaInputImages, MediaOutputImages: value.MediaOutputImages, MediaOutputSeconds: value.MediaOutputSeconds,
 		InputTokens: value.InputTokens, CachedInputTokens: value.CachedInputTokens, OutputTokens: value.OutputTokens,
 		ReasoningTokens: value.ReasoningTokens, TotalTokens: value.TotalTokens, CostInUSDTicks: value.CostInUSDTicks,
-		EstimatedCostInUSDTicks: value.EstimatedCostInUSDTicks, PricingModel: value.PricingModel, PricingVersion: value.PricingVersion,
+		EstimatedCostInUSDTicks: value.EstimatedCostInUSDTicks, RequestCacheEligible: value.RequestCacheEligible, RequestCacheHit: value.RequestCacheHit, PricingModel: value.PricingModel, PricingVersion: value.PricingVersion,
 		NumSourcesUsed: value.NumSourcesUsed, NumServerSideToolsUsed: value.NumServerSideToolsUsed,
 		ContextInputTokens: value.ContextInputTokens, ContextOutputTokens: value.ContextOutputTokens, DurationMS: value.DurationMS,
 		ErrorCode: value.ErrorCode, AttemptCount: value.AttemptCount, CreatedAt: value.CreatedAt,

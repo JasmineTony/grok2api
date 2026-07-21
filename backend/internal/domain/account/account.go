@@ -131,17 +131,23 @@ func (s State) IsValid() bool {
 	}
 }
 
+var states = [...]State{StateReady, StateDegraded, StateCooldown, StateQuotaExhausted, StateReauthRequired, StateDisabled}
+
+func States() []State { return append([]State(nil), states[:]...) }
+
 // StateEvent ??????????????????? ApplyStateEvent ?????
 type StateEvent string
 
 const (
-	EventRequestSucceeded   StateEvent = "request_succeeded"
-	EventTransientFailure   StateEvent = "transient_failure"
-	EventRateLimited        StateEvent = "rate_limited"
-	EventQuotaExhausted     StateEvent = "quota_exhausted"
-	EventCredentialRejected StateEvent = "credential_rejected"
-	EventDisabled           StateEvent = "disabled"
-	EventEnabled            StateEvent = "enabled"
+	EventRequestSucceeded    StateEvent = "request_succeeded"
+	EventCredentialRefreshed StateEvent = "credential_refreshed"
+	EventTransientFailure    StateEvent = "transient_failure"
+	EventCooldownStarted     StateEvent = "cooldown_started"
+	EventRateLimited         StateEvent = "rate_limited"
+	EventQuotaExhausted      StateEvent = "quota_exhausted"
+	EventCredentialRejected  StateEvent = "credential_rejected"
+	EventDisabled            StateEvent = "disabled"
+	EventEnabled             StateEvent = "enabled"
 )
 
 // StateEventInput ?????????????
@@ -150,6 +156,17 @@ type StateEventInput struct {
 	At         time.Time
 	Reason     string
 	CooldownTo *time.Time
+}
+
+// StateHistoryEvent is a persisted, credential-free account state transition.
+type StateHistoryEvent struct {
+	ID        uint64
+	AccountID uint64
+	FromState State
+	ToState   State
+	Event     StateEvent
+	Reason    string
+	CreatedAt time.Time
 }
 
 // ApplyStateEvent ?????????????????????????
@@ -164,13 +181,18 @@ func ApplyStateEvent(current State, enabled bool, input StateEventInput) State {
 		return StateReauthRequired
 	case EventQuotaExhausted:
 		return StateQuotaExhausted
-	case EventRateLimited:
+	case EventCooldownStarted, EventRateLimited:
 		return StateCooldown
 	case EventTransientFailure:
 		if current == StateReauthRequired || current == StateQuotaExhausted {
 			return current
 		}
 		return StateDegraded
+	case EventCredentialRefreshed:
+		if current == StateDisabled {
+			return current
+		}
+		return StateReady
 	case EventRequestSucceeded:
 		if current == StateReauthRequired || current == StateQuotaExhausted || current == StateDisabled {
 			return current
@@ -204,6 +226,7 @@ type Credential struct {
 	Enabled                   bool
 	AuthStatus                AuthStatus
 	State                     State
+	StateChangedAt            *time.Time
 	Priority                  int
 	MaxConcurrent             int
 	MinimumRemaining          float64

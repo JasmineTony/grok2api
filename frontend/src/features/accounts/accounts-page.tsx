@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, ClipboardPaste, Compass, Download, ExternalLink, FileUp, Link, MoreHorizontal, Pencil, Plus, RefreshCw, RotateCw, Search, SquareTerminal, Trash2, TriangleAlert, Webhook } from "lucide-react";
+import { ArrowRight, ClipboardPaste, Compass, Download, ExternalLink, FileUp, History, Link, MoreHorizontal, Network, Pencil, Plus, RefreshCw, RotateCw, Search, SquareTerminal, Trash2, TriangleAlert, Webhook } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
@@ -33,6 +33,7 @@ import { useDebouncedValue } from "@/shared/hooks/use-debounced-value";
 import { cn } from "@/shared/lib/cn";
 import { formatDateTime, formatNumber } from "@/shared/lib/format";
 import { nextTableSort, type SortOrder, type TableSort } from "@/shared/lib/table-sort";
+import { AccountEgressPolicyDialog } from "@/features/accounts/account-egress-policy-dialog";
 import {
   acceptWebAccountTerms,
   cleanupAccounts,
@@ -46,6 +47,7 @@ import {
   importConsoleAccounts,
   importWebAccounts,
   listAccounts,
+  listAccountStateEvents,
   pollDeviceAuthorization,
   refreshAccountBilling,
   refreshAccountsQuota,
@@ -63,6 +65,7 @@ import {
   updateAccount,
   updateAccountsEnabled,
   type AccountDTO,
+  type AccountStateEventDTO,
   type AccountCleanupStatus,
   type AccountProvider,
   type AccountUpdateInput,
@@ -136,6 +139,8 @@ export function AccountsPage() {
   const [renewalProgress, setRenewalProgress] = useState<AccountTaskProgressDTO | null>(null);
   const [editing, setEditing] = useState<AccountDTO | null>(null);
   const [deleting, setDeleting] = useState<AccountDTO | null>(null);
+  const [stateHistoryAccount, setStateHistoryAccount] = useState<AccountDTO | null>(null);
+  const [egressPolicyAccount, setEgressPolicyAccount] = useState<AccountDTO | null>(null);
   const [deviceOpen, setDeviceOpen] = useState(false);
   const [deviceSession, setDeviceSession] = useState<DeviceSessionDTO | null>(null);
   const [deviceStatus, setDeviceStatus] = useState<"starting" | "pending" | "failed">("starting");
@@ -187,6 +192,12 @@ export function AccountsPage() {
   const summaryQuery = useQuery({
     queryKey: ["accounts", "summary"],
     queryFn: getAccountSummary,
+  });
+
+  const stateEventsQuery = useQuery({
+    queryKey: ["accounts", stateHistoryAccount?.id, "state-events"],
+    queryFn: () => listAccountStateEvents(stateHistoryAccount?.id ?? ""),
+    enabled: Boolean(stateHistoryAccount),
   });
 
   const invalidateAccountData = useCallback(() => {
@@ -875,6 +886,8 @@ export function AccountsPage() {
                         <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="size-8" aria-label={t("common.actions")}><MoreHorizontal /></Button></DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => beginEdit(account)}><Pencil />{t("common.edit")}</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setStateHistoryAccount(account)}><History />{t("accounts.stateHistory")}</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setEgressPolicyAccount(account)}><Network />{t("accounts.egressPolicy")}</DropdownMenuItem>
                           {provider === "grok_web" ? <DropdownMenuItem onClick={() => openWebConversion([account.id])}><ArrowRight />{t("accountConversion.action")}</DropdownMenuItem> : null}
                           {provider === "grok_web" ? (
                             <WebAccountSettingsMenu
@@ -1122,6 +1135,40 @@ export function AccountsPage() {
         </DialogContent>
       </Dialog>
 
+      <AccountEgressPolicyDialog account={egressPolicyAccount} onOpenChange={(open) => !open && setEgressPolicyAccount(null)} />
+
+      <Dialog open={Boolean(stateHistoryAccount)} onOpenChange={(open) => !open && setStateHistoryAccount(null)}>
+        <DialogContent className="max-w-[620px]">
+          <DialogHeader>
+            <DialogTitle>{t("accounts.stateHistory")}</DialogTitle>
+            <DialogDescription>
+              {stateHistoryAccount?.name}
+              {stateHistoryAccount?.stateChangedAt ? ` ? ${t("accounts.stateChangedAt", { time: formatDateTime(stateHistoryAccount.stateChangedAt, i18n.language) })}` : ""}
+            </DialogDescription>
+          </DialogHeader>
+          {stateEventsQuery.isPending ? <LoadingState className="min-h-32" /> : null}
+          {stateEventsQuery.isError ? <ErrorState message={stateEventsQuery.error.message} onRetry={() => void stateEventsQuery.refetch()} /> : null}
+          {stateEventsQuery.data?.length === 0 ? <EmptyState message={t("accounts.noStateEvents")} /> : null}
+          {stateEventsQuery.data && stateEventsQuery.data.length > 0 ? (
+            <div className="max-h-[50vh] space-y-2 overflow-y-auto pr-1">
+              {stateEventsQuery.data.map((event: AccountStateEventDTO) => (
+                <div key={event.id} className="rounded-md border bg-muted/20 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-xs font-medium">
+                      <span>{formatAccountState(event.fromState, t)}</span>
+                      <ArrowRight className="size-3.5 text-muted-foreground" />
+                      <span>{formatAccountState(event.toState, t)}</span>
+                    </div>
+                    <time className="text-[11px] text-muted-foreground">{formatDateTime(event.createdAt, i18n.language)}</time>
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">{event.event}{event.reason ? ` ? ${event.reason}` : ""}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
       <AlertDialog open={Boolean(deleting)} onOpenChange={(open) => !open && setDeleting(null)}>
         <AlertDialogContent>
           <AlertDialogHeader><AlertDialogTitle>{t("accounts.deleteTitle")}</AlertDialogTitle><AlertDialogDescription>{t("accounts.deleteDescription")}</AlertDialogDescription></AlertDialogHeader>
@@ -1218,13 +1265,27 @@ function AccountTypeText({ label, title, variant }: { label: string; title?: str
   return <span title={title ?? label} className={cn("max-w-32 truncate text-xs font-medium", variant === "free" ? "text-emerald-700 dark:text-emerald-300" : "text-primary")}>{label}</span>;
 }
 
+function formatAccountState(state: AccountDTO["state"], t: (key: string) => string): string {
+  const keys: Record<AccountDTO["state"], string> = {
+    ready: "accounts.statusActive", degraded: "accounts.statusDegraded", cooldown: "accounts.statusCooldown",
+    quota_exhausted: "accounts.waitingReset", reauth_required: "accounts.statusReauthRequired", disabled: "accounts.statusDisabled",
+  };
+  return t(keys[state]);
+}
+
 function AccountStatus({ account }: { account: AccountDTO }) {
   const { t } = useTranslation();
-  if (!account.enabled) {
+  if (!account.enabled || account.state === "disabled") {
     return <Badge variant="outline" className="text-muted-foreground">{t("accounts.statusDisabled")}</Badge>;
   }
-  if (account.authStatus === "reauthRequired") {
+  if (account.authStatus === "reauthRequired" || account.state === "reauth_required") {
     return <Badge variant="destructive">{t("accounts.statusReauthRequired")}</Badge>;
+  }
+  if (account.state === "degraded") {
+    return <Badge variant="secondary" className="bg-orange-500/10 text-orange-700 dark:text-orange-300">{t("accounts.statusDegraded")}</Badge>;
+  }
+  if (account.state === "quota_exhausted") {
+    return <Badge variant="secondary" className="bg-amber-500/10 text-amber-700 dark:text-amber-300">{t("accounts.waitingReset")}</Badge>;
   }
   if (account.provider === "grok_console" && account.quotaWindows?.some((window) => window.mode === "console" && window.remaining <= 0)) {
     return <Badge variant="secondary" className="bg-amber-500/10 text-amber-700 dark:text-amber-300">{t("accounts.waitingReset")}</Badge>;
@@ -1235,7 +1296,7 @@ function AccountStatus({ account }: { account: AccountDTO }) {
   if (account.quota.status === "probing") {
     return <Badge variant="secondary" className="bg-sky-500/10 text-sky-700 dark:text-sky-300">{t("accounts.probing")}</Badge>;
   }
-  if (account.cooldownUntil && new Date(account.cooldownUntil) > new Date()) {
+  if (account.state === "cooldown" || (account.cooldownUntil && new Date(account.cooldownUntil) > new Date())) {
     return <Badge variant="secondary" className="bg-amber-500/10 text-amber-700 dark:text-amber-300">{t("accounts.statusCooldown")}</Badge>;
   }
   return <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">{t("accounts.statusActive")}</Badge>;

@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "policy_denied",
+    "message": "policy denied",
+    "type": "permission_error"
+  }
+}

@@ -57,6 +57,7 @@ type Input struct {
 	PromptCacheSeed    string
 	PreviousResponseID string
 	Operation          audit.Operation
+	ForcedProvider     string
 }
 
 type Usage struct {
@@ -103,6 +104,12 @@ type accountModelSyncer interface {
 }
 
 // Service 负责模型路由、账号选择、故障切换与审计收口。
+type gatewayMetrics interface {
+	IncRetry(category string)
+	AddTokens(kind string, count uint64)
+	AddCost(kind string, amount float64)
+}
+
 type Service struct {
 	models         routeResolver
 	audits         auditRecorder
@@ -125,12 +132,15 @@ type Service struct {
 	rateLimitTeams map[uint64]string
 	modelSyncMu    sync.Mutex
 	modelSyncing   map[uint64]struct{}
+	metrics        gatewayMetrics
 }
 
 type teamModelRateLimit struct {
 	TeamFingerprint string
 	Until           time.Time
 }
+
+func (s *Service) ConfigureMetrics(metrics gatewayMetrics) { s.metrics = metrics }
 
 func (s *Service) ConfigureMedia(repository repository.MediaJobRepository, concurrency int) {
 	if concurrency <= 0 {
@@ -375,6 +385,9 @@ func (s *Service) createResponseAt(ctx context.Context, input Input, path string
 		operation = audit.OperationResponses
 	}
 	routes, aliasEffort, err := s.resolvePublicModelRoutes(ctx, input.PublicModel)
+	if input.ForcedProvider != "" {
+		routes = filterRoutesByProvider(routes, input.ForcedProvider)
+	}
 	if err != nil {
 		return nil, ErrModelNotFound
 	}
@@ -516,6 +529,7 @@ attemptLoop:
 		if limited, ok := s.activeTeamModelRateLimit(lease.Credential, route.UpstreamModel, time.Now().UTC()); ok {
 			lease.Release()
 			lastFailure = &UpstreamFailure{
+				Category: FailureRateLimit, Stage: "selection", Retryable: true, AccountImpact: ImpactCooldown,
 				HTTPStatus: http.StatusTooManyRequests, Code: "upstream_rate_limited", PublicMessage: "上游请求频率受限",
 				Fingerprint: "429:team_model_rate_limit", RetryAfter: time.Until(limited.Until),
 			}
@@ -551,7 +565,7 @@ attemptLoop:
 			lease.Release()
 			lastErr = err
 			if ctx.Err() != nil || errors.Is(err, context.Canceled) {
-				lastFailure = &UpstreamFailure{HTTPStatus: 499, Code: "request_canceled", PublicMessage: "请求已取消", AccountID: credential.ID, AccountName: credential.Name, Cause: firstError(ctx.Err(), err)}
+				lastFailure = newCanceledUpstreamFailure(firstError(ctx.Err(), err), credential.ID, credential.Name)
 				break
 			}
 			if isSSOCredentialRejected(err, credential) {
@@ -600,7 +614,7 @@ attemptLoop:
 				if refreshErr != nil {
 					lastFailure = newCredentialUpstreamFailure(refreshErr, credential.ID, credential.Name)
 				} else if ctx.Err() != nil || errors.Is(err, context.Canceled) {
-					lastFailure = &UpstreamFailure{HTTPStatus: 499, Code: "request_canceled", PublicMessage: "请求已取消", AccountID: credential.ID, AccountName: credential.Name, Cause: firstError(ctx.Err(), err)}
+					lastFailure = newCanceledUpstreamFailure(firstError(ctx.Err(), err), credential.ID, credential.Name)
 					break
 				} else {
 					lastFailure = newTransportUpstreamFailure(err, credential.ID, credential.Name)
@@ -661,7 +675,7 @@ attemptLoop:
 					lease.Release()
 					lastErr = err
 					if ctx.Err() != nil || errors.Is(err, context.Canceled) {
-						lastFailure = &UpstreamFailure{HTTPStatus: 499, Code: "request_canceled", PublicMessage: "请求已取消", AccountID: credential.ID, AccountName: credential.Name, Cause: firstError(ctx.Err(), err)}
+						lastFailure = newCanceledUpstreamFailure(firstError(ctx.Err(), err), credential.ID, credential.Name)
 						break attemptLoop
 					}
 					lastFailure = newTransportUpstreamFailure(err, credential.ID, credential.Name)
@@ -696,17 +710,18 @@ attemptLoop:
 					// model-scoped; only an actual credential rejection requires reauth.
 					s.selector.MarkModelAccessDenied(ctx, credential, route.UpstreamModel, retryAfter)
 				} else {
-					_ = s.accounts.MarkReauthRequired(ctx, credential.ID, fmt.Sprintf("%s chat endpoint access denied", credential.Provider))
-					s.selector.MarkQuotaStateChanged(credential.Provider)
+					// A policy/permission denial is not proof that the credential is
+					// invalid. Keep the account degraded instead of forcing reauth.
+					s.selector.MarkUpstreamFailure(ctx, credential, lastFailure)
 				}
 				failureHandled = true
 			} else if s.providers.SupportsCredentialRefresh(credential.Provider) && lastFailure.CredentialRejected {
-				_ = s.accounts.MarkReauthRequired(ctx, credential.ID, fmt.Sprintf("%s credential rejected", credential.Provider))
+				_ = s.accounts.MarkReauthRequired(ctx, credential.ID, lastFailure.StateReason())
 				s.selector.MarkQuotaStateChanged(credential.Provider)
 				failureHandled = true
 			}
 			if lastFailure.AccountScoped && !failureHandled {
-				s.selector.MarkFailure(ctx, credential, response.StatusCode, retryAfter)
+				s.selector.MarkUpstreamFailure(ctx, credential, lastFailure)
 			}
 			lease.Release()
 			lastErr = fmt.Errorf("上游返回 %d", response.StatusCode)
@@ -716,6 +731,9 @@ attemptLoop:
 				if failureFingerprints[lastFailure.Fingerprint] >= 2 {
 					break
 				}
+			}
+			if s.metrics != nil {
+				s.metrics.IncRetry(string(lastFailure.Category))
 			}
 			continue
 		}
@@ -737,6 +755,7 @@ attemptLoop:
 				record.AccountID = &accountID
 				record.AccountName = credential.Name
 				record.StatusCode = response.StatusCode
+				usage = normalizeUsage(usage)
 				record.InputTokens = usage.InputTokens
 				record.CachedInputTokens = usage.CachedInputTokens
 				record.OutputTokens = usage.OutputTokens
@@ -757,6 +776,7 @@ attemptLoop:
 					record.PricingModel = tokenPricing.Model
 					record.PricingVersion = audit.OfficialPricingAsOf
 				}
+				recordGatewayUsageMetrics(s.metrics, usage, record.CostInUSDTicks, record.EstimatedCostInUSDTicks)
 				record.NumSourcesUsed = usage.NumSourcesUsed
 				record.NumServerSideToolsUsed = usage.NumServerSideToolsUsed
 				record.ContextInputTokens = usage.ContextInputTokens
@@ -838,6 +858,36 @@ attemptLoop:
 		s.logger.Error("request_usage_write_failed", "event_id", record.EventID, "request_id", input.RequestID, "error", err)
 	}
 	return nil, fmt.Errorf("%w: %w", ErrNoAvailableAccount, lastErr)
+}
+
+func normalizeUsage(usage Usage) Usage {
+	usage.InputTokens = max(int64(0), usage.InputTokens)
+	usage.CachedInputTokens = min(usage.InputTokens, max(int64(0), usage.CachedInputTokens))
+	usage.OutputTokens = max(int64(0), usage.OutputTokens)
+	usage.ReasoningTokens = max(int64(0), usage.ReasoningTokens)
+	usage.TotalTokens = max(int64(0), usage.TotalTokens)
+	if usage.TotalTokens == 0 {
+		usage.TotalTokens = usage.InputTokens + usage.OutputTokens + usage.ReasoningTokens
+	}
+	return usage
+}
+
+func recordGatewayUsageMetrics(metrics gatewayMetrics, usage Usage, actualCostTicks, estimatedCostTicks int64) {
+	if metrics == nil {
+		return
+	}
+	inputTokens := max(int64(0), usage.InputTokens)
+	cachedTokens := min(inputTokens, max(int64(0), usage.CachedInputTokens))
+	metrics.AddTokens("input", uint64(inputTokens))
+	metrics.AddTokens("cached_input", uint64(cachedTokens))
+	metrics.AddTokens("output", uint64(max(int64(0), usage.OutputTokens)))
+	metrics.AddTokens("reasoning", uint64(max(int64(0), usage.ReasoningTokens)))
+	if actualCostTicks > 0 {
+		metrics.AddCost("actual", float64(actualCostTicks)/10_000_000_000)
+	}
+	if estimatedCostTicks > 0 {
+		metrics.AddCost("estimated", float64(estimatedCostTicks)/10_000_000_000)
+	}
 }
 
 func isUpstreamStreamFailure(errorCode string) bool {
@@ -1125,4 +1175,14 @@ func firstError(values ...error) error {
 		}
 	}
 	return errors.New("未知上游错误")
+}
+
+func filterRoutesByProvider(routes []modeldomain.Route, providerValue string) []modeldomain.Route {
+	filtered := make([]modeldomain.Route, 0, len(routes))
+	for _, route := range routes {
+		if string(route.Provider) == providerValue {
+			filtered = append(filtered, route)
+		}
+	}
+	return filtered
 }

@@ -1,0 +1,21 @@
+{
+  "created": "<normalized>",
+  "id": "<normalized>",
+  "model": "grok-3",
+  "output": [
+    {
+      "content": [
+        {
+          "text": "ok",
+          "type": "output_text"
+        }
+      ],
+      "role": "assistant",
+      "type": "message"
+    }
+  ],
+  "usage": {
+    "input_tokens": 1,
+    "output_tokens": 1
+  }
+}

@@ -18,6 +18,7 @@ import { useAuth } from "@/shared/auth/use-auth";
 import { GitHubMark } from "@/shared/components/github-mark";
 import { SiteFooter } from "@/shared/components/site-footer";
 import { cn } from "@/shared/lib/cn";
+import { NotificationCenter } from "@/features/system/notification-center";
 import { CurrentVersionLabel } from "@/features/system/version-update";
 
 const navigation = [
@@ -222,11 +223,12 @@ export function AppShell() {
               <span>{t("appName")}</span>
               <CurrentVersionLabel />
             </Link>
-            <Button variant="ghost" size="icon" className="size-7 text-muted-foreground [&_svg]:size-[15px]" asChild>
-              <a href="https://github.com/JasmineTony/grok2api" target="_blank" rel="noreferrer" aria-label="GitHub">
-                <GitHubMark />
-              </a>
-            </Button>
+            <div className="flex items-center gap-1">
+              <NotificationCenter />
+              <Button variant="ghost" size="icon" className="size-7 text-muted-foreground [&_svg]:size-[15px]" asChild>
+                <a href="https://github.com/JasmineTony/grok2api" target="_blank" rel="noreferrer" aria-label="GitHub"><GitHubMark /></a>
+              </Button>
+            </div>
           </div>
           {navigationContent}
           <div className="relative z-10 mt-4 shrink-0 bg-sidebar pt-4">{accountControl}</div>
@@ -246,11 +248,12 @@ export function AppShell() {
               </SheetContent>
             </Sheet>
             <span className="flex items-baseline gap-2 text-sm font-semibold"><span>{t("appName")}</span><CurrentVersionLabel /></span>
-            <Button variant="ghost" size="icon" className="size-8 text-muted-foreground hover:text-foreground" asChild>
-              <a href="https://github.com/JasmineTony/grok2api" target="_blank" rel="noreferrer" aria-label="GitHub">
-                <GitHubMark />
-              </a>
-            </Button>
+            <div className="flex items-center gap-1">
+              <NotificationCenter />
+              <Button variant="ghost" size="icon" className="size-8 text-muted-foreground hover:text-foreground" asChild>
+                <a href="https://github.com/JasmineTony/grok2api" target="_blank" rel="noreferrer" aria-label="GitHub"><GitHubMark /></a>
+              </Button>
+            </div>
           </header>
 
           <main className={cn("mx-auto w-full max-w-[1440px] flex-1 px-5 sm:px-8", isMediaWorkspace ? "pt-8 pb-0 lg:pt-20" : "py-8 lg:py-20")}>

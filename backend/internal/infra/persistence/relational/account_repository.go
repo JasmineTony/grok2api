@@ -790,6 +790,8 @@ func upsertKnownAccountByIdentity(tx *gorm.DB, value account.Credential, existin
 		row.MaxConcurrent = existing.MaxConcurrent
 		row.MinimumRemaining = existing.MinimumRemaining
 		row.FailureCount = existing.FailureCount
+		row.State = existing.State
+		row.StateChangedAt = existing.StateChangedAt
 		row.CooldownUntil = existing.CooldownUntil
 		row.LastError = existing.LastError
 		row.LastUsedAt = existing.LastUsedAt
@@ -1109,12 +1111,7 @@ func (r *AccountRepository) UpdateTokens(ctx context.Context, id uint64, accessT
 	if refreshToken != "" {
 		updates["encrypted_refresh"] = refreshToken
 	}
-	if err := r.db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&accountCredentialModel{}).Where("account_id = ?", id).Updates(updates).Error; err != nil {
-			return err
-		}
-		return tx.Model(&accountModel{}).Where("id = ?", id).Updates(map[string]any{"auth_status": string(account.AuthStatusActive), "last_error": ""}).Error
-	}); err != nil {
+	if err := r.db.db.WithContext(ctx).Model(&accountCredentialModel{}).Where("account_id = ?", id).Updates(updates).Error; err != nil {
 		return account.Credential{}, err
 	}
 	return r.Get(ctx, id)
@@ -1238,13 +1235,106 @@ func (r *AccountRepository) MarkBuildAPIFallback(ctx context.Context, id uint64,
 	return nil
 }
 
-func (r *AccountRepository) UpdateHealth(ctx context.Context, id uint64, failureCount int, cooldownUntil *time.Time, lastError string, success bool) error {
-	updates := map[string]any{"failure_count": failureCount, "cooldown_until": cooldownUntil, "last_error": truncate(lastError, 512)}
-	if success {
-		now := time.Now().UTC()
-		updates["last_used_at"] = &now
+func (r *AccountRepository) TransitionHealth(ctx context.Context, transition repository.AccountHealthTransition) error {
+	if transition.AccountID == 0 || transition.Event == "" || transition.FailureCount < 0 {
+		return repository.ErrConflict
 	}
-	return r.db.db.WithContext(ctx).Model(&accountModel{}).Where("id = ?", id).Updates(updates).Error
+	when := transition.OccurredAt.UTC()
+	if when.IsZero() {
+		when = time.Now().UTC()
+	}
+	return r.db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var row accountModel
+		if err := tx.Select("id", "enabled", "auth_status", "state").Where("id = ?", transition.AccountID).Take(&row).Error; err != nil {
+			return mapError(err)
+		}
+		current := account.State(row.State)
+		if !current.IsValid() {
+			switch {
+			case !row.Enabled:
+				current = account.StateDisabled
+			case row.AuthStatus == string(account.AuthStatusReauthRequired):
+				current = account.StateReauthRequired
+			default:
+				current = account.StateReady
+			}
+		}
+		next := account.ApplyStateEvent(current, row.Enabled, account.StateEventInput{
+			Event: transition.Event, At: when, Reason: transition.Reason, CooldownTo: transition.CooldownUntil,
+		})
+		if transition.Event == account.EventEnabled && row.AuthStatus == string(account.AuthStatusReauthRequired) {
+			next = account.StateReauthRequired
+		}
+		updates := map[string]any{
+			"state": next, "failure_count": transition.FailureCount,
+			"cooldown_until": transition.CooldownUntil,
+		}
+		if transition.Event == account.EventRequestSucceeded || transition.Event == account.EventCredentialRefreshed || transition.Event == account.EventEnabled {
+			updates["last_error"] = ""
+		} else if strings.TrimSpace(transition.Reason) != "" {
+			updates["last_error"] = truncate(transition.Reason, 512)
+		}
+		if transition.Success {
+			updates["last_used_at"] = &when
+		}
+		if next != current {
+			updates["state_changed_at"] = &when
+		}
+		if transition.Event == account.EventCredentialRejected {
+			updates["auth_status"] = account.AuthStatusReauthRequired
+		} else if transition.Event == account.EventCredentialRefreshed {
+			updates["auth_status"] = account.AuthStatusActive
+		}
+		if err := tx.Model(&accountModel{}).Where("id = ?", transition.AccountID).Updates(updates).Error; err != nil {
+			return err
+		}
+		if next == current {
+			return nil
+		}
+		return tx.Create(&accountStateEventModel{
+			AccountID: transition.AccountID, FromState: string(current), ToState: string(next),
+			Event: string(transition.Event), Reason: truncate(transition.Reason, 512), CreatedAt: when,
+		}).Error
+	})
+}
+
+func (r *AccountRepository) CountStates(ctx context.Context) (map[account.State]uint64, error) {
+	var rows []struct {
+		State string
+		Count int64
+	}
+	if err := r.db.db.WithContext(ctx).Model(&accountModel{}).Select("state, COUNT(*) AS count").Group("state").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[account.State]uint64, len(rows))
+	for _, row := range rows {
+		state := account.State(row.State)
+		if state.IsValid() && row.Count > 0 {
+			result[state] = uint64(row.Count)
+		}
+	}
+	return result, nil
+}
+
+func (r *AccountRepository) ListStateEvents(ctx context.Context, accountID uint64, limit int) ([]account.StateHistoryEvent, error) {
+	if accountID == 0 {
+		return nil, repository.ErrNotFound
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	var rows []accountStateEventModel
+	if err := r.db.db.WithContext(ctx).Where("account_id = ?", accountID).Order("created_at DESC, id DESC").Limit(limit).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	result := make([]account.StateHistoryEvent, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, account.StateHistoryEvent{
+			ID: row.ID, AccountID: row.AccountID, FromState: account.State(row.FromState), ToState: account.State(row.ToState),
+			Event: account.StateEvent(row.Event), Reason: row.Reason, CreatedAt: row.CreatedAt,
+		})
+	}
+	return result, nil
 }
 
 func (r *AccountRepository) UpsertModelQuotaBlock(ctx context.Context, value account.ModelQuotaBlock) error {

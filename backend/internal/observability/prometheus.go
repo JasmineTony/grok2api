@@ -28,6 +28,7 @@ func (c PrometheusConfig) normalized() PrometheusConfig {
 type Metrics struct {
 	mu            sync.RWMutex
 	requests      map[string]uint64
+	retries       map[string]uint64
 	durations     map[string]durationSummary
 	accountStates map[string]uint64
 	egressHealth  map[string]uint64
@@ -41,13 +42,19 @@ type durationSummary struct {
 }
 
 func NewMetrics() *Metrics {
-	return &Metrics{requests: map[string]uint64{}, durations: map[string]durationSummary{}, accountStates: map[string]uint64{}, egressHealth: map[string]uint64{}, tokens: map[string]uint64{}, cost: map[string]float64{}}
+	return &Metrics{requests: map[string]uint64{}, retries: map[string]uint64{}, durations: map[string]durationSummary{}, accountStates: map[string]uint64{}, egressHealth: map[string]uint64{}, tokens: map[string]uint64{}, cost: map[string]float64{}}
 }
 
 func (m *Metrics) IncRequest(result, category string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.requests[fmt.Sprintf("%s|%s", safeLabel(result), safeLabel(category))]++
+}
+
+func (m *Metrics) IncRetry(category string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.retries[safeLabel(category)]++
 }
 
 func (m *Metrics) ObserveDuration(kind string, duration time.Duration) {
@@ -96,6 +103,8 @@ func (m *Metrics) Snapshot() string {
 	var b strings.Builder
 	b.WriteString("# TYPE grok2api_requests_total counter\n")
 	writeSorted2(&b, "grok2api_requests_total", m.requests, "result", "category")
+	b.WriteString("# TYPE grok2api_retries_total counter\n")
+	writeSorted1(&b, "grok2api_retries_total", m.retries, "category")
 	b.WriteString("# TYPE grok2api_request_duration_seconds summary\n")
 	for _, key := range sortedKeys(m.durations) {
 		item := m.durations[key]

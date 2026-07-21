@@ -36,6 +36,14 @@ Templates are available in [`templates/`](./templates/).
 | 2026-07-20 06 — SSH agent and Chinese-first README | [Plan](./2026-07-20-06-ssh-agent-readme-simplification/PLAN.md) | [Result](./2026-07-20-06-ssh-agent-readme-simplification/RESULT.md) | Complete |
 | 2026-07-20 07 — Reliability platform foundation | [Plan](./2026-07-20-07-reliability-platform-foundation/PLAN.md) | [Result](./2026-07-20-07-reliability-platform-foundation/RESULT.md) | Complete |
 
+| 2026-07-20 08 — Reliability platform roadmap completion | [Plan](./2026-07-20-08-reliability-platform-roadmap/PLAN.md) | [Result](./2026-07-20-08-reliability-platform-roadmap/RESULT.md) | In progress |
+
+## Push and PR gate
+
+- The accepted PLAN.md is the delivery unit. Keep its branch local until all scope, tests and acceptance, and assumptions/defaults are complete.
+- Local checkpoint commits are allowed; do not push partial implementation or create intermediate PRs.
+- Complete RESULT.md and the final verification pass before the first push.
+
 ## Creating the next iteration
 
 1. Determine the next sequence number for the date.

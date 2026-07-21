@@ -1,0 +1,7 @@
+event: message
+data: {"id":"chat_stream_fixture","object":"chat.completion.chunk","created":1710000000,"choices":[{"index":0,"delta":{"role":"assistant","content":"Hel"}}]}
+
+event: message
+data: {"id":"chat_stream_fixture_2","object":"chat.completion.chunk","created":1710000001,"choices":[{"index":0,"delta":{"content":"lo"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}
+
+data: [DONE]

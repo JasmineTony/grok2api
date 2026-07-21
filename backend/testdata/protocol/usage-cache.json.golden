@@ -1,0 +1,11 @@
+{
+  "created": "<normalized>",
+  "id": "<normalized>",
+  "usage": {
+    "cached_input_tokens": 75,
+    "input_tokens": 100,
+    "output_tokens": 20,
+    "reasoning_tokens": 5,
+    "total_tokens": 120
+  }
+}

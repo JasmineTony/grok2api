@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"net/http"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -801,4 +802,93 @@ func (f failingConcurrencyLimiter) Acquire(context.Context, string, int) (func()
 
 func (f failingConcurrencyLimiter) Current(context.Context, string) (int, error) {
 	return 0, nil
+}
+
+func TestSelectorUnknownForbiddenDoesNotRequireReauthentication(t *testing.T) {
+	ctx := context.Background()
+	database, err := relational.OpenSQLite(ctx, filepath.Join(t.TempDir(), "selector-state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if err := database.InitializeSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	repo := relational.NewAccountRepository(database)
+	credential, _, err := repo.UpsertByIdentity(ctx, account.Credential{
+		Provider: account.ProviderBuild, Name: "forbidden", SourceKey: "forbidden", EncryptedAccessToken: "encrypted",
+		Enabled: true, AuthStatus: account.AuthStatusActive,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	selector := NewSelector(repo, memory.NewConcurrencyLimiter(), memory.NewStickyStore(), nil, time.Hour, time.Second, time.Minute)
+	selector.MarkFailure(ctx, credential, 403, 0)
+	stored, err := repo.Get(ctx, credential.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.AuthStatus != account.AuthStatusActive || stored.State != account.StateCooldown {
+		t.Fatalf("unknown 403 changed credential status: %#v", stored)
+	}
+}
+
+func TestSelectorStructuredFailurePreservesCredentialOnUnknownForbidden(t *testing.T) {
+	ctx := context.Background()
+	database, err := relational.OpenSQLite(ctx, filepath.Join(t.TempDir(), "structured-forbidden.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := database.InitializeSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	repo := relational.NewAccountRepository(database)
+	credential, _, err := repo.UpsertByIdentity(ctx, account.Credential{
+		Provider: account.ProviderBuild, Name: "policy", SourceKey: "policy", EncryptedAccessToken: "encrypted",
+		Enabled: true, AuthStatus: account.AuthStatusActive,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	selector := NewSelector(repo, memory.NewConcurrencyLimiter(), memory.NewStickyStore(), nil, time.Hour, time.Second, time.Minute)
+	failure := newHTTPUpstreamFailure(http.StatusForbidden, []byte("{\"error\":\"temporary edge policy rejection\"}"), credential.ID, credential.Name)
+	selector.MarkUpstreamFailure(ctx, credential, failure)
+	stored, err := repo.Get(ctx, credential.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.AuthStatus != account.AuthStatusActive || stored.State == account.StateReauthRequired {
+		t.Fatalf("unknown forbidden changed credential state: %#v", stored)
+	}
+}
+
+func TestSelectorStructuredCredentialFailureRequiresReauthentication(t *testing.T) {
+	ctx := context.Background()
+	database, err := relational.OpenSQLite(ctx, filepath.Join(t.TempDir(), "structured-credential.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := database.InitializeSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	repo := relational.NewAccountRepository(database)
+	credential, _, err := repo.UpsertByIdentity(ctx, account.Credential{
+		Provider: account.ProviderBuild, Name: "credential", SourceKey: "credential", EncryptedAccessToken: "encrypted",
+		Enabled: true, AuthStatus: account.AuthStatusActive,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	selector := NewSelector(repo, memory.NewConcurrencyLimiter(), memory.NewStickyStore(), nil, time.Hour, time.Second, time.Minute)
+	failure := newHTTPUpstreamFailure(http.StatusForbidden, []byte("{\"error\":\"invalid token\"}"), credential.ID, credential.Name)
+	selector.MarkUpstreamFailure(ctx, credential, failure)
+	stored, err := repo.Get(ctx, credential.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.AuthStatus != account.AuthStatusReauthRequired || stored.State != account.StateReauthRequired {
+		t.Fatalf("credential rejection did not require reauth: %#v", stored)
+	}
 }

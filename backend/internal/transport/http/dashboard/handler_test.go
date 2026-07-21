@@ -22,6 +22,8 @@ func TestHandlerReturnsDashboardContract(t *testing.T) {
 		Buckets:         []dashboarddomain.Bucket{{Index: 0, Requests: 10, Tokens: 1200}},
 		ActivityBuckets: []dashboarddomain.ActivityBucket{{Index: 179, Requests: 10}},
 		Providers:       []dashboarddomain.ProviderUsage{{Provider: "grok_build", Requests: 10, SuccessfulRequests: 9, Tokens: 1200}},
+		TopAccounts:     []dashboarddomain.AccountUsage{{AccountID: 11, AccountName: "account", Provider: "grok_build", Usage: dashboarddomain.DimensionUsage{Requests: 10}}},
+		TopClientKeys:   []dashboarddomain.ClientKeyUsage{{ClientKeyID: 7, ClientKeyName: "key", Usage: dashboarddomain.DimensionUsage{Requests: 10}}},
 	}})
 	router := gin.New()
 	NewHandler(service).Register(router.Group("/api/admin/v1"))
@@ -41,13 +43,15 @@ func TestHandlerReturnsDashboardContract(t *testing.T) {
 			} `json:"usage"`
 			Series    []seriesDTO        `json:"series"`
 			Activity  []activityDTO      `json:"activity"`
-			Providers []providerUsageDTO `json:"providers"`
+			Providers     []providerUsageDTO `json:"providers"`
+			TopAccounts   []accountUsageDTO `json:"topAccounts"`
+			TopClientKeys []clientKeyUsageDTO `json:"topClientKeys"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
 		t.Fatal(err)
 	}
-	if envelope.Data.Period != "7d" || envelope.Data.Usage.Requests != 10 || envelope.Data.Usage.SuccessRate != 90 || len(envelope.Data.Series) != 7 || len(envelope.Data.Activity) != 180 || len(envelope.Data.Providers) != 1 {
+	if envelope.Data.Period != "7d" || envelope.Data.Usage.Requests != 10 || envelope.Data.Usage.SuccessRate != 90 || len(envelope.Data.Series) != 7 || len(envelope.Data.Activity) != 180 || len(envelope.Data.Providers) != 1 || len(envelope.Data.TopAccounts) != 1 || len(envelope.Data.TopClientKeys) != 1 {
 		t.Fatalf("response = %#v", envelope.Data)
 	}
 }

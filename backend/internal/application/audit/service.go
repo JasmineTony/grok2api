@@ -311,7 +311,13 @@ type SummaryUsage struct {
 	TotalTokens             int64
 	AverageDurationMS       float64
 	SuccessRate             float64
+	CostInUSDTicks          int64
 	EstimatedCostInUSDTicks int64
+	BilledCostInUSDTicks    int64
+	RequestCacheEligible    int64
+	RequestCacheHits        int64
+	TokenCacheHitRate       float64
+	RequestCacheHitRate     float64
 	PricedRequests          int64
 	UnpricedRequests        int64
 	PricedTokens            int64
@@ -363,8 +369,14 @@ func (s *Service) loadSummary(ctx context.Context, search string, filter ListFil
 		Requests: aggregate.Requests, SuccessfulRequests: aggregate.SuccessfulRequests, FailedRequests: aggregate.FailedRequests,
 		InputTokens: aggregate.InputTokens, CachedInputTokens: aggregate.CachedInputTokens, OutputTokens: aggregate.OutputTokens,
 		ReasoningTokens: aggregate.ReasoningTokens, TotalTokens: aggregate.TotalTokens,
-		EstimatedCostInUSDTicks: aggregate.EstimatedCostInUSDTicks, PricedRequests: aggregate.PricedRequests,
+		CostInUSDTicks: aggregate.CostInUSDTicks, EstimatedCostInUSDTicks: aggregate.EstimatedCostInUSDTicks, BilledCostInUSDTicks: aggregate.BilledCostInUSDTicks, RequestCacheEligible: aggregate.RequestCacheEligible, RequestCacheHits: aggregate.RequestCacheHits, PricedRequests: aggregate.PricedRequests,
 		UnpricedRequests: aggregate.UnpricedRequests, PricedTokens: aggregate.PricedTokens, UnpricedTokens: aggregate.UnpricedTokens,
+	}
+	if aggregate.InputTokens > 0 {
+		usage.TokenCacheHitRate = float64(aggregate.CachedInputTokens) / float64(aggregate.InputTokens) * 100
+	}
+	if aggregate.RequestCacheEligible > 0 {
+		usage.RequestCacheHitRate = float64(aggregate.RequestCacheHits) / float64(aggregate.RequestCacheEligible) * 100
 	}
 	if aggregate.Requests > 0 {
 		usage.SuccessRate = float64(aggregate.SuccessfulRequests) / float64(aggregate.Requests) * 100

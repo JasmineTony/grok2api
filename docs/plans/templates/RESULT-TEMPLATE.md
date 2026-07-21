@@ -16,6 +16,18 @@
 | --- | --- | --- |
 | Example | Passed | Relevant detail |
 
+## Assumptions and defaults verification
+
+| Assumption/default | Result | Evidence |
+| --- | --- | --- |
+| Example | Confirmed | Test or configuration reference |
+
+## Push gate evidence
+
+- First remote push occurred only after final local acceptance: Yes / No
+- Final synchronization base: `<commit>`
+- Final verification run: `<commands/results>`
+
 ## Deviations from plan
 
 - None, or describe the deviation and why it was necessary.

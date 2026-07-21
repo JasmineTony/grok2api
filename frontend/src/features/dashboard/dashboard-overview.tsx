@@ -20,7 +20,9 @@ export function DashboardOverview({ dashboard, locale, loading }: DashboardDataP
   const { t } = useTranslation();
   const resources = dashboard?.resources;
   const usage = dashboard?.usage;
-  const cacheHitRate = (usage?.inputTokens ?? 0) > 0 ? (usage?.cachedInputTokens ?? 0) / (usage?.inputTokens ?? 1) * 100 : 0;
+  const tokenCacheHitRate = usage?.tokenCacheHitRate ?? 0;
+  const requestCacheAvailable = (usage?.requestCacheEligibleRequests ?? 0) > 0;
+  const requestCacheHitRate = usage?.requestCacheHitRate ?? 0;
   const averageRequestCost = (usage?.requests ?? 0) > 0 ? usdTicksToValue(usage?.billedCostUsdTicks ?? 0) / (usage?.requests ?? 1) : 0;
 
   return (
@@ -44,14 +46,16 @@ export function DashboardOverview({ dashboard, locale, loading }: DashboardDataP
           icon={WholeWord}
           label={t("dashboard.tokens")}
           value={formatNumber(usage?.tokens ?? 0, locale)}
-          detail={t("dashboard.tokenEfficiency", { rate: formatNumber(cacheHitRate, locale, 1) })}
+          detail={requestCacheAvailable
+            ? t("dashboard.cacheEfficiency", { tokenRate: formatNumber(tokenCacheHitRate, locale, 1), requestRate: formatNumber(requestCacheHitRate, locale, 1) })
+            : t("dashboard.cacheEfficiencyUnavailable", { tokenRate: formatNumber(tokenCacheHitRate, locale, 1) })}
           loading={loading}
         />
         <DashboardMetric
           icon={CircleDollarSign}
           label={t("dashboard.billing")}
           value={formatUSD(usage?.billedCostUsdTicks ?? 0, locale)}
-          detail={t("dashboard.averageRequestCost", { cost: formatUSDValue(averageRequestCost, locale) })}
+          detail={t("dashboard.costComposition", { actual: formatUSD(usage?.actualCostUsdTicks ?? 0, locale), estimated: formatUSD(usage?.estimatedCostUsdTicks ?? 0, locale), average: formatUSDValue(averageRequestCost, locale) })}
           loading={loading}
         />
       </div>

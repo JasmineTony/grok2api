@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -134,6 +135,7 @@ func (h *Handler) Register(router *gin.RouterGroup) {
 	router.GET("/accounts/summary", h.summary)
 	router.GET("/accounts/export", h.exportCredentials)
 	router.GET("/accounts/:id", h.get)
+	router.GET("/accounts/:id/state-events", h.stateEvents)
 	router.POST("/accounts/device/start", h.startDevice)
 	router.POST("/accounts/device/:sessionId/poll", h.pollDevice)
 	router.POST("/accounts/import", h.importAuth)
@@ -253,6 +255,8 @@ type accountResponse struct {
 	TeamID                     string                  `json:"teamId,omitempty"`
 	Enabled                    bool                    `json:"enabled"`
 	AuthStatus                 string                  `json:"authStatus"`
+	State                      string                  `json:"state"`
+	StateChangedAt             *time.Time              `json:"stateChangedAt,omitempty"`
 	ExpiresAt                  *time.Time              `json:"expiresAt,omitempty"`
 	Refreshable                bool                    `json:"refreshable"`
 	RefreshDueAt               *time.Time              `json:"refreshDueAt,omitempty"`
@@ -281,6 +285,15 @@ type accountResponse struct {
 	Billing                    *billingResponse        `json:"billing,omitempty"`
 	Quota                      quotaResponse           `json:"quota"`
 	QuotaWindows               []quotaWindowResponse   `json:"quotaWindows,omitempty"`
+}
+
+type accountStateEventResponse struct {
+	ID        uint64    `json:"id,string"`
+	FromState string    `json:"fromState"`
+	ToState   string    `json:"toState"`
+	Event     string    `json:"event"`
+	Reason    string    `json:"reason,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 type linkedAccountResponse struct {
@@ -554,6 +567,32 @@ func (h *Handler) get(c *gin.Context) {
 		return
 	}
 	response.Success(c, http.StatusOK, newAccountResponse(value))
+}
+
+func (h *Handler) stateEvents(c *gin.Context) {
+	id, ok := pathID(c)
+	if !ok {
+		return
+	}
+	limit := 20
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= 100 {
+			limit = parsed
+		}
+	}
+	values, err := h.service.ListStateEvents(c.Request.Context(), id, limit)
+	if err != nil {
+		h.writeServiceError(c, "accountStateEventsFailed", err, http.StatusInternalServerError, "??????????")
+		return
+	}
+	result := make([]accountStateEventResponse, 0, len(values))
+	for _, value := range values {
+		result = append(result, accountStateEventResponse{
+			ID: value.ID, FromState: string(value.FromState), ToState: string(value.ToState),
+			Event: string(value.Event), Reason: value.Reason, CreatedAt: value.CreatedAt,
+		})
+	}
+	response.Success(c, http.StatusOK, result)
 }
 
 func (h *Handler) startDevice(c *gin.Context) {
@@ -1143,7 +1182,7 @@ func newAccountResponse(value accountapp.View) accountResponse {
 	result := accountResponse{
 		ID: c.ID, Provider: string(c.Provider), AuthType: string(c.AuthType), WebTier: string(c.WebTier),
 		WebTierSyncedAt: c.WebTierSyncedAt, WebNSFWEnabledAt: c.WebNSFWEnabledAt, WebTermsAcceptedAt: c.WebTermsAcceptedAt, Name: c.Name, Email: c.Email, UserID: c.UserID, TeamID: c.TeamID,
-		Enabled: c.Enabled, AuthStatus: string(c.AuthStatus), Refreshable: c.EncryptedRefreshToken != "",
+		Enabled: c.Enabled, AuthStatus: string(c.AuthStatus), State: string(c.State), StateChangedAt: c.StateChangedAt, Refreshable: c.EncryptedRefreshToken != "",
 		RefreshDueAt: c.RefreshDueAt, LastRefreshAt: c.LastRefreshAt,
 		RefreshFailures: c.RefreshFailureCount, LastRefreshError: c.LastRefreshErrorCode,
 		Priority: c.Priority, MaxConcurrent: c.MaxConcurrent, MinimumRemaining: c.MinimumRemaining,

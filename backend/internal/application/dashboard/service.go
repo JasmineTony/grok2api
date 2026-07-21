@@ -31,15 +31,19 @@ type Range struct {
 }
 
 type SeriesPoint struct {
-	Start              time.Time
-	End                time.Time
-	Requests           int64
-	InputTokens        int64
-	CachedInputTokens  int64
-	OutputTokens       int64
-	ReasoningTokens    int64
-	Tokens             int64
-	BilledCostUSDTicks int64
+	Start                        time.Time
+	End                          time.Time
+	Requests                     int64
+	InputTokens                  int64
+	CachedInputTokens            int64
+	OutputTokens                 int64
+	ReasoningTokens              int64
+	Tokens                       int64
+	ActualCostUSDTicks           int64
+	EstimatedCostUSDTicks        int64
+	BilledCostUSDTicks           int64
+	RequestCacheEligibleRequests int64
+	RequestCacheHits             int64
 }
 
 type ActivityPoint struct {
@@ -49,14 +53,18 @@ type ActivityPoint struct {
 }
 
 type ModelUsage struct {
-	Model              string
-	Requests           int64
-	InputTokens        int64
-	CachedInputTokens  int64
-	OutputTokens       int64
-	ReasoningTokens    int64
-	Tokens             int64
-	BilledCostUSDTicks int64
+	Model                        string
+	Requests                     int64
+	InputTokens                  int64
+	CachedInputTokens            int64
+	OutputTokens                 int64
+	ReasoningTokens              int64
+	Tokens                       int64
+	ActualCostUSDTicks           int64
+	EstimatedCostUSDTicks        int64
+	BilledCostUSDTicks           int64
+	RequestCacheEligibleRequests int64
+	RequestCacheHits             int64
 }
 
 type Result struct {
@@ -68,7 +76,9 @@ type Result struct {
 	Series      []SeriesPoint
 	Activity    []ActivityPoint
 	TopModels   []ModelUsage
-	Providers   []dashboarddomain.ProviderUsage
+	Providers     []dashboarddomain.ProviderUsage
+	TopAccounts   []dashboarddomain.AccountUsage
+	TopClientKeys []dashboarddomain.ClientKeyUsage
 }
 
 // Service 负责 Dashboard 时间范围校验和固定时间桶编排。
@@ -153,7 +163,7 @@ func (s *Service) load(ctx context.Context, period Period, bucketCount, bucketDa
 	}
 	topModels := make([]ModelUsage, 0, len(aggregate.TopModels))
 	for _, item := range aggregate.TopModels {
-		topModels = append(topModels, ModelUsage{Model: item.Model, Requests: item.Requests, InputTokens: item.InputTokens, CachedInputTokens: item.CachedInputTokens, OutputTokens: item.OutputTokens, ReasoningTokens: item.ReasoningTokens, Tokens: item.Tokens, BilledCostUSDTicks: item.BilledCostUSDTicks})
+		topModels = append(topModels, ModelUsage{Model: item.Model, Requests: item.Requests, InputTokens: item.InputTokens, CachedInputTokens: item.CachedInputTokens, OutputTokens: item.OutputTokens, ReasoningTokens: item.ReasoningTokens, Tokens: item.Tokens, ActualCostUSDTicks: item.ActualCostUSDTicks, EstimatedCostUSDTicks: item.EstimatedCostUSDTicks, BilledCostUSDTicks: item.BilledCostUSDTicks, RequestCacheEligibleRequests: item.RequestCacheEligibleRequests, RequestCacheHits: item.RequestCacheHits})
 	}
 	return Result{
 		Period:      period,
@@ -164,7 +174,9 @@ func (s *Service) load(ctx context.Context, period Period, bucketCount, bucketDa
 		Series:      series,
 		Activity:    activity,
 		TopModels:   topModels,
-		Providers:   aggregate.Providers,
+		Providers:     aggregate.Providers,
+		TopAccounts:   aggregate.TopAccounts,
+		TopClientKeys: aggregate.TopClientKeys,
 	}, nil
 }
 

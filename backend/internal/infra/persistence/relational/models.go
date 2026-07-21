@@ -25,17 +25,18 @@ type adminSessionModel struct {
 func (adminSessionModel) TableName() string { return "admin_sessions" }
 
 type accountModel struct {
-	ID               uint64  `gorm:"primaryKey;autoIncrement"`
-	IdentityKey      string  `gorm:"size:64;uniqueIndex;not null;check:chk_accounts_identity_key,length(identity_key) = 64"`
-	Provider         string  `gorm:"size:32;not null;check:chk_accounts_provider,provider IN ('grok_build','grok_web','grok_console');index:idx_accounts_provider_source,priority:1"`
-	Name             string  `gorm:"size:160;not null;check:chk_accounts_name,length(trim(name)) BETWEEN 1 AND 160"`
-	Email            string  `gorm:"size:255;check:chk_accounts_email,length(email) <= 255"`
-	UserID           string  `gorm:"size:255;check:chk_accounts_user_id,length(user_id) <= 255"`
-	TeamID           string  `gorm:"size:255;check:chk_accounts_team_id,length(team_id) <= 255"`
-	SourceKey        string  `gorm:"size:512;not null;check:chk_accounts_source_key,length(trim(source_key)) BETWEEN 1 AND 512;index:idx_accounts_provider_source,priority:2"`
-	Enabled          bool    `gorm:"not null"`
-	AuthStatus       string  `gorm:"size:32;not null;check:chk_accounts_auth_status,auth_status IN ('active','reauthRequired')"`
-	State            string  `gorm:"size:32;not null;default:ready;check:chk_accounts_state,state IN ('ready','degraded','cooldown','quota_exhausted','reauth_required','disabled')"`
+	ID               uint64 `gorm:"primaryKey;autoIncrement"`
+	IdentityKey      string `gorm:"size:64;uniqueIndex;not null;check:chk_accounts_identity_key,length(identity_key) = 64"`
+	Provider         string `gorm:"size:32;not null;check:chk_accounts_provider,provider IN ('grok_build','grok_web','grok_console');index:idx_accounts_provider_source,priority:1"`
+	Name             string `gorm:"size:160;not null;check:chk_accounts_name,length(trim(name)) BETWEEN 1 AND 160"`
+	Email            string `gorm:"size:255;check:chk_accounts_email,length(email) <= 255"`
+	UserID           string `gorm:"size:255;check:chk_accounts_user_id,length(user_id) <= 255"`
+	TeamID           string `gorm:"size:255;check:chk_accounts_team_id,length(team_id) <= 255"`
+	SourceKey        string `gorm:"size:512;not null;check:chk_accounts_source_key,length(trim(source_key)) BETWEEN 1 AND 512;index:idx_accounts_provider_source,priority:2"`
+	Enabled          bool   `gorm:"not null"`
+	AuthStatus       string `gorm:"size:32;not null;check:chk_accounts_auth_status,auth_status IN ('active','reauthRequired')"`
+	State            string `gorm:"size:32;not null;default:ready;check:chk_accounts_state,state IN ('ready','degraded','cooldown','quota_exhausted','reauth_required','disabled')"`
+	StateChangedAt   *time.Time
 	Priority         int     `gorm:"not null;default:1"`
 	MaxConcurrent    int     `gorm:"not null;default:8;check:chk_accounts_max_concurrent,max_concurrent BETWEEN 1 AND 256"`
 	MinimumRemaining float64 `gorm:"not null;check:chk_accounts_minimum_remaining,minimum_remaining >= 0"`
@@ -283,6 +284,90 @@ type billingReservationModel struct {
 
 func (billingReservationModel) TableName() string { return "billing_reservations" }
 
+type notificationModel struct {
+	ID             uint64    `gorm:"primaryKey;autoIncrement"`
+	EventKey       string    `gorm:"size:100;not null"`
+	Severity       string    `gorm:"size:16;not null;check:chk_notifications_severity,severity IN ('info','warning','error')"`
+	Title          string    `gorm:"size:200;not null"`
+	Body           string    `gorm:"type:text;not null"`
+	DedupKey       string    `gorm:"size:200;not null"`
+	Status         string    `gorm:"size:20;not null;check:chk_notifications_status,status IN ('unread','read','acknowledged')"`
+	CreatedAt      time.Time `gorm:"not null"`
+	ReadAt         *time.Time
+	AcknowledgedAt *time.Time
+	ExpiresAt      *time.Time
+}
+
+func (notificationModel) TableName() string { return "notifications" }
+
+type requestPolicyModel struct {
+	ID         uint64 `gorm:"primaryKey;autoIncrement"`
+	Name       string `gorm:"size:160;not null;check:chk_request_policies_name,length(trim(name)) BETWEEN 1 AND 160"`
+	Priority   int    `gorm:"not null;default:0;check:chk_request_policies_priority,priority BETWEEN -100000 AND 100000"`
+	Enabled    bool   `gorm:"not null;default:true"`
+	DryRun     bool   `gorm:"not null;default:true"`
+	MatchJSON  string `gorm:"type:text;not null;check:chk_request_policies_match_json,length(match_json) <= 65536"`
+	ActionJSON string `gorm:"type:text;not null;check:chk_request_policies_action_json,length(action_json) <= 65536"`
+	HitCount   uint64 `gorm:"not null;default:0"`
+	LastHitAt  *time.Time
+	CreatedAt  time.Time `gorm:"not null"`
+	UpdatedAt  time.Time `gorm:"not null"`
+}
+
+func (requestPolicyModel) TableName() string { return "request_policies" }
+
+type requestSnapshotModel struct {
+	ID               string    `gorm:"size:64;primaryKey"`
+	RequestID        string    `gorm:"size:128;not null;default:''"`
+	Protocol         string    `gorm:"size:40;not null"`
+	Operation        string    `gorm:"size:40;not null"`
+	Model            string    `gorm:"size:255;not null;default:''"`
+	EncryptedPayload string    `gorm:"type:text;not null"`
+	PayloadSHA256    string    `gorm:"size:64;not null"`
+	PayloadBytes     int       `gorm:"not null"`
+	CreatedAt        time.Time `gorm:"not null"`
+	ExpiresAt        time.Time `gorm:"not null"`
+}
+
+func (requestSnapshotModel) TableName() string { return "request_snapshots" }
+
+type usageRollupModel struct {
+	ID                    uint64    `gorm:"primaryKey;autoIncrement"`
+	BucketKind            string    `gorm:"size:8;not null;check:chk_usage_rollups_bucket_kind,bucket_kind IN ('hour','day')"`
+	BucketStart           time.Time `gorm:"not null"`
+	Provider              string    `gorm:"size:32;not null"`
+	Model                 string    `gorm:"size:255;not null"`
+	AccountID             uint64    `gorm:"not null;default:0"`
+	ClientKeyID           uint64    `gorm:"not null;default:0"`
+	Requests              int64     `gorm:"not null;default:0;check:chk_usage_rollups_metrics,requests >= 0 AND successful_requests >= 0 AND failed_requests >= 0 AND successful_requests + failed_requests = requests AND input_tokens >= 0 AND cached_input_tokens >= 0 AND cached_input_tokens <= input_tokens AND output_tokens >= 0 AND reasoning_tokens >= 0 AND total_tokens >= 0 AND actual_cost_usd_ticks >= 0 AND billed_cost_usd_ticks >= 0 AND estimated_cost_usd_ticks >= 0 AND request_cache_eligible >= 0 AND request_cache_hits >= 0 AND request_cache_hits <= request_cache_eligible AND duration_ms >= 0"`
+	SuccessfulRequests    int64     `gorm:"not null;default:0"`
+	FailedRequests        int64     `gorm:"not null;default:0"`
+	InputTokens           int64     `gorm:"not null;default:0"`
+	CachedInputTokens     int64     `gorm:"not null;default:0"`
+	OutputTokens          int64     `gorm:"not null;default:0"`
+	ReasoningTokens       int64     `gorm:"not null;default:0"`
+	TotalTokens           int64     `gorm:"not null;default:0"`
+	ActualCostUSDTicks    int64     `gorm:"not null;default:0"`
+	BilledCostUSDTicks    int64     `gorm:"not null;default:0"`
+	EstimatedCostUSDTicks int64     `gorm:"not null;default:0"`
+	RequestCacheEligible  int64     `gorm:"not null;default:0"`
+	RequestCacheHits      int64     `gorm:"not null;default:0"`
+	DurationMS            int64     `gorm:"not null;default:0"`
+	CreatedAt             time.Time `gorm:"not null"`
+	UpdatedAt             time.Time `gorm:"not null"`
+}
+
+func (usageRollupModel) TableName() string { return "usage_rollups" }
+
+type usageRollupCheckpointModel struct {
+	ID           uint64    `gorm:"primaryKey"`
+	CoveredFrom  time.Time `gorm:"not null"`
+	CoveredUntil time.Time `gorm:"not null"`
+	UpdatedAt    time.Time `gorm:"not null"`
+}
+
+func (usageRollupCheckpointModel) TableName() string { return "usage_rollup_checkpoints" }
+
 type requestAuditModel struct {
 	ID                      uint64    `gorm:"primaryKey;autoIncrement"`
 	EventID                 string    `gorm:"size:64;check:chk_request_audits_event_id,event_id = '' OR length(event_id) BETWEEN 16 AND 64"`
@@ -313,6 +398,8 @@ type requestAuditModel struct {
 	TotalTokens             int64     `gorm:"not null;default:0"`
 	CostInUSDTicks          int64     `gorm:"not null;default:0"`
 	EstimatedCostInUSDTicks int64     `gorm:"not null;default:0"`
+	RequestCacheEligible    bool      `gorm:"not null;default:false;check:chk_request_audits_request_cache,NOT request_cache_hit OR request_cache_eligible"`
+	RequestCacheHit         bool      `gorm:"not null;default:false"`
 	PricingModel            string    `gorm:"size:100;check:chk_request_audits_pricing_model,length(pricing_model) <= 100"`
 	PricingVersion          string    `gorm:"size:20;check:chk_request_audits_pricing_version,length(pricing_version) <= 20"`
 	NumSourcesUsed          int64     `gorm:"not null;default:0"`
@@ -475,4 +562,25 @@ type egressNodeModel struct {
 	UpdatedAt                 time.Time `gorm:"not null"`
 }
 
-func (egressNodeModel) TableName() string { return "egress_nodes" }
+type accountEgressPolicyModel struct {
+	AccountID           uint64    `gorm:"primaryKey;check:chk_account_egress_policy_account_id,account_id > 0"`
+	Strategy            string    `gorm:"size:16;not null;default:'inherit';check:chk_account_egress_policy_strategy,strategy IN ('inherit','node','direct')"`
+	EgressNodeID        *uint64   `gorm:"check:chk_account_egress_policy_node_id,egress_node_id IS NULL OR egress_node_id > 0"`
+	AllowDirectFallback bool      `gorm:"not null;default:false"`
+	CreatedAt           time.Time `gorm:"not null"`
+	UpdatedAt           time.Time `gorm:"not null"`
+}
+
+func (accountEgressPolicyModel) TableName() string { return "account_egress_policies" }
+
+type egressHealthCheckModel struct {
+	ID         uint64    `gorm:"primaryKey;autoIncrement"`
+	NodeID     uint64    `gorm:"not null;index;check:chk_egress_health_checks_node_id,node_id > 0"`
+	Healthy    bool      `gorm:"not null"`
+	DurationMS int64     `gorm:"not null;check:chk_egress_health_checks_duration,duration_ms >= 0"`
+	ErrorCode  string    `gorm:"size:64;not null;default:'';check:chk_egress_health_checks_error,length(error_code) <= 64"`
+	CheckedAt  time.Time `gorm:"not null;index"`
+}
+
+func (egressHealthCheckModel) TableName() string { return "egress_health_checks" }
+func (egressNodeModel) TableName() string        { return "egress_nodes" }

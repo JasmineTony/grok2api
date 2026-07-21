@@ -265,14 +265,14 @@ func TestAuditRepositoryNormalizesUntrustedUsage(t *testing.T) {
 		t.Fatal(err)
 	}
 	repository := NewAuditRepository(database)
-	if err := repository.Create(ctx, audit.Record{RequestID: "normalize", ClientKeyID: 1, ModelRouteID: 1, StatusCode: 200, MediaInputImages: -1, MediaOutputImages: -2, MediaOutputSeconds: -3, InputTokens: -1, TotalTokens: -2, DurationMS: -3, CreatedAt: time.Now().UTC()}); err != nil {
+	if err := repository.Create(ctx, audit.Record{RequestID: "normalize", ClientKeyID: 1, ModelRouteID: 1, StatusCode: 200, MediaInputImages: -1, MediaOutputImages: -2, MediaOutputSeconds: -3, InputTokens: -1, TotalTokens: -2, DurationMS: -3, RequestCacheHit: true, CreatedAt: time.Now().UTC()}); err != nil {
 		t.Fatal(err)
 	}
 	values, _, err := repository.List(ctx, 0, 1)
 	if err != nil || len(values) != 1 {
 		t.Fatalf("values = %#v, err = %v", values, err)
 	}
-	if values[0].MediaInputImages != 0 || values[0].MediaOutputImages != 0 || values[0].MediaOutputSeconds != 0 || values[0].InputTokens != 0 || values[0].TotalTokens != 0 || values[0].DurationMS != 0 {
+	if values[0].MediaInputImages != 0 || values[0].MediaOutputImages != 0 || values[0].MediaOutputSeconds != 0 || values[0].InputTokens != 0 || values[0].TotalTokens != 0 || values[0].DurationMS != 0 || values[0].RequestCacheHit {
 		t.Fatalf("normalized audit = %#v", values[0])
 	}
 }
@@ -290,8 +290,8 @@ func TestAuditRepositorySummaryAppliesRangeAndGroupsPricingTier(t *testing.T) {
 	repository := NewAuditRepository(database)
 	now := time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC)
 	values := []audit.Record{
-		{RequestID: "standard", ClientKeyID: 1, ModelRouteID: 1, ModelPublicID: "public", ModelUpstreamModel: "grok-build-0.1", StatusCode: 200, Streaming: true, InputTokens: 100, CachedInputTokens: 20, OutputTokens: 50, ReasoningTokens: 10, TotalTokens: 150, EstimatedCostInUSDTicks: 1_840_000, PricingModel: "grok-build-0.1", PricingVersion: "2026-07-11", DurationMS: 100, CreatedAt: now.Add(-time.Hour)},
-		{RequestID: "long", ClientKeyID: 1, ModelRouteID: 1, ModelPublicID: "public", ModelUpstreamModel: "grok-build-0.1", StatusCode: 500, Streaming: false, InputTokens: 210_000, ContextInputTokens: 210_000, OutputTokens: 100, TotalTokens: 210_100, DurationMS: 300, CreatedAt: now.Add(-2 * time.Hour)},
+		{RequestID: "standard", ClientKeyID: 1, ModelRouteID: 1, ModelPublicID: "public", ModelUpstreamModel: "grok-build-0.1", StatusCode: 200, Streaming: true, InputTokens: 100, CachedInputTokens: 20, OutputTokens: 50, ReasoningTokens: 10, TotalTokens: 150, CostInUSDTicks: 1_000, EstimatedCostInUSDTicks: 1_840_000, RequestCacheEligible: true, RequestCacheHit: true, PricingModel: "grok-build-0.1", PricingVersion: "2026-07-11", DurationMS: 100, CreatedAt: now.Add(-time.Hour)},
+		{RequestID: "long", ClientKeyID: 1, ModelRouteID: 1, ModelPublicID: "public", ModelUpstreamModel: "grok-build-0.1", StatusCode: 500, Streaming: false, InputTokens: 210_000, ContextInputTokens: 210_000, OutputTokens: 100, TotalTokens: 210_100, RequestCacheEligible: true, DurationMS: 300, CreatedAt: now.Add(-2 * time.Hour)},
 		{RequestID: "outside", ClientKeyID: 1, ModelRouteID: 1, ModelPublicID: "public", ModelUpstreamModel: "grok-build-0.1", StatusCode: 200, TotalTokens: 999, CreatedAt: now.Add(-8 * 24 * time.Hour)},
 	}
 	if err := repository.CreateBatch(ctx, values); err != nil {
@@ -304,7 +304,7 @@ func TestAuditRepositorySummaryAppliesRangeAndGroupsPricingTier(t *testing.T) {
 	if summary.Requests != 2 || summary.SuccessfulRequests != 1 || summary.FailedRequests != 1 || summary.TotalTokens != 210_250 || summary.DurationMS != 400 {
 		t.Fatalf("summary = %#v", summary)
 	}
-	if summary.EstimatedCostInUSDTicks != 1_840_000 || summary.PricedRequests != 1 || summary.UnpricedRequests != 1 || summary.PricedTokens != 150 || summary.UnpricedTokens != 210_100 {
+	if summary.CostInUSDTicks != 1_000 || summary.EstimatedCostInUSDTicks != 1_840_000 || summary.BilledCostInUSDTicks != 1_000 || summary.RequestCacheEligible != 2 || summary.RequestCacheHits != 1 || summary.PricedRequests != 1 || summary.UnpricedRequests != 1 || summary.PricedTokens != 150 || summary.UnpricedTokens != 210_100 {
 		t.Fatalf("summary pricing = %#v", summary)
 	}
 }

@@ -94,8 +94,10 @@ func (e *UpstreamFailure) AuditCode() string {
 func newHTTPUpstreamFailure(status int, body []byte, accountID uint64, accountName string) *UpstreamFailure {
 	upstreamCode, upstreamType, upstreamMessage := extractUpstreamErrorMetadata(body)
 	failure := &UpstreamFailure{
+		Category: FailureUpstream, Stage: "response", Retryable: status >= http.StatusInternalServerError, AccountImpact: ImpactNone,
 		HTTPStatus: status, Code: "upstream_error", PublicMessage: "上游服务返回错误",
-		UpstreamCode: upstreamCode, AccountID: accountID, AccountName: accountName,
+		UpstreamCode: upstreamCode, SanitizedDetail: firstNonEmptyFailure(upstreamCode, upstreamType),
+		AccountID: accountID, AccountName: accountName,
 	}
 	if status < 400 || status > 599 {
 		failure.HTTPStatus = http.StatusBadGateway
@@ -171,9 +173,36 @@ func newTransportUpstreamFailure(err error, accountID uint64, accountName string
 
 func newCredentialUpstreamFailure(err error, accountID uint64, accountName string) *UpstreamFailure {
 	return &UpstreamFailure{
+		Category: FailureCredential, Stage: "credential", Retryable: true, AccountImpact: ImpactDegraded,
 		HTTPStatus: http.StatusBadGateway, Code: "upstream_credential_unavailable", PublicMessage: "上游账号凭据不可用",
-		AccountID: accountID, AccountName: accountName, AccountScoped: true, Cause: err,
+		AccountID: accountID, AccountName: accountName, AccountScoped: true, Fingerprint: "upstream_credential_unavailable", Cause: err,
 	}
+}
+
+func newCanceledUpstreamFailure(err error, accountID uint64, accountName string) *UpstreamFailure {
+	return &UpstreamFailure{
+		Category: FailureInternal, Stage: "request", Retryable: false, AccountImpact: ImpactNone,
+		HTTPStatus: 499, Code: "request_canceled", PublicMessage: "请求已取消",
+		AccountID: accountID, AccountName: accountName, Fingerprint: "request_canceled", Cause: err,
+	}
+}
+
+// StateReason returns a bounded, credential-free reason suitable for state history.
+func (e *UpstreamFailure) StateReason() string {
+	if e == nil {
+		return "failure_unknown"
+	}
+	parts := []string{e.AuditCode()}
+	if e.Category != "" {
+		parts = append(parts, "category="+string(e.Category))
+	}
+	if e.Stage != "" {
+		parts = append(parts, "stage="+normalizeFailureCode(e.Stage))
+	}
+	if detail := normalizeFailureCode(e.SanitizedDetail); detail != "" {
+		parts = append(parts, "detail="+detail)
+	}
+	return truncateFailureCode(strings.Join(parts, " "))
 }
 
 // Normalized ???????????????????

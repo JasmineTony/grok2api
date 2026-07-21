@@ -1,0 +1,39 @@
+event: message
+data: {
+  "choices": [
+    {
+      "delta": {
+        "content": "Hel",
+        "role": "assistant"
+      },
+      "index": 0
+    }
+  ],
+  "created": "<normalized>",
+  "id": "<normalized>",
+  "object": "chat.completion.chunk"
+}
+
+event: message
+data: {
+  "choices": [
+    {
+      "delta": {
+        "content": "lo"
+      },
+      "finish_reason": "stop",
+      "index": 0
+    }
+  ],
+  "created": "<normalized>",
+  "id": "<normalized>",
+  "object": "chat.completion.chunk",
+  "usage": {
+    "completion_tokens": 1,
+    "prompt_tokens": 2,
+    "total_tokens": 3
+  }
+}
+
+data: [DONE]
+

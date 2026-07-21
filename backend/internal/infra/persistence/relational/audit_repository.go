@@ -105,7 +105,7 @@ func toAuditModels(value audit.Record) (requestAuditModel, []requestAuditAttempt
 		MediaInputImages: nonNegative(value.MediaInputImages), MediaOutputImages: nonNegative(value.MediaOutputImages), MediaOutputSeconds: nonNegative(value.MediaOutputSeconds),
 		InputTokens: nonNegative(value.InputTokens), CachedInputTokens: nonNegative(value.CachedInputTokens), OutputTokens: nonNegative(value.OutputTokens),
 		ReasoningTokens: nonNegative(value.ReasoningTokens), TotalTokens: nonNegative(value.TotalTokens), CostInUSDTicks: nonNegative(value.CostInUSDTicks),
-		EstimatedCostInUSDTicks: nonNegative(value.EstimatedCostInUSDTicks), PricingModel: truncate(value.PricingModel, 100), PricingVersion: truncate(value.PricingVersion, 20),
+		EstimatedCostInUSDTicks: nonNegative(value.EstimatedCostInUSDTicks), RequestCacheEligible: value.RequestCacheEligible, RequestCacheHit: value.RequestCacheEligible && value.RequestCacheHit, PricingModel: truncate(value.PricingModel, 100), PricingVersion: truncate(value.PricingVersion, 20),
 		NumSourcesUsed: nonNegative(value.NumSourcesUsed), NumServerSideToolsUsed: nonNegative(value.NumServerSideToolsUsed),
 		ContextInputTokens: nonNegative(value.ContextInputTokens), ContextOutputTokens: nonNegative(value.ContextOutputTokens), DurationMS: nonNegative(value.DurationMS),
 		ErrorCode: truncate(value.ErrorCode, 100), AttemptCount: len(value.Attempts), CreatedAt: value.CreatedAt,
@@ -354,7 +354,11 @@ func (r *AuditRepository) Summarize(ctx context.Context, input repository.AuditS
 		ReasoningTokens         int64
 		TotalTokens             int64
 		DurationMS              int64
+		CostInUSDTicks          int64
 		EstimatedCostInUSDTicks int64
+		BilledCostInUSDTicks    int64
+		RequestCacheEligible    int64
+		RequestCacheHits        int64
 		PricedRequests          int64
 		UnpricedRequests        int64
 		PricedTokens            int64
@@ -371,7 +375,11 @@ func (r *AuditRepository) Summarize(ctx context.Context, input repository.AuditS
 		COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens,
 		COALESCE(SUM(total_tokens), 0) AS total_tokens,
 		COALESCE(SUM(duration_ms), 0) AS duration_ms,
+		COALESCE(SUM(cost_in_usd_ticks), 0) AS cost_in_usd_ticks,
 		COALESCE(SUM(estimated_cost_in_usd_ticks), 0) AS estimated_cost_in_usd_ticks,
+		COALESCE(SUM(CASE WHEN cost_in_usd_ticks > 0 THEN cost_in_usd_ticks ELSE estimated_cost_in_usd_ticks END), 0) AS billed_cost_in_usd_ticks,
+		COALESCE(SUM(CASE WHEN request_cache_eligible THEN 1 ELSE 0 END), 0) AS request_cache_eligible,
+		COALESCE(SUM(CASE WHEN request_cache_hit THEN 1 ELSE 0 END), 0) AS request_cache_hits,
 		COALESCE(SUM(CASE WHEN COALESCE(pricing_model, '') <> '' THEN 1 ELSE 0 END), 0) AS priced_requests,
 		COALESCE(SUM(CASE WHEN COALESCE(pricing_model, '') = '' THEN 1 ELSE 0 END), 0) AS unpriced_requests,
 		COALESCE(SUM(CASE WHEN COALESCE(pricing_model, '') <> '' THEN total_tokens ELSE 0 END), 0) AS priced_tokens,
@@ -382,7 +390,7 @@ func (r *AuditRepository) Summarize(ctx context.Context, input repository.AuditS
 		Requests: aggregate.Requests, SuccessfulRequests: aggregate.SuccessfulRequests, FailedRequests: aggregate.FailedRequests,
 		InputTokens: aggregate.InputTokens, CachedInputTokens: aggregate.CachedInputTokens, OutputTokens: aggregate.OutputTokens,
 		ReasoningTokens: aggregate.ReasoningTokens, TotalTokens: aggregate.TotalTokens, DurationMS: aggregate.DurationMS,
-		EstimatedCostInUSDTicks: aggregate.EstimatedCostInUSDTicks, PricedRequests: aggregate.PricedRequests,
+		CostInUSDTicks: aggregate.CostInUSDTicks, EstimatedCostInUSDTicks: aggregate.EstimatedCostInUSDTicks, BilledCostInUSDTicks: aggregate.BilledCostInUSDTicks, RequestCacheEligible: aggregate.RequestCacheEligible, RequestCacheHits: aggregate.RequestCacheHits, PricedRequests: aggregate.PricedRequests,
 		UnpricedRequests: aggregate.UnpricedRequests, PricedTokens: aggregate.PricedTokens, UnpricedTokens: aggregate.UnpricedTokens,
 	}
 	return result, nil

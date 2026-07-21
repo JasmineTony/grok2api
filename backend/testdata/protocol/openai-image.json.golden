@@ -1,0 +1,9 @@
+{
+  "created": "<normalized>",
+  "data": [
+    {
+      "revised_prompt": "A test image",
+      "url": "https://example.invalid/image.png"
+    }
+  ]
+}

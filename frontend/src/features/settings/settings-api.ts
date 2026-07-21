@@ -35,6 +35,11 @@ export type EgressNodeInput = {
 };
 
 export type EgressScope = "grok_build" | "grok_web" | "grok_console" | "grok_web_asset";
+export type EgressHealthCheckDTO = {
+  id: string; nodeId: string; healthy: boolean; durationMs: number; errorCode?: string; checkedAt: string;
+};
+export type EgressHealthCheckListDTO = { items: EgressHealthCheckDTO[] };
+
 export type EgressNodeListDTO = { items: EgressNodeDTO[]; defaultUserAgents: Record<EgressScope, string> };
 
 export type SettingsSnapshotDTO = {
@@ -78,6 +83,11 @@ const decodeEgressNode = createObjectDecoder<EgressNodeDTO>("egress node", {
   proxyConfigured: isBoolean, userAgent: isString, cookieConfigured: isBoolean, health: isNumber, failureCount: isNumber,
   cooldownUntil: isOptional(isString), lastError: isOptional(isString),
 });
+const egressHealthCheckValidator = hasShape({ id: isString, nodeId: isString, healthy: isBoolean, durationMs: isNumber, errorCode: isOptional(isString), checkedAt: isString });
+const decodeEgressHealthCheck = createObjectDecoder<EgressHealthCheckDTO>("egress health check", {
+  id: isString, nodeId: isString, healthy: isBoolean, durationMs: isNumber, errorCode: isOptional(isString), checkedAt: isString,
+});
+const decodeEgressHealthCheckList = createObjectDecoder<EgressHealthCheckListDTO>("egress health check list", { items: isArrayOf(egressHealthCheckValidator) });
 const decodeEgressNodeList = createObjectDecoder<EgressNodeListDTO>("egress node list", {
   items: isArrayOf(egressNodeValidator),
   defaultUserAgents: hasShape({ grok_build: isString, grok_web: isString, grok_console: isString, grok_web_asset: isString }),
@@ -111,4 +121,13 @@ export function updateEgressNode(id: string, input: EgressNodeInput): Promise<Eg
 
 export function deleteEgressNode(id: string): Promise<{ deleted: boolean }> {
   return apiRequest(`/api/admin/v1/egress-nodes/${id}`, { method: "DELETE" }, decodeBooleanResult<{ deleted: boolean }>("deleted"));
+}
+
+
+export function checkEgressNode(id: string): Promise<EgressHealthCheckDTO> {
+  return apiRequest(`/api/admin/v1/egress-nodes/${id}/check`, { method: "POST" }, decodeEgressHealthCheck);
+}
+
+export function listEgressHealthChecks(id: string, limit = 20): Promise<EgressHealthCheckListDTO> {
+  return apiRequest(`/api/admin/v1/egress-nodes/${id}/health-checks?limit=${Math.min(Math.max(limit, 1), 100)}`, {}, decodeEgressHealthCheckList);
 }
