@@ -111,6 +111,10 @@ jobs:
         working-directory: frontend
         run: pnpm check:bundle
 
+      - name: Check frontend chunk graph
+        working-directory: frontend
+        run: pnpm check:chunks
+
 
   visual:
     name: Visual regression

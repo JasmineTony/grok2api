@@ -1,8 +1,5 @@
 import { Activity, CircleDollarSign, UsersRound, WholeWord, type LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Pie, PieChart } from "recharts";
-
-import { ChartContainer, type ChartConfig } from "@/components/ui/chart";
 import { Spinner } from "@/components/ui/spinner";
 import type { DashboardDTO } from "@/features/dashboard/dashboard-api";
 import { formatUSD, formatUSDValue, usdTicksToValue } from "@/features/dashboard/dashboard-format";
@@ -70,23 +67,6 @@ export function DashboardResources({ dashboard, locale, loading }: DashboardData
   const totalAccounts = resources?.totalAccounts ?? 0;
   const unavailableAccounts = Math.max(0, totalAccounts - activeAccounts);
   const availability = totalAccounts > 0 ? activeAccounts / totalAccounts * 100 : 0;
-  const chartConfig = {
-    active: {
-      label: t("dashboard.activeAccounts"),
-      theme: { light: "oklch(0.68 0.14 160)", dark: "oklch(0.74 0.12 160)" },
-    },
-    unavailable: {
-      label: t("dashboard.unavailableAccounts"),
-      theme: { light: "oklch(0.88 0.01 250)", dark: "oklch(0.36 0.01 250)" },
-    },
-  } satisfies ChartConfig;
-  const chartData = totalAccounts > 0 ? [
-    { status: "active", value: activeAccounts, fill: "var(--color-active)" },
-    { status: "unavailable", value: unavailableAccounts, fill: "var(--color-unavailable)" },
-  ] : [
-    { status: "unavailable", value: 1, fill: "var(--color-unavailable)" },
-  ];
-
   return (
     <DashboardPanel
       id="dashboard-resources-title"
@@ -99,21 +79,14 @@ export function DashboardResources({ dashboard, locale, loading }: DashboardData
       ) : (
         <div className="grid min-h-[260px] w-full flex-1 grid-cols-[minmax(0,1fr)_minmax(128px,0.8fr)] items-center gap-4">
           <div className="relative mx-auto size-44 max-w-full">
-            <ChartContainer config={chartConfig} className="size-full aspect-square" aria-label={t("dashboard.resourcesTitle")}>
-              <PieChart>
-                <Pie
-                  data={chartData}
-                  dataKey="value"
-                  nameKey="status"
-                  innerRadius={56}
-                  outerRadius={78}
-                  paddingAngle={activeAccounts > 0 && unavailableAccounts > 0 ? 3 : 0}
-                  strokeWidth={0}
-                  animationDuration={700}
-                  animationEasing="ease-out"
-                />
-              </PieChart>
-            </ChartContainer>
+            <div
+              className="size-full rounded-full p-[18px]"
+              role="img"
+              aria-label={t("dashboard.resourcesTitle")}
+              style={{ background: `conic-gradient(oklch(0.696 0.17 162.48) ${Math.min(100, Math.max(0, availability))}%, var(--muted) 0)` }}
+            >
+              <div className="size-full rounded-full bg-card" />
+            </div>
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
               <span className="text-2xl font-medium tabular-nums">{formatNumber(availability, locale, 0)}%</span>
               <span className="mt-1 text-[10px] text-muted-foreground">{t("dashboard.availability")}</span>

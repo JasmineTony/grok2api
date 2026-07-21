@@ -8,7 +8,7 @@ const budgets = [
   { pattern: /^index-.*\.js$/, maxRaw: 350_000, maxGzip: 115_000, label: "entry JavaScript" },
   { pattern: /^dashboard-page-.*\.js$/, maxRaw: 350_000, maxGzip: 100_000, label: "dashboard route" },
   { pattern: /^dashboard-charts-.*\.js$/, maxRaw: 350_000, maxGzip: 100_000, label: "dashboard charts" },
-  { pattern: /^vendor-(recharts|chart-runtime)-.*\.js$/, maxRaw: 350_000, maxGzip: 100_000, label: "chart vendor chunk" },
+  { pattern: /^(vendor-(recharts|chart-runtime)|chart)-.*\.js$/, maxRaw: 350_000, maxGzip: 100_000, label: "chart vendor chunk" },
   { pattern: /^createLucideIcon-.*\.js$/, maxRaw: 100_000, maxGzip: 35_000, label: "Lucide shared chunk" },
   { pattern: /^index-.*\.css$/, maxRaw: 90_000, maxGzip: 20_000, label: "application CSS" },
 ];

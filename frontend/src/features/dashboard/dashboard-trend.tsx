@@ -63,13 +63,17 @@ export function DashboardTrend({ dashboard, locale, loading }: DashboardTrendPro
 
   return (
     <DashboardPanel id="dashboard-trend-title" title={t("dashboard.trend")} className="h-full min-h-[360px]">
-      {!loading && !hasData ? (
+      {loading ? (
+        <div className="flex h-[280px] items-center justify-center" aria-busy="true">
+          <Spinner className="size-5" />
+        </div>
+      ) : !hasData ? (
         <div className="flex h-[280px] items-center justify-center">
           <EmptyState message={t("dashboard.noTrendData")} />
         </div>
       ) : (
-        <div className="relative" aria-busy={loading}>
-          <ChartContainer config={chartConfig} className={cn("h-[280px] w-full aspect-auto", loading && "opacity-40")}>
+        <div className="relative">
+          <ChartContainer config={chartConfig} className="h-[280px] w-full aspect-auto">
             <ComposedChart accessibilityLayer data={chartData} margin={{ left: 0, right: 4, top: 10, bottom: 0 }}>
               <defs>
                 <linearGradient id="dashboard-tokens-fill" x1="0" y1="0" x2="0" y2="1">
@@ -150,8 +154,7 @@ export function DashboardTrend({ dashboard, locale, loading }: DashboardTrendPro
                 hide={hiddenSeries.has("billing")}
                 maxBarSize={32}
                 radius={[3, 3, 0, 0]}
-                animationDuration={700}
-                animationEasing="ease-out"
+                isAnimationActive={false}
               />
               <Area
                 key={`tokens-${dashboard?.period ?? "loading"}`}
@@ -164,8 +167,7 @@ export function DashboardTrend({ dashboard, locale, loading }: DashboardTrendPro
                 hide={hiddenSeries.has("tokens")}
                 dot={false}
                 activeDot={{ r: 3, fill: "var(--color-tokens)", stroke: "var(--color-background)", strokeWidth: 2 }}
-                animationDuration={700}
-                animationEasing="ease-out"
+                isAnimationActive={false}
               />
               <Line
                 key={`requests-${dashboard?.period ?? "loading"}`}
@@ -178,13 +180,11 @@ export function DashboardTrend({ dashboard, locale, loading }: DashboardTrendPro
                 hide={hiddenSeries.has("requests")}
                 dot={false}
                 activeDot={{ r: 3, fill: "var(--color-requests)", stroke: "var(--color-background)", strokeWidth: 2 }}
-                animationDuration={700}
-                animationEasing="ease-out"
+                isAnimationActive={false}
               />
               <ChartLegend content={<DashboardTrendLegend config={chartConfig} hiddenSeries={hiddenSeries} onToggle={toggleSeries} />} />
             </ComposedChart>
           </ChartContainer>
-          {loading ? <div className="absolute inset-0 flex items-center justify-center"><Spinner className="size-5" /></div> : null}
         </div>
       )}
     </DashboardPanel>
