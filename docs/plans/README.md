@@ -40,6 +40,8 @@ Templates are available in [`templates/`](./templates/).
 | 2026-07-21 09 — Remote branch maintenance | [Plan](./2026-07-21-09-remote-branch-maintenance/PLAN.md) | [Result](./2026-07-21-09-remote-branch-maintenance/RESULT.md) | Complete |
 | 2026-07-21 10 — Exact upstream v3.0.6 sync | [Plan](./2026-07-21-10-upstream-v3.0.6-sync/PLAN.md) | [Result](./2026-07-21-10-upstream-v3.0.6-sync/RESULT.md) | Complete |
 
+| 2026-07-21 11 — Chrome DevTools MCP performance | [Plan](./2026-07-21-11-chrome-devtools-performance/PLAN.md) | [Result](./2026-07-21-11-chrome-devtools-performance/RESULT.md) | In progress |
+
 ## Push and PR gate
 
 - The accepted PLAN.md is the delivery unit. Keep its branch local until all scope, tests and acceptance, and assumptions/defaults are complete.
