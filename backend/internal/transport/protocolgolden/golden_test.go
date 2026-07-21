@@ -1,6 +1,7 @@
 package protocolgolden
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -52,6 +53,7 @@ func TestProtocolGoldenFixturesAreOfflineAndStable(t *testing.T) {
 			if err != nil {
 				t.Fatalf("missing golden %s; run UPDATE_GOLDEN=1 go test ./internal/transport/protocolgolden", goldenPath)
 			}
+			expected = bytes.ReplaceAll(expected, []byte("\r\n"), []byte("\n"))
 			if string(normalized)+"\n" != string(expected) {
 				t.Fatalf("golden mismatch for %s", test.input)
 			}
