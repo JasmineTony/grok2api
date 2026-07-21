@@ -10,12 +10,13 @@ const repositoryRoot = resolve(frontendRoot, "..");
 const outputDir = resolve(repositoryRoot, ".cache", "chrome-devtools-profile");
 const targetURL = process.env.GROK2API_PERF_URL ?? "http://127.0.0.1:8000/login";
 const tracePath = resolve(outputDir, "page-load.json.gz");
+const heapPath = resolve(outputDir, "page-load.heapsnapshot");
 mkdirSync(outputDir, { recursive: true });
 
 const mcpArguments = [
   "-y", "chrome-devtools-mcp@1.6.0",
   "--headless=true", "--isolated=true", "--viewport=1440x900",
-  "--no-performance-crux", "--no-usage-statistics", "--redact-network-headers=true",
+  "--memory-debugging=true", "--no-performance-crux", "--no-usage-statistics", "--redact-network-headers=true",
 ];
 const command = process.platform === "win32" ? "cmd.exe" : "npx";
 const args = process.platform === "win32" ? ["/d", "/s", "/c", "npx", ...mcpArguments] : mcpArguments;
@@ -90,6 +91,9 @@ try {
   }, 60_000);
   const network = await call("list_network_requests", { pageSize: 300 }, 60_000);
   const consoleMessages = await call("list_console_messages", { pageSize: 200 }, 60_000);
+  await call("take_heapsnapshot", { filePath: heapPath }, 300_000);
+  const heapSummary = await call("get_heapsnapshot_summary", { filePath: heapPath }, 120_000);
+  await call("close_heapsnapshot", { filePath: heapPath }, 60_000);
   const report = {
     server: initialized.serverInfo,
     targetURL,
@@ -97,6 +101,7 @@ try {
     runtime: text(runtime),
     network: text(network),
     console: text(consoleMessages),
+    heap: text(heapSummary),
   };
   await writeFile(resolve(outputDir, "summary.json"), `${JSON.stringify(report, null, 2)}\n`);
   console.log(`Chrome DevTools MCP profile saved to ${outputDir}`);

@@ -58,8 +58,11 @@ pnpm profile:devtools
 - `evaluate_script`
 - `list_network_requests`
 - `list_console_messages`
+- `take_heapsnapshot`
+- `get_heapsnapshot_summary`
+- `close_heapsnapshot`
 
-输出保存在 `.cache/chrome-devtools-profile/`，不会进入 Git。
+输出保存在 `.cache/chrome-devtools-profile/`，包括页面加载 Trace、堆快照和脱敏汇总，不会进入 Git。堆快照可能保留页面文本与运行时对象，只能在本地受控环境使用，分析完成后应按需要删除。
 
 ## 深度分析场景
 
