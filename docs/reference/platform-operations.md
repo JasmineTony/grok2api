@@ -11,12 +11,14 @@ Rules are ordered by priority and id. With no rules, requests remain allowed. dr
 
 ## Upgrade preflight and backups
 
-- GET /api/admin/v1/system/upgrade/preflight
+- GET /api/admin/v1/system/upgrade/preflight?backupName=<name>
 - grok2api backup create <directory>
 - grok2api backup verify <directory>
 - grok2api backup restore <directory> <database>
 
-SQLite uses a consistent snapshot. PostgreSQL and Redis are not presented as local full backups. backup.externalHook can point to an external executable; it is invoked without a shell as verify <database-driver> <runtime-driver>.
+The management preflight endpoint accepts only a backup name beneath `backup.root` (default `./data/backups`); it never accepts an arbitrary host path. The legacy `backupRoot` query key is accepted as a compatibility alias but is interpreted as the same confined name. Local CLI commands continue to accept explicit operator-controlled paths.
+
+SQLite uses a consistent snapshot. PostgreSQL and Redis are not presented as local full backups. `backup.externalHook` can point to an external executable; it is invoked without a shell as `verify <database-driver> <runtime-driver>`.
 
 ## Request snapshots and protocol preview
 

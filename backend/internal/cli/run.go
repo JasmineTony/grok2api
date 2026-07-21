@@ -385,6 +385,7 @@ func runBackupCommand(args []string) error {
 		return err
 	}
 	service := backupapp.NewService(db, cfg.Media.Local.Path, buildinfo.CurrentVersion())
+	service.SetManagedRoot(cfg.Backup.Root)
 	switch args[0] {
 	case "create":
 		result, err := service.Create(ctx, args[1])

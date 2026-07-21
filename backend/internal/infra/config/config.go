@@ -209,6 +209,7 @@ type PrometheusConfig struct {
 }
 
 type BackupConfig struct {
+	Root         string   `yaml:"root"`
 	ExternalHook string   `yaml:"externalHook"`
 	HookTimeout  Duration `yaml:"hookTimeout"`
 }
@@ -606,7 +607,7 @@ func defaultConfig() Config {
 		Observability:     ObservabilityConfig{Prometheus: PrometheusConfig{Enabled: false, Listen: "127.0.0.1:9090"}},
 		Notifications:     NotificationConfig{Enabled: true, Cooldown: Duration(15 * time.Minute), Retention: Duration(30 * 24 * time.Hour)},
 		RequestSnapshots:  RequestSnapshotConfig{Enabled: false, TTL: Duration(24 * time.Hour)},
-		Backup:            BackupConfig{HookTimeout: Duration(2 * time.Minute)},
+		Backup:            BackupConfig{Root: "./data/backups", HookTimeout: Duration(2 * time.Minute)},
 	}
 }
 

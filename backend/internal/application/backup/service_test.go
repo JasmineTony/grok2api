@@ -2,6 +2,7 @@ package backup
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -97,5 +98,129 @@ func TestPreflightRequiresVerifiedBackup(t *testing.T) {
 	with := service.Preflight(ctx, root)
 	if !with.Ready {
 		t.Fatalf("preflight with backup = %#v", with)
+	}
+}
+
+func TestVerifyRejectsUnsafeManifestPaths(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	database, err := relational.OpenSQLite(ctx, filepath.Join(root, "source.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if err := database.InitializeSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	mediaRoot := filepath.Join(root, "media")
+	if err := os.MkdirAll(mediaRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mediaRoot, "asset.bin"), []byte("media"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(database, mediaRoot, "v3.0.5")
+
+	for _, test := range []struct {
+		name   string
+		mutate func(*Manifest)
+	}{
+		{name: "database parent traversal", mutate: func(manifest *Manifest) { manifest.DatabaseSnapshot = "../outside.db" }},
+		{name: "database absolute path", mutate: func(manifest *Manifest) { manifest.DatabaseSnapshot = filepath.Join(root, "outside.db") }},
+		{name: "media parent traversal", mutate: func(manifest *Manifest) { manifest.MediaFiles[0].Path = "media/../../outside.bin" }},
+		{name: "media backslash traversal", mutate: func(manifest *Manifest) { manifest.MediaFiles[0].Path = `media\..\outside.bin` }},
+		{name: "media absolute path", mutate: func(manifest *Manifest) {
+			manifest.MediaFiles[0].Path = filepath.ToSlash(filepath.Join(root, "outside.bin"))
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			backupRoot := filepath.Join(t.TempDir(), "backup")
+			result, err := service.Create(ctx, backupRoot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			manifest := result.Manifest
+			test.mutate(&manifest)
+			data, err := json.MarshalIndent(manifest, "", "  ")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(backupRoot, "manifest.json"), append(data, '\n'), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := service.Verify(ctx, backupRoot); err == nil {
+				t.Fatal("unsafe manifest path was accepted")
+			}
+		})
+	}
+}
+
+func TestVerifyRejectsBackupSymlinkEscape(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	database, err := relational.OpenSQLite(ctx, filepath.Join(root, "source.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if err := database.InitializeSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	mediaRoot := filepath.Join(root, "media")
+	if err := os.MkdirAll(mediaRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mediaRoot, "asset.bin"), []byte("media"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(database, mediaRoot, "v3.0.5")
+	backupRoot := filepath.Join(root, "backup")
+	if _, err := service.Create(ctx, backupRoot); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(root, "outside.bin")
+	if err := os.WriteFile(outside, []byte("media"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	backupAsset := filepath.Join(backupRoot, "media", "asset.bin")
+	if err := os.Remove(backupAsset); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, backupAsset); err != nil {
+		t.Skipf("symlink creation is unavailable: %v", err)
+	}
+	if _, err := service.Verify(ctx, backupRoot); err == nil {
+		t.Fatal("symlink escaping the backup root was accepted")
+	}
+}
+
+func TestManagedPreflightConfinesBackupNames(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	database, err := relational.OpenSQLite(ctx, filepath.Join(root, "preflight.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if err := database.InitializeSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	mediaRoot := filepath.Join(root, "media")
+	if err := os.MkdirAll(mediaRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	managedRoot := filepath.Join(root, "backups")
+	service := NewService(database, mediaRoot, "v3.1.0")
+	service.SetManagedRoot(managedRoot)
+	if _, err := service.Create(ctx, filepath.Join(managedRoot, "release-20260721")); err != nil {
+		t.Fatal(err)
+	}
+	if report := service.PreflightManaged(ctx, "release-20260721"); !report.Ready {
+		t.Fatalf("managed preflight = %#v", report)
+	}
+	for _, name := range []string{"../outside", `..\\outside`, "nested/backup", "nested\\backup", filepath.Join(root, "outside")} {
+		if report := service.PreflightManaged(ctx, name); report.Ready {
+			t.Fatalf("unsafe managed backup name %q was accepted: %#v", name, report)
+		}
 	}
 }

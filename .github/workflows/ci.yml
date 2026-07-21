@@ -143,6 +143,17 @@ jobs:
         working-directory: frontend
         run: pnpm test:e2e
 
+      - name: Upload Playwright diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: playwright-diagnostics-${{ github.run_id }}
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
   build_image:
     name: Build image (${{ matrix.arch }})
     needs: [verify, visual]

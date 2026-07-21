@@ -125,6 +125,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	requestPolicyRepo := relational.NewRequestPolicyRepository(database)
 	requestSnapshotRepo := relational.NewRequestSnapshotRepository(database)
 	backupService := backupapp.NewService(database, cfg.Media.Local.Path, buildinfo.CurrentVersion())
+	backupService.SetManagedRoot(cfg.Backup.Root)
 	notificationConfig := notificationapp.Config{Cooldown: cfg.Notifications.Cooldown.Value(), Retention: cfg.Notifications.Retention.Value()}
 	if cfg.Notifications.Enabled {
 		notificationConfig.WebhookURL = cfg.Notifications.WebhookURL

@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -66,12 +68,37 @@ func (s *Service) SetExternalBackupCheck(check func(context.Context) error) {
 }
 
 func (s *Service) Preflight(ctx context.Context, backupRoot string) PreflightReport {
-	report := PreflightReport{ApplicationVersion: s.version, RestoreRequiresStop: true}
+	var verify func() error
+	if strings.TrimSpace(backupRoot) != "" {
+		verify = func() error {
+			_, err := s.Verify(ctx, backupRoot)
+			return err
+		}
+	}
+	return s.preflight(ctx, verify)
+}
+
+// PreflightManaged verifies a named backup beneath the configured managed root.
+// HTTP callers use this method so request values can never select an arbitrary host path.
+func (s *Service) PreflightManaged(ctx context.Context, backupName string) PreflightReport {
+	var verify func() error
+	if strings.TrimSpace(backupName) != "" {
+		verify = func() error {
+			_, err := s.VerifyManaged(ctx, backupName)
+			return err
+		}
+	}
+	return s.preflight(ctx, verify)
+}
+
+func (s *Service) preflight(ctx context.Context, verify func() error) PreflightReport {
+	report := PreflightReport{RestoreRequiresStop: true}
 	if s == nil || s.database == nil {
 		report.Ready = false
 		report.Checks = []PreflightCheck{{Name: "database", OK: false, Detail: "database is not configured"}}
 		return report
 	}
+	report.ApplicationVersion = s.version
 	report.DatabaseDriver = s.database.Driver()
 	report.ExternalBackupRequired = s.database.Driver() != "sqlite"
 	add := func(name string, ok bool, detail string) {
@@ -94,14 +121,12 @@ func (s *Service) Preflight(ctx context.Context, backupRoot string) PreflightRep
 	} else {
 		add("media_root", true, s.mediaRoot)
 	}
-	if strings.TrimSpace(backupRoot) != "" {
-		if _, err := s.Verify(ctx, backupRoot); err != nil {
-			add("backup_manifest", false, err.Error())
-		} else {
-			add("backup_manifest", true, "backup manifest and checksums verified")
-		}
-	} else {
+	if verify == nil {
 		add("backup_manifest", false, "no backup manifest supplied")
+	} else if err := verify(); err != nil {
+		add("backup_manifest", false, err.Error())
+	} else {
+		add("backup_manifest", true, "backup manifest and checksums verified")
 	}
 	report.Ready = true
 	for _, check := range report.Checks {
@@ -115,13 +140,25 @@ func (s *Service) Preflight(ctx context.Context, backupRoot string) PreflightRep
 type Service struct {
 	database            *relational.Database
 	mediaRoot           string
+	managedRoot         string
 	version             string
 	now                 func() time.Time
 	externalBackupCheck func(context.Context) error
 }
 
 func NewService(database *relational.Database, mediaRoot, version string) *Service {
-	return &Service{database: database, mediaRoot: filepath.Clean(mediaRoot), version: strings.TrimSpace(version), now: time.Now}
+	mediaRoot = filepath.Clean(mediaRoot)
+	return &Service{
+		database: database, mediaRoot: mediaRoot, managedRoot: filepath.Join(filepath.Dir(mediaRoot), "backups"),
+		version: strings.TrimSpace(version), now: time.Now,
+	}
+}
+
+func (s *Service) SetManagedRoot(root string) {
+	if s == nil || strings.TrimSpace(root) == "" {
+		return
+	}
+	s.managedRoot = filepath.Clean(root)
 }
 
 func (s *Service) Create(ctx context.Context, destination string) (Result, error) {
@@ -172,12 +209,38 @@ func (s *Service) Create(ctx context.Context, destination string) (Result, error
 }
 
 func (s *Service) Verify(ctx context.Context, backupRoot string) (Manifest, error) {
-	root, err := cleanDestination(backupRoot)
+	root, err := openBackupRoot(backupRoot)
 	if err != nil {
 		return Manifest{}, err
 	}
+	defer root.Close()
+	return verifyRoot(ctx, root)
+}
+
+func (s *Service) VerifyManaged(ctx context.Context, backupName string) (Manifest, error) {
+	if s == nil || strings.TrimSpace(s.managedRoot) == "" {
+		return Manifest{}, errors.New("managed backup root is not configured")
+	}
+	name, err := cleanManagedBackupName(backupName)
+	if err != nil {
+		return Manifest{}, err
+	}
+	managedRoot, err := os.OpenRoot(s.managedRoot)
+	if err != nil {
+		return Manifest{}, fmt.Errorf("open managed backup root: %w", err)
+	}
+	defer managedRoot.Close()
+	root, err := managedRoot.OpenRoot(name)
+	if err != nil {
+		return Manifest{}, fmt.Errorf("open managed backup: %w", err)
+	}
+	defer root.Close()
+	return verifyRoot(ctx, root)
+}
+
+func verifyRoot(ctx context.Context, root *os.Root) (Manifest, error) {
 	var manifest Manifest
-	data, err := os.ReadFile(filepath.Join(root, "manifest.json"))
+	data, err := root.ReadFile("manifest.json")
 	if err != nil {
 		return Manifest{}, fmt.Errorf("read backup manifest: %w", err)
 	}
@@ -188,7 +251,10 @@ func (s *Service) Verify(ctx context.Context, backupRoot string) (Manifest, erro
 		return Manifest{}, errors.New("unsupported or unsafe backup manifest")
 	}
 	if manifest.DatabaseSnapshot != "" {
-		entry, err := fileEntry(filepath.Join(root, manifest.DatabaseSnapshot), manifest.DatabaseSnapshot)
+		if manifest.DatabaseSnapshot != "database.sqlite" {
+			return Manifest{}, errors.New("database snapshot path is invalid")
+		}
+		entry, err := fileEntryInRoot(root, manifest.DatabaseSnapshot, manifest.DatabaseSnapshot)
 		if err != nil {
 			return Manifest{}, err
 		}
@@ -196,13 +262,22 @@ func (s *Service) Verify(ctx context.Context, backupRoot string) (Manifest, erro
 			return Manifest{}, errors.New("database snapshot checksum mismatch")
 		}
 	}
+	seen := make(map[string]struct{}, len(manifest.MediaFiles))
 	for _, expected := range manifest.MediaFiles {
-		actual, err := fileEntry(filepath.Join(root, filepath.FromSlash(expected.Path)), expected.Path)
+		name, err := cleanManifestMediaPath(expected.Path)
+		if err != nil {
+			return Manifest{}, err
+		}
+		if _, exists := seen[name]; exists {
+			return Manifest{}, fmt.Errorf("duplicate media manifest path: %s", name)
+		}
+		seen[name] = struct{}{}
+		actual, err := fileEntryInRoot(root, name, name)
 		if err != nil {
 			return Manifest{}, err
 		}
 		if actual.Size != expected.Size || actual.SHA256 != expected.SHA256 {
-			return Manifest{}, fmt.Errorf("media checksum mismatch: %s", expected.Path)
+			return Manifest{}, fmt.Errorf("media checksum mismatch: %s", name)
 		}
 	}
 	if err := ctx.Err(); err != nil {
@@ -218,9 +293,14 @@ func (s *Service) Restore(ctx context.Context, backupRoot, targetDatabase, targe
 	if err != nil {
 		return err
 	}
-	if manifest.DatabaseDriver != "sqlite" || manifest.DatabaseSnapshot == "" {
+	if manifest.DatabaseDriver != "sqlite" || manifest.DatabaseSnapshot != "database.sqlite" {
 		return errors.New("restore requires a SQLite snapshot; use the external database backup procedure for PostgreSQL")
 	}
+	root, err := openBackupRoot(backupRoot)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
 	targetDatabase, err = filepath.Abs(filepath.Clean(strings.TrimSpace(targetDatabase)))
 	if err != nil || targetDatabase == "" {
 		return errors.New("restore database path is invalid")
@@ -234,7 +314,7 @@ func (s *Service) Restore(ctx context.Context, backupRoot, targetDatabase, targe
 	}
 	timestamp := s.now().UTC().Format("20060102T150405Z")
 	stagedDatabase := targetDatabase + ".restore-" + timestamp
-	if err := copyFile(filepath.Join(filepath.Clean(backupRoot), filepath.FromSlash(manifest.DatabaseSnapshot)), stagedDatabase); err != nil {
+	if err := copyFileFromRoot(root, manifest.DatabaseSnapshot, stagedDatabase); err != nil {
 		return fmt.Errorf("stage database restore: %w", err)
 	}
 	if err := replacePathWithBackup(stagedDatabase, targetDatabase, timestamp); err != nil {
@@ -242,7 +322,7 @@ func (s *Service) Restore(ctx context.Context, backupRoot, targetDatabase, targe
 		return err
 	}
 	stagedMedia := targetMedia + ".restore-" + timestamp
-	if err := copyTree(filepath.Join(filepath.Clean(backupRoot), "media"), stagedMedia); err != nil {
+	if err := copyTreeFromRoot(root, "media", stagedMedia); err != nil {
 		return fmt.Errorf("stage media restore: %w", err)
 	}
 	if err := replacePathWithBackup(stagedMedia, targetMedia, timestamp); err != nil {
@@ -269,30 +349,80 @@ func replacePathWithBackup(staged, target, timestamp string) error {
 	return nil
 }
 
-func copyTree(source, destination string) error {
+func copyTreeFromRoot(root *os.Root, source, destination string) error {
+	sourceRoot, err := root.OpenRoot(source)
+	if err != nil {
+		return err
+	}
+	defer sourceRoot.Close()
 	if err := os.MkdirAll(destination, 0o700); err != nil {
 		return err
 	}
-	return filepath.WalkDir(source, func(path string, entry os.DirEntry, walkErr error) error {
+	return fs.WalkDir(sourceRoot.FS(), ".", func(name string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		relative, err := filepath.Rel(source, path)
+		if name == "." {
+			return nil
+		}
+		target, err := joinWithinRoot(destination, name)
 		if err != nil {
 			return err
 		}
-		if relative == "." {
-			return nil
-		}
-		target := filepath.Join(destination, relative)
 		if entry.IsDir() {
 			return os.MkdirAll(target, 0o700)
 		}
 		if entry.Type().IsRegular() {
-			return copyFile(path, target)
+			return copyFileFromRoot(sourceRoot, name, target)
 		}
 		return nil
 	})
+}
+
+func openBackupRoot(value string) (*os.Root, error) {
+	root, err := cleanDestination(value)
+	if err != nil {
+		return nil, err
+	}
+	handle, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, fmt.Errorf("open backup root: %w", err)
+	}
+	return handle, nil
+}
+
+func cleanManagedBackupName(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > 128 || value == "." || value == ".." || strings.Contains(value, "..") || strings.ContainsAny(value, `/\`) {
+		return "", errors.New("managed backup name is invalid")
+	}
+	for _, character := range value {
+		if (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') || (character >= '0' && character <= '9') || character == '-' || character == '_' || character == '.' {
+			continue
+		}
+		return "", errors.New("managed backup name is invalid")
+	}
+	return value, nil
+}
+
+func cleanManifestMediaPath(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.Contains(value, `\`) {
+		return "", errors.New("media manifest path is invalid")
+	}
+	cleaned := pathpkg.Clean(value)
+	if cleaned != value || pathpkg.IsAbs(cleaned) || cleaned == ".." || strings.HasPrefix(cleaned, "../") || !strings.HasPrefix(cleaned, "media/") {
+		return "", fmt.Errorf("media manifest path is invalid: %s", value)
+	}
+	return cleaned, nil
+}
+
+func joinWithinRoot(root, relative string) (string, error) {
+	relative = filepath.Clean(filepath.FromSlash(relative))
+	if relative == "." || filepath.IsAbs(relative) || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", errors.New("relative path escapes destination root")
+	}
+	return filepath.Join(root, relative), nil
 }
 
 func cleanDestination(value string) (string, error) {
@@ -339,14 +469,27 @@ func copyMediaTree(ctx context.Context, source, destination string) error {
 }
 
 func copyFile(source, destination string) error {
-	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
-		return err
-	}
 	input, err := os.Open(source)
 	if err != nil {
 		return err
 	}
 	defer input.Close()
+	return copyReaderToFile(input, destination)
+}
+
+func copyFileFromRoot(root *os.Root, source, destination string) error {
+	input, err := root.Open(source)
+	if err != nil {
+		return err
+	}
+	defer input.Close()
+	return copyReaderToFile(input, destination)
+}
+
+func copyReaderToFile(input io.Reader, destination string) error {
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		return err
+	}
 	output, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
@@ -356,6 +499,26 @@ func copyFile(source, destination string) error {
 		return err
 	}
 	return output.Close()
+}
+
+func fileEntryInRoot(root *os.Root, name, relative string) (FileEntry, error) {
+	info, err := root.Stat(name)
+	if err != nil {
+		return FileEntry{}, fmt.Errorf("stat backup file %s: %w", relative, err)
+	}
+	if !info.Mode().IsRegular() {
+		return FileEntry{}, fmt.Errorf("backup path is not a regular file: %s", relative)
+	}
+	file, err := root.Open(name)
+	if err != nil {
+		return FileEntry{}, err
+	}
+	defer file.Close()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return FileEntry{}, err
+	}
+	return FileEntry{Path: filepath.ToSlash(relative), Size: info.Size(), SHA256: hex.EncodeToString(hash.Sum(nil))}, nil
 }
 
 func fileEntry(path, relative string) (FileEntry, error) {

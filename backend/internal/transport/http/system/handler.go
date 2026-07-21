@@ -55,7 +55,11 @@ func (h *Handler) preflight(c *gin.Context) {
 		response.Error(c, http.StatusNotImplemented, "upgradePreflightUnavailable", "upgrade preflight is not configured")
 		return
 	}
-	report := h.backup.Preflight(c.Request.Context(), strings.TrimSpace(c.Query("backupRoot")))
+	backupName := strings.TrimSpace(c.Query("backupName"))
+	if backupName == "" {
+		backupName = strings.TrimSpace(c.Query("backupRoot"))
+	}
+	report := h.backup.PreflightManaged(c.Request.Context(), backupName)
 	status := http.StatusOK
 	if !report.Ready {
 		status = http.StatusPreconditionFailed
