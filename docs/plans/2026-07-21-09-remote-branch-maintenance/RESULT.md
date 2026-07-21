@@ -1,35 +1,25 @@
 # 第 09 轮迭代结果：远程分支维护与历史归档
 
 - 日期：2026-07-21
-- 当前状态：实施中；等待供应链最短发布时间门禁到期后重跑 PR #21
-- 文档分支：`docs/remote-branch-maintenance`，尚未推送
+- 状态：完成
+- 文档分支：`docs/remote-branch-maintenance`
 
-## 可靠性平台分支
+## 合并与依赖
 
-- PR #19 已通过 Verify、Visual、CodeQL 和 amd64/arm64 Docker 检查并 Squash 合并。
-- 合并提交：`785aa7a13813b9e18bd10e4a8615dcd17b265a1f`。
-- 本地和远程 `codex/reliability-platform-roadmap` 已删除。
+- PR #19 已通过 Verify、Visual、CodeQL 与 amd64/arm64 Docker 检查，并 Squash 合并为 `785aa7a13813b9e18bd10e4a8615dcd17b265a1f`。
+- 原 Dependabot PR #17 因新基线冲突关闭；维护者替代 PR #21 完成相同的 12 项前端补丁升级，并于 2026-07-21 Squash 合并为 `599384a2b67f33d8f928d2dc9f57e5a95188fadb`。
+- PR #21 本地通过 frozen install、依赖审计、Vitest、typecheck、lint、build、图标、包体与 Playwright 6/6；GitHub Verify、Visual、CodeQL 与 amd64/arm64 Docker 在 24 小时 `minimumReleaseAge` 门禁到期后全部成功。
+- 重复且超出范围的 Dependabot PR #20 已关闭；其远程分支及替代依赖分支均已删除。
 
-## Dependabot 与替代依赖分支
+## `legacy-initial` 归档
 
-- 原 Dependabot PR #17 在 PR #19 合并后变为 `DIRTY / CONFLICTING`，机器人自动关闭 PR 并删除原远程分支。
-- 替代分支 `codex/frontend-minor-patch-refresh` 从最新 main 创建，main 是其直接祖先。
-- 当前差异只包含 `frontend/package.json` 和 `frontend/pnpm-lock.yaml`，没有业务代码、API、配置或数据库变更。
-- 12 个目标版本与原 PR #17 一致；替代提交为 `14a31c9fd500d6108a9b9bf0fcdb12d9c44b17be`。
-- 替代 PR：#21 `chore(deps): refresh frontend minor and patch dependencies`。
-- 本地已通过 frozen install、audit、test、typecheck、lint、build、图标、包体和 Playwright 6/6。
-- CodeQL 已通过；首次 GitHub CI 仅因 TanStack 5.101.3 两个包尚未达到 pnpm 24 小时 minimumReleaseAge 而失败。
-- 两个包分别发布于 2026-07-20 12:04:24 UTC 和 12:04:30 UTC；不提交策略例外，计划在 2026-07-21 12:05 UTC（上海时间 20:05）后重跑。
+- annotated tag `archive/legacy-initial-20260719` 的 peeled commit 已远程核验为 `039c9f092610a4fe8e47b6471850bf5594d020c5`。
+- 本地和远程 `legacy-initial` 分支均已删除；归档标签继续保留。
+- 远程不存在 `v*.*.*` 版本标签，也没有对应 GitHub Release。
+- 最近工作流仅包含 CI、CodeQL、Dependabot 与维护任务；本轮归档标签和主分支更新未触发 Release 或 GHCR 发布工作流。
 
-## legacy-initial 归档
+## 最终验收与回滚
 
-- 创建并单独推送 annotated tag：`archive/legacy-initial-20260719`。
-- 远程 peeled commit 已核验为 `039c9f092610a4fe8e47b6471850bf5594d020c5`。
-- 本地和远程 `legacy-initial` 分支均已删除。
-- 归档标签没有对应 GitHub Release；没有创建 `v*.*.*` 标签。
-
-## 待完成
-
-- 在 minimumReleaseAge 到期后重跑 PR #21 全部检查；成功后 Squash 合并并删除替代分支。
-- 将文档分支 rebase 到最终 main，完成分支、标签、Release/GHCR 和工作区验收。
-- 统一推送本文档分支，创建文档 PR，等待检查后 Squash 合并。
+- 远程只保留 `main` 分支；旧可靠性、Dependabot、替代依赖和 `legacy-initial` 分支均不存在。
+- `origin` 与 `upstream` 地址保持不变，公开 API、配置、数据库结构及 Go module 路径未改变。
+- 如需回滚依赖升级，应 revert PR #21 的 squash commit；历史归档标签不应删除。
