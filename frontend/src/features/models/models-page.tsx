@@ -211,7 +211,7 @@ export function ModelsPage() {
             <div className="flex w-full items-center gap-2 sm:w-auto">
               <div className="relative min-w-0 flex-1 sm:w-64 sm:flex-none">
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input className="h-8 pl-9 text-xs" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder={t("models.search")} aria-label={t("models.search")} />
+                <Input id="models-search" name="search" className="h-8 pl-9 text-xs" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder={t("models.search")} aria-label={t("models.search")} />
               </div>
               <DataTableFilters filters={[
                 { id: "provider", label: t("models.provider"), value: providerFilter, onChange: (value) => { setProviderFilter(value as ModelRouteDTO["provider"] | ""); setPage(1); }, options: [
@@ -319,16 +319,16 @@ export function ModelsPage() {
               {editing === "new" ? (
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
-                    <Label>{t("models.provider")}</Label>
-                    <Select value={selectedProvider} disabled>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                    <Label htmlFor="model-provider">{t("models.provider")}</Label>
+                    <Select name="provider" value={selectedProvider} disabled>
+                      <SelectTrigger id="model-provider"><SelectValue /></SelectTrigger>
                       <SelectContent><SelectItem value="grok_build">{t("models.providerGrokBuild")}</SelectItem></SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>{t("models.capability")}</Label>
-                    <Select value={selectedCapability} disabled>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                    <Label htmlFor="model-capability">{t("models.capability")}</Label>
+                    <Select name="capability" value={selectedCapability} disabled>
+                      <SelectTrigger id="model-capability"><SelectValue /></SelectTrigger>
                       <SelectContent><SelectItem value="responses">Responses</SelectItem></SelectContent>
                     </Select>
                   </div>
@@ -344,14 +344,14 @@ export function ModelsPage() {
                     </div>
                     <p className="mt-1 text-xs leading-5 text-muted-foreground">{t("models.bindAccountsDescription")}</p>
                   </div>
-                  <Switch className="mt-0.5 shrink-0" id="model-binding-mode" checked={bindingMode} onCheckedChange={(checked) => { form.setValue("bindingMode", checked); if (!checked) form.clearErrors("accountIds"); }} />
+                  <Switch className="mt-0.5 shrink-0" id="model-binding-mode" name="bindingMode" checked={bindingMode} onCheckedChange={(checked) => { form.setValue("bindingMode", checked); if (!checked) form.clearErrors("accountIds"); }} />
                 </div>
                 {bindingMode ? (
                   <div className="mt-3">
                     <div className="overflow-hidden rounded-md bg-background/85 p-1">
                       <div className="relative">
                         <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                        <Input className="bg-transparent pl-8 shadow-none" value={accountSearch} onChange={(event) => setAccountSearch(event.target.value)} placeholder={t("models.searchAccounts")} />
+                        <Input id="model-account-search" name="accountSearch" aria-label={t("models.searchAccounts")} className="bg-transparent pl-8 shadow-none" value={accountSearch} onChange={(event) => setAccountSearch(event.target.value)} placeholder={t("models.searchAccounts")} />
                       </div>
                       <div className="mt-1 max-h-40 overflow-y-auto overscroll-contain sm:max-h-44">
                         {accountOptionsQuery.isPending ? <div className="flex min-h-20 items-center justify-center"><Spinner /></div> : null}
@@ -379,7 +379,7 @@ export function ModelsPage() {
                   <Label htmlFor="model-enabled">{modelEnabled ? t("common.enabled") : t("common.disabled")}</Label>
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">{t("models.enabledDescription")}</p>
                 </div>
-                <Switch id="model-enabled" checked={modelEnabled} onCheckedChange={(checked) => form.setValue("enabled", checked)} />
+                <Switch id="model-enabled" name="enabled" checked={modelEnabled} onCheckedChange={(checked) => form.setValue("enabled", checked)} />
               </section>
             </div>
             <DialogFooter className="shrink-0 gap-2 bg-muted/20 px-5 py-3 sm:gap-0"><Button type="button" variant="secondary" size="sm" onClick={() => setEditing(null)}>{t("common.cancel")}</Button><Button type="submit" size="sm" disabled={updateMutation.isPending}>{updateMutation.isPending ? <Spinner /> : null}{editing === "new" ? t("common.create") : t("common.save")}</Button></DialogFooter>

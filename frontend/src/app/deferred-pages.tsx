@@ -3,7 +3,7 @@ import { lazy, Suspense, type ComponentType, type LazyExoticComponent } from "re
 import { Spinner } from "@/components/ui/spinner";
 
 const AccountsPage = lazyNamed(() => import("@/features/accounts/accounts-page"), "AccountsPage");
-const AppShell = lazyNamed(() => import("@/app/app-shell"), "AppShell");
+const AdminShell = lazyNamed(() => import("@/app/admin-shell"), "AdminShell");
 const RequestAuditsPage = lazyNamed(() => import("@/features/audits/request-audits-page"), "RequestAuditsPage");
 const ClientKeysPage = lazyNamed(() => import("@/features/client-keys/client-keys-page"), "ClientKeysPage");
 const CreativeConsolePage = lazyNamed(() => import("@/features/creative-console/creative-console-page"), "CreativeConsolePage");
@@ -27,7 +27,7 @@ export function DeferredAccountsPage() {
 }
 
 export function DeferredAppShell() {
-  return <Suspense fallback={<PageLoadingFallback fullScreen />}><AppShell /></Suspense>;
+  return <Suspense fallback={<PageLoadingFallback fullScreen />}><AdminShell /></Suspense>;
 }
 
 export function DeferredDashboardPage() {

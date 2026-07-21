@@ -13,6 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check:bundle": "node scripts/check-bundle-budget.mjs",
+    "check:chunks": "node scripts/check-chunk-cycles.mjs",
+    "profile:devtools": "node scripts/profile-chrome-devtools-mcp.mjs",
     "check:icons": "node scripts/check-icon-imports.mjs",
     "test:e2e": "playwright test"
   },

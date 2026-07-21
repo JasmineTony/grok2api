@@ -199,6 +199,7 @@ pnpm build
 - [架构与路由参考](./docs/reference/architecture-and-routing.md)
 - [后端开发说明](./backend/README.md)
 - [前端开发说明](./frontend/README.md)
+- [Chrome DevTools MCP 性能分析](./docs/reference/chrome-devtools-performance.md)
 - [上游同步流程](./UPSTREAM.md)
 - [安全策略](./SECURITY.md)
 - [安全审计记录](./SECURITY-AUDIT.md)
