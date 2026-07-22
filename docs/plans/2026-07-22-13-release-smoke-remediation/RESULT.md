@@ -17,14 +17,14 @@ v3.1.0 的 Validate、amd64/arm64 构建与推送、provenance、digest manifest
 
 - 将 `release-image.yml` 的 smoke mount 修正为 `/run/grok2api/config.yaml:ro`。
 - 新增只读 `release-smoke.yml` 手动工作流，严格验证输入标签、`VERSION` 和 main 祖先关系，再拉取已发布镜像执行 `/healthz`。
-- 手动 smoke 仅授予 `contents: read` 和 `packages: read`，继续受 `release` environment 审批保护。
+- 手动 smoke 仅授予 `contents: read` 和 `packages: read`。首次 main 调度因 `release` environment 仅允许标签部署而在分配 Runner 前被拒绝；手动只读验证不再绑定发布环境，发布写入流程仍继续受 `release` environment 保护。
 - 不移动 `v3.1.0` 标签，不重建 Release，不重新发布应用代码。
 
 ## 验证
 
 - `actionlint`：通过。
 - Markdown 相对链接、UTF-8 和 `git diff --check`：通过。
-- PR CI 与实际 `v3.1.0` 手动 smoke：待合并后执行。
+- PR #30 已全绿并合并，未来 Release 工作流挂载路径已修复。只读手动 smoke 的 environment 兼容修复与实际 `v3.1.0` 验证正在进行。
 
 ## PR 与回滚
 
