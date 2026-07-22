@@ -1,0 +1,9 @@
+.cache
+*.tsbuildinfo
+node_modules
+dist
+coverage
+playwright-report
+test-results
+pnpm-lock.yaml
+src/shared/i18n/locales

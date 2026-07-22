@@ -2,43 +2,34 @@ import type { TFunction } from "i18next";
 import type { UseFormReturn } from "react-hook-form";
 import { toast } from "sonner";
 
+import type { AccountFormValues } from "@/features/accounts/account-form";
 import type {
   AccountDTO,
   AccountProvider,
   AccountSummaryDTO,
   BuildConversionStrategy,
 } from "@/features/accounts/accounts-api";
-import type { AccountFormValues } from "@/features/accounts/account-form";
 
 const MAX_IMPORT_FILE_BYTES = 30 * 1024 * 1024;
 
 export function isAbortError(error: unknown): boolean {
-  return (
-    (error instanceof DOMException || error instanceof Error) &&
-    error.name === "AbortError"
-  );
+  return (error instanceof DOMException || error instanceof Error) && error.name === "AbortError";
 }
 
 export function showAccountError(error: unknown, t: TFunction): void {
   toast.error(error instanceof Error ? error.message : t("errors.generic"));
 }
 
-export function createQuickImportFile(
-  tokens: string,
-  provider: AccountProvider,
-): File | null {
+export function createQuickImportFile(tokens: string, provider: AccountProvider): File | null {
   const value = tokens.trim();
   if (!value) return null;
   const filename =
-    provider === "grok_console"
-      ? "grok-console-sso-tokens.txt"
-      : "grok-web-sso-tokens.txt";
+    provider === "grok_console" ? "grok-console-sso-tokens.txt" : "grok-web-sso-tokens.txt";
   return new File([value], filename, { type: "text/plain" });
 }
 
 export async function readQuickImportFile(file: File): Promise<string> {
-  if (file.size > MAX_IMPORT_FILE_BYTES)
-    throw new RangeError("accountImportFileTooLarge");
+  if (file.size > MAX_IMPORT_FILE_BYTES) throw new RangeError("accountImportFileTooLarge");
   return file.text();
 }
 
@@ -50,9 +41,7 @@ export function createConversionInput(
   targets: string[] | "all",
   strategy: BuildConversionStrategy,
 ): AccountConversionInput {
-  return targets === "all"
-    ? { all: true, strategy }
-    : { ids: targets, strategy };
+  return targets === "all" ? { all: true, strategy } : { ids: targets, strategy };
 }
 
 export function resetAccountForm(
@@ -86,11 +75,7 @@ export function deriveAccountOverview(
   const web = summary?.providers.grok_web ?? emptyProvider;
   const console = summary?.providers.grok_console ?? emptyProvider;
   const providerTotal =
-    provider === "grok_build"
-      ? build.total
-      : provider === "grok_web"
-        ? web.total
-        : console.total;
+    provider === "grok_build" ? build.total : provider === "grok_web" ? web.total : console.total;
   return {
     build,
     web,
@@ -104,10 +89,7 @@ export function deriveAccountOverview(
   };
 }
 
-export function downloadAccountExport(
-  blob: Blob,
-  provider: AccountProvider,
-): void {
+export function downloadAccountExport(blob: Blob, provider: AccountProvider): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;

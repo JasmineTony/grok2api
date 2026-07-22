@@ -24,7 +24,7 @@ export function TableLoadingRow({ colSpan }: { colSpan: number }) {
   );
 }
 
-export function EmptyState({ message }: { message?: string }) {
+export function EmptyState({ message }: { message?: string | undefined }) {
   const { t } = useTranslation();
   return (
     <div className="flex min-h-44 flex-col items-center justify-center gap-2 text-center text-muted-foreground">
@@ -40,7 +40,9 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry: () 
     <div className="flex min-h-44 flex-col items-center justify-center gap-3 text-center">
       <AlertCircle className="size-7 text-destructive" />
       <p className="max-w-md text-sm text-muted-foreground">{message}</p>
-      <Button type="button" variant="secondary" size="sm" onClick={onRetry}>{t("common.retry")}</Button>
+      <Button type="button" variant="secondary" size="sm" onClick={onRetry}>
+        {t("common.retry")}
+      </Button>
     </div>
   );
 }

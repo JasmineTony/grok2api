@@ -3,19 +3,14 @@ import { useState } from "react";
 import type { AccountProvider } from "@/features/accounts/accounts-api";
 
 /** Keeps bulk selection scoped to the active provider to avoid cross-pool actions. */
-export function useAccountSelection(
-  provider: AccountProvider,
-  pageIDs: readonly string[],
-) {
+export function useAccountSelection(provider: AccountProvider, pageIDs: readonly string[]) {
   const [selection, setSelection] = useState(() => ({
     provider,
     ids: new Set<string>(),
   }));
-  const selected =
-    selection.provider === provider ? selection.ids : new Set<string>();
+  const selected = selection.provider === provider ? selection.ids : new Set<string>();
   const selectedOnPage = pageIDs.filter((id) => selected.has(id));
-  const allPageSelected =
-    pageIDs.length > 0 && selectedOnPage.length === pageIDs.length;
+  const allPageSelected = pageIDs.length > 0 && selectedOnPage.length === pageIDs.length;
 
   function resetSelection(nextProvider = provider): void {
     setSelection({ provider: nextProvider, ids: new Set() });

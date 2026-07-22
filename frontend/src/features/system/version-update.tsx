@@ -6,24 +6,27 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { checkForUpdates, getVersionInfo } from "@/entities/system/system-api";
+import { useApiClient } from "@/shared/api/use-api-client";
 import { cn } from "@/shared/lib/cn";
 import { formatDateTime } from "@/shared/lib/format";
 
 const versionQueryKey = ["system-version"] as const;
 
 function useVersionInfo() {
+  const apiClient = useApiClient();
   return useQuery({
     queryKey: versionQueryKey,
-    queryFn: getVersionInfo,
+    queryFn: () => getVersionInfo(apiClient),
     staleTime: 60_000,
     retry: 1,
   });
 }
 
 function useCheckForUpdates() {
+  const apiClient = useApiClient();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: checkForUpdates,
+    mutationFn: () => checkForUpdates(apiClient),
     onSuccess: (value) => queryClient.setQueryData(versionQueryKey, value),
   });
 }
@@ -45,18 +48,37 @@ export function VersionUpdateBanner() {
   return (
     <section className="flex flex-col gap-3 rounded-lg bg-amber-500/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
-        <p className="text-sm font-medium">{t("updates.available", { version: version.latestVersion })}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">{t("updates.currentSummary", { version: version.currentVersion })}</p>
+        <p className="text-sm font-medium">
+          {t("updates.available", { version: version.latestVersion })}
+        </p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {t("updates.currentSummary", { version: version.currentVersion })}
+        </p>
       </div>
       <div className="flex shrink-0 items-center gap-0.5">
         {version.releaseUrl ? (
-          <Button variant="ghost" size="sm" className="h-7 px-2.5 text-xs font-normal text-muted-foreground hover:text-foreground" asChild>
-            <a href={version.releaseUrl} target="_blank" rel="noreferrer">{t("updates.viewRelease")}<ArrowUpRight className="size-3.5" /></a>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2.5 text-xs font-normal text-muted-foreground hover:text-foreground"
+            asChild
+          >
+            <a href={version.releaseUrl} target="_blank" rel="noreferrer">
+              {t("updates.viewRelease")}
+              <ArrowUpRight className="size-3.5" />
+            </a>
           </Button>
         ) : null}
         {version.releaseUrl ? <span className="mx-1 h-3 w-px bg-border/70" /> : null}
-        <Button variant="ghost" size="sm" className="h-7 px-2.5 text-xs font-normal text-muted-foreground hover:text-foreground" disabled={checkMutation.isPending} onClick={() => checkMutation.mutate()}>
-          {checkMutation.isPending ? <Spinner /> : <RefreshCw className="size-3.5" />}{t("updates.checkNow")}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2.5 text-xs font-normal text-muted-foreground hover:text-foreground"
+          disabled={checkMutation.isPending}
+          onClick={() => checkMutation.mutate()}
+        >
+          {checkMutation.isPending ? <Spinner /> : <RefreshCw className="size-3.5" />}
+          {t("updates.checkNow")}
         </Button>
       </div>
     </section>
@@ -82,38 +104,83 @@ export function VersionUpdateSection() {
           <Info className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-300" />
           <div className="min-w-0">
             <p className="text-xs font-medium">{t("updates.noteTitle")}</p>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">{t("updates.noteDescription")}</p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              {t("updates.noteDescription")}
+            </p>
           </div>
         </div>
         <div className="space-y-0">
-          <VersionField label={t("updates.currentVersion")} description={t("updates.currentVersionHelp")}>
+          <VersionField
+            label={t("updates.currentVersion")}
+            description={t("updates.currentVersionHelp")}
+          >
             <div className="flex min-w-0 items-center gap-2">
-              <div className="min-w-0 flex-1"><VersionValue>{version?.currentVersion || "-"}</VersionValue></div>
-              <Button type="button" variant="secondary" size="sm" className="shrink-0" disabled={versionQuery.isPending || checkMutation.isPending} onClick={() => checkMutation.mutate()}>
-                {versionQuery.isPending || checkMutation.isPending ? <Spinner /> : <RefreshCw />}{t("updates.checkNow")}
+              <div className="min-w-0 flex-1">
+                <VersionValue>{version?.currentVersion || "-"}</VersionValue>
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="shrink-0"
+                disabled={versionQuery.isPending || checkMutation.isPending}
+                onClick={() => checkMutation.mutate()}
+              >
+                {versionQuery.isPending || checkMutation.isPending ? <Spinner /> : <RefreshCw />}
+                {t("updates.checkNow")}
               </Button>
             </div>
           </VersionField>
-          <VersionField label={t("updates.latestVersion")} description={t("updates.latestVersionHelp")}>
+          <VersionField
+            label={t("updates.latestVersion")}
+            description={t("updates.latestVersionHelp")}
+          >
             <VersionValue>{version?.latestVersion || t("updates.notChecked")}</VersionValue>
           </VersionField>
           <VersionField label={t("updates.repository")} description={t("updates.repositoryHelp")}>
             <VersionValue>{version?.repository || "JasmineTony/grok2api"}</VersionValue>
           </VersionField>
-          <VersionField label={t("updates.upstreamVersion")} description={t("updates.upstreamVersionHelp", { repository: version?.upstreamRepository || "chenyme/grok2api" })}>
+          <VersionField
+            label={t("updates.upstreamVersion")}
+            description={t("updates.upstreamVersionHelp", {
+              repository: version?.upstreamRepository || "chenyme/grok2api",
+            })}
+          >
             <VersionValue>
               <span>{version?.upstreamLatestVersion || t("updates.notChecked")}</span>
-              {version?.upstreamReleaseUrl ? <a className="ml-auto text-muted-foreground hover:text-foreground" href={version.upstreamReleaseUrl} target="_blank" rel="noreferrer"><ArrowUpRight className="size-3.5" /></a> : null}
+              {version?.upstreamReleaseUrl ? (
+                <a
+                  className="ml-auto text-muted-foreground hover:text-foreground"
+                  href={version.upstreamReleaseUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <ArrowUpRight className="size-3.5" />
+                </a>
+              ) : null}
             </VersionValue>
           </VersionField>
           <VersionField label={t("updates.statusLabel")} description={t("updates.statusLabelHelp")}>
             <VersionValue>
-              {version?.status ? <span className={cn("size-1.5 shrink-0 rounded-full bg-muted-foreground", version.status === "up_to_date" && "bg-emerald-500", version.status === "update_available" && "bg-amber-500", version.status === "check_failed" && "bg-destructive")} /> : null}
+              {version?.status ? (
+                <span
+                  className={cn(
+                    "size-1.5 shrink-0 rounded-full bg-muted-foreground",
+                    version.status === "up_to_date" && "bg-emerald-500",
+                    version.status === "update_available" && "bg-amber-500",
+                    version.status === "check_failed" && "bg-destructive",
+                  )}
+                />
+              ) : null}
               <span>{version ? t(`updates.status.${version.status}`) : t("common.loading")}</span>
             </VersionValue>
           </VersionField>
           <VersionField label={t("updates.checkedAt")} description={t("updates.checkedAtHelp")}>
-            <VersionValue>{version?.checkedAt ? formatDateTime(version.checkedAt, i18n.language) : t("updates.neverChecked")}</VersionValue>
+            <VersionValue>
+              {version?.checkedAt
+                ? formatDateTime(version.checkedAt, i18n.language)
+                : t("updates.neverChecked")}
+            </VersionValue>
           </VersionField>
         </div>
         {error ? <p className="text-xs leading-5 text-destructive">{error}</p> : null}
@@ -124,11 +191,16 @@ export function VersionUpdateSection() {
           <div className="flex min-h-8 items-center justify-between gap-3 px-1">
             <div>
               <h3 className="text-sm font-medium tracking-tight">{t("updates.releaseNotes")}</h3>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">{t("updates.releaseNotesHelp")}</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {t("updates.releaseNotesHelp")}
+              </p>
             </div>
             {version.releaseUrl ? (
               <Button type="button" variant="secondary" size="sm" asChild>
-                <a href={version.releaseUrl} target="_blank" rel="noreferrer">{t("updates.openRelease")}<ArrowUpRight /></a>
+                <a href={version.releaseUrl} target="_blank" rel="noreferrer">
+                  {t("updates.openRelease")}
+                  <ArrowUpRight />
+                </a>
               </Button>
             ) : null}
           </div>
@@ -143,7 +215,15 @@ export function VersionUpdateSection() {
   );
 }
 
-function VersionField({ label, description, children }: { label: string; description: string; children: ReactNode }) {
+function VersionField({
+  label,
+  description,
+  children,
+}: {
+  label: string;
+  description: string;
+  children: ReactNode;
+}) {
   return (
     <div className="min-w-0 py-4">
       <div className="grid min-w-0 gap-2.5 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] sm:items-center sm:gap-8">
@@ -158,5 +238,9 @@ function VersionField({ label, description, children }: { label: string; descrip
 }
 
 function VersionValue({ children }: { children: ReactNode }) {
-  return <div className="flex min-h-8 min-w-0 items-center gap-2 rounded-md bg-secondary/55 px-3 py-1 text-xs font-medium">{children}</div>;
+  return (
+    <div className="flex min-h-8 min-w-0 items-center gap-2 rounded-md bg-secondary/55 px-3 py-1 text-xs font-medium">
+      {children}
+    </div>
+  );
 }

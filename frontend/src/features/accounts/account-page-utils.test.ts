@@ -31,9 +31,7 @@ describe("account page utilities", () => {
   });
 
   it("reads bounded files and rejects oversized imports", async () => {
-    await expect(
-      readQuickImportFile(new File(["token"], "tokens.txt")),
-    ).resolves.toBe("token");
+    await expect(readQuickImportFile(new File(["token"], "tokens.txt"))).resolves.toBe("token");
     const oversized = {
       size: 30 * 1024 * 1024 + 1,
       text: () => Promise.resolve(""),

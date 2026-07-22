@@ -91,10 +91,7 @@ export function AccountProviderToolbar({
                 {t("accounts.quickImportSSO")}
               </DropdownMenuItem>
             ) : null}
-            <DropdownMenuItem
-              disabled={pending}
-              onClick={() => fileInputRef.current?.click()}
-            >
+            <DropdownMenuItem disabled={pending} onClick={() => fileInputRef.current?.click()}>
               <FileUp />
               {provider === "grok_build"
                 ? t("accounts.importAuth")

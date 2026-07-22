@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  formatDateTime,
-  formatDuration,
-  formatNumber,
-  toDateTimeLocal,
-} from "@/shared/lib/format";
+import { formatDateTime, formatDuration, formatNumber, toDateTimeLocal } from "@/shared/lib/format";
 
 describe("format helpers", () => {
   it("handles missing or invalid dates", () => {

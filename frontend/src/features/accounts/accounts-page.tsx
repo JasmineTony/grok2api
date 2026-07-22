@@ -1,4 +1,4 @@
-﻿import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
@@ -9,6 +9,7 @@ import type {
   ConversionProgress,
   WebConversionTarget,
 } from "@/features/accounts/account-bulk-dialogs";
+import { type AccountFormValues, createAccountSchema } from "@/features/accounts/account-form";
 import {
   createConversionInput,
   createQuickImportFile,
@@ -19,25 +20,21 @@ import {
   resetAccountForm,
   showAccountError,
 } from "@/features/accounts/account-page-utils";
-import { AccountsDialogsPortal } from "@/features/accounts/accounts-dialogs-portal";
 import { useAccountSelection } from "@/features/accounts/account-selection";
 import {
-  createAccountSchema,
-  type AccountFormValues,
-} from "@/features/accounts/account-form";
-import { AccountsOverview } from "@/features/accounts/accounts-overview";
-import { AccountsWorkspace } from "@/features/accounts/accounts-workspace";
-import {
-  useDeviceAuthorization,
-  type DeviceAuthorizationStatus,
-} from "@/features/accounts/use-device-authorization";
-import { useStartDeviceLogin } from "@/features/accounts/use-device-login";
-import {
   acceptWebAccountTerms,
+  type AccountCleanupStatus,
+  type AccountDTO,
+  type AccountProvider,
+  type AccountTaskProgressDTO,
+  type AccountUpdateInput,
+  type BuildConversionInput,
+  type BuildConversionStrategy,
   cleanupAccounts,
   convertWebAccountsToBuild,
   deleteAccount,
   deleteAccounts,
+  type DeviceSessionDTO,
   enableWebAccountNSFW,
   exportAccounts,
   getAccountSummary,
@@ -60,29 +57,27 @@ import {
   syncWebAccountsToConsole,
   updateAccount,
   updateAccountsEnabled,
-  type AccountCleanupStatus,
-  type AccountDTO,
-  type AccountProvider,
-  type AccountTaskProgressDTO,
-  type AccountUpdateInput,
-  type BuildConversionInput,
-  type BuildConversionStrategy,
-  type DeviceSessionDTO,
   type WebAccountScriptActions,
   type WebAccountScriptsInput,
   type WebConsoleSyncInput,
 } from "@/features/accounts/accounts-api";
-import type { WebAccountConfirmationTarget } from "@/features/accounts/web-account-settings";
-import { useDebouncedValue } from "@/shared/hooks/use-debounced-value";
+import { AccountsDialogsPortal } from "@/features/accounts/accounts-dialogs-portal";
+import { AccountsOverview } from "@/features/accounts/accounts-overview";
+import { AccountsWorkspace } from "@/features/accounts/accounts-workspace";
 import {
-  nextTableSort,
-  type SortOrder,
-  type TableSort,
-} from "@/shared/lib/table-sort";
+  type DeviceAuthorizationStatus,
+  useDeviceAuthorization,
+} from "@/features/accounts/use-device-authorization";
+import { useStartDeviceLogin } from "@/features/accounts/use-device-login";
+import type { WebAccountConfirmationTarget } from "@/features/accounts/web-account-settings";
+import { useApiClient } from "@/shared/api/use-api-client";
+import { useDebouncedValue } from "@/shared/hooks/use-debounced-value";
+import { nextTableSort, type SortOrder, type TableSort } from "@/shared/lib/table-sort";
 
 export function AccountsPage() {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
+  const apiClient = useApiClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const quickImportFileInputRef = useRef<HTMLInputElement>(null);
   const quotaSyncAbortRef = useRef<AbortController | null>(null);
@@ -106,44 +101,33 @@ export function AccountsPage() {
   });
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
   const [cleanupOpen, setCleanupOpen] = useState(false);
-  const [cleanupStatuses, setCleanupStatuses] = useState<
-    Set<AccountCleanupStatus>
-  >(() => new Set());
+  const [cleanupStatuses, setCleanupStatuses] = useState<Set<AccountCleanupStatus>>(
+    () => new Set(),
+  );
   const [exportOpen, setExportOpen] = useState(false);
   const [syncAllOpen, setSyncAllOpen] = useState(false);
-  const [quotaSyncProgress, setQuotaSyncProgress] =
-    useState<AccountTaskProgressDTO | null>(null);
-  const [webConversionTargets, setWebConversionTargets] = useState<
-    string[] | "all" | null
-  >(null);
-  const [webConversionTarget, setWebConversionTarget] =
-    useState<WebConversionTarget>("build");
+  const [quotaSyncProgress, setQuotaSyncProgress] = useState<AccountTaskProgressDTO | null>(null);
+  const [webConversionTargets, setWebConversionTargets] = useState<string[] | "all" | null>(null);
+  const [webConversionTarget, setWebConversionTarget] = useState<WebConversionTarget>("build");
   const [webConversionStrategy, setWebConversionStrategy] =
     useState<BuildConversionStrategy>("missing");
-  const [conversionProgress, setConversionProgress] =
-    useState<ConversionProgress | null>(null);
+  const [conversionProgress, setConversionProgress] = useState<ConversionProgress | null>(null);
   const [webConsoleSyncProgress, setWebConsoleSyncProgress] =
     useState<AccountTaskProgressDTO | null>(null);
-  const [webAccountScriptsTargets, setWebAccountScriptsTargets] = useState<
-    string[] | "all" | null
-  >(null);
+  const [webAccountScriptsTargets, setWebAccountScriptsTargets] = useState<string[] | "all" | null>(
+    null,
+  );
   const [webAccountScriptsProgress, setWebAccountScriptsProgress] =
     useState<AccountTaskProgressDTO | null>(null);
   const [renewAllOpen, setRenewAllOpen] = useState(false);
-  const [renewalProgress, setRenewalProgress] =
-    useState<AccountTaskProgressDTO | null>(null);
+  const [renewalProgress, setRenewalProgress] = useState<AccountTaskProgressDTO | null>(null);
   const [editing, setEditing] = useState<AccountDTO | null>(null);
   const [deleting, setDeleting] = useState<AccountDTO | null>(null);
-  const [stateHistoryAccount, setStateHistoryAccount] =
-    useState<AccountDTO | null>(null);
-  const [egressPolicyAccount, setEgressPolicyAccount] =
-    useState<AccountDTO | null>(null);
+  const [stateHistoryAccount, setStateHistoryAccount] = useState<AccountDTO | null>(null);
+  const [egressPolicyAccount, setEgressPolicyAccount] = useState<AccountDTO | null>(null);
   const [deviceOpen, setDeviceOpen] = useState(false);
-  const [deviceSession, setDeviceSession] = useState<DeviceSessionDTO | null>(
-    null,
-  );
-  const [deviceStatus, setDeviceStatus] =
-    useState<DeviceAuthorizationStatus>("starting");
+  const [deviceSession, setDeviceSession] = useState<DeviceSessionDTO | null>(null);
+  const [deviceStatus, setDeviceStatus] = useState<DeviceAuthorizationStatus>("starting");
   const [quickImportOpen, setQuickImportOpen] = useState(false);
   const [quickImportTokens, setQuickImportTokens] = useState("");
   const [webConfirmationTarget, setWebConfirmationTarget] =
@@ -157,8 +141,7 @@ export function AccountsPage() {
       webConsoleSyncAbortRef.current?.abort();
       webAccountScriptsAbortRef.current?.abort();
       importAbortRef.current?.abort();
-      if (importToastRef.current !== null)
-        toast.dismiss(importToastRef.current);
+      if (importToastRef.current !== null) toast.dismiss(importToastRef.current);
     },
     [],
   );
@@ -205,26 +188,25 @@ export function AccountsPage() {
       sort.order,
     ],
     queryFn: () =>
-      listAccounts({
+      listAccounts(apiClient, {
         provider,
         page,
         pageSize,
         search: debouncedSearch,
         type: typeFilter,
         status: statusFilter,
-        renewal: provider === "grok_build" ? renewalFilter : undefined,
-        risk: provider === "grok_build" ? riskFilter : undefined,
+        ...(provider === "grok_build" ? { renewal: renewalFilter, risk: riskFilter } : {}),
         sortBy: sort.field,
         sortOrder: sort.order,
       }),
   });
   const summaryQuery = useQuery({
     queryKey: ["accounts", "summary"],
-    queryFn: getAccountSummary,
+    queryFn: () => getAccountSummary(apiClient),
   });
   const stateEventsQuery = useQuery({
     queryKey: ["accounts", stateHistoryAccount?.id, "state-events"],
-    queryFn: () => listAccountStateEvents(stateHistoryAccount?.id ?? ""),
+    queryFn: () => listAccountStateEvents(apiClient, stateHistoryAccount?.id ?? ""),
     enabled: Boolean(stateHistoryAccount),
   });
   const invalidateAccountData = useCallback(() => {
@@ -250,24 +232,22 @@ export function AccountsPage() {
         if (values.buildSuperEntitled !== editing.buildSuperEntitled)
           input.buildSuperEntitled = values.buildSuperEntitled;
       }
-      return updateAccount(editing.id, input);
+      return updateAccount(apiClient, editing.id, input);
     },
     onSuccess: (account, values) => {
       const entitlementChanged =
         editing?.provider === "grok_build" &&
         values.buildSuperEntitled !== editing.buildSuperEntitled;
       invalidateAccountData();
-      if (entitlementChanged)
-        void queryClient.invalidateQueries({ queryKey: ["models"] });
+      if (entitlementChanged) void queryClient.invalidateQueries({ queryKey: ["models"] });
       setEditing(null);
-      if (account.modelSyncFailed)
-        toast.warning(t("accounts.updatedWithModelSyncFailure"));
+      if (account.modelSyncFailed) toast.warning(t("accounts.updatedWithModelSyncFailure"));
       else toast.success(t("accounts.updated"));
     },
     onError: showError,
   });
   const deleteMutation = useMutation({
-    mutationFn: deleteAccount,
+    mutationFn: (id: string) => deleteAccount(apiClient, id),
     onSuccess: () => {
       invalidateAccountData();
       setDeleting(null);
@@ -276,7 +256,7 @@ export function AccountsPage() {
     onError: showError,
   });
   const billingMutation = useMutation({
-    mutationFn: refreshAccountBilling,
+    mutationFn: (id: string) => refreshAccountBilling(apiClient, id),
     onSuccess: () => {
       invalidateAccountData();
       toast.success(t("accounts.billingRefreshed"));
@@ -284,7 +264,7 @@ export function AccountsPage() {
     onError: showError,
   });
   const tokenMutation = useMutation({
-    mutationFn: refreshAccountToken,
+    mutationFn: (id: string) => refreshAccountToken(apiClient, id),
     onSuccess: () => {
       invalidateAccountData();
       toast.success(t("accounts.authRefreshed"));
@@ -292,7 +272,7 @@ export function AccountsPage() {
     onError: showError,
   });
   const quotaMutation = useMutation({
-    mutationFn: refreshAccountQuota,
+    mutationFn: (id: string) => refreshAccountQuota(apiClient, id),
     onSuccess: () => {
       invalidateAccountData();
       toast.success(t("accounts.billingRefreshed"));
@@ -301,9 +281,9 @@ export function AccountsPage() {
   });
   const webConfirmationMutation = useMutation({
     mutationFn: ({ account, action }: WebAccountConfirmationTarget) => {
-      if (action === "acceptTerms") return acceptWebAccountTerms(account.id);
-      if (action === "setBirthDate") return setWebAccountBirthDate(account.id);
-      return enableWebAccountNSFW(account.id);
+      if (action === "acceptTerms") return acceptWebAccountTerms(apiClient, account.id);
+      if (action === "setBirthDate") return setWebAccountBirthDate(apiClient, account.id);
+      return enableWebAccountNSFW(apiClient, account.id);
     },
     onSuccess: (_, target) => {
       setWebConfirmationTarget(null);
@@ -323,7 +303,7 @@ export function AccountsPage() {
       const controller = new AbortController();
       renewalAbortRef.current = controller;
       setRenewalProgress(null);
-      return refreshAllAccountTokens(setRenewalProgress, controller.signal);
+      return refreshAllAccountTokens(apiClient, setRenewalProgress, controller.signal);
     },
     onSuccess: (result) => {
       setRenewAllOpen(false);
@@ -344,16 +324,10 @@ export function AccountsPage() {
       quotaSyncAbortRef.current = controller;
       setQuotaSyncProgress(null);
       if (targetProvider === "grok_web")
-        return refreshAllWebAccountQuotas(
-          setQuotaSyncProgress,
-          controller.signal,
-        );
+        return refreshAllWebAccountQuotas(apiClient, setQuotaSyncProgress, controller.signal);
       if (targetProvider === "grok_console")
-        return refreshAllConsoleAccountQuotas(
-          setQuotaSyncProgress,
-          controller.signal,
-        );
-      return refreshAllAccountBilling(setQuotaSyncProgress, controller.signal);
+        return refreshAllConsoleAccountQuotas(apiClient, setQuotaSyncProgress, controller.signal);
+      return refreshAllAccountBilling(apiClient, setQuotaSyncProgress, controller.signal);
     },
     onSuccess: (result) => {
       setSyncAllOpen(false);
@@ -374,6 +348,7 @@ export function AccountsPage() {
       conversionAbortRef.current = controller;
       setConversionProgress(null);
       return convertWebAccountsToBuild(
+        apiClient,
         input,
         (progress) => {
           const phase = progress.phase === "syncing" ? "syncing" : "converting";
@@ -407,6 +382,7 @@ export function AccountsPage() {
       webConsoleSyncAbortRef.current = controller;
       setWebConsoleSyncProgress(null);
       return syncWebAccountsToConsole(
+        apiClient,
         input,
         setWebConsoleSyncProgress,
         controller.signal,
@@ -433,6 +409,7 @@ export function AccountsPage() {
       webAccountScriptsAbortRef.current = controller;
       setWebAccountScriptsProgress(null);
       return runWebAccountScripts(
+        apiClient,
         input,
         setWebAccountScriptsProgress,
         controller.signal,
@@ -460,30 +437,25 @@ export function AccountsPage() {
     mutationFn: (files: File[]) => {
       const controller = new AbortController();
       importAbortRef.current = controller;
-      const toastID = toast.loading(
-        t("common.importingProgress", { completed: 0, total: "?" }),
-      );
+      const toastID = toast.loading(t("common.importingProgress", { completed: 0, total: "?" }));
       importToastRef.current = toastID;
       const onProgress = (progress: AccountTaskProgressDTO) => {
         toast.loading(
           t(
-            progress.phase === "syncing"
-              ? "common.syncingProgress"
-              : "common.importingProgress",
+            progress.phase === "syncing" ? "common.syncingProgress" : "common.importingProgress",
             progress,
           ),
           { id: toastID },
         );
       };
       if (provider === "grok_web")
-        return importWebAccounts(files, onProgress, controller.signal);
+        return importWebAccounts(apiClient, files, onProgress, controller.signal);
       if (provider === "grok_console")
-        return importConsoleAccounts(files, onProgress, controller.signal);
-      return importAccounts(files, onProgress, controller.signal);
+        return importConsoleAccounts(apiClient, files, onProgress, controller.signal);
+      return importAccounts(apiClient, files, onProgress, controller.signal);
     },
     onSuccess: (result) => {
-      if (importToastRef.current !== null)
-        toast.dismiss(importToastRef.current);
+      if (importToastRef.current !== null) toast.dismiss(importToastRef.current);
       importToastRef.current = null;
       importAbortRef.current = null;
       setQuickImportOpen(false);
@@ -495,8 +467,7 @@ export function AccountsPage() {
       toast.success(t("accounts.imported", result));
     },
     onError: (error) => {
-      if (importToastRef.current !== null)
-        toast.dismiss(importToastRef.current);
+      if (importToastRef.current !== null) toast.dismiss(importToastRef.current);
       importToastRef.current = null;
       importAbortRef.current = null;
       if (!isAbortError(error)) showError(error);
@@ -507,7 +478,7 @@ export function AccountsPage() {
     },
   });
   const exportMutation = useMutation({
-    mutationFn: () => exportAccounts(provider),
+    mutationFn: () => exportAccounts(apiClient, provider),
     onSuccess: (blob) => {
       downloadAccountExport(blob, provider);
       setExportOpen(false);
@@ -517,7 +488,7 @@ export function AccountsPage() {
   });
   const batchUpdateMutation = useMutation({
     mutationFn: (enabled: boolean) =>
-      updateAccountsEnabled([...selected], enabled, provider),
+      updateAccountsEnabled(apiClient, [...selected], enabled, provider),
     onSuccess: () => {
       clearSelection();
       invalidateAccountData();
@@ -526,7 +497,7 @@ export function AccountsPage() {
     onError: showError,
   });
   const batchBillingMutation = useMutation({
-    mutationFn: () => refreshAccountsQuota([...selected], provider),
+    mutationFn: () => refreshAccountsQuota(apiClient, [...selected], provider),
     onSuccess: (result) => {
       clearSelection();
       invalidateAccountData();
@@ -535,7 +506,7 @@ export function AccountsPage() {
     onError: showError,
   });
   const batchTokenMutation = useMutation({
-    mutationFn: () => refreshAccountsTokens([...selected], provider),
+    mutationFn: () => refreshAccountsTokens(apiClient, [...selected], provider),
     onSuccess: (result) => {
       clearSelection();
       invalidateAccountData();
@@ -544,7 +515,7 @@ export function AccountsPage() {
     onError: showError,
   });
   const batchDeleteMutation = useMutation({
-    mutationFn: () => deleteAccounts([...selected], provider),
+    mutationFn: () => deleteAccounts(apiClient, [...selected], provider),
     onSuccess: () => {
       clearSelection();
       setBatchDeleteOpen(false);
@@ -554,7 +525,7 @@ export function AccountsPage() {
     onError: showError,
   });
   const cleanupMutation = useMutation({
-    mutationFn: () => cleanupAccounts(provider, [...cleanupStatuses]),
+    mutationFn: () => cleanupAccounts(apiClient, provider, [...cleanupStatuses]),
     onSuccess: (result) => {
       setCleanupOpen(false);
       setCleanupStatuses(new Set());
@@ -627,9 +598,7 @@ export function AccountsPage() {
   function runWebConversion(): void {
     if (webConversionTargets === null) return;
     if (webConversionTarget === "build") {
-      conversionMutation.mutate(
-        createConversionInput(webConversionTargets, webConversionStrategy),
-      );
+      conversionMutation.mutate(createConversionInput(webConversionTargets, webConversionStrategy));
       return;
     }
     webConsoleSyncMutation.mutate(
@@ -637,9 +606,7 @@ export function AccountsPage() {
     );
   }
 
-  function runSelectedWebAccountScripts(
-    actions: WebAccountScriptActions,
-  ): void {
+  function runSelectedWebAccountScripts(actions: WebAccountScriptActions): void {
     if (webAccountScriptsTargets === "all") {
       webAccountScriptsMutation.mutate({ all: true, actions });
     } else if (webAccountScriptsTargets) {
@@ -655,8 +622,7 @@ export function AccountsPage() {
     resetAccountForm(form, account);
   }
 
-  const webConversionPending =
-    conversionMutation.isPending || webConsoleSyncMutation.isPending;
+  const webConversionPending = conversionMutation.isPending || webConsoleSyncMutation.isPending;
 
   function showError(error: unknown): void {
     showAccountError(error, t);
@@ -664,14 +630,8 @@ export function AccountsPage() {
 
   const result = accountsQuery.data;
   const pageIDs = result?.items.map((account) => account.id) ?? [];
-  const {
-    selected,
-    selectedOnPage,
-    allPageSelected,
-    resetSelection,
-    togglePage,
-    toggleAccount,
-  } = useAccountSelection(provider, pageIDs);
+  const { selected, selectedOnPage, allPageSelected, resetSelection, togglePage, toggleAccount } =
+    useAccountSelection(provider, pageIDs);
 
   function clearSelection(): void {
     resetSelection();
@@ -682,11 +642,7 @@ export function AccountsPage() {
     setPage(1);
   }
 
-  const overview = deriveAccountOverview(
-    summaryQuery.data,
-    provider,
-    result?.total ?? 0,
-  );
+  const overview = deriveAccountOverview(summaryQuery.data, provider, result?.total ?? 0);
   const bulkTaskPending =
     quotaSyncMutation.isPending ||
     allTokenMutation.isPending ||
@@ -836,8 +792,7 @@ export function AccountsPage() {
             setQuickImportOpen(open);
             if (!open) {
               setQuickImportTokens("");
-              if (quickImportFileInputRef.current)
-                quickImportFileInputRef.current.value = "";
+              if (quickImportFileInputRef.current) quickImportFileInputRef.current.value = "";
             }
           },
           provider,

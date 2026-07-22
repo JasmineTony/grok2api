@@ -1,0 +1,14 @@
+{
+  "threshold": 8,
+  "reporters": ["console", "json"],
+  "output": ".cache/jscpd",
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/coverage/**",
+    "**/*-snapshots/**",
+    "src/shared/i18n/locales/**"
+  ],
+  "minLines": 12,
+  "minTokens": 80
+}

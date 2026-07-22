@@ -6,10 +6,30 @@ import { gzipSync } from "node:zlib";
 const assetsDir = fileURLToPath(new URL("../dist/assets/", import.meta.url));
 const budgets = [
   { pattern: /^index-.*\.js$/, maxRaw: 350_000, maxGzip: 115_000, label: "entry JavaScript" },
-  { pattern: /^dashboard-page-.*\.js$/, maxRaw: 350_000, maxGzip: 100_000, label: "dashboard route" },
-  { pattern: /^dashboard-charts-.*\.js$/, maxRaw: 350_000, maxGzip: 100_000, label: "dashboard charts" },
-  { pattern: /^(vendor-(recharts|chart-runtime)|chart)-.*\.js$/, maxRaw: 350_000, maxGzip: 100_000, label: "chart vendor chunk" },
-  { pattern: /^createLucideIcon-.*\.js$/, maxRaw: 100_000, maxGzip: 35_000, label: "Lucide shared chunk" },
+  {
+    pattern: /^dashboard-page-.*\.js$/,
+    maxRaw: 350_000,
+    maxGzip: 100_000,
+    label: "dashboard route",
+  },
+  {
+    pattern: /^dashboard-charts-.*\.js$/,
+    maxRaw: 350_000,
+    maxGzip: 100_000,
+    label: "dashboard charts",
+  },
+  {
+    pattern: /^(vendor-(recharts|chart-runtime)|chart)-.*\.js$/,
+    maxRaw: 350_000,
+    maxGzip: 100_000,
+    label: "chart vendor chunk",
+  },
+  {
+    pattern: /^createLucideIcon-.*\.js$/,
+    maxRaw: 100_000,
+    maxGzip: 35_000,
+    label: "Lucide shared chunk",
+  },
   { pattern: /^index-.*\.css$/, maxRaw: 90_000, maxGzip: 20_000, label: "application CSS" },
 ];
 
@@ -27,8 +47,14 @@ for (const budget of budgets) {
     continue;
   }
   for (const file of matching) {
-    if (file.raw > budget.maxRaw) failures.push(`${budget.label}: ${file.name} is ${file.raw} raw bytes (budget ${budget.maxRaw})`);
-    if (file.gzip > budget.maxGzip) failures.push(`${budget.label}: ${file.name} is ${file.gzip} gzip bytes (budget ${budget.maxGzip})`);
+    if (file.raw > budget.maxRaw)
+      failures.push(
+        `${budget.label}: ${file.name} is ${file.raw} raw bytes (budget ${budget.maxRaw})`,
+      );
+    if (file.gzip > budget.maxGzip)
+      failures.push(
+        `${budget.label}: ${file.name} is ${file.gzip} gzip bytes (budget ${budget.maxGzip})`,
+      );
   }
 }
 if (failures.length) {

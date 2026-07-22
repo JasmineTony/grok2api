@@ -3,6 +3,11 @@ import type {
   ChatToolActivity,
   ReasoningEffort,
 } from "@/features/creative-console/creative-console-api";
+import {
+  readStorageString,
+  removeStorageValue,
+  writeStorageString,
+} from "@/shared/storage/safe-storage";
 
 export type ConversationMessage = ChatMessage & {
   id: string;
@@ -26,13 +31,12 @@ export type ChatSession = {
 const storagePrefix = "grok2api:creative-console:chat-history:";
 const maxSessions = 50;
 const maxBytes = 4 * 1024 * 1024;
-let fallbackMessageID = 0;
 
 export function createCreativeMessageId(): string {
-  if (typeof globalThis.crypto?.randomUUID === "function")
-    return globalThis.crypto.randomUUID();
-  fallbackMessageID += 1;
-  return `creative-${Date.now().toString(36)}-${fallbackMessageID.toString(36)}`;
+  if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
+  const random = new Uint32Array(2);
+  globalThis.crypto?.getRandomValues?.(random);
+  return `creative-${Date.now().toString(36)}-${random[0]?.toString(36) ?? "0"}${random[1]?.toString(36) ?? "0"}`;
 }
 
 export function createCreativeCacheKey(): string {
@@ -59,9 +63,7 @@ export function createBlankChatSession(model: string): ChatSession {
   };
 }
 
-export function createChatSessionTitle(
-  messages: ConversationMessage[],
-): string {
+export function createChatSessionTitle(messages: ConversationMessage[]): string {
   const title =
     messages
       .find((message) => message.role === "user")
@@ -70,10 +72,7 @@ export function createChatSessionTitle(
   return title.length > 48 ? `${title.slice(0, 48)}?` : title || "Conversation";
 }
 
-export function upsertChatSession(
-  sessions: ChatSession[],
-  session: ChatSession,
-): ChatSession[] {
+export function upsertChatSession(sessions: ChatSession[], session: ChatSession): ChatSession[] {
   return [session, ...sessions.filter((item) => item.id !== session.id)]
     .sort((left, right) => right.updatedAt - left.updatedAt)
     .slice(0, maxSessions);
@@ -82,9 +81,7 @@ export function upsertChatSession(
 export function loadChatSessions(scope: string): ChatSession[] {
   if (typeof window === "undefined") return [];
   try {
-    const parsed: unknown = JSON.parse(
-      window.localStorage.getItem(storageKey(scope)) ?? "[]",
-    );
+    const parsed: unknown = JSON.parse(readStorageString(storageKey(scope)) ?? "[]");
     return Array.isArray(parsed)
       ? parsed
           .flatMap(parseChatSession)
@@ -96,10 +93,7 @@ export function loadChatSessions(scope: string): ChatSession[] {
   }
 }
 
-export function persistChatSessions(
-  scope: string,
-  sessions: ChatSession[],
-): ChatSession[] {
+export function persistChatSessions(scope: string, sessions: ChatSession[]): ChatSession[] {
   if (typeof window === "undefined") return sessions;
   const retained = sessions.slice(0, maxSessions);
   while (retained.length > 0) {
@@ -109,14 +103,14 @@ export function persistChatSessions(
         retained.pop();
         continue;
       }
-      window.localStorage.setItem(storageKey(scope), serialized);
-      return retained;
+      if (writeStorageString(storageKey(scope), serialized)) return retained;
+      retained.pop();
     } catch {
       retained.pop();
     }
   }
   try {
-    window.localStorage.removeItem(storageKey(scope));
+    removeStorageValue(storageKey(scope));
   } catch {
     /* Storage is optional. */
   }
@@ -136,12 +130,7 @@ function storageKey(scope: string): string {
   return `${storagePrefix}${encodeURIComponent(scope)}`;
 }
 function parseChatSession(value: unknown): ChatSession[] {
-  if (
-    !isRecord(value) ||
-    typeof value.id !== "string" ||
-    !Array.isArray(value.messages)
-  )
-    return [];
+  if (!isRecord(value) || typeof value.id !== "string" || !Array.isArray(value.messages)) return [];
   const messages = value.messages.flatMap(parseConversationMessage);
   if (messages.length === 0) return [];
   const now = currentTimestamp();
@@ -160,9 +149,7 @@ function parseChatSession(value: unknown): ChatSession[] {
         typeof value.promptCacheKey === "string" && value.promptCacheKey
           ? value.promptCacheKey
           : createCreativeCacheKey(),
-      reasoningEffort: isReasoningEffort(value.reasoningEffort)
-        ? value.reasoningEffort
-        : "auto",
+      reasoningEffort: isReasoningEffort(value.reasoningEffort) ? value.reasoningEffort : "auto",
       webSearch: value.webSearch === true,
       xSearch: value.xSearch === true,
       messages,
@@ -178,17 +165,11 @@ function parseConversationMessage(value: unknown): ConversationMessage[] {
     return [];
   return [
     {
-      id:
-        typeof value.id === "string" && value.id
-          ? value.id
-          : createCreativeMessageId(),
+      id: typeof value.id === "string" && value.id ? value.id : createCreativeMessageId(),
       role: value.role,
       content: value.content,
-      reasoning:
-        typeof value.reasoning === "string" ? value.reasoning : undefined,
-      tools: Array.isArray(value.tools)
-        ? value.tools.flatMap(parseToolActivity)
-        : undefined,
+      ...(typeof value.reasoning === "string" ? { reasoning: value.reasoning } : {}),
+      ...(Array.isArray(value.tools) ? { tools: value.tools.flatMap(parseToolActivity) } : {}),
     },
   ];
 }
@@ -201,9 +182,7 @@ function parseToolActivity(value: unknown): ChatToolActivity[] {
   )
     return [];
   const status =
-    value.status === "completed" ||
-    value.status === "failed" ||
-    value.status === "in_progress"
+    value.status === "completed" || value.status === "failed" || value.status === "in_progress"
       ? value.status
       : "completed";
   return [
@@ -217,14 +196,10 @@ function parseToolActivity(value: unknown): ChatToolActivity[] {
   ];
 }
 function isReasoningEffort(value: unknown): value is ReasoningEffort {
-  return ["auto", "none", "low", "medium", "high", "xhigh"].includes(
-    String(value),
-  );
+  return ["auto", "none", "low", "medium", "high", "xhigh"].includes(String(value));
 }
 function finiteTimestamp(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) && value > 0
-    ? value
-    : null;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

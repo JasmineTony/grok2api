@@ -1,0 +1,3 @@
+failure-threshold: warning
+ignored:
+  - DL3018 # Alpine package versions are resolved from the immutable base-image repository snapshot.

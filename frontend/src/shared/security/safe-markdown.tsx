@@ -10,14 +10,7 @@ export function SafeMarkdown({ content }: { content: string }) {
   const renderedHTML = useMemo(() => renderSafeMarkdown(content), [content]);
   if (!renderedHTML)
     return (
-      <div className="w-full whitespace-pre-wrap break-words py-1 text-sm leading-6">
-        {content}
-      </div>
+      <div className="w-full whitespace-pre-wrap break-words py-1 text-sm leading-6">{content}</div>
     );
-  return (
-    <div
-      className={proseClassName}
-      dangerouslySetInnerHTML={{ __html: renderedHTML }}
-    />
-  );
+  return <div className={proseClassName} dangerouslySetInnerHTML={{ __html: renderedHTML }} />;
 }

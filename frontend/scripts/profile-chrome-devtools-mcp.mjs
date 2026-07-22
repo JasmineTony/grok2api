@@ -14,22 +14,41 @@ const heapPath = resolve(outputDir, "page-load.heapsnapshot");
 mkdirSync(outputDir, { recursive: true });
 
 const mcpArguments = [
-  "-y", "chrome-devtools-mcp@1.6.0",
-  "--headless=true", "--isolated=true", "--viewport=1440x900",
-  "--memory-debugging=true", "--no-performance-crux", "--no-usage-statistics", "--redact-network-headers=true",
+  "-y",
+  "chrome-devtools-mcp@1.6.0",
+  "--headless=true",
+  "--isolated=true",
+  "--viewport=1440x900",
+  "--memory-debugging=true",
+  "--no-performance-crux",
+  "--no-usage-statistics",
+  "--redact-network-headers=true",
 ];
 const command = process.platform === "win32" ? "cmd.exe" : "npx";
-const args = process.platform === "win32" ? ["/d", "/s", "/c", "npx", ...mcpArguments] : mcpArguments;
-const server = spawn(command, args, { cwd: repositoryRoot, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+const args =
+  process.platform === "win32" ? ["/d", "/s", "/c", "npx", ...mcpArguments] : mcpArguments;
+const server = spawn(command, args, {
+  cwd: repositoryRoot,
+  stdio: ["pipe", "pipe", "pipe"],
+  windowsHide: true,
+});
 const pending = new Map();
 const errors = [];
 let nextId = 1;
 
 createInterface({ input: server.stdout }).on("line", (line) => {
   let message;
-  try { message = JSON.parse(line); } catch { return; }
+  try {
+    message = JSON.parse(line);
+  } catch {
+    return;
+  }
   if (message.method === "roots/list" && message.id != null) {
-    send({ jsonrpc: "2.0", id: message.id, result: { roots: [{ uri: pathToFileURL(repositoryRoot).href, name: "grok2api" }] } });
+    send({
+      jsonrpc: "2.0",
+      id: message.id,
+      result: { roots: [{ uri: pathToFileURL(repositoryRoot).href, name: "grok2api" }] },
+    });
     return;
   }
   if (message.id != null && pending.has(message.id)) {
@@ -78,10 +97,20 @@ try {
     clientInfo: { name: "grok2api-performance-smoke", version: "1.0.0" },
   });
   send({ jsonrpc: "2.0", method: "notifications/initialized", params: {} });
-  await call("new_page", { url: targetURL, isolatedContext: "grok2api-performance-smoke", timeout: 30_000 }, 60_000);
-  const trace = await call("performance_start_trace", { reload: true, autoStop: true, filePath: tracePath }, 300_000);
-  const runtime = await call("evaluate_script", {
-    function: `() => ({
+  await call(
+    "new_page",
+    { url: targetURL, isolatedContext: "grok2api-performance-smoke", timeout: 30_000 },
+    60_000,
+  );
+  const trace = await call(
+    "performance_start_trace",
+    { reload: true, autoStop: true, filePath: tracePath },
+    300_000,
+  );
+  const runtime = await call(
+    "evaluate_script",
+    {
+      function: `() => ({
       url: location.href,
       navigation: performance.getEntriesByType("navigation").map((entry) => ({
         duration: entry.duration,
@@ -92,7 +121,9 @@ try {
       paints: performance.getEntriesByType("paint").map((entry) => ({ name: entry.name, startTime: entry.startTime })),
       resourceCount: performance.getEntriesByType("resource").length,
     })`,
-  }, 60_000);
+    },
+    60_000,
+  );
   const network = await call("list_network_requests", { pageSize: 300 }, 60_000);
   const consoleMessages = await call("list_console_messages", { pageSize: 200 }, 60_000);
   await call("take_heapsnapshot", { filePath: heapPath }, 300_000);

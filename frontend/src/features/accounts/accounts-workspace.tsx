@@ -33,16 +33,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import type {
-  AccountCleanupStatus,
-  AccountDTO,
-  AccountProvider,
-} from "@/features/accounts/accounts-api";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AccountNameCell } from "@/features/accounts/account-name-cell";
 import {
   AccountStatus,
@@ -51,21 +42,18 @@ import {
   WebAccountType,
 } from "@/features/accounts/account-presentation";
 import { AccountProviderToolbar } from "@/features/accounts/account-provider-toolbar";
+import { AccountQuota, ConsoleQuota, WebQuota } from "@/features/accounts/account-quota";
+import type {
+  AccountCleanupStatus,
+  AccountDTO,
+  AccountProvider,
+} from "@/features/accounts/accounts-api";
 import {
-  AccountQuota,
-  ConsoleQuota,
-  WebQuota,
-} from "@/features/accounts/account-quota";
-import {
-  WebAccountSettingsMenu,
   type WebAccountConfirmationTarget,
+  WebAccountSettingsMenu,
 } from "@/features/accounts/web-account-settings";
 import type { PaginatedDTO } from "@/shared/api/client";
-import {
-  EmptyState,
-  ErrorState,
-  TableLoadingRow,
-} from "@/shared/components/data-state";
+import { EmptyState, ErrorState, TableLoadingRow } from "@/shared/components/data-state";
 import { DataTableFilters } from "@/shared/components/data-table-filters";
 import { DataTableShell } from "@/shared/components/data-table-shell";
 import { Pagination } from "@/shared/components/pagination";
@@ -108,9 +96,7 @@ type AccountsWorkspaceProps = {
   toggleAccount: (id: string, checked: boolean) => void;
   batchUpdateMutation: ValueMutation<boolean>;
   openWebConversion: (targets: string[] | "all") => void;
-  setWebAccountScriptsTargets: Dispatch<
-    SetStateAction<string[] | "all" | null>
-  >;
+  setWebAccountScriptsTargets: Dispatch<SetStateAction<string[] | "all" | null>>;
   batchBillingMutation: VoidMutation;
   batchTokenMutation: VoidMutation;
   setBatchDeleteOpen: Dispatch<SetStateAction<boolean>>;
@@ -129,9 +115,7 @@ type AccountsWorkspaceProps = {
   beginEdit: (account: AccountDTO) => void;
   setStateHistoryAccount: Dispatch<SetStateAction<AccountDTO | null>>;
   setEgressPolicyAccount: Dispatch<SetStateAction<AccountDTO | null>>;
-  setWebConfirmationTarget: Dispatch<
-    SetStateAction<WebAccountConfirmationTarget | null>
-  >;
+  setWebConfirmationTarget: Dispatch<SetStateAction<WebAccountConfirmationTarget | null>>;
   tokenMutation: ValueMutation<string>;
   billingMutation: ValueMutation<string>;
   quotaMutation: ValueMutation<string>;
@@ -513,12 +497,8 @@ export function AccountsWorkspace(props: AccountsWorkspaceProps) {
               <col style={{ width: "18%" }} />
               <col style={{ width: "7%" }} />
               <col style={{ width: "7%" }} />
-              <col
-                style={{ width: provider === "grok_build" ? "27%" : "43%" }}
-              />
-              {provider === "grok_build" ? (
-                <col style={{ width: "16%" }} />
-              ) : null}
+              <col style={{ width: provider === "grok_build" ? "27%" : "43%" }} />
+              {provider === "grok_build" ? <col style={{ width: "16%" }} /> : null}
               <col style={{ width: "18%" }} />
               <col style={{ width: "4%" }} />
             </colgroup>
@@ -527,11 +507,7 @@ export function AccountsWorkspace(props: AccountsWorkspaceProps) {
                 <TableHead className="px-2">
                   <Checkbox
                     checked={
-                      allPageSelected
-                        ? true
-                        : selectedOnPage.length > 0
-                          ? "indeterminate"
-                          : false
+                      allPageSelected ? true : selectedOnPage.length > 0 ? "indeterminate" : false
                     }
                     onCheckedChange={(checked) => togglePage(checked === true)}
                     aria-label={t("common.selectPage")}
@@ -565,12 +541,7 @@ export function AccountsWorkspace(props: AccountsWorkspaceProps) {
                 >
                   {t("accounts.status")}
                 </SortableTableHead>
-                <TableHead
-                  className={cn(
-                    "whitespace-nowrap",
-                    provider !== "grok_build" && "px-6",
-                  )}
-                >
+                <TableHead className={cn("whitespace-nowrap", provider !== "grok_build" && "px-6")}>
                   {t("accounts.quota")}
                 </TableHead>
                 {provider === "grok_build" ? (
@@ -604,16 +575,12 @@ export function AccountsWorkspace(props: AccountsWorkspaceProps) {
                   <TableRow
                     className="group h-14 [&>td]:py-1.5"
                     key={account.id}
-                    data-state={
-                      selected.has(account.id) ? "selected" : undefined
-                    }
+                    data-state={selected.has(account.id) ? "selected" : undefined}
                   >
                     <TableCell className="px-2">
                       <Checkbox
                         checked={selected.has(account.id)}
-                        onCheckedChange={(checked) =>
-                          toggleAccount(account.id, checked === true)
-                        }
+                        onCheckedChange={(checked) => toggleAccount(account.id, checked === true)}
                         aria-label={t("common.selectItem", {
                           name: account.name,
                         })}
@@ -626,10 +593,7 @@ export function AccountsWorkspace(props: AccountsWorkspaceProps) {
                       {provider === "grok_web" ? (
                         <WebAccountType tier={account.webTier} />
                       ) : provider === "grok_console" ? (
-                        <AccountTypeText
-                          label={t("accountType.console")}
-                          variant="free"
-                        />
+                        <AccountTypeText label={t("accountType.console")} variant="free" />
                       ) : (
                         <AccountType quota={account.quota} />
                       )}
@@ -637,9 +601,7 @@ export function AccountsWorkspace(props: AccountsWorkspaceProps) {
                     <TableCell className="text-center whitespace-nowrap">
                       <AccountStatus account={account} />
                     </TableCell>
-                    <TableCell
-                      className={provider === "grok_build" ? undefined : "px-6"}
-                    >
+                    <TableCell className={provider === "grok_build" ? undefined : "px-6"}>
                       {provider === "grok_web" ? (
                         <WebQuota
                           windows={account.quotaWindows ?? []}
@@ -647,10 +609,7 @@ export function AccountsWorkspace(props: AccountsWorkspaceProps) {
                           tier={account.webTier}
                         />
                       ) : provider === "grok_console" ? (
-                        <ConsoleQuota
-                          windows={account.quotaWindows ?? []}
-                          locale={i18n.language}
-                        />
+                        <ConsoleQuota windows={account.quotaWindows ?? []} locale={i18n.language} />
                       ) : (
                         <AccountQuota
                           quota={account.quota}
@@ -674,10 +633,7 @@ export function AccountsWorkspace(props: AccountsWorkspaceProps) {
                             <TooltipContent>
                               {account.expiresAt
                                 ? t("accountCredential.expiresAt", {
-                                    time: formatDateTime(
-                                      account.expiresAt,
-                                      i18n.language,
-                                    ),
+                                    time: formatDateTime(account.expiresAt, i18n.language),
                                   })
                                 : t("accountCredential.expiryUnknown")}
                             </TooltipContent>
@@ -709,22 +665,16 @@ export function AccountsWorkspace(props: AccountsWorkspaceProps) {
                             <Pencil />
                             {t("common.edit")}
                           </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => setStateHistoryAccount(account)}
-                          >
+                          <DropdownMenuItem onClick={() => setStateHistoryAccount(account)}>
                             <History />
                             {t("accounts.stateHistory")}
                           </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => setEgressPolicyAccount(account)}
-                          >
+                          <DropdownMenuItem onClick={() => setEgressPolicyAccount(account)}>
                             <Network />
                             {t("accounts.egressPolicy")}
                           </DropdownMenuItem>
                           {provider === "grok_web" ? (
-                            <DropdownMenuItem
-                              onClick={() => openWebConversion([account.id])}
-                            >
+                            <DropdownMenuItem onClick={() => openWebConversion([account.id])}>
                               <ArrowRight />
                               {t("accountConversion.action")}
                             </DropdownMenuItem>
@@ -737,9 +687,7 @@ export function AccountsWorkspace(props: AccountsWorkspaceProps) {
                             />
                           ) : null}
                           {provider === "grok_build" ? (
-                            <DropdownMenuItem
-                              onClick={() => tokenMutation.mutate(account.id)}
-                            >
+                            <DropdownMenuItem onClick={() => tokenMutation.mutate(account.id)}>
                               <RotateCw />
                               {t("accounts.refreshToken")}
                             </DropdownMenuItem>

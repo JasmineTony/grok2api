@@ -17,11 +17,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import type {
-  AccountDTO,
-  BuildRouteMode,
-} from "@/features/accounts/accounts-api";
 import type { AccountFormValues } from "@/features/accounts/account-form";
+import type { AccountDTO, BuildRouteMode } from "@/features/accounts/accounts-api";
 
 export function AccountEditDialog({
   account,
@@ -52,18 +49,14 @@ export function AccountEditDialog({
           <DialogTitle>
             {t("common.edit")} {account?.name}
           </DialogTitle>
-          <DialogDescription>
-            {account?.email ?? account?.userId}
-          </DialogDescription>
+          <DialogDescription>{account?.email ?? account?.userId}</DialogDescription>
         </DialogHeader>
         <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
           <div className="space-y-2">
             <Label htmlFor="account-name">{t("accounts.name")}</Label>
             <Input id="account-name" {...form.register("name")} />
             {form.formState.errors.name ? (
-              <p className="text-xs text-destructive">
-                {form.formState.errors.name.message}
-              </p>
+              <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
             ) : null}
           </div>
           <div className="flex items-center justify-between border-b py-2">
@@ -86,9 +79,7 @@ export function AccountEditDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="account-concurrency">
-                {t("accounts.maxConcurrent")}
-              </Label>
+              <Label htmlFor="account-concurrency">{t("accounts.maxConcurrent")}</Label>
               <Input
                 id="account-concurrency"
                 type="number"
@@ -99,9 +90,7 @@ export function AccountEditDialog({
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="account-minimum">
-              {t("accounts.minimumRemaining")}
-            </Label>
+            <Label htmlFor="account-minimum">{t("accounts.minimumRemaining")}</Label>
             <Input
               id="account-minimum"
               type="number"
@@ -132,9 +121,7 @@ export function AccountEditDialog({
                 />
               </div>
               <div className="space-y-2">
-                <Label id="account-build-route-mode">
-                  {t("accounts.buildRouteMode.label")}
-                </Label>
+                <Label id="account-build-route-mode">{t("accounts.buildRouteMode.label")}</Label>
                 <Tabs
                   value={buildRouteMode}
                   onValueChange={(value) =>
@@ -147,17 +134,15 @@ export function AccountEditDialog({
                     aria-labelledby="account-build-route-mode"
                     className="grid h-10 w-full grid-cols-3 p-1"
                   >
-                    {(["auto", "build", "xai"] as BuildRouteMode[]).map(
-                      (mode) => (
-                        <TabsTrigger
-                          key={mode}
-                          value={mode}
-                          className="h-8 px-2 font-normal data-[state=active]:font-medium"
-                        >
-                          {t(`accounts.buildRouteMode.${mode}`)}
-                        </TabsTrigger>
-                      ),
-                    )}
+                    {(["auto", "build", "xai"] as BuildRouteMode[]).map((mode) => (
+                      <TabsTrigger
+                        key={mode}
+                        value={mode}
+                        className="h-8 px-2 font-normal data-[state=active]:font-medium"
+                      >
+                        {t(`accounts.buildRouteMode.${mode}`)}
+                      </TabsTrigger>
+                    ))}
                   </TabsList>
                 </Tabs>
                 <p className="text-xs text-muted-foreground">
@@ -166,8 +151,7 @@ export function AccountEditDialog({
                 {buildRouteMode === "xai" &&
                 !buildSuperEntitled &&
                 !(
-                  account.quota.type === "paid" &&
-                  account.quota.source !== "buildSuperEntitlement"
+                  account.quota.type === "paid" && account.quota.source !== "buildSuperEntitlement"
                 ) ? (
                   <p className="text-xs text-amber-700 dark:text-amber-300">
                     {t("accounts.buildRouteMode.xaiUnconfirmedWarning")}
@@ -213,12 +197,7 @@ export function AccountEditDialog({
             </div>
           ) : null}
           <DialogFooter>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={onClose}
-            >
+            <Button type="button" variant="secondary" size="sm" onClick={onClose}>
               {t("common.cancel")}
             </Button>
             <Button type="submit" size="sm" disabled={pending}>

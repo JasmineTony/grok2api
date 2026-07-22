@@ -9,7 +9,7 @@ import { cn } from "@/shared/lib/cn";
 import { formatNumber } from "@/shared/lib/format";
 
 type DashboardActivityProps = {
-  dashboard?: DashboardDTO;
+  dashboard?: DashboardDTO | undefined;
   locale: string;
   loading: boolean;
 };
@@ -25,25 +25,44 @@ const INTENSITY_CLASSES = [
 export function DashboardActivity({ dashboard, locale, loading }: DashboardActivityProps) {
   const { t } = useTranslation();
   const activity = useMemo(() => dashboard?.activity ?? [], [dashboard?.activity]);
-  const activityWeeks = useMemo(() => Array.from({ length: Math.ceil(activity.length / 7) }, (_, index) => activity.slice(index * 7, index * 7 + 7)), [activity]);
+  const activityWeeks = useMemo(
+    () =>
+      Array.from({ length: Math.ceil(activity.length / 7) }, (_, index) =>
+        activity.slice(index * 7, index * 7 + 7),
+      ),
+    [activity],
+  );
   const maxRequests = Math.max(0, ...activity.map((point) => point.requests));
   const totalRequests = activity.reduce((total, point) => total + point.requests, 0);
-  const generatedAt = dashboard?.generatedAt ? new Date(dashboard.generatedAt).getTime() : Number.POSITIVE_INFINITY;
-  const rangeLabel = useMemo(() => formatActivityRange(activity, locale, generatedAt), [activity, generatedAt, locale]);
+  const generatedAt = dashboard?.generatedAt
+    ? new Date(dashboard.generatedAt).getTime()
+    : Number.POSITIVE_INFINITY;
+  const rangeLabel = useMemo(
+    () => formatActivityRange(activity, locale, generatedAt),
+    [activity, generatedAt, locale],
+  );
 
   return (
     <DashboardPanel
       id="dashboard-activity-title"
       title={t("dashboard.activityTitle")}
-      actions={<span className="text-[11px] text-muted-foreground">{t("dashboard.lastDays", { count: 180 })}</span>}
+      actions={
+        <span className="text-[11px] text-muted-foreground">
+          {t("dashboard.lastDays", { count: 180 })}
+        </span>
+      }
       className="min-h-[210px]"
     >
       {loading ? (
-        <div className="flex min-h-32 items-center justify-center"><Spinner className="size-5" /></div>
+        <div className="flex min-h-32 items-center justify-center">
+          <Spinner className="size-5" />
+        </div>
       ) : (
         <div>
           <div className="flex items-baseline justify-between gap-3">
-            <p className="text-xl font-medium tabular-nums">{formatNumber(totalRequests, locale)}</p>
+            <p className="text-xl font-medium tabular-nums">
+              {formatNumber(totalRequests, locale)}
+            </p>
             <p className="text-[11px] text-muted-foreground">{rangeLabel}</p>
           </div>
 
@@ -59,12 +78,19 @@ export function DashboardActivity({ dashboard, locale, loading }: DashboardActiv
                           <span
                             className={cn(
                               "aspect-square w-full rounded-[3px]",
-                              future ? "bg-muted/40" : INTENSITY_CLASSES[activityLevel(point.requests, maxRequests)],
+                              future
+                                ? "bg-muted/40"
+                                : INTENSITY_CLASSES[activityLevel(point.requests, maxRequests)],
                             )}
                             aria-hidden="true"
                           />
                         </TooltipTrigger>
-                        <TooltipContent>{t("dashboard.activityDay", { date: formatActivityDate(point.start, locale), requests: formatNumber(point.requests, locale) })}</TooltipContent>
+                        <TooltipContent>
+                          {t("dashboard.activityDay", {
+                            date: formatActivityDate(point.start, locale),
+                            requests: formatNumber(point.requests, locale),
+                          })}
+                        </TooltipContent>
                       </Tooltip>
                     );
                   })}
@@ -75,7 +101,9 @@ export function DashboardActivity({ dashboard, locale, loading }: DashboardActiv
 
           <div className="mt-3 flex items-center justify-end gap-1.5 text-[10px] text-muted-foreground">
             <span>{t("dashboard.activityLess")}</span>
-            {INTENSITY_CLASSES.map((className) => <span key={className} className={cn("size-2.5 rounded-[2px]", className)} />)}
+            {INTENSITY_CLASSES.map((className) => (
+              <span key={className} className={cn("size-2.5 rounded-[2px]", className)} />
+            ))}
             <span>{t("dashboard.activityMore")}</span>
           </div>
         </div>
@@ -94,10 +122,16 @@ function activityLevel(value: number, maximum: number): number {
 }
 
 function formatActivityDate(value: string, locale: string): string {
-  return new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(new Date(value));
+  return new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(
+    new Date(value),
+  );
 }
 
-function formatActivityRange(activity: DashboardDTO["activity"], locale: string, generatedAt: number): string {
+function formatActivityRange(
+  activity: DashboardDTO["activity"],
+  locale: string,
+  generatedAt: number,
+): string {
   const firstActivity = activity[0];
   if (!firstActivity) return "-";
 

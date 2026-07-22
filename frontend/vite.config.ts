@@ -7,9 +7,7 @@ import { configDefaults, defineConfig } from "vitest/config";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   define: {
-    __GROK2API_DEV_API_TARGET__: JSON.stringify(
-      process.env.VITE_DEV_API_TARGET ?? "",
-    ),
+    __GROK2API_DEV_API_TARGET__: JSON.stringify(process.env.VITE_DEV_API_TARGET ?? ""),
   },
   resolve: {
     alias: {
@@ -98,12 +96,7 @@ export default defineConfig({
       reporter: ["text", "json-summary", "html"],
       reportsDirectory: "../.cache/frontend-coverage",
       include: ["src/**/*.{ts,tsx}"],
-      exclude: [
-        "src/components/ui/**",
-        "src/types/**",
-        "src/vite-env.d.ts",
-        "src/main.tsx",
-      ],
+      exclude: ["src/components/ui/**", "src/types/**", "src/vite-env.d.ts", "src/main.tsx"],
     },
   },
 });

@@ -1,0 +1,50 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Release smoke password is a non-production fixture replaced inside an ephemeral container"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''SmokeTest-Only-Password-123!''']
+paths = ['''^\.github/workflows/release-(?:image|smoke)\.yml$''']
+
+[[allowlists]]
+description = "Deterministic SHA-256-shaped hashes used only by repository and gateway tests"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''SecretHash:\s*"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"''', '''testSecretHash\s*=\s*"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"''']
+paths = ['''^backend/internal/application/gateway/service_test\.go$''', '''^backend/internal/infra/persistence/relational/repository_test\.go$''']
+
+[[allowlists]]
+description = "Documented configuration placeholder validated by config tests"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''replace-with-at-least-32-characters''']
+paths = ['''^backend/internal/infra/config/config_test\.go$''', '''^config\.example\.yaml$''']
+
+[[allowlists]]
+description = "Public OAuth client identifier embedded by the upstream CLI integration"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''defaultOAuthClientID\s*=\s*"b1a00492-073a-47ea-816f-4c329264a828"''']
+paths = ['''^backend/internal/infra/provider/cli/oauth\.go$''']
+
+[[allowlists]]
+description = "Deterministic upload-token fixtures used to verify error redaction"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''const token = "(?:aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899|11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff)"''']
+paths = ['''^backend/internal/infra/provider/cli/video_test\.go$''']
+
+[[allowlists]]
+description = "Invalid client-key fixtures used to exercise parser rejection paths"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''g2a__secret.*other_abc123_secret.*gbp_abc123_old_secret''']
+paths = ['''^backend/internal/infra/security/token_test\.go$''']

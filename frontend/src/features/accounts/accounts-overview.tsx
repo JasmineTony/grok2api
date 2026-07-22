@@ -35,10 +35,7 @@ export function AccountsOverview({
 }) {
   return (
     <>
-      <PageHeader
-        title={t("accounts.title")}
-        description={t("console.accountsDescription")}
-      />
+      <PageHeader title={t("accounts.title")} description={t("console.accountsDescription")} />
       <AccountsSummary
         loading={loading}
         unavailable={unavailable}

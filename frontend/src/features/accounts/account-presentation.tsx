@@ -28,20 +28,12 @@ export function AccountMetricPanel({
       label={label}
       value={loading ? <Spinner /> : value}
       icon={
-        <span
-          className={cn(
-            "flex size-5 items-center justify-center [&_svg]:size-4",
-            tone,
-          )}
-        >
+        <span className={cn("flex size-5 items-center justify-center [&_svg]:size-4", tone)}>
           {icon}
         </span>
       }
       detail={
-        <span
-          className={cn("block truncate", loading && "invisible")}
-          title={detail}
-        >
+        <span className={cn("block truncate", loading && "invisible")} title={detail}>
           {detail}
         </span>
       }
@@ -59,12 +51,7 @@ export function WebAccountType({ tier }: { tier?: AccountDTO["webTier"] }) {
         : tier === "heavy"
           ? t("accountType.heavy")
           : t("accountType.auto");
-  return (
-    <AccountTypeText
-      label={label}
-      variant={tier === "basic" ? "free" : "default"}
-    />
-  );
+  return <AccountTypeText label={label} variant={tier === "basic" ? "free" : "default"} />;
 }
 
 export function AccountType({ quota }: { quota: QuotaDTO }) {
@@ -106,9 +93,7 @@ export function AccountTypeText({
       title={title ?? label}
       className={cn(
         "max-w-32 truncate text-xs font-medium",
-        variant === "free"
-          ? "text-emerald-700 dark:text-emerald-300"
-          : "text-primary",
+        variant === "free" ? "text-emerald-700 dark:text-emerald-300" : "text-primary",
       )}
     >
       {label}
@@ -124,44 +109,28 @@ export function AccountStatus({ account }: { account: AccountDTO }) {
         {t("accounts.statusDisabled")}
       </Badge>
     );
-  if (
-    account.authStatus === "reauthRequired" ||
-    account.state === "reauth_required"
-  )
-    return (
-      <Badge variant="destructive">{t("accounts.statusReauthRequired")}</Badge>
-    );
+  if (account.authStatus === "reauthRequired" || account.state === "reauth_required")
+    return <Badge variant="destructive">{t("accounts.statusReauthRequired")}</Badge>;
   if (account.state === "degraded")
     return (
-      <Badge
-        variant="secondary"
-        className="bg-orange-500/10 text-orange-700 dark:text-orange-300"
-      >
+      <Badge variant="secondary" className="bg-orange-500/10 text-orange-700 dark:text-orange-300">
         {t("accounts.statusDegraded")}
       </Badge>
     );
   if (
     account.state === "quota_exhausted" ||
     (account.provider === "grok_console" &&
-      account.quotaWindows?.some(
-        (window) => window.mode === "console" && window.remaining <= 0,
-      )) ||
+      account.quotaWindows?.some((window) => window.mode === "console" && window.remaining <= 0)) ||
     account.quota.status === "waitingReset"
   )
     return (
-      <Badge
-        variant="secondary"
-        className="bg-amber-500/10 text-amber-700 dark:text-amber-300"
-      >
+      <Badge variant="secondary" className="bg-amber-500/10 text-amber-700 dark:text-amber-300">
         {t("accounts.waitingReset")}
       </Badge>
     );
   if (account.quota.status === "probing")
     return (
-      <Badge
-        variant="secondary"
-        className="bg-sky-500/10 text-sky-700 dark:text-sky-300"
-      >
+      <Badge variant="secondary" className="bg-sky-500/10 text-sky-700 dark:text-sky-300">
         {t("accounts.probing")}
       </Badge>
     );
@@ -170,18 +139,12 @@ export function AccountStatus({ account }: { account: AccountDTO }) {
     (account.cooldownUntil && new Date(account.cooldownUntil) > new Date())
   )
     return (
-      <Badge
-        variant="secondary"
-        className="bg-amber-500/10 text-amber-700 dark:text-amber-300"
-      >
+      <Badge variant="secondary" className="bg-amber-500/10 text-amber-700 dark:text-amber-300">
         {t("accounts.statusCooldown")}
       </Badge>
     );
   return (
-    <Badge
-      variant="secondary"
-      className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-    >
+    <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
       {t("accounts.statusActive")}
     </Badge>
   );

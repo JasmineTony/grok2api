@@ -132,10 +132,7 @@ export function AccountBulkDialogs({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <AlertDialog
-        open={conversionTargets !== null}
-        onOpenChange={onConversionOpenChange}
-      >
+      <AlertDialog open={conversionTargets !== null} onOpenChange={onConversionOpenChange}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("accountConversion.title")}</AlertDialogTitle>
@@ -145,9 +142,7 @@ export function AccountBulkDialogs({
                   ? "accountConversion.allDescription"
                   : "accountConversion.selectedDescription",
                 {
-                  count: Array.isArray(conversionTargets)
-                    ? conversionTargets.length
-                    : 0,
+                  count: Array.isArray(conversionTargets) ? conversionTargets.length : 0,
                 },
               )}
             </AlertDialogDescription>
@@ -158,9 +153,7 @@ export function AccountBulkDialogs({
             </p>
             <Tabs
               value={conversionTarget}
-              onValueChange={(value) =>
-                onConversionTargetChange(value as WebConversionTarget)
-              }
+              onValueChange={(value) => onConversionTargetChange(value as WebConversionTarget)}
             >
               <TabsList
                 aria-labelledby="web-conversion-target"
@@ -206,11 +199,7 @@ export function AccountBulkDialogs({
                 >
                   {t("accountConversion.missing")}
                 </TabsTrigger>
-                <TabsTrigger
-                  value="all"
-                  className="h-8 font-normal"
-                  disabled={conversionPending}
-                >
+                <TabsTrigger value="all" className="h-8 font-normal" disabled={conversionPending}>
                   {t("accountConversion.all")}
                 </TabsTrigger>
               </TabsList>
@@ -233,8 +222,7 @@ export function AccountBulkDialogs({
               disabled={
                 conversionPending ||
                 conversionTargets === null ||
-                (Array.isArray(conversionTargets) &&
-                  conversionTargets.length === 0)
+                (Array.isArray(conversionTargets) && conversionTargets.length === 0)
               }
               onClick={(event) => {
                 event.preventDefault();
@@ -272,9 +260,7 @@ export function AccountBulkDialogs({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("accounts.renewAllTitle")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("accounts.renewAllDescription")}
-            </AlertDialogDescription>
+            <AlertDialogDescription>{t("accounts.renewAllDescription")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
@@ -316,9 +302,7 @@ export function AccountBulkDialogs({
                       : "Grok Console",
               })}
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("accounts.exportDescription")}
-            </AlertDialogDescription>
+            <AlertDialogDescription>{t("accounts.exportDescription")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>

@@ -1,32 +1,62 @@
 import { useQuery } from "@tanstack/react-query";
-import { Activity, ArrowDown, ArrowUp, BrainCircuit, CircleCheck, CircleDollarSign, CornerDownRight, Database, Info, Minimize2, RefreshCw, Search, WholeWord, type LucideIcon } from "lucide-react";
+import {
+  Activity,
+  ArrowDown,
+  ArrowUp,
+  BrainCircuit,
+  CircleCheck,
+  CircleDollarSign,
+  CornerDownRight,
+  Database,
+  Info,
+  type LucideIcon,
+  Minimize2,
+  RefreshCw,
+  Search,
+  WholeWord,
+} from "lucide-react";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { listModels } from "@/entities/model/model-api";
 import { RequestAuditDetailDialog } from "@/features/audits/request-audit-detail-dialog";
-import { getRequestAudits, getRequestAuditSummary, type AuditDTO, type AuditPeriod } from "@/features/audits/request-audits-api";
+import {
+  type AuditDTO,
+  type AuditPeriod,
+  getRequestAudits,
+  getRequestAuditSummary,
+} from "@/features/audits/request-audits-api";
+import { useApiClient } from "@/shared/api/use-api-client";
 import { EmptyState, ErrorState, TableLoadingRow } from "@/shared/components/data-state";
-import { DataTableShell } from "@/shared/components/data-table-shell";
 import { DataTableFilters } from "@/shared/components/data-table-filters";
-import { CursorPagination } from "@/shared/components/pagination";
+import { DataTableShell } from "@/shared/components/data-table-shell";
 import { PageHeader } from "@/shared/components/page-header";
+import { CursorPagination } from "@/shared/components/pagination";
 import { PeriodSelector } from "@/shared/components/period-selector";
 import { SortableTableHead } from "@/shared/components/sortable-table-head";
 import { VirtualTableBody } from "@/shared/components/virtual-table-body";
 import { useDebouncedValue } from "@/shared/hooks/use-debounced-value";
 import { cn } from "@/shared/lib/cn";
+import { ticksToUSD } from "@/shared/lib/cost";
 import { formatDateTime, formatDuration, formatNumber } from "@/shared/lib/format";
-import { toPeriodValue, type PeriodDays } from "@/shared/lib/period";
+import { type PeriodDays, toPeriodValue } from "@/shared/lib/period";
 import { nextTableSort, type SortOrder, type TableSort } from "@/shared/lib/table-sort";
 
 export function RequestAuditsPage() {
   const { t, i18n } = useTranslation();
+  const apiClient = useApiClient();
   const [cursors, setCursors] = useState<string[]>([""]);
   const [pageSize, setPageSize] = useState(20);
   const [search, setSearch] = useState("");
@@ -46,17 +76,67 @@ export function RequestAuditsPage() {
   const cursor = cursors[cursors.length - 1];
   const period: AuditPeriod = toPeriodValue(periodDays);
   const auditsQuery = useQuery({
-    queryKey: ["request-audits", "cursor", cursor, pageSize, debouncedSearch, modelFilter, statusFilter, modeFilter, debouncedKeyFilter, debouncedAccountFilter, period, sort.field, sort.order],
-    queryFn: () => getRequestAudits({ cursor, pageSize, search: debouncedSearch, model: modelFilter, status: statusFilter, mode: modeFilter, key: debouncedKeyFilter, account: debouncedAccountFilter, period, sortBy: sort.field, sortOrder: sort.order }),
+    queryKey: [
+      "request-audits",
+      "cursor",
+      cursor,
+      pageSize,
+      debouncedSearch,
+      modelFilter,
+      statusFilter,
+      modeFilter,
+      debouncedKeyFilter,
+      debouncedAccountFilter,
+      period,
+      sort.field,
+      sort.order,
+    ],
+    queryFn: () =>
+      getRequestAudits(apiClient, {
+        ...(cursor === undefined ? {} : { cursor }),
+        pageSize,
+        search: debouncedSearch,
+        model: modelFilter,
+        status: statusFilter,
+        mode: modeFilter,
+        key: debouncedKeyFilter,
+        account: debouncedAccountFilter,
+        period,
+        sortBy: sort.field,
+        sortOrder: sort.order,
+      }),
   });
   const summaryQuery = useQuery({
-    queryKey: ["request-audits", "summary", debouncedSearch, modelFilter, statusFilter, modeFilter, debouncedKeyFilter, debouncedAccountFilter, period],
-    queryFn: () => getRequestAuditSummary({ search: debouncedSearch, model: modelFilter, status: statusFilter, mode: modeFilter, key: debouncedKeyFilter, account: debouncedAccountFilter, period }, forceSummaryRefresh.current),
+    queryKey: [
+      "request-audits",
+      "summary",
+      debouncedSearch,
+      modelFilter,
+      statusFilter,
+      modeFilter,
+      debouncedKeyFilter,
+      debouncedAccountFilter,
+      period,
+    ],
+    queryFn: () =>
+      getRequestAuditSummary(
+        apiClient,
+        {
+          search: debouncedSearch,
+          model: modelFilter,
+          status: statusFilter,
+          mode: modeFilter,
+          key: debouncedKeyFilter,
+          account: debouncedAccountFilter,
+          period,
+        },
+        forceSummaryRefresh.current,
+      ),
     placeholderData: (previous) => previous,
   });
   const modelOptionsQuery = useQuery({
     queryKey: ["models", "audit-filter"],
-    queryFn: () => listModels({ page: 1, pageSize: 100 }),
+    queryFn: () => listModels(apiClient, { page: 1, pageSize: 100 }),
     staleTime: 60_000,
   });
   const result = auditsQuery.data;
@@ -91,75 +171,220 @@ export function RequestAuditsPage() {
       <PageHeader
         title={t("audits.title")}
         description={t("audits.description")}
-        actions={(
+        actions={
           <>
-            <PeriodSelector value={periodDays} onChange={(days) => { setPeriodDays(days); setCursors([""]); }} ariaLabel={t("audits.usageSummary")} />
-            <Button variant="secondary" size="sm" onClick={refreshAll} disabled={auditsQuery.isFetching || summaryQuery.isFetching || manualRefreshing}><RefreshCw className={manualRefreshing ? "animate-spin" : undefined} />{t("common.refresh")}</Button>
+            <PeriodSelector
+              value={periodDays}
+              onChange={(days) => {
+                setPeriodDays(days);
+                setCursors([""]);
+              }}
+              ariaLabel={t("audits.usageSummary")}
+            />
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={refreshAll}
+              disabled={auditsQuery.isFetching || summaryQuery.isFetching || manualRefreshing}
+            >
+              <RefreshCw className={manualRefreshing ? "animate-spin" : undefined} />
+              {t("common.refresh")}
+            </Button>
           </>
-        )}
+        }
       />
 
       <section className="space-y-2" aria-label={t("audits.usageSummary")}>
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          <AuditMetric icon={Activity} loading={summaryLoading} label={t("audits.totalRequests")} value={formatNumber(summary?.usage.requests ?? 0, i18n.language, 0)} detail={t("audits.requestBreakdown", { success: formatNumber(summary?.usage.successfulRequests ?? 0, i18n.language, 0), failed: formatNumber(summary?.usage.failedRequests ?? 0, i18n.language, 0) })} />
-          <AuditMetric icon={WholeWord} loading={summaryLoading} label={t("audits.totalTokens")} value={formatNumber(summary?.usage.totalTokens ?? 0, i18n.language, 0)} detail={requestCacheAvailable ? t("audits.cacheEfficiency", { tokenRate: formatNumber(tokenCacheHitRate, i18n.language, 1), requestRate: formatNumber(requestCacheHitRate, i18n.language, 1) }) : t("audits.cacheEfficiencyUnavailable", { tokenRate: formatNumber(tokenCacheHitRate, i18n.language, 1) })} />
-          <AuditMetric icon={CircleCheck} loading={summaryLoading} label={t("audits.successRate")} value={`${formatNumber(summary?.usage.successRate ?? 0, i18n.language, 1)}%`} detail={t("audits.averageDuration", { duration: formatDuration(summary?.usage.averageDurationMs ?? 0) })} />
+          <AuditMetric
+            icon={Activity}
+            loading={summaryLoading}
+            label={t("audits.totalRequests")}
+            value={formatNumber(summary?.usage.requests ?? 0, i18n.language, 0)}
+            detail={t("audits.requestBreakdown", {
+              success: formatNumber(summary?.usage.successfulRequests ?? 0, i18n.language, 0),
+              failed: formatNumber(summary?.usage.failedRequests ?? 0, i18n.language, 0),
+            })}
+          />
+          <AuditMetric
+            icon={WholeWord}
+            loading={summaryLoading}
+            label={t("audits.totalTokens")}
+            value={formatNumber(summary?.usage.totalTokens ?? 0, i18n.language, 0)}
+            detail={
+              requestCacheAvailable
+                ? t("audits.cacheEfficiency", {
+                    tokenRate: formatNumber(tokenCacheHitRate, i18n.language, 1),
+                    requestRate: formatNumber(requestCacheHitRate, i18n.language, 1),
+                  })
+                : t("audits.cacheEfficiencyUnavailable", {
+                    tokenRate: formatNumber(tokenCacheHitRate, i18n.language, 1),
+                  })
+            }
+          />
+          <AuditMetric
+            icon={CircleCheck}
+            loading={summaryLoading}
+            label={t("audits.successRate")}
+            value={`${formatNumber(summary?.usage.successRate ?? 0, i18n.language, 1)}%`}
+            detail={t("audits.averageDuration", {
+              duration: formatDuration(summary?.usage.averageDurationMs ?? 0),
+            })}
+          />
           <AuditMetric
             icon={CircleDollarSign}
             loading={summaryLoading}
             label={t("audits.billedCost")}
             value={hasCost ? formatUSDCost(billedCostTicks, 2) : "-"}
             fullValue={hasCost ? formatUSDCost(billedCostTicks, 10) : undefined}
-            detail={t("audits.costComposition", { actual: formatUSDCost(summary?.usage.costInUsdTicks ?? 0, 2), estimated: formatUSDCost(summary?.usage.estimatedCostInUsdTicks ?? 0, 2) })}
+            detail={t("audits.costComposition", {
+              actual: formatUSDCost(summary?.usage.costInUsdTicks ?? 0, 2),
+              estimated: formatUSDCost(summary?.usage.estimatedCostInUsdTicks ?? 0, 2),
+            })}
             tooltip={t("audits.pricingDescription")}
           />
         </div>
         <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
-          <AuditTokenMetric icon={ArrowUp} loading={summaryLoading} label={t("audits.input")} value={formatNumber(summary?.usage.inputTokens ?? 0, i18n.language, 0)} />
-          <AuditTokenMetric icon={ArrowDown} loading={summaryLoading} label={t("audits.output")} value={formatNumber(summary?.usage.outputTokens ?? 0, i18n.language, 0)} />
-          <AuditTokenMetric icon={Database} loading={summaryLoading} label={t("audits.cached")} value={formatNumber(summary?.usage.cachedInputTokens ?? 0, i18n.language, 0)} />
-          <AuditTokenMetric icon={BrainCircuit} loading={summaryLoading} label={t("audits.reasoning")} value={formatNumber(summary?.usage.reasoningTokens ?? 0, i18n.language, 0)} />
+          <AuditTokenMetric
+            icon={ArrowUp}
+            loading={summaryLoading}
+            label={t("audits.input")}
+            value={formatNumber(summary?.usage.inputTokens ?? 0, i18n.language, 0)}
+          />
+          <AuditTokenMetric
+            icon={ArrowDown}
+            loading={summaryLoading}
+            label={t("audits.output")}
+            value={formatNumber(summary?.usage.outputTokens ?? 0, i18n.language, 0)}
+          />
+          <AuditTokenMetric
+            icon={Database}
+            loading={summaryLoading}
+            label={t("audits.cached")}
+            value={formatNumber(summary?.usage.cachedInputTokens ?? 0, i18n.language, 0)}
+          />
+          <AuditTokenMetric
+            icon={BrainCircuit}
+            loading={summaryLoading}
+            label={t("audits.reasoning")}
+            value={formatNumber(summary?.usage.reasoningTokens ?? 0, i18n.language, 0)}
+          />
         </div>
       </section>
 
       <DataTableShell
-        toolbar={(
+        toolbar={
           <>
             <div className="flex w-full items-center gap-2 sm:w-auto">
               <div className="relative min-w-0 flex-1 sm:w-64 sm:flex-none">
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input className="h-8 pl-9 text-xs" value={search} onChange={(event) => { setSearch(event.target.value); setCursors([""]); }} placeholder={t("audits.search")} aria-label={t("audits.search")} />
+                <Input
+                  className="h-8 pl-9 text-xs"
+                  value={search}
+                  onChange={(event) => {
+                    setSearch(event.target.value);
+                    setCursors([""]);
+                  }}
+                  placeholder={t("audits.search")}
+                  aria-label={t("audits.search")}
+                />
               </div>
-              <DataTableFilters filters={[
-                { id: "model", label: t("audits.model"), value: modelFilter, onChange: (value) => { setModelFilter(value); setCursors([""]); }, options: [...new Map((modelOptionsQuery.data?.items ?? []).map((model) => [model.publicId, { value: model.publicId, label: model.publicId }])).values()] },
-                { id: "status", label: t("audits.status"), value: statusFilter, onChange: (value) => { setStatusFilter(value); setCursors([""]); }, options: [
-                  { value: "2xx", label: `2xx · ${t("audits.statusSuccess")}` },
-                  { value: "4xx", label: `4xx · ${t("audits.statusClientError")}` },
-                  { value: "5xx", label: `5xx · ${t("audits.statusServerError")}` },
-                ] },
-                { id: "mode", label: t("audits.mode"), value: modeFilter, onChange: (value) => { setModeFilter(value); setCursors([""]); }, options: [
-                  { value: "stream", label: t("audits.stream") },
-                  { value: "nonStream", label: t("audits.nonStream") },
-                ] },
-                { id: "key", type: "text", label: t("audits.key"), value: keyFilter, placeholder: t("audits.keyFilterPlaceholder"), onChange: (value) => { setKeyFilter(value); setCursors([""]); } },
-                { id: "account", type: "text", label: t("audits.account"), value: accountFilter, placeholder: t("audits.accountFilterPlaceholder"), onChange: (value) => { setAccountFilter(value); setCursors([""]); } },
-              ]} />
+              <DataTableFilters
+                filters={[
+                  {
+                    id: "model",
+                    label: t("audits.model"),
+                    value: modelFilter,
+                    onChange: (value) => {
+                      setModelFilter(value);
+                      setCursors([""]);
+                    },
+                    options: [
+                      ...new Map(
+                        (modelOptionsQuery.data?.items ?? []).map((model) => [
+                          model.publicId,
+                          { value: model.publicId, label: model.publicId },
+                        ]),
+                      ).values(),
+                    ],
+                  },
+                  {
+                    id: "status",
+                    label: t("audits.status"),
+                    value: statusFilter,
+                    onChange: (value) => {
+                      setStatusFilter(value);
+                      setCursors([""]);
+                    },
+                    options: [
+                      { value: "2xx", label: `2xx · ${t("audits.statusSuccess")}` },
+                      { value: "4xx", label: `4xx · ${t("audits.statusClientError")}` },
+                      { value: "5xx", label: `5xx · ${t("audits.statusServerError")}` },
+                    ],
+                  },
+                  {
+                    id: "mode",
+                    label: t("audits.mode"),
+                    value: modeFilter,
+                    onChange: (value) => {
+                      setModeFilter(value);
+                      setCursors([""]);
+                    },
+                    options: [
+                      { value: "stream", label: t("audits.stream") },
+                      { value: "nonStream", label: t("audits.nonStream") },
+                    ],
+                  },
+                  {
+                    id: "key",
+                    type: "text",
+                    label: t("audits.key"),
+                    value: keyFilter,
+                    placeholder: t("audits.keyFilterPlaceholder"),
+                    onChange: (value) => {
+                      setKeyFilter(value);
+                      setCursors([""]);
+                    },
+                  },
+                  {
+                    id: "account",
+                    type: "text",
+                    label: t("audits.account"),
+                    value: accountFilter,
+                    placeholder: t("audits.accountFilterPlaceholder"),
+                    onChange: (value) => {
+                      setAccountFilter(value);
+                      setCursors([""]);
+                    },
+                  },
+                ]}
+              />
             </div>
           </>
-        )}
-        footer={result && result.items.length > 0 ? (
-          <CursorPagination
-            page={cursors.length}
-            pageSize={pageSize}
-            hasMore={result.hasMore && Boolean(result.nextCursor)}
-            onFirstPage={() => setCursors([""])}
-            onPreviousPage={() => setCursors((values) => values.slice(0, -1))}
-            onNextPage={() => setCursors((values) => [...values, result.nextCursor])}
-            onPageSizeChange={(value) => { setPageSize(value); setCursors([""]); }}
-          />
-        ) : undefined}
+        }
+        footer={
+          result && result.items.length > 0 ? (
+            <CursorPagination
+              page={cursors.length}
+              pageSize={pageSize}
+              hasMore={result.hasMore && Boolean(result.nextCursor)}
+              onFirstPage={() => setCursors([""])}
+              onPreviousPage={() => setCursors((values) => values.slice(0, -1))}
+              onNextPage={() => setCursors((values) => [...values, result.nextCursor])}
+              onPageSizeChange={(value) => {
+                setPageSize(value);
+                setCursors([""]);
+              }}
+            />
+          ) : undefined
+        }
       >
-        {auditsQuery.isError ? <ErrorState message={auditsQuery.error.message} onRetry={() => void auditsQuery.refetch()} /> : null}
+        {auditsQuery.isError ? (
+          <ErrorState
+            message={auditsQuery.error.message}
+            onRetry={() => void auditsQuery.refetch()}
+          />
+        ) : null}
         {result && result.items.length === 0 ? <EmptyState /> : null}
         {auditsQuery.isPending || (result && result.items.length > 0) ? (
           <Table viewportRows={20} rowHeight={72} className="min-w-[1136px] table-fixed text-xs">
@@ -175,43 +400,126 @@ export function RequestAuditsPage() {
             </colgroup>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <SortableTableHead field="request" sortBy={sort.field} sortOrder={sort.order} onSort={changeSort}>{t("audits.request")}</SortableTableHead>
-                <SortableTableHead field="model" sortBy={sort.field} sortOrder={sort.order} onSort={changeSort}>{t("audits.model")}</SortableTableHead>
+                <SortableTableHead
+                  field="request"
+                  sortBy={sort.field}
+                  sortOrder={sort.order}
+                  onSort={changeSort}
+                >
+                  {t("audits.request")}
+                </SortableTableHead>
+                <SortableTableHead
+                  field="model"
+                  sortBy={sort.field}
+                  sortOrder={sort.order}
+                  onSort={changeSort}
+                >
+                  {t("audits.model")}
+                </SortableTableHead>
                 <TableHead>{t("audits.egress")}</TableHead>
-                <SortableTableHead field="billing" sortBy={sort.field} sortOrder={sort.order} initialOrder="desc" onSort={changeSort}>{t("audits.billing")}</SortableTableHead>
-                <SortableTableHead field="tokens" sortBy={sort.field} sortOrder={sort.order} initialOrder="desc" className="px-3" onSort={changeSort}>{t("audits.tokens")}</SortableTableHead>
-                <SortableTableHead field="status" sortBy={sort.field} sortOrder={sort.order} align="center" onSort={changeSort}>{t("audits.status")}</SortableTableHead>
-                <SortableTableHead field="duration" sortBy={sort.field} sortOrder={sort.order} initialOrder="desc" onSort={changeSort}>{t("audits.duration")}</SortableTableHead>
-                <SortableTableHead field="createdAt" sortBy={sort.field} sortOrder={sort.order} initialOrder="desc" onSort={changeSort}>{t("audits.createdAt")}</SortableTableHead>
+                <SortableTableHead
+                  field="billing"
+                  sortBy={sort.field}
+                  sortOrder={sort.order}
+                  initialOrder="desc"
+                  onSort={changeSort}
+                >
+                  {t("audits.billing")}
+                </SortableTableHead>
+                <SortableTableHead
+                  field="tokens"
+                  sortBy={sort.field}
+                  sortOrder={sort.order}
+                  initialOrder="desc"
+                  className="px-3"
+                  onSort={changeSort}
+                >
+                  {t("audits.tokens")}
+                </SortableTableHead>
+                <SortableTableHead
+                  field="status"
+                  sortBy={sort.field}
+                  sortOrder={sort.order}
+                  align="center"
+                  onSort={changeSort}
+                >
+                  {t("audits.status")}
+                </SortableTableHead>
+                <SortableTableHead
+                  field="duration"
+                  sortBy={sort.field}
+                  sortOrder={sort.order}
+                  initialOrder="desc"
+                  onSort={changeSort}
+                >
+                  {t("audits.duration")}
+                </SortableTableHead>
+                <SortableTableHead
+                  field="createdAt"
+                  sortBy={sort.field}
+                  sortOrder={sort.order}
+                  initialOrder="desc"
+                  onSort={changeSort}
+                >
+                  {t("audits.createdAt")}
+                </SortableTableHead>
               </TableRow>
             </TableHeader>
             {auditsQuery.isPending ? (
-              <TableBody><TableLoadingRow colSpan={8} /></TableBody>
+              <TableBody>
+                <TableLoadingRow colSpan={8} />
+              </TableBody>
             ) : (
-              <VirtualTableBody items={result?.items ?? []} colSpan={8} rowHeight={72} renderRow={(audit) => (
-                <TableRow className="h-[72px]" key={audit.id}>
-                  <TableCell><RequestValue audit={audit} /></TableCell>
-                  <TableCell>
-                    <ModelRouteValue
-                      model={audit.modelPublicId || `#${audit.modelRouteId}`}
-                      upstreamModel={audit.modelUpstreamModel || "-"}
-                      account={audit.accountName || (audit.accountId ? `#${audit.accountId}` : "-")}
-                      clientKey={audit.clientKeyName || `#${audit.clientKeyId}`}
-                    />
-                  </TableCell>
-                  <TableCell><EgressValue audit={audit} /></TableCell>
-                  <TableCell><BillingValue audit={audit} /></TableCell>
-                  <TableCell className="px-3"><UsageDetails audit={audit} locale={i18n.language} /></TableCell>
-                  <TableCell className="text-center"><AuditStatus audit={audit} onOpen={() => setSelectedAudit(audit)} /></TableCell>
-                  <TableCell className="whitespace-nowrap text-xs tabular-nums">{formatDuration(audit.durationMs)}</TableCell>
-                  <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatDateTime(audit.createdAt, i18n.language)}</TableCell>
-                </TableRow>
-              )} />
+              <VirtualTableBody
+                items={result?.items ?? []}
+                colSpan={8}
+                rowHeight={72}
+                renderRow={(audit) => (
+                  <TableRow className="h-[72px]" key={audit.id}>
+                    <TableCell>
+                      <RequestValue audit={audit} />
+                    </TableCell>
+                    <TableCell>
+                      <ModelRouteValue
+                        model={audit.modelPublicId || `#${audit.modelRouteId}`}
+                        upstreamModel={audit.modelUpstreamModel || "-"}
+                        account={
+                          audit.accountName || (audit.accountId ? `#${audit.accountId}` : "-")
+                        }
+                        clientKey={audit.clientKeyName || `#${audit.clientKeyId}`}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <EgressValue audit={audit} />
+                    </TableCell>
+                    <TableCell>
+                      <BillingValue audit={audit} />
+                    </TableCell>
+                    <TableCell className="px-3">
+                      <UsageDetails audit={audit} locale={i18n.language} />
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <AuditStatus audit={audit} onOpen={() => setSelectedAudit(audit)} />
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-xs tabular-nums">
+                      {formatDuration(audit.durationMs)}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                      {formatDateTime(audit.createdAt, i18n.language)}
+                    </TableCell>
+                  </TableRow>
+                )}
+              />
             )}
           </Table>
         ) : null}
       </DataTableShell>
-      <RequestAuditDetailDialog key={selectedAudit?.id ?? "closed"} audit={selectedAudit} open={selectedAudit !== null} onOpenChange={(open) => !open && setSelectedAudit(null)} />
+      <RequestAuditDetailDialog
+        key={selectedAudit?.id ?? "closed"}
+        audit={selectedAudit}
+        open={selectedAudit !== null}
+        onOpenChange={(open) => !open && setSelectedAudit(null)}
+      />
     </div>
   );
 }
@@ -220,8 +528,15 @@ function RequestValue({ audit }: { audit: AuditDTO }) {
   const { t } = useTranslation();
   return (
     <div className="min-w-0">
-      <span className="block truncate text-xs font-medium">{providerLabel(audit.provider)} · {t(`audits.operations.${audit.operation}`)}</span>
-      <span className="mt-0.5 block truncate font-mono text-[10px] text-muted-foreground" title={audit.requestId}>{audit.requestId}</span>
+      <span className="block truncate text-xs font-medium">
+        {providerLabel(audit.provider)} · {t(`audits.operations.${audit.operation}`)}
+      </span>
+      <span
+        className="mt-0.5 block truncate font-mono text-[10px] text-muted-foreground"
+        title={audit.requestId}
+      >
+        {audit.requestId}
+      </span>
     </div>
   );
 }
@@ -232,14 +547,31 @@ function EgressValue({ audit }: { audit: AuditDTO }) {
     return <span className="text-muted-foreground">-</span>;
   }
   const proxied = audit.egressMode === "proxy";
-  const node = audit.egressNodeName || (proxied ? t("audits.egressUnknown") : t("audits.egressDirect"));
-  const details = [audit.egressScope, audit.egressNodeId ? `#${audit.egressNodeId}` : ""].filter(Boolean).join(" · ");
+  const node =
+    audit.egressNodeName || (proxied ? t("audits.egressUnknown") : t("audits.egressDirect"));
+  const details = [audit.egressScope, audit.egressNodeId ? `#${audit.egressNodeId}` : ""]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button type="button" className="block min-w-0 max-w-full cursor-help text-left" aria-label={`${proxied ? t("audits.egressProxy") : t("audits.egressDirect")}: ${node}`}>
-          <span className={cn("inline-flex items-center gap-1.5 text-xs", proxied ? "text-emerald-700 dark:text-emerald-300" : "text-muted-foreground")}>
-            <span className={cn("size-1.5 rounded-full", proxied ? "bg-emerald-500" : "bg-muted-foreground/50")} />
+        <button
+          type="button"
+          className="block min-w-0 max-w-full cursor-help text-left"
+          aria-label={`${proxied ? t("audits.egressProxy") : t("audits.egressDirect")}: ${node}`}
+        >
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 text-xs",
+              proxied ? "text-emerald-700 dark:text-emerald-300" : "text-muted-foreground",
+            )}
+          >
+            <span
+              className={cn(
+                "size-1.5 rounded-full",
+                proxied ? "bg-emerald-500" : "bg-muted-foreground/50",
+              )}
+            />
             {proxied ? t("audits.egressProxy") : t("audits.egressDirect")}
           </span>
         </button>
@@ -263,10 +595,19 @@ function BillingValue({ audit }: { audit: AuditDTO }) {
     <div className="max-w-full text-left">
       {priced ? (
         <Tooltip>
-          <TooltipTrigger asChild><span className="block cursor-help whitespace-nowrap text-xs tabular-nums" tabIndex={0}>{amount}</span></TooltipTrigger>
-          <TooltipContent side="top"><span className="text-primary-foreground/65">{t("audits.exactBilling")}</span> <span className="font-mono">{fullAmount}</span></TooltipContent>
+          <TooltipTrigger asChild>
+            <span className="block cursor-help whitespace-nowrap text-xs tabular-nums" tabIndex={0}>
+              {amount}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            <span className="text-primary-foreground/65">{t("audits.exactBilling")}</span>{" "}
+            <span className="font-mono">{fullAmount}</span>
+          </TooltipContent>
         </Tooltip>
-      ) : <span className="block text-xs text-muted-foreground">-</span>}
+      ) : (
+        <span className="block text-xs text-muted-foreground">-</span>
+      )}
       {audit.numServerSideToolsUsed > 0 ? (
         <span className="mt-0.5 block whitespace-nowrap text-[10px] text-muted-foreground">
           {t("audits.serverTools", { count: audit.numServerSideToolsUsed })}
@@ -276,7 +617,23 @@ function BillingValue({ audit }: { audit: AuditDTO }) {
   );
 }
 
-function AuditMetric({ icon: Icon, label, value, detail, tooltip, fullValue, loading }: { icon: LucideIcon; label: string; value: string; detail?: string; tooltip?: string; fullValue?: string; loading: boolean }) {
+function AuditMetric({
+  icon: Icon,
+  label,
+  value,
+  detail,
+  tooltip,
+  fullValue,
+  loading,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  detail?: string;
+  tooltip?: string;
+  fullValue?: string | undefined;
+  loading: boolean;
+}) {
   const { t } = useTranslation();
   return (
     <article className="min-h-28 rounded-lg bg-card p-4" aria-busy={loading}>
@@ -285,7 +642,11 @@ function AuditMetric({ icon: Icon, label, value, detail, tooltip, fullValue, loa
           <span>{label}</span>
           {tooltip ? (
             <Tooltip>
-              <TooltipTrigger asChild><button type="button" className="cursor-help" aria-label={tooltip}><Info className="size-3.5" /></button></TooltipTrigger>
+              <TooltipTrigger asChild>
+                <button type="button" className="cursor-help" aria-label={tooltip}>
+                  <Info className="size-3.5" />
+                </button>
+              </TooltipTrigger>
               <TooltipContent className="max-w-72 leading-5">{tooltip}</TooltipContent>
             </Tooltip>
           ) : null}
@@ -293,48 +654,109 @@ function AuditMetric({ icon: Icon, label, value, detail, tooltip, fullValue, loa
         <Icon className="size-4 shrink-0 text-muted-foreground" />
       </header>
       <div className="mt-3 flex min-h-8 items-center text-2xl font-medium tracking-tight tabular-nums">
-        {loading ? <Spinner /> : fullValue ? (
+        {loading ? (
+          <Spinner />
+        ) : fullValue ? (
           <Tooltip>
-            <TooltipTrigger asChild><span className="cursor-help" tabIndex={0}>{value}</span></TooltipTrigger>
-            <TooltipContent side="top"><span className="text-primary-foreground/65">{t("audits.exactBilling")}</span> <span className="font-mono">{fullValue}</span></TooltipContent>
+            <TooltipTrigger asChild>
+              <span className="cursor-help" tabIndex={0}>
+                {value}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              <span className="text-primary-foreground/65">{t("audits.exactBilling")}</span>{" "}
+              <span className="font-mono">{fullValue}</span>
+            </TooltipContent>
           </Tooltip>
-        ) : value}
+        ) : (
+          value
+        )}
       </div>
-      {detail ? <p className={cn("mt-1.5 min-h-4 truncate text-[11px] text-muted-foreground", loading && "invisible")} title={detail}>{detail}</p> : null}
+      {detail ? (
+        <p
+          className={cn(
+            "mt-1.5 min-h-4 truncate text-[11px] text-muted-foreground",
+            loading && "invisible",
+          )}
+          title={detail}
+        >
+          {detail}
+        </p>
+      ) : null}
     </article>
   );
 }
 
-function AuditTokenMetric({ icon: Icon, label, value, loading }: { icon: LucideIcon; label: string; value: string; loading: boolean }) {
+function AuditTokenMetric({
+  icon: Icon,
+  label,
+  value,
+  loading,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  loading: boolean;
+}) {
   return (
     <div className="flex min-h-11 min-w-0 items-center justify-between gap-3 rounded-lg bg-muted/45 px-4 py-2">
-      <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground"><Icon className="size-3.5 shrink-0" />{label}</span>
-      <span className="flex min-h-5 min-w-8 items-center justify-end truncate text-sm font-medium tabular-nums" title={loading ? undefined : value}>{loading ? <Spinner className="size-3.5" /> : value}</span>
+      <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+        <Icon className="size-3.5 shrink-0" />
+        {label}
+      </span>
+      <span
+        className="flex min-h-5 min-w-8 items-center justify-end truncate text-sm font-medium tabular-nums"
+        title={loading ? undefined : value}
+      >
+        {loading ? <Spinner className="size-3.5" /> : value}
+      </span>
     </div>
   );
 }
 
-function ModelRouteValue({ model, upstreamModel, account, clientKey }: { model: string; upstreamModel: string; account: string; clientKey: string }) {
+function ModelRouteValue({
+  model,
+  upstreamModel,
+  account,
+  clientKey,
+}: {
+  model: string;
+  upstreamModel: string;
+  account: string;
+  clientKey: string;
+}) {
   const { t } = useTranslation();
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button type="button" className="block w-full min-w-0 cursor-help text-left" aria-label={t("audits.routeDetails")}>
-          <span className="block truncate text-xs font-medium" title={model}>{model}</span>
+        <button
+          type="button"
+          className="block w-full min-w-0 cursor-help text-left"
+          aria-label={t("audits.routeDetails")}
+        >
+          <span className="block truncate text-xs font-medium" title={model}>
+            {model}
+          </span>
           <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
             <CornerDownRight className="size-3 shrink-0" />
-            <span className="truncate" title={upstreamModel}>{upstreamModel}</span>
+            <span className="truncate" title={upstreamModel}>
+              {upstreamModel}
+            </span>
           </span>
         </button>
       </TooltipTrigger>
       <TooltipContent className="w-64 space-y-1.5 py-2" side="top" align="start">
         <div className="grid grid-cols-[auto_1fr] gap-x-3">
           <span className="text-primary-foreground/65">{t("audits.owningAccount")}</span>
-          <span className="truncate text-right" title={account}>{account}</span>
+          <span className="truncate text-right" title={account}>
+            {account}
+          </span>
         </div>
         <div className="grid grid-cols-[auto_1fr] gap-x-3">
           <span className="text-primary-foreground/65">{t("audits.owningKey")}</span>
-          <span className="truncate text-right" title={clientKey}>{clientKey}</span>
+          <span className="truncate text-right" title={clientKey}>
+            {clientKey}
+          </span>
         </div>
       </TooltipContent>
     </Tooltip>
@@ -355,10 +777,25 @@ function UsageDetails({ audit, locale }: { audit: AuditDTO; locale: string }) {
     );
   }
   if (audit.operation === "video") {
-    return <MediaUsage input={t("audits.imageCount", { count: audit.mediaInputImages })} output={t("audits.secondsCount", { count: audit.mediaOutputSeconds })} />;
+    return (
+      <MediaUsage
+        input={t("audits.imageCount", { count: audit.mediaInputImages })}
+        output={t("audits.secondsCount", { count: audit.mediaOutputSeconds })}
+      />
+    );
   }
-  if (audit.operation === "image" || audit.operation === "image_edit" || audit.mediaInputImages > 0 || audit.mediaOutputImages > 0) {
-    return <MediaUsage input={t("audits.imageCount", { count: audit.mediaInputImages })} output={t("audits.imageCount", { count: audit.mediaOutputImages })} />;
+  if (
+    audit.operation === "image" ||
+    audit.operation === "image_edit" ||
+    audit.mediaInputImages > 0 ||
+    audit.mediaOutputImages > 0
+  ) {
+    return (
+      <MediaUsage
+        input={t("audits.imageCount", { count: audit.mediaInputImages })}
+        output={t("audits.imageCount", { count: audit.mediaOutputImages })}
+      />
+    );
   }
   const items = [
     { label: t("audits.input"), value: audit.inputTokens },
@@ -370,7 +807,10 @@ function UsageDetails({ audit, locale }: { audit: AuditDTO; locale: string }) {
     <div className="w-full">
       <div className="grid grid-cols-2 gap-1">
         {items.map((item) => (
-          <div key={item.label} className="flex h-6 min-w-0 items-center justify-between gap-2 rounded-md bg-muted/45 px-2 text-[11px]">
+          <div
+            key={item.label}
+            className="flex h-6 min-w-0 items-center justify-between gap-2 rounded-md bg-muted/45 px-2 text-[11px]"
+          >
             <span className="text-muted-foreground">{item.label}</span>
             <span className="font-medium tabular-nums">{formatNumber(item.value, locale)}</span>
           </div>
@@ -413,20 +853,36 @@ function StatusCode({ statusCode, hasError = false }: { statusCode: number; hasE
 
 function AuditStatus({ audit, onOpen }: { audit: AuditDTO; onOpen: () => void }) {
   const { t } = useTranslation();
-  const mode = audit.operation === "compaction" ? t("audits.operations.compaction") : audit.streaming ? t("audits.stream") : t("audits.nonStream");
+  const mode =
+    audit.operation === "compaction"
+      ? t("audits.operations.compaction")
+      : audit.streaming
+        ? t("audits.stream")
+        : t("audits.nonStream");
   const content = (
     <>
       <StatusCode statusCode={audit.statusCode} hasError={Boolean(audit.errorCode)} />
       <span className="block whitespace-nowrap text-[10px] text-muted-foreground">{mode}</span>
     </>
   );
-  if (!audit.errorCode && audit.attemptCount === 0) return <div className="space-y-0.5 text-center">{content}</div>;
+  if (!audit.errorCode && audit.attemptCount === 0)
+    return <div className="space-y-0.5 text-center">{content}</div>;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button type="button" className="group space-y-0.5 rounded-md text-center outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [&>span:last-child]:underline-offset-2 hover:[&>span:last-child]:text-foreground hover:[&>span:last-child]:underline" aria-label={t("audits.openDiagnostics")} onClick={onOpen}>{content}</button>
+        <button
+          type="button"
+          className="group space-y-0.5 rounded-md text-center outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [&>span:last-child]:underline-offset-2 hover:[&>span:last-child]:text-foreground hover:[&>span:last-child]:underline"
+          aria-label={t("audits.openDiagnostics")}
+          onClick={onOpen}
+        >
+          {content}
+        </button>
       </TooltipTrigger>
-      <TooltipContent className="max-w-80 whitespace-normal break-words text-left leading-5" side="top">
+      <TooltipContent
+        className="max-w-80 whitespace-normal break-words text-left leading-5"
+        side="top"
+      >
         {audit.errorCode || t("audits.openDiagnostics")}
       </TooltipContent>
     </Tooltip>
@@ -437,7 +893,8 @@ function statusTone(statusCode: number, hasError = false): { dot: string; text: 
   if (hasError) return { dot: "bg-amber-500", text: "text-amber-700 dark:text-amber-300" };
   if (statusCode >= 500) return { dot: "bg-red-500", text: "text-red-700 dark:text-red-300" };
   if (statusCode >= 400) return { dot: "bg-amber-500", text: "text-amber-700 dark:text-amber-300" };
-  if (statusCode >= 200 && statusCode < 300) return { dot: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-300" };
+  if (statusCode >= 200 && statusCode < 300)
+    return { dot: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-300" };
   return { dot: "bg-muted-foreground/50", text: "text-muted-foreground" };
 }
 
@@ -453,5 +910,5 @@ function providerLabel(provider: AuditDTO["provider"]): string {
 }
 
 function formatUSDCost(ticks: number, fractionDigits: number): string {
-  return `$${(ticks / 10_000_000_000).toFixed(fractionDigits)}`;
+  return `${ticksToUSD(ticks).toFixed(fractionDigits)}`;
 }
