@@ -42,7 +42,7 @@ Templates are available in [`templates/`](./templates/).
 
 | 2026-07-21 11 — Chrome DevTools MCP performance | [Plan](./2026-07-21-11-chrome-devtools-performance/PLAN.md) | [Result](./2026-07-21-11-chrome-devtools-performance/RESULT.md) | Complete |
 
-| 2026-07-21 12 — Frontend architecture, UI, build and v3.1.0 release | [Plan](./2026-07-21-12-frontend-architecture-ui-build-release/PLAN.md) | [Result](./2026-07-21-12-frontend-architecture-ui-build-release/RESULT.md) | In progress |
+| 2026-07-21 12 — Frontend architecture, UI, build and v3.1.0 release | [Plan](./2026-07-21-12-frontend-architecture-ui-build-release/PLAN.md) | [Result](./2026-07-21-12-frontend-architecture-ui-build-release/RESULT.md) | Ready for PR |
 
 ## Push and PR gate
 

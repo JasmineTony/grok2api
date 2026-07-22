@@ -17,6 +17,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 import { useAuth } from "@/shared/auth/use-auth";
 import { GitHubMark } from "@/shared/components/github-mark";
 import { SiteFooter } from "@/shared/components/site-footer";
+import { PageScaffold } from "@/shared/components/page-scaffold";
 import { cn } from "@/shared/lib/cn";
 import { NotificationCenter } from "@/features/system/notification-center";
 import { CurrentVersionLabel } from "@/features/system/version-update";
@@ -256,8 +257,10 @@ export function AppShell() {
             </div>
           </header>
 
-          <main className={cn("mx-auto w-full max-w-[1440px] flex-1 px-5 sm:px-8", isMediaWorkspace ? "pt-8 pb-0 lg:pt-20" : "py-8 lg:py-20")}>
-            <Outlet />
+          <main className="flex min-w-0 flex-1">
+            <PageScaffold className={isMediaWorkspace ? "pb-0" : undefined}>
+              <Outlet />
+            </PageScaffold>
           </main>
           {!isMediaWorkspace ? <SiteFooter /> : null}
         </div>

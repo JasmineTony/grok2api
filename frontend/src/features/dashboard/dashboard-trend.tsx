@@ -131,7 +131,7 @@ export function DashboardTrend({ dashboard, locale, loading }: DashboardTrendPro
                   <ChartTooltipContent
                     className="w-64 max-w-[calc(100vw-2rem)]"
                     indicator="dot"
-                    labelFormatter={(_label, payload) => payload?.[0]?.payload?.tooltipLabel ?? ""}
+                    labelFormatter={(_label, payload) => readTooltipLabel(payload?.[0]?.payload)}
                     formatter={(value, name, item) => (
                       <div className="flex w-full items-center justify-between gap-4">
                         <span className="flex min-w-0 items-center gap-2 text-xs font-normal text-muted-foreground">
@@ -198,6 +198,7 @@ function DashboardTrendLegend({ config, hiddenSeries, onToggle }: { config: Char
       {TREND_SERIES.map((series) => {
         const hidden = hiddenSeries.has(series);
         const label = config[series]?.label ?? series;
+        const accessibleLabel = typeof label === "string" || typeof label === "number" ? String(label) : series;
         return (
           <button
             key={series}
@@ -205,7 +206,7 @@ function DashboardTrendLegend({ config, hiddenSeries, onToggle }: { config: Char
             className={cn("flex items-center gap-1.5 rounded-md px-2 py-1 transition-[background-color,color,opacity] hover:bg-accent hover:opacity-100", hidden && "opacity-35")}
             onClick={() => onToggle(series)}
             aria-pressed={!hidden}
-            aria-label={`${t(hidden ? "common.enable" : "common.disable")} ${String(label)}`}
+            aria-label={`${t(hidden ? "common.enable" : "common.disable")} ${accessibleLabel}`}
           >
             <SeriesLegendMark series={series} />
             <span>{label}</span>
@@ -228,6 +229,10 @@ function SeriesLegendMark({ series }: { series: TrendSeries }) {
   );
 }
 
+function readTooltipLabel(value: unknown): string {
+  if (!value || typeof value !== "object" || !("tooltipLabel" in value)) return "";
+  return typeof value.tooltipLabel === "string" ? value.tooltipLabel : "";
+}
 function resolveTrendAxes(hiddenSeries: ReadonlySet<TrendSeries>): Partial<Record<TrendSeries, AxisSide>> {
   const visible = TREND_SERIES.filter((series) => !hiddenSeries.has(series));
   if (visible.length === 3) return { tokens: "left", billing: "right" };
@@ -237,7 +242,8 @@ function resolveTrendAxes(hiddenSeries: ReadonlySet<TrendSeries>): Partial<Recor
     }
     return { requests: "left", billing: "right" };
   }
-  return visible.length === 1 ? { [visible[0]]: "left" } : {};
+  const onlyVisible = visible[0];
+  return onlyVisible ? { [onlyVisible]: "left" } : {};
 }
 
 function formatBucketRange(startValue: string | undefined, endValue: string | undefined, period: DashboardPeriod, locale: string): string {

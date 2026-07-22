@@ -1,0 +1,8 @@
+{
+  "extends": "../tsconfig.node.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "../.cache/tsconfig.tests.tsbuildinfo",
+    "types": ["node", "@playwright/test"]
+  },
+  "include": ["**/*.ts"]
+}

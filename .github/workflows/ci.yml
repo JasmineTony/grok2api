@@ -2,11 +2,9 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -16,9 +14,12 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  PNPM_VERSION: 11.15.1
+
 jobs:
-  verify:
-    name: Verify
+  backend-test:
+    name: Backend test and audit
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -27,127 +28,116 @@ jobs:
           POSTGRES_USER: grok2api
           POSTGRES_PASSWORD: grok2api-ci
           POSTGRES_DB: grok2api
-        ports:
-          - 5432:5432
+        ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U grok2api -d grok2api"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
+          --health-interval 10s --health-timeout 5s --health-retries 10
     env:
       TEST_POSTGRES_DSN: postgres://grok2api:grok2api-ci@127.0.0.1:5432/grok2api?sslmode=disable
     steps:
-      - name: Checkout
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
-
       - name: Test backend
         working-directory: backend
-        run: go test ./...
-
+        run: go test -coverprofile=coverage.out ./...
       - name: Vet backend
         working-directory: backend
         run: go vet ./...
-
-      - name: Race test backend
-        working-directory: backend
-        run: go test -race -p 1 ./...
-
       - name: Check reachable Go vulnerabilities
         working-directory: backend
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
-
       - name: Verify Swagger document
         run: |
           make swagger
           git diff --exit-code -- backend/docs/docs.go backend/docs/swagger.json backend/docs/swagger.yaml
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@b0f76dfb45f55f8421693e4803ac7bb65143bd34 # v6
+  backend-race:
+    name: Backend race
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          version: 11.15.1
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Race test backend
+        working-directory: backend
+        run: go test -race -p 1 ./...
 
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+  frontend-quality:
+    name: Frontend quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: pnpm/action-setup@b0f76dfb45f55f8421693e4803ac7bb65143bd34 # v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .node-version
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
-
-      - name: Install frontend dependencies
+      - name: Install dependencies
         working-directory: frontend
         run: pnpm install --frozen-lockfile
-
-      - name: Audit frontend dependencies
+      - name: Audit dependencies
         working-directory: frontend
         run: pnpm audit --audit-level high
-
-      - name: Type-check frontend
+      - name: Verify frontend
         working-directory: frontend
-        run: pnpm typecheck
+        run: pnpm verify
 
-      - name: Test frontend
+  code-audit:
+    name: Repository code audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: pnpm/action-setup@b0f76dfb45f55f8421693e4803ac7bb65143bd34 # v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install dependencies
         working-directory: frontend
-        run: pnpm test
-
-      - name: Lint frontend
+        run: pnpm install --frozen-lockfile
+      - name: Static code and unused dependency audit
         working-directory: frontend
-        run: pnpm lint
-
-      - name: Check icon imports
-        working-directory: frontend
-        run: pnpm check:icons
-
-      - name: Build frontend
-        working-directory: frontend
-        run: pnpm build
-
-      - name: Check frontend bundle budgets
-        working-directory: frontend
-        run: pnpm check:bundle
-
-      - name: Check frontend chunk graph
-        working-directory: frontend
-        run: pnpm check:chunks
-
+        run: |
+          pnpm audit:code
+          pnpm audit:unused
+      - name: Check patch cleanliness and conflict markers
+        run: |
+          git diff --check
+          ! git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- ':!frontend/pnpm-lock.yaml'
 
   visual:
     name: Visual regression
     runs-on: windows-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@b0f76dfb45f55f8421693e4803ac7bb65143bd34 # v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: pnpm/action-setup@b0f76dfb45f55f8421693e4803ac7bb65143bd34 # v6
         with:
-          version: 11.15.1
-
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .node-version
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
-
-      - name: Install frontend dependencies
+      - name: Install dependencies and Chromium
         working-directory: frontend
-        run: pnpm install --frozen-lockfile
-
-      - name: Install Playwright Chromium
-        working-directory: frontend
-        run: pnpm exec playwright install chromium
-
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install chromium
       - name: Run Playwright layout regression
         working-directory: frontend
         run: pnpm test:e2e
-
-      - name: Upload Playwright diagnostics on failure
+      - name: Upload diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
@@ -158,28 +148,27 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  build_image:
+  verify:
+    name: Verify
+    needs: [backend-test, backend-race, frontend-quality, code-audit]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm required verification jobs
+        run: echo "Backend, race, frontend, and repository audits passed."
+
+  build-image:
     name: Build image (${{ matrix.arch }})
     needs: [verify, visual]
     strategy:
       fail-fast: false
       matrix:
         include:
-          - arch: amd64
-            platform: linux/amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
+          - { arch: amd64, platform: linux/amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, platform: linux/arm64, runner: ubuntu-24.04-arm }
     runs-on: ${{ matrix.runner }}
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
-
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
-
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
       - name: Build image without publishing
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
@@ -188,5 +177,6 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: false
           cache-from: type=gha,scope=ci-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=ci-${{ matrix.arch }}
           provenance: false
           sbom: false

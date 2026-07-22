@@ -98,13 +98,16 @@ function formatActivityDate(value: string, locale: string): string {
 }
 
 function formatActivityRange(activity: DashboardDTO["activity"], locale: string, generatedAt: number): string {
-  if (activity.length === 0) return "-";
-  let lastVisible = activity[0];
+  const firstActivity = activity[0];
+  if (!firstActivity) return "-";
+
+  let lastVisible = firstActivity;
   for (let index = activity.length - 1; index >= 0; index -= 1) {
-    if (new Date(activity[index].start).getTime() <= generatedAt) {
-      lastVisible = activity[index];
+    const candidate = activity[index];
+    if (candidate && new Date(candidate.start).getTime() <= generatedAt) {
+      lastVisible = candidate;
       break;
     }
   }
-  return `${formatActivityDate(activity[0].start, locale)} – ${formatActivityDate(lastVisible.start, locale)}`;
+  return `${formatActivityDate(firstActivity.start, locale)} – ${formatActivityDate(lastVisible.start, locale)}`;
 }

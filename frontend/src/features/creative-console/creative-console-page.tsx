@@ -1,6 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowUp, BrainCircuit, Check, CheckCircle2, Clock3, ExternalLink, Globe, History, ImageIcon, ImagePlus, ImageUpscale, Images, Loader2, MessageSquareText, RefreshCw, Sparkle, SquarePen, Trash2, TriangleAlert, TvMinimal, Video, Wrench, X } from "lucide-react";
-import { marked } from "marked";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -31,21 +30,25 @@ import {
   type VideoStatus,
 } from "@/features/creative-console/creative-console-api";
 import { getClientKeySecret, listClientKeys, type ClientKeyDTO } from "@/features/client-keys/client-keys-api";
+import {
+  createBlankChatSession,
+  createChatSessionTitle,
+  createCreativeCacheKey,
+  createCreativeMessageId,
+  currentTimestamp,
+  formatChatSessionTime,
+  loadChatSessions,
+  persistChatSessions,
+  upsertChatSession,
+  type ChatSession,
+  type ConversationMessage,
+} from "@/features/creative-console/chat-history";
 import { PageHeader } from "@/shared/components/page-header";
 import { cn } from "@/shared/lib/cn";
+import { SafeMarkdown } from "@/shared/security/safe-markdown";
 
 type CreativeMode = "chat" | "image" | "video";
-type ConversationMessage = ChatMessage & {
-  id: string;
-  reasoning?: string;
-  tools?: ChatToolActivity[];
-};
-
-type SecretState = {
-  keyId: string;
-  secret: string;
-};
-
+type SecretState = { keyId: string; secret: string };
 type ChatRequest = {
   messages: ChatMessage[];
   promptCacheKey: string;
@@ -56,28 +59,11 @@ type ChatRequest = {
   apiKey: string;
   model: string;
 };
-
-type ChatSession = {
-  id: string;
-  title: string;
-  createdAt: number;
-  updatedAt: number;
-  model: string;
-  promptCacheKey: string;
-  reasoningEffort: ReasoningEffort;
-  webSearch: boolean;
-  xSearch: boolean;
-  messages: ConversationMessage[];
-};
-
 const imageAspectRatios = ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"] as const;
 const videoAspectRatios = ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"] as const;
 const imageResolutions = ["1k", "2k"] as const;
 const videoResolutions = ["480p", "720p", "1080p"] as const;
 const videoDurations = ["6", "10", "15"] as const;
-const chatHistoryStoragePrefix = "grok2api:creative-console:chat-history:";
-const chatHistoryMaxSessions = 50;
-const chatHistoryMaxBytes = 4 * 1024 * 1024;
 const composerClassName = "overflow-hidden rounded-2xl bg-secondary/45 ring-1 ring-transparent transition-colors focus-within:bg-secondary/60 focus-within:ring-ring";
 
 export function CreativeConsolePage() {
@@ -794,22 +780,11 @@ function ChatMessageItem({ message, loading = false }: { message: ConversationMe
         {message.content || isUser ? (
           isUser ? (
             <div className="whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-secondary px-4 py-2.5 text-sm leading-6">{message.content}</div>
-          ) : <AssistantContent content={message.content} />
+          ) : <SafeMarkdown content={message.content} />
         ) : null}
         {loading ? <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground"><Spinner />{t("creativeConsole.streaming")}</div> : null}
       </MessageContent>
     </Message>
-  );
-}
-
-function AssistantContent({ content }: { content: string }) {
-  const renderedHTML = useMemo(() => renderAssistantMarkup(content), [content]);
-  if (!renderedHTML) return <div className="w-full whitespace-pre-wrap break-words py-1 text-sm leading-6">{content}</div>;
-  return (
-    <div
-      className="w-full break-words py-1 text-sm leading-6 [&>:first-child]:mt-0 [&>:last-child]:mb-0 [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:my-3 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_code]:rounded [&_code]:bg-secondary [&_code]:px-1 [&_code]:py-0.5 [&_h1]:mb-3 [&_h1]:mt-5 [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:mt-3 [&_h3]:font-semibold [&_hr]:my-4 [&_hr]:border-border [&_img]:my-3 [&_img]:max-h-[32rem] [&_img]:max-w-full [&_img]:rounded-xl [&_li]:my-1 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:my-2 [&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:bg-secondary [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_table]:my-3 [&_table]:w-full [&_table]:border-collapse [&_td]:border-b [&_td]:border-border [&_td]:px-3 [&_td]:py-2 [&_th]:border-b [&_th]:border-border [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-6"
-      dangerouslySetInnerHTML={{ __html: renderedHTML }}
-    />
   );
 }
 
@@ -883,233 +858,6 @@ function uniqueModelsByPublicID(models: ModelRouteDTO[]): ModelRouteDTO[] {
     seen.add(model.publicId);
     return true;
   });
-}
-
-let fallbackMessageID = 0;
-
-function createCreativeMessageId(): string {
-  if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
-  fallbackMessageID += 1;
-  return `creative-${Date.now().toString(36)}-${fallbackMessageID.toString(36)}`;
-}
-
-function createCreativeCacheKey(): string {
-  return `creative-console-${createCreativeMessageId()}`;
-}
-
-function currentTimestamp(): number {
-  return Date.now();
-}
-
-function createBlankChatSession(model: string): ChatSession {
-  const now = Date.now();
-  return {
-    id: createCreativeMessageId(),
-    title: "",
-    createdAt: now,
-    updatedAt: now,
-    model,
-    promptCacheKey: createCreativeCacheKey(),
-    reasoningEffort: "auto",
-    webSearch: false,
-    xSearch: false,
-    messages: [],
-  };
-}
-
-function createChatSessionTitle(messages: ConversationMessage[]): string {
-  const title = messages.find((message) => message.role === "user")?.content.replace(/\s+/g, " ").trim() ?? "";
-  return title.length > 48 ? `${title.slice(0, 48)}…` : title || "Conversation";
-}
-
-function upsertChatSession(sessions: ChatSession[], session: ChatSession): ChatSession[] {
-  return [session, ...sessions.filter((item) => item.id !== session.id)]
-    .sort((left, right) => right.updatedAt - left.updatedAt)
-    .slice(0, chatHistoryMaxSessions);
-}
-
-function chatHistoryStorageKey(scope: string): string {
-  return `${chatHistoryStoragePrefix}${encodeURIComponent(scope)}`;
-}
-
-function loadChatSessions(scope: string): ChatSession[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const parsed: unknown = JSON.parse(window.localStorage.getItem(chatHistoryStorageKey(scope)) ?? "[]");
-    if (!Array.isArray(parsed)) return [];
-    return parsed.flatMap(parseChatSession).sort((left, right) => right.updatedAt - left.updatedAt).slice(0, chatHistoryMaxSessions);
-  } catch {
-    return [];
-  }
-}
-
-function persistChatSessions(scope: string, sessions: ChatSession[]): ChatSession[] {
-  if (typeof window === "undefined") return sessions;
-  const retained = sessions.slice(0, chatHistoryMaxSessions);
-  while (retained.length > 0) {
-    try {
-      const serialized = JSON.stringify(retained);
-      if (serialized.length * 2 > chatHistoryMaxBytes) {
-        retained.pop();
-        continue;
-      }
-      window.localStorage.setItem(chatHistoryStorageKey(scope), serialized);
-      return retained;
-    } catch {
-      retained.pop();
-    }
-  }
-  try {
-    window.localStorage.removeItem(chatHistoryStorageKey(scope));
-  } catch {
-    // Storage may be unavailable; the in-memory conversation remains usable.
-  }
-  return retained;
-}
-
-function parseChatSession(value: unknown): ChatSession[] {
-  if (!isLocalRecord(value) || typeof value.id !== "string" || !Array.isArray(value.messages)) return [];
-  const messages = value.messages.flatMap(parseConversationMessage);
-  if (messages.length === 0) return [];
-  const now = Date.now();
-  const createdAt = finiteTimestamp(value.createdAt) ?? now;
-  const updatedAt = finiteTimestamp(value.updatedAt) ?? createdAt;
-  return [{
-    id: value.id,
-    title: typeof value.title === "string" && value.title.trim() ? value.title.trim() : createChatSessionTitle(messages),
-    createdAt,
-    updatedAt,
-    model: typeof value.model === "string" ? value.model : "",
-    promptCacheKey: typeof value.promptCacheKey === "string" && value.promptCacheKey ? value.promptCacheKey : createCreativeCacheKey(),
-    reasoningEffort: isReasoningEffort(value.reasoningEffort) ? value.reasoningEffort : "auto",
-    webSearch: value.webSearch === true,
-    xSearch: value.xSearch === true,
-    messages,
-  }];
-}
-
-function parseConversationMessage(value: unknown): ConversationMessage[] {
-  if (!isLocalRecord(value) || (value.role !== "user" && value.role !== "assistant") || typeof value.content !== "string") return [];
-  return [{
-    id: typeof value.id === "string" && value.id ? value.id : createCreativeMessageId(),
-    role: value.role,
-    content: value.content,
-    reasoning: typeof value.reasoning === "string" ? value.reasoning : undefined,
-    tools: Array.isArray(value.tools) ? value.tools.flatMap(parseChatToolActivity) : undefined,
-  }];
-}
-
-function parseChatToolActivity(value: unknown): ChatToolActivity[] {
-  if (!isLocalRecord(value) || typeof value.id !== "string" || typeof value.type !== "string" || typeof value.name !== "string") return [];
-  const status = value.status === "completed" || value.status === "failed" || value.status === "in_progress" ? value.status : "completed";
-  return [{ id: value.id, type: value.type, name: value.name, status, detail: typeof value.detail === "string" ? value.detail : "" }];
-}
-
-function isReasoningEffort(value: unknown): value is ReasoningEffort {
-  return value === "auto" || value === "none" || value === "low" || value === "medium" || value === "high" || value === "xhigh";
-}
-
-function finiteTimestamp(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
-}
-
-function isLocalRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function formatChatSessionTime(value: number, language: string): string {
-  return new Intl.DateTimeFormat(language, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
-}
-
-const safeAssistantHTMLTags = new Set([
-  "a", "b", "blockquote", "br", "code", "del", "details", "div", "em", "h1", "h2", "h3", "h4", "h5", "h6",
-  "hr", "i", "img", "kbd", "li", "mark", "ol", "p", "pre", "s", "span", "strong", "sub", "summary", "sup", "table",
-  "tbody", "td", "tfoot", "th", "thead", "tr", "u", "ul",
-]);
-const discardedAssistantHTMLTags = new Set([
-  "applet", "audio", "base", "button", "canvas", "embed", "form", "frame", "frameset", "iframe", "input", "link",
-  "math", "meta", "object", "picture", "script", "select", "source", "style", "svg", "template", "textarea", "video",
-]);
-
-function renderAssistantMarkup(content: string): string {
-  const rendered = marked.parse(content, { async: false, breaks: true, gfm: true });
-  return sanitizeAssistantHTML(typeof rendered === "string" ? rendered : "");
-}
-
-function sanitizeAssistantHTML(content: string): string {
-  if (typeof DOMParser === "undefined") return "";
-  const source = content.trim();
-  if (!/<\/?[a-z][^>]*>/i.test(source)) return "";
-  const documentValue = new DOMParser().parseFromString(source, "text/html");
-  const elements = Array.from(documentValue.body.querySelectorAll("*"));
-  for (const element of elements) {
-    if (!element.isConnected) continue;
-    const tag = element.tagName.toLowerCase();
-    if (discardedAssistantHTMLTags.has(tag)) {
-      element.remove();
-      continue;
-    }
-    if (!safeAssistantHTMLTags.has(tag)) {
-      element.replaceWith(...Array.from(element.childNodes));
-      continue;
-    }
-    const href = tag === "a" ? safeAssistantLink(element.getAttribute("href")) : "";
-    const title = tag === "a" ? element.getAttribute("title")?.slice(0, 512) ?? "" : "";
-    const imageSource = tag === "img" ? safeAssistantImage(element.getAttribute("src")) : "";
-    const imageAlt = tag === "img" ? element.getAttribute("alt")?.slice(0, 512) ?? "" : "";
-    const colSpan = tag === "td" || tag === "th" ? boundedTableSpan(element.getAttribute("colspan")) : "";
-    const rowSpan = tag === "td" || tag === "th" ? boundedTableSpan(element.getAttribute("rowspan")) : "";
-    const open = tag === "details" && element.hasAttribute("open");
-    for (const attribute of Array.from(element.attributes)) element.removeAttribute(attribute.name);
-    if (href) {
-      element.setAttribute("href", href);
-      element.setAttribute("target", "_blank");
-      element.setAttribute("rel", "nofollow noopener noreferrer");
-    }
-    if (title) element.setAttribute("title", title);
-    if (imageSource) {
-      element.setAttribute("src", imageSource);
-      element.setAttribute("alt", imageAlt);
-      element.setAttribute("loading", "lazy");
-      element.setAttribute("decoding", "async");
-      element.setAttribute("referrerpolicy", "no-referrer");
-    } else if (tag === "img") {
-      element.remove();
-      continue;
-    }
-    if (colSpan) element.setAttribute("colspan", colSpan);
-    if (rowSpan) element.setAttribute("rowspan", rowSpan);
-    if (open) element.setAttribute("open", "");
-  }
-  return documentValue.body.innerHTML;
-}
-
-function safeAssistantLink(value: string | null): string {
-  const link = value?.trim() ?? "";
-  if (!link) return "";
-  try {
-    const parsed = new URL(link);
-    return parsed.protocol === "http:" || parsed.protocol === "https:" || parsed.protocol === "mailto:" ? parsed.toString() : "";
-  } catch {
-    return "";
-  }
-}
-
-function safeAssistantImage(value: string | null): string {
-  const source = value?.trim() ?? "";
-  if (!source) return "";
-  if (source.startsWith("/v1/media/images/")) return source;
-  try {
-    const parsed = new URL(source);
-    return parsed.protocol === "https:" ? parsed.toString() : "";
-  } catch {
-    return "";
-  }
-}
-
-function boundedTableSpan(value: string | null): string {
-  const parsed = Number.parseInt(value ?? "", 10);
-  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 100 ? String(parsed) : "";
 }
 
 async function listAllPaginatedItems<T>(loadPage: (page: number, pageSize: number) => Promise<{ items: T[]; total: number }>): Promise<T[]> {

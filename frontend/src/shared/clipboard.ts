@@ -40,7 +40,7 @@ function legacyCopy(text: string): boolean {
   textarea.style.opacity = "0";
   textarea.style.pointerEvents = "none";
 
-  const activeElement = document.activeElement as Element | null;
+  const activeElement = document.activeElement;
   const selection = document.getSelection();
   let savedRange: Range | null = null;
   if (selection && selection.rangeCount > 0) savedRange = selection.getRangeAt(0);
