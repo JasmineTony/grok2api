@@ -44,6 +44,8 @@ Templates are available in [`templates/`](./templates/).
 
 | 2026-07-21 12 — Frontend architecture, UI, build and v3.1.0 release | [Plan](./2026-07-21-12-frontend-architecture-ui-build-release/PLAN.md) | [Result](./2026-07-21-12-frontend-architecture-ui-build-release/RESULT.md) | Ready for PR |
 
+| 2026-07-22 13 — Release smoke remediation | [Plan](./2026-07-22-13-release-smoke-remediation/PLAN.md) | [Result](./2026-07-22-13-release-smoke-remediation/RESULT.md) | In progress |
+
 ## Push and PR gate
 
 - The accepted PLAN.md is the delivery unit. Keep its branch local until all scope, tests and acceptance, and assumptions/defaults are complete.
