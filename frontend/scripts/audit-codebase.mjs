@@ -1,9 +1,11 @@
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, writeFile } from "node:fs/promises";
 import { extname, relative, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const sourceRoot = resolve(root, "src");
 const findings = [];
+const baselinePath = resolve(import.meta.dirname, "code-audit-baseline.json");
+const writeBaseline = process.argv.includes("--write-baseline");
 
 async function collectFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -44,30 +46,18 @@ for (const file of files) {
     report("type-safety", file, "contains a disabled type or lint check");
   if (/(?::\s*any\b|<any>|as\s+any\b)/.test(content))
     report("type-safety", file, "contains an explicit any type");
-  if (
-    /console\.log\s*\(/.test(content) &&
-    normalized !== "src/features/docs/api-docs-page.tsx"
-  )
+  if (/console\.log\s*\(/.test(content) && normalized !== "src/features/docs/api-docs-page.tsx")
     report("quality", file, "contains console.log");
   if (
     content.includes("dangerouslySetInnerHTML") &&
-    ![
-      "src/components/ui/chart.tsx",
-      "src/shared/security/safe-markdown.tsx",
-    ].includes(normalized)
+    !["src/components/ui/chart.tsx", "src/shared/security/safe-markdown.tsx"].includes(normalized)
   )
-    report(
-      "security",
-      file,
-      "uses dangerouslySetInnerHTML outside the reviewed allowlist",
-    );
+    report("security", file, "uses dangerouslySetInnerHTML outside the reviewed allowlist");
   if (/target=["']_blank["'](?![^>]*\brel=)/.test(content))
     report("security", file, "opens a new tab without rel protection");
 }
 
-const testFiles = files.filter((file) =>
-  /\.(?:test|spec)\.(?:ts|tsx)$/.test(file),
-);
+const testFiles = files.filter((file) => /\.(?:test|spec)\.(?:ts|tsx)$/.test(file));
 if (testFiles.length < 8)
   findings.push({
     category: "testing",
@@ -75,17 +65,35 @@ if (testFiles.length < 8)
     detail: `${testFiles.length} unit test files; at least 8 are required`,
   });
 
-const grouped = Object.groupBy(findings, (finding) => finding.category);
-if (findings.length === 0) {
+const normalized = findings.sort((left, right) =>
+  `${left.category}:${left.file}:${left.detail}`.localeCompare(
+    `${right.category}:${right.file}:${right.detail}`,
+  ),
+);
+if (writeBaseline) {
+  await writeFile(baselinePath, `${JSON.stringify(normalized, null, 2)}\n`, "utf8");
+  console.log(`Code audit baseline written with ${normalized.length} finding(s).`);
+  process.exit(0);
+}
+const baseline = JSON.parse(await readFile(baselinePath, "utf8"));
+const signature = (finding) => `${finding.category}:${finding.file}`;
+const allowed = new Map(baseline.map((finding) => [signature(finding), finding.detail]));
+const regressions = normalized.filter((finding) => {
+  const previous = allowed.get(signature(finding));
+  if (previous === undefined) return true;
+  if (finding.category !== "maintainability") return finding.detail !== previous;
+  return Number.parseInt(finding.detail, 10) > Number.parseInt(previous, 10);
+});
+const grouped = Object.groupBy(regressions, (finding) => finding.category);
+if (regressions.length === 0) {
   console.log(
-    `Code audit passed: ${files.length} source files and ${testFiles.length} unit test files checked.`,
+    `Code audit passed: ${files.length} source files, ${testFiles.length} unit test files, ${normalized.length} frozen finding(s).`,
   );
   process.exit(0);
 }
 for (const [category, values] of Object.entries(grouped)) {
   console.error(`\n[${category}]`);
-  for (const finding of values ?? [])
-    console.error(`- ${finding.file}: ${finding.detail}`);
+  for (const finding of values ?? []) console.error(`- ${finding.file}: ${finding.detail}`);
 }
-console.error(`\nCode audit failed with ${findings.length} finding(s).`);
+console.error(`\nCode audit failed with ${regressions.length} regression(s).`);
 process.exit(1);

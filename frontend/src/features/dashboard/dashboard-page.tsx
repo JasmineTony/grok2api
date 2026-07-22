@@ -5,20 +5,25 @@ import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { DashboardActivity } from "@/features/dashboard/dashboard-activity";
-import { getDashboard, type DashboardPeriod } from "@/features/dashboard/dashboard-api";
+import { type DashboardPeriod, getDashboard } from "@/features/dashboard/dashboard-api";
 import { DashboardOverview, DashboardResources } from "@/features/dashboard/dashboard-overview";
-
-import { VersionUpdateBanner } from "@/features/system/version-update";
+import { VersionUpdateBanner } from "@/features/system";
+import { useApiClient } from "@/shared/api/use-api-client";
 import { ErrorState } from "@/shared/components/data-state";
 import { PeriodSelector } from "@/shared/components/period-selector";
-import { PERIOD_DAYS, toPeriodValue, type PeriodDays } from "@/shared/lib/period";
+import { PERIOD_DAYS, type PeriodDays, toPeriodValue } from "@/shared/lib/period";
+import { readStorageJSON, writeStorageJSON } from "@/shared/storage/safe-storage";
 
 type DashboardPreferences = { periodDays: PeriodDays };
 
 const DASHBOARD_PREFERENCES_KEY = "grok2api:dashboard-preferences";
 const DEFAULT_DASHBOARD_PREFERENCES: DashboardPreferences = { periodDays: 30 };
 
-const DashboardCharts = lazy(() => import("@/features/dashboard/dashboard-charts").then((module) => ({ default: module.DashboardCharts })));
+const DashboardCharts = lazy(() =>
+  import("@/features/dashboard/dashboard-charts").then((module) => ({
+    default: module.DashboardCharts,
+  })),
+);
 
 function DashboardChartsFallback() {
   return (
@@ -31,6 +36,7 @@ function DashboardChartsFallback() {
 
 export function DashboardPage() {
   const { t, i18n } = useTranslation();
+  const apiClient = useApiClient();
   const [preferences, setPreferences] = useState<DashboardPreferences>(readDashboardPreferences);
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const forceRefresh = useRef(false);
@@ -44,7 +50,7 @@ export function DashboardPage() {
 
   const dashboardQuery = useQuery({
     queryKey: ["dashboard", period, timezone],
-    queryFn: () => getDashboard(period, timezone, forceRefresh.current),
+    queryFn: () => getDashboard(apiClient, period, timezone, forceRefresh.current),
     placeholderData: (previous) => previous,
     staleTime: 15_000,
   });
@@ -111,23 +117,21 @@ export function DashboardPage() {
 }
 
 function readDashboardPreferences(): DashboardPreferences {
-  if (typeof window === "undefined") return DEFAULT_DASHBOARD_PREFERENCES;
-  try {
-    const value: unknown = JSON.parse(window.localStorage.getItem(DASHBOARD_PREFERENCES_KEY) ?? "null");
-    if (!value || typeof value !== "object") return DEFAULT_DASHBOARD_PREFERENCES;
-    const candidate = value as Record<string, unknown>;
-    const periodDays = PERIOD_DAYS.find((days) => days === candidate.periodDays);
-    if (periodDays === undefined) return DEFAULT_DASHBOARD_PREFERENCES;
-    return { periodDays };
-  } catch {
-    return DEFAULT_DASHBOARD_PREFERENCES;
-  }
+  return readStorageJSON(
+    DASHBOARD_PREFERENCES_KEY,
+    decodeDashboardPreferences,
+    DEFAULT_DASHBOARD_PREFERENCES,
+  );
 }
 
 function saveDashboardPreferences(value: DashboardPreferences): void {
-  try {
-    window.localStorage.setItem(DASHBOARD_PREFERENCES_KEY, JSON.stringify(value));
-  } catch {
-    return;
-  }
+  writeStorageJSON(DASHBOARD_PREFERENCES_KEY, value);
+}
+
+function decodeDashboardPreferences(value: unknown): DashboardPreferences {
+  if (!value || typeof value !== "object") return DEFAULT_DASHBOARD_PREFERENCES;
+  const periodDays = PERIOD_DAYS.find(
+    (days) => days === (value as Record<string, unknown>).periodDays,
+  );
+  return periodDays === undefined ? DEFAULT_DASHBOARD_PREFERENCES : { periodDays };
 }

@@ -1,0 +1,47 @@
+[
+  {
+    "rule": "oversized-view",
+    "file": "src/features/accounts/accounts-page.tsx",
+    "detail": "855 lines exceeds 500"
+  },
+  {
+    "rule": "oversized-view",
+    "file": "src/features/accounts/accounts-workspace.tsx",
+    "detail": "728 lines exceeds 500"
+  },
+  {
+    "rule": "oversized-view",
+    "file": "src/features/audits/request-audits-page.tsx",
+    "detail": "915 lines exceeds 500"
+  },
+  {
+    "rule": "oversized-view",
+    "file": "src/features/client-keys/client-keys-page.tsx",
+    "detail": "1141 lines exceeds 500"
+  },
+  {
+    "rule": "oversized-view",
+    "file": "src/features/creative-console/creative-console-page.tsx",
+    "detail": "1527 lines exceeds 500"
+  },
+  {
+    "rule": "oversized-view",
+    "file": "src/features/docs/api-docs-page.tsx",
+    "detail": "619 lines exceeds 500"
+  },
+  {
+    "rule": "oversized-view",
+    "file": "src/features/media/video-gallery-page.tsx",
+    "detail": "694 lines exceeds 500"
+  },
+  {
+    "rule": "oversized-view",
+    "file": "src/features/models/models-page.tsx",
+    "detail": "877 lines exceeds 500"
+  },
+  {
+    "rule": "oversized-view",
+    "file": "src/features/settings/settings-page.tsx",
+    "detail": "1090 lines exceeds 500"
+  }
+]

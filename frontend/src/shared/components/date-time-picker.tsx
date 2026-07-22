@@ -1,67 +1,83 @@
-import { format } from "date-fns"
-import { enUS, zhCN } from "date-fns/locale"
-import { CalendarIcon } from "lucide-react"
-import { useRef } from "react"
-import { useTranslation } from "react-i18next"
-import { enUS as enUSDayPicker, zhCN as zhCNDayPicker } from "react-day-picker/locale"
+import { format } from "date-fns";
+import { enUS, zhCN } from "date-fns/locale";
+import { CalendarIcon } from "lucide-react";
+import { useRef } from "react";
+import { enUS as enUSDayPicker, zhCN as zhCNDayPicker } from "react-day-picker/locale";
+import { useTranslation } from "react-i18next";
 
-import { Button } from "@/components/ui/button"
-import { Calendar } from "@/components/ui/calendar"
-import { Input } from "@/components/ui/input"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { cn } from "@/shared/lib/cn"
-import { toDateTimeLocal } from "@/shared/lib/format"
+import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/shared/lib/cn";
+import { toDateTimeLocal } from "@/shared/lib/format";
 
 type DateTimePickerProps = {
-  value: string
-  onChange: (value: string) => void
-  placeholder?: string
-  disabled?: boolean
-}
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+};
 
-export function DateTimePicker({ value, onChange, placeholder, disabled = false }: DateTimePickerProps) {
-  const { t, i18n } = useTranslation()
-  const selected = parseLocalDateTime(value)
-  const isChinese = i18n.language.toLowerCase().startsWith("zh")
-  const timeParts = getTimeParts(selected)
-  const timeInputRefs = useRef<Array<HTMLInputElement | null>>([])
+export function DateTimePicker({
+  value,
+  onChange,
+  placeholder,
+  disabled = false,
+}: DateTimePickerProps) {
+  const { t, i18n } = useTranslation();
+  const selected = parseLocalDateTime(value);
+  const isChinese = i18n.language.toLowerCase().startsWith("zh");
+  const timeParts = getTimeParts(selected);
+  const timeInputRefs = useRef<Array<HTMLInputElement | null>>([]);
 
   function enteredTimeParts(): TimeParts {
-    return timeParts.map((part, index) => timeInputRefs.current[index]?.value ?? part) as TimeParts
+    return timeParts.map((part, index) => timeInputRefs.current[index]?.value ?? part) as TimeParts;
   }
 
   function selectDate(date: Date | undefined): void {
     if (!date) {
-      onChange("")
-      return
+      onChange("");
+      return;
     }
-    const [hours, minutes, seconds] = normalizedTimeParts(enteredTimeParts())
-    date.setHours(hours, minutes, seconds, 0)
-    onChange(toDateTimeLocal(date.toISOString()))
+    const [hours, minutes, seconds] = normalizedTimeParts(enteredTimeParts());
+    date.setHours(hours, minutes, seconds, 0);
+    onChange(toDateTimeLocal(date.toISOString()));
   }
 
   function commitTime(): void {
-    const normalized = normalizedTimeParts(enteredTimeParts())
-    const date = selected ? new Date(selected) : new Date()
-    date.setHours(normalized[0], normalized[1], normalized[2], 0)
-    onChange(toDateTimeLocal(date.toISOString()))
+    const normalized = normalizedTimeParts(enteredTimeParts());
+    const date = selected ? new Date(selected) : new Date();
+    date.setHours(normalized[0], normalized[1], normalized[2], 0);
+    onChange(toDateTimeLocal(date.toISOString()));
   }
 
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button type="button" variant="secondary" disabled={disabled} className={cn("h-8 w-full min-w-0 justify-start rounded-md bg-secondary/55 px-3 text-left font-normal", !selected && "text-muted-foreground")}>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={disabled}
+          className={cn(
+            "h-8 w-full min-w-0 justify-start rounded-md bg-secondary/55 px-3 text-left font-normal",
+            !selected && "text-muted-foreground",
+          )}
+        >
           <CalendarIcon />
           <span className="truncate">
-            {selected ? format(selected, isChinese ? "yyyy年M月d日 HH:mm:ss" : "MMM d, yyyy HH:mm:ss", { locale: isChinese ? zhCN : enUS }) : (placeholder ?? t("keys.neverExpires"))}
+            {selected
+              ? format(selected, isChinese ? "yyyy年M月d日 HH:mm:ss" : "MMM d, yyyy HH:mm:ss", {
+                  locale: isChinese ? zhCN : enUS,
+                })
+              : (placeholder ?? t("keys.neverExpires"))}
           </span>
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto overflow-hidden p-0" align="start">
         <Calendar
           mode="single"
-          selected={selected}
-          defaultMonth={selected}
+          {...(selected === undefined ? {} : { selected, defaultMonth: selected })}
           onSelect={selectDate}
           locale={isChinese ? zhCNDayPicker : enUSDayPicker}
         />
@@ -80,17 +96,19 @@ export function DateTimePicker({ value, onChange, placeholder, disabled = false 
                   defaultValue={part}
                   key={`${value}-${index}`}
                   ref={(element) => {
-                    timeInputRefs.current[index] = element
+                    timeInputRefs.current[index] = element;
                   }}
                   onChange={(event) => {
-                    event.currentTarget.value = event.currentTarget.value.replace(/\D/g, "").slice(0, 2)
+                    event.currentTarget.value = event.currentTarget.value
+                      .replace(/\D/g, "")
+                      .slice(0, 2);
                   }}
                   onBlur={commitTime}
                   onFocus={(event) => event.currentTarget.select()}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
-                      commitTime()
-                      event.currentTarget.blur()
+                      commitTime();
+                      event.currentTarget.blur();
                     }
                   }}
                 />
@@ -100,32 +118,28 @@ export function DateTimePicker({ value, onChange, placeholder, disabled = false 
         </div>
       </PopoverContent>
     </Popover>
-  )
+  );
 }
 
-type TimeParts = [string, string, string]
+type TimeParts = [string, string, string];
 
 function getTimeParts(date: Date | undefined): TimeParts {
-  return date ? [format(date, "HH"), format(date, "mm"), format(date, "ss")] : ["23", "59", "59"]
+  return date ? [format(date, "HH"), format(date, "mm"), format(date, "ss")] : ["23", "59", "59"];
 }
 
 function normalizedTimeParts(parts: TimeParts): [number, number, number] {
-  return [
-    clampTimePart(parts[0], 23),
-    clampTimePart(parts[1], 59),
-    clampTimePart(parts[2], 59),
-  ]
+  return [clampTimePart(parts[0], 23), clampTimePart(parts[1], 59), clampTimePart(parts[2], 59)];
 }
 
 function clampTimePart(value: string, maximum: number): number {
-  const parsed = Number.parseInt(value, 10)
-  return Number.isNaN(parsed) ? 0 : Math.min(Math.max(parsed, 0), maximum)
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? 0 : Math.min(Math.max(parsed, 0), maximum);
 }
 
 function parseLocalDateTime(value: string): Date | undefined {
   if (!value) {
-    return undefined
+    return undefined;
   }
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? undefined : date
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
 }

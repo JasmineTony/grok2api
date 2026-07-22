@@ -10,7 +10,8 @@ function visit(directory) {
     if (entry.isDirectory()) visit(path);
     else if (/\.(tsx?|jsx?)$/.test(entry.name)) {
       const source = readFileSync(path, "utf8");
-      if (/import\s+\*\s+as\s+\w+\s+from\s+["']lucide-react["']/.test(source)) violations.push(path);
+      if (/import\s+\*\s+as\s+\w+\s+from\s+["']lucide-react["']/.test(source))
+        violations.push(path);
       if (/from\s+["']lucide-react\/dynamic["']/.test(source)) violations.push(path);
     }
   }

@@ -47,7 +47,8 @@ for (const file of files) visit(file);
 
 if (cycles.length > 0) {
   console.error("Circular production chunks detected:");
-  for (const cycle of cycles) console.error(`- ${cycle.map((file) => basename(file)).join(" -> ")}`);
+  for (const cycle of cycles)
+    console.error(`- ${cycle.map((file) => basename(file)).join(" -> ")}`);
   process.exit(1);
 }
 

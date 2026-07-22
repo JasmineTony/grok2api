@@ -77,11 +77,7 @@ export function AccountsSummary({
         detail={details.console}
       />
       <AccountMetricPanel
-        tone={
-          abnormal > 0
-            ? "text-amber-600 dark:text-amber-400"
-            : "text-muted-foreground"
-        }
+        tone={abnormal > 0 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}
         icon={<TriangleAlert />}
         loading={loading}
         label={labels.abnormal}

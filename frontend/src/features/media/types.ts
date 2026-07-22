@@ -26,4 +26,10 @@ export type MediaJobDTO = {
 };
 
 export type ImageStatsDTO = { totalImages: number; totalBytes: number };
-export type VideoStatsDTO = { totalJobs: number; completed: number; failed: number; inProgress: number; queued: number };
+export type VideoStatsDTO = {
+  totalJobs: number;
+  completed: number;
+  failed: number;
+  inProgress: number;
+  queued: number;
+};

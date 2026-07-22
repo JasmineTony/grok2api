@@ -1,11 +1,11 @@
+import type { DashboardDTO } from "@/features/dashboard/dashboard-api";
 import { DashboardProviderDistribution } from "@/features/dashboard/dashboard-provider-distribution";
 import { DashboardTopModels } from "@/features/dashboard/dashboard-top-models";
 import { DashboardTrend } from "@/features/dashboard/dashboard-trend";
 import { DashboardUsageGovernance } from "@/features/dashboard/dashboard-usage-governance";
-import type { DashboardDTO } from "@/features/dashboard/dashboard-api";
 
 type DashboardChartsProps = {
-  dashboard?: DashboardDTO;
+  dashboard?: DashboardDTO | undefined;
   locale: string;
   loading: boolean;
 };

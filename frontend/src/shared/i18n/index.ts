@@ -3,6 +3,7 @@ import { initReactI18next } from "react-i18next";
 
 import { en } from "@/shared/i18n/locales/en";
 import { zhCN } from "@/shared/i18n/locales/zh-CN";
+import { readStorageString, writeStorageString } from "@/shared/storage/safe-storage";
 
 const resources = {
   "zh-CN": { translation: zhCN },
@@ -10,21 +11,11 @@ const resources = {
 } as const;
 
 function readStoredLanguage(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage.getItem("grok2api:language");
-  } catch {
-    return null;
-  }
+  return readStorageString("grok2api:language");
 }
 
 function storeLanguage(language: string): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem("grok2api:language", language);
-  } catch {
-    // Language changes still apply when browser storage is unavailable.
-  }
+  writeStorageString("grok2api:language", language);
 }
 
 const storedLanguage = readStoredLanguage();
@@ -41,7 +32,6 @@ i18n.on("languageChanged", (language) => {
   if (typeof document !== "undefined") document.documentElement.lang = language;
 });
 
-if (typeof document !== "undefined")
-  document.documentElement.lang = i18n.language;
+if (typeof document !== "undefined") document.documentElement.lang = i18n.language;
 
 export { i18n, resources };

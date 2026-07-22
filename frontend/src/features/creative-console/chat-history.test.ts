@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  type ChatSession,
   createBlankChatSession,
   createChatSessionTitle,
   loadChatSessions,
   persistChatSessions,
   upsertChatSession,
-  type ChatSession,
 } from "@/features/creative-console/chat-history";
 
 beforeEach(() => {
@@ -16,15 +16,11 @@ beforeEach(() => {
 
 describe("chat history", () => {
   it("creates bounded readable titles", () => {
+    expect(createChatSessionTitle([{ id: "1", role: "user", content: "  hello   world  " }])).toBe(
+      "hello world",
+    );
     expect(
-      createChatSessionTitle([
-        { id: "1", role: "user", content: "  hello   world  " },
-      ]),
-    ).toBe("hello world");
-    expect(
-      createChatSessionTitle([
-        { id: "1", role: "user", content: "x".repeat(60) },
-      ]),
+      createChatSessionTitle([{ id: "1", role: "user", content: "x".repeat(60) }]),
     ).toHaveLength(49);
   });
 
@@ -36,14 +32,9 @@ describe("chat history", () => {
       messages: [{ id: "m1", role: "user" as const, content: "old" }],
     };
     const newer = { ...older, id: "new", updatedAt: 2 };
-    expect(upsertChatSession([older], newer).map((item) => item.id)).toEqual([
-      "new",
-      "old",
-    ]);
+    expect(upsertChatSession([older], newer).map((item) => item.id)).toEqual(["new", "old"]);
     expect(
-      upsertChatSession([older, newer], { ...older, updatedAt: 3 }).map(
-        (item) => item.id,
-      ),
+      upsertChatSession([older, newer], { ...older, updatedAt: 3 }).map((item) => item.id),
     ).toEqual(["old", "new"]);
   });
 

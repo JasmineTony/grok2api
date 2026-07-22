@@ -6,15 +6,23 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { getSettings, updateSettings } from "@/features/settings/settings-api";
-import { settingsSchema, toSettingsDTO, toSettingsForm, type SettingsForm } from "@/features/settings/settings-model";
+import {
+  type SettingsForm,
+  settingsSchema,
+  toSettingsDTO,
+  toSettingsForm,
+} from "@/features/settings/settings-model";
+import { useApiClient } from "@/shared/api/use-api-client";
 
 export function useSettings() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const settingsQuery = useQuery({ queryKey: ["settings"], queryFn: getSettings });
+  const apiClient = useApiClient();
+  const settingsQuery = useQuery({ queryKey: ["settings"], queryFn: () => getSettings(apiClient) });
   const form = useForm<SettingsForm>({ resolver: zodResolver(settingsSchema) });
   const updateMutation = useMutation({
-    mutationFn: (config: SettingsForm) => updateSettings(settingsQuery.data?.revision ?? "0", toSettingsDTO(config)),
+    mutationFn: (config: SettingsForm) =>
+      updateSettings(apiClient, settingsQuery.data?.revision ?? "0", toSettingsDTO(config)),
     onSuccess: (snapshot) => {
       queryClient.setQueryData(["settings"], snapshot);
       void queryClient.invalidateQueries({ queryKey: ["system-info"] });
@@ -32,6 +40,8 @@ export function useSettings() {
     form,
     settingsQuery,
     updateMutation,
-    reset: () => { if (settingsQuery.data) form.reset(toSettingsForm(settingsQuery.data.config)); },
+    reset: () => {
+      if (settingsQuery.data) form.reset(toSettingsForm(settingsQuery.data.config));
+    },
   };
 }

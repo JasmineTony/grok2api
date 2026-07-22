@@ -1,36 +1,77 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowUp, BrainCircuit, Check, CheckCircle2, Clock3, ExternalLink, Globe, History, ImageIcon, ImagePlus, ImageUpscale, Images, Loader2, MessageSquareText, RefreshCw, Sparkle, SquarePen, Trash2, TriangleAlert, TvMinimal, Video, Wrench, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import {
+  ArrowUp,
+  BrainCircuit,
+  Check,
+  CheckCircle2,
+  Clock3,
+  ExternalLink,
+  Globe,
+  History,
+  ImageIcon,
+  ImagePlus,
+  Images,
+  ImageUpscale,
+  Loader2,
+  MessageSquareText,
+  RefreshCw,
+  Sparkle,
+  SquarePen,
+  Trash2,
+  TriangleAlert,
+  TvMinimal,
+  Video,
+  Wrench,
+  X,
+} from "lucide-react";
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Message, MessageContent } from "@/components/ui/message";
-import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerItem, MessageScrollerProvider, MessageScrollerViewport } from "@/components/ui/message-scroller";
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from "@/components/ui/message-scroller";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { listModels } from "@/entities/model/model-api";
 import type { ModelRouteDTO } from "@/entities/model/types";
+import { type ClientKeyDTO, getClientKeySecret, listClientKeys } from "@/features/client-keys";
 import {
-  createChatResponse,
-  createVideo,
-  generateImage,
-  getVideo,
-  type ChatMessage,
-  type ChatStreamSnapshot,
-  type ChatToolActivity,
-  type ImageResult,
-  type ReasoningEffort,
-  type VideoStatus,
-} from "@/features/creative-console/creative-console-api";
-import { getClientKeySecret, listClientKeys, type ClientKeyDTO } from "@/features/client-keys/client-keys-api";
-import {
+  type ChatSession,
+  type ConversationMessage,
   createBlankChatSession,
   createChatSessionTitle,
   createCreativeCacheKey,
@@ -40,9 +81,20 @@ import {
   loadChatSessions,
   persistChatSessions,
   upsertChatSession,
-  type ChatSession,
-  type ConversationMessage,
 } from "@/features/creative-console/chat-history";
+import {
+  type ChatMessage,
+  type ChatStreamSnapshot,
+  type ChatToolActivity,
+  createChatResponse,
+  createVideo,
+  generateImage,
+  getVideo,
+  type ImageResult,
+  type ReasoningEffort,
+  type VideoStatus,
+} from "@/features/creative-console/creative-console-api";
+import { useApiClient } from "@/shared/api/use-api-client";
 import { PageHeader } from "@/shared/components/page-header";
 import { cn } from "@/shared/lib/cn";
 import { SafeMarkdown } from "@/shared/security/safe-markdown";
@@ -64,50 +116,87 @@ const videoAspectRatios = ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"] as
 const imageResolutions = ["1k", "2k"] as const;
 const videoResolutions = ["480p", "720p", "1080p"] as const;
 const videoDurations = ["6", "10", "15"] as const;
-const composerClassName = "overflow-hidden rounded-2xl bg-secondary/45 ring-1 ring-transparent transition-colors focus-within:bg-secondary/60 focus-within:ring-ring";
+const composerClassName =
+  "overflow-hidden rounded-2xl bg-secondary/45 ring-1 ring-transparent transition-colors focus-within:bg-secondary/60 focus-within:ring-ring";
 
 export function CreativeConsolePage() {
   const { t } = useTranslation();
+  const apiClient = useApiClient();
   const [mode, setMode] = useState<CreativeMode>("chat");
   const [selectedKeyId, setSelectedKeyId] = useState("");
   const [secretState, setSecretState] = useState<SecretState | null>(null);
   const [keyError, setKeyError] = useState("");
-  const [selectedModels, setSelectedModels] = useState<Record<CreativeMode, string>>({ chat: "", image: "", video: "" });
+  const [selectedModels, setSelectedModels] = useState<Record<CreativeMode, string>>({
+    chat: "",
+    image: "",
+    video: "",
+  });
   const [chatToolbarElement, setChatToolbarElement] = useState<HTMLDivElement | null>(null);
   const requestedSecretKeyRef = useRef("");
 
   const keysQuery = useQuery({
     queryKey: ["creative-console", "client-keys"],
-    queryFn: () => listAllPaginatedItems((page, pageSize) => listClientKeys({ page, pageSize, status: "active" })),
+    queryFn: () =>
+      listAllPaginatedItems((page, pageSize) =>
+        listClientKeys(apiClient, { page, pageSize, status: "active" }),
+      ),
     staleTime: 30_000,
   });
   const modelsQuery = useQuery({
     queryKey: ["creative-console", "models"],
-    queryFn: () => listAllPaginatedItems((page, pageSize) => listModels({ page, pageSize, status: "enabled" })),
+    queryFn: () =>
+      listAllPaginatedItems((page, pageSize) =>
+        listModels(apiClient, { page, pageSize, status: "enabled" }),
+      ),
     staleTime: 30_000,
   });
   const activeKeys = useMemo(() => (keysQuery.data ?? []).filter(isUsableKey), [keysQuery.data]);
-  const effectiveKeyId = activeKeys.some((key) => key.id === selectedKeyId) ? selectedKeyId : activeKeys[0]?.id ?? "";
+  const effectiveKeyId = activeKeys.some((key) => key.id === selectedKeyId)
+    ? selectedKeyId
+    : (activeKeys[0]?.id ?? "");
   const selectedKey = activeKeys.find((key) => key.id === effectiveKeyId);
-  const availableModels = useMemo(() => (modelsQuery.data ?? []).filter((model) => model.enabled && model.available), [modelsQuery.data]);
+  const availableModels = useMemo(
+    () => (modelsQuery.data ?? []).filter((model) => model.enabled && model.available),
+    [modelsQuery.data],
+  );
   const permittedModels = useMemo(() => {
     if (!selectedKey || selectedKey.allowedModelIds.length === 0) return availableModels;
     const allowedModelIds = new Set(selectedKey.allowedModelIds);
     return availableModels.filter((model) => allowedModelIds.has(model.id));
   }, [availableModels, selectedKey]);
-  const modelGroups = useMemo(() => ({
-    chat: uniqueModelsByPublicID(permittedModels.filter((model) => model.capability === "chat" || model.capability === "responses")),
-    image: uniqueModelsByPublicID(permittedModels.filter((model) => model.capability === "image")),
-    video: uniqueModelsByPublicID(permittedModels.filter((model) => model.capability === "video")),
-  }), [permittedModels]);
-  const effectiveModels = useMemo<Record<CreativeMode, string>>(() => ({
-    chat: modelGroups.chat.some((model) => model.publicId === selectedModels.chat) ? selectedModels.chat : modelGroups.chat[0]?.publicId ?? "",
-    image: modelGroups.image.some((model) => model.publicId === selectedModels.image) ? selectedModels.image : modelGroups.image[0]?.publicId ?? "",
-    video: modelGroups.video.some((model) => model.publicId === selectedModels.video) ? selectedModels.video : modelGroups.video[0]?.publicId ?? "",
-  }), [modelGroups, selectedModels]);
+  const modelGroups = useMemo(
+    () => ({
+      chat: uniqueModelsByPublicID(
+        permittedModels.filter(
+          (model) => model.capability === "chat" || model.capability === "responses",
+        ),
+      ),
+      image: uniqueModelsByPublicID(
+        permittedModels.filter((model) => model.capability === "image"),
+      ),
+      video: uniqueModelsByPublicID(
+        permittedModels.filter((model) => model.capability === "video"),
+      ),
+    }),
+    [permittedModels],
+  );
+  const effectiveModels = useMemo<Record<CreativeMode, string>>(
+    () => ({
+      chat: modelGroups.chat.some((model) => model.publicId === selectedModels.chat)
+        ? selectedModels.chat
+        : (modelGroups.chat[0]?.publicId ?? ""),
+      image: modelGroups.image.some((model) => model.publicId === selectedModels.image)
+        ? selectedModels.image
+        : (modelGroups.image[0]?.publicId ?? ""),
+      video: modelGroups.video.some((model) => model.publicId === selectedModels.video)
+        ? selectedModels.video
+        : (modelGroups.video[0]?.publicId ?? ""),
+    }),
+    [modelGroups, selectedModels],
+  );
 
   const secretMutation = useMutation({
-    mutationFn: (id: string) => getClientKeySecret(id),
+    mutationFn: (id: string) => getClientKeySecret(apiClient, id),
     onSuccess: ({ secret }, id) => {
       if (id !== effectiveKeyId) return;
       setSecretState({ keyId: id, secret });
@@ -115,7 +204,9 @@ export function CreativeConsolePage() {
     },
     onError: (error, id) => {
       if (id !== effectiveKeyId) return;
-      setKeyError(error instanceof Error ? error.message : t("creativeConsole.errors.keyUnavailable"));
+      setKeyError(
+        error instanceof Error ? error.message : t("creativeConsole.errors.keyUnavailable"),
+      );
     },
   });
 
@@ -137,7 +228,8 @@ export function CreativeConsolePage() {
       apiKey,
       model: effectiveModels[panelMode],
       modelOptions: modelGroups[panelMode],
-      onModelChange: (model) => setSelectedModels((current) => ({ ...current, [panelMode]: model })),
+      onModelChange: (model) =>
+        setSelectedModels((current) => ({ ...current, [panelMode]: model })),
     };
   }
 
@@ -149,15 +241,24 @@ export function CreativeConsolePage() {
 
   return (
     <div className="flex h-[calc(100dvh-5rem)] min-h-[36rem] flex-col gap-5 overflow-hidden">
-      <PageHeader title={t("creativeConsole.title")} description={t("creativeConsole.description")} />
+      <PageHeader
+        title={t("creativeConsole.title")}
+        description={t("creativeConsole.description")}
+      />
 
       <aside className="flex shrink-0 flex-col gap-2 rounded-lg bg-secondary/45 px-4 py-2.5 text-xs leading-5 text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div className="flex min-w-0 items-center gap-3">
           <Sparkle className="size-4 shrink-0 text-foreground/70" />
           <p>{t("creativeConsole.promotion", { product: "DEEIX Chat" })}</p>
         </div>
-        <a className="inline-flex shrink-0 items-center gap-1.5 self-end font-medium text-foreground hover:underline sm:self-auto" href="https://github.com/DEEIX-AI/DEEIX-Chat" target="_blank" rel="noopener noreferrer">
-          {t("creativeConsole.promotionAction")}<ExternalLink className="size-3.5" />
+        <a
+          className="inline-flex shrink-0 items-center gap-1.5 self-end font-medium text-foreground hover:underline sm:self-auto"
+          href="https://github.com/DEEIX-AI/DEEIX-Chat"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {t("creativeConsole.promotionAction")}
+          <ExternalLink className="size-3.5" />
         </a>
       </aside>
 
@@ -165,36 +266,96 @@ export function CreativeConsolePage() {
         <div className="flex min-h-9 shrink-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <Tabs value={mode} onValueChange={(value) => setMode(value as CreativeMode)}>
             <TabsList className="h-9 w-full rounded-full bg-secondary/50 p-1 lg:w-auto">
-              <TabsTrigger className="flex-1 gap-1.5 rounded-full px-3 lg:min-w-20 [&_svg]:size-3.5" value="chat"><MessageSquareText />{t("creativeConsole.modes.chat")}</TabsTrigger>
-              <TabsTrigger className="flex-1 gap-1.5 rounded-full px-3 lg:min-w-20 [&_svg]:size-3.5" value="image"><ImageIcon />{t("creativeConsole.modes.image")}</TabsTrigger>
-              <TabsTrigger className="flex-1 gap-1.5 rounded-full px-3 lg:min-w-20 [&_svg]:size-3.5" value="video"><Video />{t("creativeConsole.modes.video")}</TabsTrigger>
+              <TabsTrigger
+                className="flex-1 gap-1.5 rounded-full px-3 lg:min-w-20 [&_svg]:size-3.5"
+                value="chat"
+              >
+                <MessageSquareText />
+                {t("creativeConsole.modes.chat")}
+              </TabsTrigger>
+              <TabsTrigger
+                className="flex-1 gap-1.5 rounded-full px-3 lg:min-w-20 [&_svg]:size-3.5"
+                value="image"
+              >
+                <ImageIcon />
+                {t("creativeConsole.modes.image")}
+              </TabsTrigger>
+              <TabsTrigger
+                className="flex-1 gap-1.5 rounded-full px-3 lg:min-w-20 [&_svg]:size-3.5"
+                value="video"
+              >
+                <Video />
+                {t("creativeConsole.modes.video")}
+              </TabsTrigger>
             </TabsList>
           </Tabs>
 
           <div className="flex min-w-0 items-center gap-2">
-            <Select value={effectiveKeyId} onValueChange={changeKey} disabled={keysQuery.isPending || activeKeys.length === 0}>
-              <SelectTrigger id="creative-key" className="min-w-0 flex-1 bg-secondary/55 lg:w-64 lg:flex-none" aria-label={t("creativeConsole.clientKey")}>
-                <SelectValue placeholder={keysQuery.isPending ? t("common.loading") : t("creativeConsole.selectKey")} />
+            <Select
+              value={effectiveKeyId}
+              onValueChange={changeKey}
+              disabled={keysQuery.isPending || activeKeys.length === 0}
+            >
+              <SelectTrigger
+                id="creative-key"
+                className="min-w-0 flex-1 bg-secondary/55 lg:w-64 lg:flex-none"
+                aria-label={t("creativeConsole.clientKey")}
+              >
+                <SelectValue
+                  placeholder={
+                    keysQuery.isPending ? t("common.loading") : t("creativeConsole.selectKey")
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
-                {activeKeys.map((key) => <SelectItem key={key.id} value={key.id}>{key.name} · {key.prefix}</SelectItem>)}
+                {activeKeys.map((key) => (
+                  <SelectItem key={key.id} value={key.id}>
+                    {key.name} · {key.prefix}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
-            <div ref={setChatToolbarElement} className={cn("items-center gap-1", mode === "chat" ? "flex" : "hidden")} />
+            <div
+              ref={setChatToolbarElement}
+              className={cn("items-center gap-1", mode === "chat" ? "flex" : "hidden")}
+            />
           </div>
         </div>
 
         <div className="shrink-0 space-y-2 px-3">
-          {keysQuery.isError ? <RetryableError message={keysQuery.error.message} onRetry={() => void keysQuery.refetch()} /> : null}
-          {!keysQuery.isPending && !keysQuery.isError && activeKeys.length === 0 ? <InlineError message={t("creativeConsole.errors.noKeys")} /> : null}
+          {keysQuery.isError ? (
+            <RetryableError
+              message={keysQuery.error.message}
+              onRetry={() => void keysQuery.refetch()}
+            />
+          ) : null}
+          {!keysQuery.isPending && !keysQuery.isError && activeKeys.length === 0 ? (
+            <InlineError message={t("creativeConsole.errors.noKeys")} />
+          ) : null}
           {keyError ? <InlineError message={keyError} /> : null}
-          {modelsQuery.isError ? <RetryableError message={modelsQuery.error.message} onRetry={() => void modelsQuery.refetch()} /> : null}
+          {modelsQuery.isError ? (
+            <RetryableError
+              message={modelsQuery.error.message}
+              onRetry={() => void modelsQuery.refetch()}
+            />
+          ) : null}
         </div>
 
         <div className="min-h-0 flex-1">
-          <div className="h-full" hidden={mode !== "chat"}><ChatPanel key={effectiveKeyId || "default"} storageScope={effectiveKeyId || "default"} toolbarElement={chatToolbarElement} {...panelProps("chat")} /></div>
-          <div className="h-full" hidden={mode !== "image"}><ImagePanel {...panelProps("image")} /></div>
-          <div className="h-full" hidden={mode !== "video"}><VideoPanel {...panelProps("video")} /></div>
+          <div className="h-full" hidden={mode !== "chat"}>
+            <ChatPanel
+              key={effectiveKeyId || "default"}
+              storageScope={effectiveKeyId || "default"}
+              toolbarElement={chatToolbarElement}
+              {...panelProps("chat")}
+            />
+          </div>
+          <div className="h-full" hidden={mode !== "image"}>
+            <ImagePanel {...panelProps("image")} />
+          </div>
+          <div className="h-full" hidden={mode !== "video"}>
+            <VideoPanel {...panelProps("video")} />
+          </div>
         </div>
       </section>
     </div>
@@ -208,8 +369,16 @@ type CreativePanelProps = {
   onModelChange: (model: string) => void;
 };
 
-function ChatPanel({ apiKey, model, modelOptions, onModelChange, storageScope, toolbarElement }: CreativePanelProps & { storageScope: string; toolbarElement: HTMLDivElement | null }) {
+function ChatPanel({
+  apiKey,
+  model,
+  modelOptions,
+  onModelChange,
+  storageScope,
+  toolbarElement,
+}: CreativePanelProps & { storageScope: string; toolbarElement: HTMLDivElement | null }) {
   const { t, i18n } = useTranslation();
+  const apiClient = useApiClient();
   const [initialHistory] = useState(() => {
     const sessions = loadChatSessions(storageScope);
     return { sessions, active: sessions[0] ?? createBlankChatSession(model) };
@@ -219,7 +388,9 @@ function ChatPanel({ apiKey, model, modelOptions, onModelChange, storageScope, t
   const [sessionCreatedAt, setSessionCreatedAt] = useState(initialHistory.active.createdAt);
   const [webSearch, setWebSearch] = useState(initialHistory.active.webSearch);
   const [xSearch, setXSearch] = useState(initialHistory.active.xSearch);
-  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(initialHistory.active.reasoningEffort);
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
+    initialHistory.active.reasoningEffort,
+  );
   const [promptCacheKey, setPromptCacheKey] = useState(initialHistory.active.promptCacheKey);
   const [prompt, setPrompt] = useState("");
   const [messages, setMessages] = useState<ConversationMessage[]>(initialHistory.active.messages);
@@ -231,7 +402,10 @@ function ChatPanel({ apiKey, model, modelOptions, onModelChange, storageScope, t
   useEffect(() => {
     if (restoredInitialModelRef.current || modelOptions.length === 0) return;
     restoredInitialModelRef.current = true;
-    if (initialHistory.active.model && modelOptions.some((option) => option.publicId === initialHistory.active.model)) {
+    if (
+      initialHistory.active.model &&
+      modelOptions.some((option) => option.publicId === initialHistory.active.model)
+    ) {
       onModelChange(initialHistory.active.model);
     }
   }, [initialHistory.active.model, modelOptions, onModelChange]);
@@ -257,21 +431,43 @@ function ChatPanel({ apiKey, model, modelOptions, onModelChange, storageScope, t
       });
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [messages, model, promptCacheKey, reasoningEffort, sessionCreatedAt, sessionId, storageScope, webSearch, xSearch]);
+  }, [
+    messages,
+    model,
+    promptCacheKey,
+    reasoningEffort,
+    sessionCreatedAt,
+    sessionId,
+    storageScope,
+    webSearch,
+    xSearch,
+  ]);
 
-  useEffect(() => () => {
-    if (streamFrameRef.current !== null) cancelAnimationFrame(streamFrameRef.current);
-    requestControllerRef.current?.abort();
-  }, []);
+  useEffect(
+    () => () => {
+      if (streamFrameRef.current !== null) cancelAnimationFrame(streamFrameRef.current);
+      requestControllerRef.current?.abort();
+    },
+    [],
+  );
 
   function renderStreamSnapshot(messageId: string): void {
     if (streamFrameRef.current !== null) return;
     streamFrameRef.current = requestAnimationFrame(() => {
       streamFrameRef.current = null;
       const snapshot = streamSnapshotRef.current;
-      setMessages((current) => current.map((message) => message.id === messageId
-        ? { ...message, content: snapshot.text, reasoning: snapshot.reasoning, tools: snapshot.tools }
-        : message));
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === messageId
+            ? {
+                ...message,
+                content: snapshot.text,
+                reasoning: snapshot.reasoning,
+                tools: snapshot.tools,
+              }
+            : message,
+        ),
+      );
     });
   }
 
@@ -280,11 +476,11 @@ function ChatPanel({ apiKey, model, modelOptions, onModelChange, storageScope, t
       streamSnapshotRef.current = { text: "", reasoning: "", tools: [] };
       const controller = new AbortController();
       requestControllerRef.current = controller;
-      return createChatResponse({
+      return createChatResponse(apiClient, {
         apiKey: request.apiKey,
         model: request.model,
         messages: request.messages,
-        promptCacheKey: request.promptCacheKey || undefined,
+        ...(request.promptCacheKey ? { promptCacheKey: request.promptCacheKey } : {}),
         reasoningEffort: request.reasoningEffort,
         webSearch: request.webSearch,
         xSearch: request.xSearch,
@@ -298,20 +494,34 @@ function ChatPanel({ apiKey, model, modelOptions, onModelChange, storageScope, t
     onSuccess: (result, request) => {
       if (streamFrameRef.current !== null) cancelAnimationFrame(streamFrameRef.current);
       streamFrameRef.current = null;
-      setMessages((current) => current.map((message) => message.id === request.assistantMessageId
-        ? { ...message, content: result.text, reasoning: result.reasoning, tools: result.tools }
-        : message));
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === request.assistantMessageId
+            ? { ...message, content: result.text, reasoning: result.reasoning, tools: result.tools }
+            : message,
+        ),
+      );
       requestControllerRef.current = null;
     },
     onError: (_error, request) => {
       if (streamFrameRef.current !== null) cancelAnimationFrame(streamFrameRef.current);
       streamFrameRef.current = null;
       const snapshot = streamSnapshotRef.current;
-      setMessages((current) => current.flatMap((message) => {
-        if (message.id !== request.assistantMessageId) return [message];
-        if (!snapshot.text.trim() && !snapshot.reasoning.trim() && snapshot.tools.length === 0) return [];
-        return [{ ...message, content: snapshot.text, reasoning: snapshot.reasoning, tools: snapshot.tools }];
-      }));
+      setMessages((current) =>
+        current.flatMap((message) => {
+          if (message.id !== request.assistantMessageId) return [message];
+          if (!snapshot.text.trim() && !snapshot.reasoning.trim() && snapshot.tools.length === 0)
+            return [];
+          return [
+            {
+              ...message,
+              content: snapshot.text,
+              reasoning: snapshot.reasoning,
+              tools: snapshot.tools,
+            },
+          ];
+        }),
+      );
       requestControllerRef.current = null;
     },
   });
@@ -320,10 +530,22 @@ function ChatPanel({ apiKey, model, modelOptions, onModelChange, storageScope, t
     event?.preventDefault();
     const userText = prompt.trim();
     if (!apiKey || !model || !userText || mutation.isPending) return;
-    const userMessage: ConversationMessage = { id: createCreativeMessageId(), role: "user", content: userText };
-    const assistantMessage: ConversationMessage = { id: createCreativeMessageId(), role: "assistant", content: "", reasoning: "", tools: [] };
+    const userMessage: ConversationMessage = {
+      id: createCreativeMessageId(),
+      role: "user",
+      content: userText,
+    };
+    const assistantMessage: ConversationMessage = {
+      id: createCreativeMessageId(),
+      role: "assistant",
+      content: "",
+      reasoning: "",
+      tools: [],
+    };
     const requestMessages: ChatMessage[] = [
-      ...messages.filter((message) => message.content.trim()).map(({ role, content }) => ({ role, content })),
+      ...messages
+        .filter((message) => message.content.trim())
+        .map(({ role, content }) => ({ role, content })),
       { role: "user", content: userText },
     ];
     setMessages((current) => [...current, userMessage, assistantMessage]);
@@ -358,18 +580,21 @@ function ChatPanel({ apiKey, model, modelOptions, onModelChange, storageScope, t
   function startNewConversation(): void {
     if (mutation.isPending) return;
     setSessions((current) => {
-      const next = messages.length > 0 ? upsertChatSession(current, {
-        id: sessionId,
-        title: createChatSessionTitle(messages),
-        createdAt: sessionCreatedAt,
-        updatedAt: currentTimestamp(),
-        model,
-        promptCacheKey,
-        reasoningEffort,
-        webSearch,
-        xSearch,
-        messages,
-      }) : current;
+      const next =
+        messages.length > 0
+          ? upsertChatSession(current, {
+              id: sessionId,
+              title: createChatSessionTitle(messages),
+              createdAt: sessionCreatedAt,
+              updatedAt: currentTimestamp(),
+              model,
+              promptCacheKey,
+              reasoningEffort,
+              webSearch,
+              xSearch,
+              messages,
+            })
+          : current;
       return persistChatSessions(storageScope, next);
     });
     const blank = createBlankChatSession(model);
@@ -414,7 +639,8 @@ function ChatPanel({ apiKey, model, modelOptions, onModelChange, storageScope, t
     setXSearch(target.xSearch);
     setPrompt("");
     mutation.reset();
-    if (target.model && modelOptions.some((option) => option.publicId === target.model)) onModelChange(target.model);
+    if (target.model && modelOptions.some((option) => option.publicId === target.model))
+      onModelChange(target.model);
   }
 
   function handlePromptKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
@@ -426,53 +652,110 @@ function ChatPanel({ apiKey, model, modelOptions, onModelChange, storageScope, t
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      {toolbarElement ? createPortal(<>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button type="button" variant="ghost" size="icon" className="rounded-full" aria-label={t("creativeConsole.newConversation")} onClick={startNewConversation} disabled={mutation.isPending}>
-              <SquarePen />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{t("creativeConsole.newConversation")}</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button type="button" variant="ghost" size="icon" className="rounded-full" aria-label={t("creativeConsole.clearCurrent")} onClick={clearConversation} disabled={messages.length === 0 || mutation.isPending}>
-              <Trash2 />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{t("creativeConsole.clearCurrent")}</TooltipContent>
-        </Tooltip>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button type="button" variant="ghost" size="icon" className="rounded-full" aria-label={t("creativeConsole.history")} disabled={mutation.isPending}>
-              <History />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-80">
-            <DropdownMenuLabel>{t("creativeConsole.history")}</DropdownMenuLabel>
-            {sessions.length === 0 ? (
-              <div className="px-2 py-5 text-center text-xs text-muted-foreground">{t("creativeConsole.noHistory")}</div>
-            ) : sessions.map((session) => (
-              <DropdownMenuItem key={session.id} className="min-h-12 gap-2" onSelect={() => switchConversation(session.id)}>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-xs">{session.title}</div>
-                  <div className="mt-0.5 truncate text-[10px] text-muted-foreground">{session.model || t("creativeConsole.model")} · {formatChatSessionTime(session.updatedAt, i18n.language)}</div>
-                </div>
-                {session.id === sessionId ? <Check className="text-muted-foreground" /> : null}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </>, toolbarElement) : null}
+      {toolbarElement
+        ? createPortal(
+            <>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="rounded-full"
+                    aria-label={t("creativeConsole.newConversation")}
+                    onClick={startNewConversation}
+                    disabled={mutation.isPending}
+                  >
+                    <SquarePen />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t("creativeConsole.newConversation")}</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="rounded-full"
+                    aria-label={t("creativeConsole.clearCurrent")}
+                    onClick={clearConversation}
+                    disabled={messages.length === 0 || mutation.isPending}
+                  >
+                    <Trash2 />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t("creativeConsole.clearCurrent")}</TooltipContent>
+              </Tooltip>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="rounded-full"
+                    aria-label={t("creativeConsole.history")}
+                    disabled={mutation.isPending}
+                  >
+                    <History />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-80">
+                  <DropdownMenuLabel>{t("creativeConsole.history")}</DropdownMenuLabel>
+                  {sessions.length === 0 ? (
+                    <div className="px-2 py-5 text-center text-xs text-muted-foreground">
+                      {t("creativeConsole.noHistory")}
+                    </div>
+                  ) : (
+                    sessions.map((session) => (
+                      <DropdownMenuItem
+                        key={session.id}
+                        className="min-h-12 gap-2"
+                        onSelect={() => switchConversation(session.id)}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-xs">{session.title}</div>
+                          <div className="mt-0.5 truncate text-[10px] text-muted-foreground">
+                            {session.model || t("creativeConsole.model")} ·{" "}
+                            {formatChatSessionTime(session.updatedAt, i18n.language)}
+                          </div>
+                        </div>
+                        {session.id === sessionId ? (
+                          <Check className="text-muted-foreground" />
+                        ) : null}
+                      </DropdownMenuItem>
+                    ))
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>,
+            toolbarElement,
+          )
+        : null}
       <MessageScrollerProvider autoScroll defaultScrollPosition="end">
         <MessageScroller className="min-h-0 flex-1">
           <MessageScrollerViewport aria-label={t("creativeConsole.messageList")}>
-            <MessageScrollerContent className={cn("w-full px-3 py-6 sm:px-6", messages.length === 0 && !mutation.isPending && "justify-center")}>
-              {messages.length === 0 && !mutation.isPending ? <WelcomeState title={t("creativeConsole.welcome")} /> : null}
+            <MessageScrollerContent
+              className={cn(
+                "w-full px-3 py-6 sm:px-6",
+                messages.length === 0 && !mutation.isPending && "justify-center",
+              )}
+            >
+              {messages.length === 0 && !mutation.isPending ? (
+                <WelcomeState title={t("creativeConsole.welcome")} />
+              ) : null}
               {messages.map((message) => (
-                <MessageScrollerItem key={message.id} messageId={message.id} scrollAnchor={message.role === "user"}>
-                  <ChatMessageItem message={message} loading={mutation.isPending && mutation.variables?.assistantMessageId === message.id} />
+                <MessageScrollerItem
+                  key={message.id}
+                  messageId={message.id}
+                  scrollAnchor={message.role === "user"}
+                >
+                  <ChatMessageItem
+                    message={message}
+                    loading={
+                      mutation.isPending && mutation.variables?.assistantMessageId === message.id
+                    }
+                  />
                 </MessageScrollerItem>
               ))}
             </MessageScrollerContent>
@@ -483,13 +766,23 @@ function ChatPanel({ apiKey, model, modelOptions, onModelChange, storageScope, t
 
       <form className="w-full shrink-0 px-3 pb-2 sm:px-6 sm:pb-3" onSubmit={submit}>
         <div className={composerClassName}>
-          <Textarea id="chat-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={handlePromptKeyDown} placeholder={t("creativeConsole.chatPlaceholder")} className="min-h-24 resize-none border-0 bg-transparent px-4 py-3 text-sm focus-visible:ring-0" />
+          <Textarea
+            id="chat-prompt"
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            onKeyDown={handlePromptKeyDown}
+            placeholder={t("creativeConsole.chatPlaceholder")}
+            className="min-h-24 resize-none border-0 bg-transparent px-4 py-3 text-sm focus-visible:ring-0"
+          />
           <div className="flex items-center justify-between gap-3 px-3 pb-3">
             <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto">
               <CompactModelSelect value={model} models={modelOptions} onChange={onModelChange} />
               <CompactIconSelect
                 value={webSearch ? "on" : "off"}
-                options={[{ value: "off", label: t("creativeConsole.webSearchOff") }, { value: "on", label: t("creativeConsole.webSearchOn") }]}
+                options={[
+                  { value: "off", label: t("creativeConsole.webSearchOff") },
+                  { value: "on", label: t("creativeConsole.webSearchOn") },
+                ]}
                 onChange={(value) => setWebSearch(value === "on")}
                 ariaLabel={t("creativeConsole.webSearch")}
                 icon={<Globe />}
@@ -497,7 +790,10 @@ function ChatPanel({ apiKey, model, modelOptions, onModelChange, storageScope, t
               />
               <CompactIconSelect
                 value={xSearch ? "on" : "off"}
-                options={[{ value: "off", label: t("creativeConsole.xSearchOff") }, { value: "on", label: t("creativeConsole.xSearchOn") }]}
+                options={[
+                  { value: "off", label: t("creativeConsole.xSearchOff") },
+                  { value: "on", label: t("creativeConsole.xSearchOn") },
+                ]}
                 onChange={(value) => setXSearch(value === "on")}
                 ariaLabel={t("creativeConsole.xSearch")}
                 icon={<XSocialIcon />}
@@ -505,19 +801,31 @@ function ChatPanel({ apiKey, model, modelOptions, onModelChange, storageScope, t
               />
               <CompactIconSelect
                 value={reasoningEffort}
-                options={(["auto", "none", "low", "medium", "high", "xhigh"] as ReasoningEffort[]).map((effort) => ({ value: effort, label: t(`creativeConsole.reasoning.${effort}`) }))}
+                options={(
+                  ["auto", "none", "low", "medium", "high", "xhigh"] as ReasoningEffort[]
+                ).map((effort) => ({
+                  value: effort,
+                  label: t(`creativeConsole.reasoning.${effort}`),
+                }))}
                 onChange={(value) => setReasoningEffort(value as ReasoningEffort)}
                 ariaLabel={t("creativeConsole.reasoningEffort")}
                 icon={<Sparkle />}
                 active={reasoningEffort !== "auto" && reasoningEffort !== "none"}
               />
             </div>
-            <Button type="submit" size="icon" aria-label={t("creativeConsole.send")} disabled={!apiKey || !model || !prompt.trim() || mutation.isPending}>
+            <Button
+              type="submit"
+              size="icon"
+              aria-label={t("creativeConsole.send")}
+              disabled={!apiKey || !model || !prompt.trim() || mutation.isPending}
+            >
               {mutation.isPending ? <Loader2 className="animate-spin" /> : <ArrowUp />}
             </Button>
           </div>
         </div>
-        {mutation.isError ? <div className="mt-1 px-2 text-[11px] text-destructive">{mutation.error.message}</div> : null}
+        {mutation.isError ? (
+          <div className="mt-1 px-2 text-[11px] text-destructive">{mutation.error.message}</div>
+        ) : null}
       </form>
     </div>
   );
@@ -525,6 +833,7 @@ function ChatPanel({ apiKey, model, modelOptions, onModelChange, storageScope, t
 
 function ImagePanel({ apiKey, model, modelOptions, onModelChange }: CreativePanelProps) {
   const { t } = useTranslation();
+  const apiClient = useApiClient();
   const [prompt, setPrompt] = useState("");
   const [count, setCount] = useState("1");
   const [aspectRatio, setAspectRatio] = useState("1:1");
@@ -532,7 +841,7 @@ function ImagePanel({ apiKey, model, modelOptions, onModelChange }: CreativePane
   const [images, setImages] = useState<ImageResult[]>([]);
 
   const mutation = useMutation({
-    mutationFn: (request: Parameters<typeof generateImage>[0]) => generateImage(request),
+    mutationFn: (request: Parameters<typeof generateImage>[1]) => generateImage(apiClient, request),
     onSuccess: setImages,
   });
 
@@ -540,23 +849,50 @@ function ImagePanel({ apiKey, model, modelOptions, onModelChange }: CreativePane
     event.preventDefault();
     if (!apiKey || !model || !prompt.trim() || mutation.isPending) return;
     mutation.reset();
-    mutation.mutate({ apiKey, model, prompt: prompt.trim(), count: Number(count), aspectRatio, resolution });
+    mutation.mutate({
+      apiKey,
+      model,
+      prompt: prompt.trim(),
+      count: Number(count),
+      aspectRatio,
+      resolution,
+    });
   }
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="min-h-0 flex-1 overflow-y-auto py-6">
         <div className="flex min-h-full w-full flex-col justify-center px-3 sm:px-6">
-          {images.length === 0 && !mutation.isPending ? <WelcomeState title={t("creativeConsole.welcomeImage")} /> : null}
-          {mutation.isPending ? <LoadingResult text={t("creativeConsole.generatingImage")} /> : null}
+          {images.length === 0 && !mutation.isPending ? (
+            <WelcomeState title={t("creativeConsole.welcomeImage")} />
+          ) : null}
+          {mutation.isPending ? (
+            <LoadingResult text={t("creativeConsole.generatingImage")} />
+          ) : null}
           {images.length > 0 ? (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2" aria-live="polite">
               {images.map((image, index) => (
                 <figure key={`${image.url}-${index}`} className="group min-w-0 overflow-hidden">
-                  <img src={image.url} alt={t("creativeConsole.generatedImageAlt", { index: index + 1 })} className="aspect-square w-full rounded-xl bg-muted object-contain" loading="lazy" />
+                  <img
+                    src={image.url}
+                    alt={t("creativeConsole.generatedImageAlt", { index: index + 1 })}
+                    className="aspect-square w-full rounded-xl bg-muted object-contain"
+                    loading="lazy"
+                  />
                   <figcaption className="flex min-w-0 items-center justify-between gap-2 py-1.5">
-                    <span className="truncate text-xs text-muted-foreground">{t("creativeConsole.imageNumber", { index: index + 1 })}</span>
-                    <Button variant="ghost" size="icon" asChild><a href={image.url} target="_blank" rel="noreferrer" aria-label={t("creativeConsole.open")}><ExternalLink /></a></Button>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {t("creativeConsole.imageNumber", { index: index + 1 })}
+                    </span>
+                    <Button variant="ghost" size="icon" asChild>
+                      <a
+                        href={image.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label={t("creativeConsole.open")}
+                      >
+                        <ExternalLink />
+                      </a>
+                    </Button>
                   </figcaption>
                 </figure>
               ))}
@@ -567,18 +903,52 @@ function ImagePanel({ apiKey, model, modelOptions, onModelChange }: CreativePane
 
       <form className="w-full shrink-0 px-3 pb-2 sm:px-6 sm:pb-3" onSubmit={submit}>
         <div className={composerClassName}>
-          <Textarea id="image-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={t("creativeConsole.imagePlaceholder")} className="min-h-24 resize-none border-0 bg-transparent px-4 py-3 text-sm focus-visible:ring-0" />
+          <Textarea
+            id="image-prompt"
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            placeholder={t("creativeConsole.imagePlaceholder")}
+            className="min-h-24 resize-none border-0 bg-transparent px-4 py-3 text-sm focus-visible:ring-0"
+          />
           <div className="flex flex-wrap items-center justify-between gap-2 px-3 pb-3">
             <div className="flex min-w-0 flex-wrap items-center gap-1">
               <CompactModelSelect value={model} models={modelOptions} onChange={onModelChange} />
-              <CompactSelect value={count} options={["1", "2", "3", "4"]} onChange={setCount} ariaLabel={t("creativeConsole.count")} suffix="×" icon={<Images />} />
-              <CompactSelect value={aspectRatio} options={imageAspectRatios} onChange={setAspectRatio} ariaLabel={t("creativeConsole.aspectRatio")} icon={<TvMinimal />} />
-              <CompactSelect value={resolution} options={imageResolutions} onChange={setResolution} ariaLabel={t("creativeConsole.resolution")} icon={<ImageUpscale />} />
+              <CompactSelect
+                value={count}
+                options={["1", "2", "3", "4"]}
+                onChange={setCount}
+                ariaLabel={t("creativeConsole.count")}
+                suffix="×"
+                icon={<Images />}
+              />
+              <CompactSelect
+                value={aspectRatio}
+                options={imageAspectRatios}
+                onChange={setAspectRatio}
+                ariaLabel={t("creativeConsole.aspectRatio")}
+                icon={<TvMinimal />}
+              />
+              <CompactSelect
+                value={resolution}
+                options={imageResolutions}
+                onChange={setResolution}
+                ariaLabel={t("creativeConsole.resolution")}
+                icon={<ImageUpscale />}
+              />
             </div>
-            <Button type="submit" size="icon" aria-label={t("creativeConsole.generateImage")} disabled={!apiKey || !model || !prompt.trim() || mutation.isPending}>{mutation.isPending ? <Loader2 className="animate-spin" /> : <ArrowUp />}</Button>
+            <Button
+              type="submit"
+              size="icon"
+              aria-label={t("creativeConsole.generateImage")}
+              disabled={!apiKey || !model || !prompt.trim() || mutation.isPending}
+            >
+              {mutation.isPending ? <Loader2 className="animate-spin" /> : <ArrowUp />}
+            </Button>
           </div>
         </div>
-        {mutation.isError ? <div className="mt-1 px-2 text-[11px] text-destructive">{mutation.error.message}</div> : null}
+        {mutation.isError ? (
+          <div className="mt-1 px-2 text-[11px] text-destructive">{mutation.error.message}</div>
+        ) : null}
       </form>
     </div>
   );
@@ -586,6 +956,7 @@ function ImagePanel({ apiKey, model, modelOptions, onModelChange }: CreativePane
 
 function VideoPanel({ apiKey, model, modelOptions, onModelChange }: CreativePanelProps) {
   const { t } = useTranslation();
+  const apiClient = useApiClient();
   const [prompt, setPrompt] = useState("");
   const [imageURL, setImageURL] = useState("");
   const [duration, setDuration] = useState("6");
@@ -594,28 +965,36 @@ function VideoPanel({ apiKey, model, modelOptions, onModelChange }: CreativePane
   const [job, setJob] = useState<{ requestId: string; apiKey: string } | null>(null);
 
   const createMutation = useMutation({
-    mutationFn: (request: Parameters<typeof createVideo>[0]) => createVideo(request),
+    mutationFn: (request: Parameters<typeof createVideo>[1]) => createVideo(apiClient, request),
     onSuccess: (requestId, request) => setJob({ requestId, apiKey: request.apiKey }),
   });
 
   const statusQuery = useQuery({
     queryKey: ["creative-console", "video", job?.requestId],
-    queryFn: ({ signal }) => getVideo({ apiKey: job!.apiKey, requestId: job!.requestId, signal }),
+    queryFn: ({ signal }) =>
+      getVideo(apiClient, { apiKey: job!.apiKey, requestId: job!.requestId, signal }),
     enabled: Boolean(job),
-    refetchInterval: (query) => query.state.data?.status === "pending" ? 3_000 : false,
+    refetchInterval: (query) => (query.state.data?.status === "pending" ? 3_000 : false),
     retry: 2,
   });
 
   function submit(event: FormEvent): void {
     event.preventDefault();
-    if (!apiKey || !model || (!prompt.trim() && !imageURL.trim()) || !validDuration(duration) || createMutation.isPending) return;
+    if (
+      !apiKey ||
+      !model ||
+      (!prompt.trim() && !imageURL.trim()) ||
+      !validDuration(duration) ||
+      createMutation.isPending
+    )
+      return;
     setJob(null);
     createMutation.reset();
     createMutation.mutate({
       apiKey,
       model,
       prompt: prompt.trim(),
-      imageURL: imageURL.trim() || undefined,
+      ...(imageURL.trim() ? { imageURL: imageURL.trim() } : {}),
       duration: Number(duration),
       aspectRatio,
       resolution,
@@ -626,12 +1005,16 @@ function VideoPanel({ apiKey, model, modelOptions, onModelChange }: CreativePane
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="min-h-0 flex-1 overflow-y-auto py-6">
         <div className="flex min-h-full w-full flex-col justify-center px-3 sm:px-6">
-          {!job && !createMutation.isPending ? <WelcomeState title={t("creativeConsole.welcomeVideo")} /> : null}
-          {createMutation.isPending ? <LoadingResult text={t("creativeConsole.submittingVideo")} /> : null}
+          {!job && !createMutation.isPending ? (
+            <WelcomeState title={t("creativeConsole.welcomeVideo")} />
+          ) : null}
+          {createMutation.isPending ? (
+            <LoadingResult text={t("creativeConsole.submittingVideo")} />
+          ) : null}
           {job ? (
             <VideoResult
               requestId={job.requestId}
-              status={statusQuery.data}
+              {...(statusQuery.data === undefined ? {} : { status: statusQuery.data })}
               loading={statusQuery.isPending || statusQuery.isFetching}
               error={statusQuery.isError ? statusQuery.error.message : ""}
               onRetry={() => void statusQuery.refetch()}
@@ -642,61 +1025,177 @@ function VideoPanel({ apiKey, model, modelOptions, onModelChange }: CreativePane
 
       <form className="w-full shrink-0 px-3 pb-2 sm:px-6 sm:pb-3" onSubmit={submit}>
         <div className={composerClassName}>
-          <Textarea id="video-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={t("creativeConsole.videoPlaceholder")} className="min-h-24 resize-none border-0 bg-transparent px-4 py-3 text-sm focus-visible:ring-0" />
+          <Textarea
+            id="video-prompt"
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            placeholder={t("creativeConsole.videoPlaceholder")}
+            className="min-h-24 resize-none border-0 bg-transparent px-4 py-3 text-sm focus-visible:ring-0"
+          />
           <div className="flex items-center justify-between gap-3 px-3 pb-3">
             <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
               <CompactModelSelect value={model} models={modelOptions} onChange={onModelChange} />
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button type="button" variant="ghost" size="sm" className={cn("h-8 gap-1.5 px-2 font-normal", imageURL && "bg-secondary/70 text-foreground")} aria-label={t("creativeConsole.referenceImage")}>
-                    <ImagePlus />{imageURL ? t("creativeConsole.referenceImageAdded") : t("creativeConsole.referenceImageShort")}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className={cn(
+                      "h-8 gap-1.5 px-2 font-normal",
+                      imageURL && "bg-secondary/70 text-foreground",
+                    )}
+                    aria-label={t("creativeConsole.referenceImage")}
+                  >
+                    <ImagePlus />
+                    {imageURL
+                      ? t("creativeConsole.referenceImageAdded")
+                      : t("creativeConsole.referenceImageShort")}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent align="start" className="w-80 p-3">
-                  <div className="mb-2 text-xs font-medium">{t("creativeConsole.referenceImage")}</div>
+                  <div className="mb-2 text-xs font-medium">
+                    {t("creativeConsole.referenceImage")}
+                  </div>
                   <div className="flex items-center gap-2">
-                    <Input id="video-image" type="url" value={imageURL} onChange={(event) => setImageURL(event.target.value)} placeholder="https://..." aria-label={t("creativeConsole.referenceImage")} />
-                    {imageURL ? <Button type="button" variant="ghost" size="icon" className="shrink-0" aria-label={t("creativeConsole.clearReferenceImage")} onClick={() => setImageURL("")}><X /></Button> : null}
+                    <Input
+                      id="video-image"
+                      type="url"
+                      value={imageURL}
+                      onChange={(event) => setImageURL(event.target.value)}
+                      placeholder="https://..."
+                      aria-label={t("creativeConsole.referenceImage")}
+                    />
+                    {imageURL ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="shrink-0"
+                        aria-label={t("creativeConsole.clearReferenceImage")}
+                        onClick={() => setImageURL("")}
+                      >
+                        <X />
+                      </Button>
+                    ) : null}
                   </div>
                 </PopoverContent>
               </Popover>
-              <CompactSelect value={duration} options={videoDurations} onChange={setDuration} ariaLabel={t("creativeConsole.duration")} suffix="s" icon={<Clock3 />} />
-              <CompactSelect value={aspectRatio} options={videoAspectRatios} onChange={setAspectRatio} ariaLabel={t("creativeConsole.aspectRatio")} icon={<TvMinimal />} />
-              <CompactSelect value={resolution} options={videoResolutions} onChange={setResolution} ariaLabel={t("creativeConsole.resolution")} icon={<ImageUpscale />} />
+              <CompactSelect
+                value={duration}
+                options={videoDurations}
+                onChange={setDuration}
+                ariaLabel={t("creativeConsole.duration")}
+                suffix="s"
+                icon={<Clock3 />}
+              />
+              <CompactSelect
+                value={aspectRatio}
+                options={videoAspectRatios}
+                onChange={setAspectRatio}
+                ariaLabel={t("creativeConsole.aspectRatio")}
+                icon={<TvMinimal />}
+              />
+              <CompactSelect
+                value={resolution}
+                options={videoResolutions}
+                onChange={setResolution}
+                ariaLabel={t("creativeConsole.resolution")}
+                icon={<ImageUpscale />}
+              />
             </div>
-            <Button type="submit" size="icon" aria-label={t("creativeConsole.generateVideo")} disabled={!apiKey || !model || (!prompt.trim() && !imageURL.trim()) || !validDuration(duration) || createMutation.isPending}>
+            <Button
+              type="submit"
+              size="icon"
+              aria-label={t("creativeConsole.generateVideo")}
+              disabled={
+                !apiKey ||
+                !model ||
+                (!prompt.trim() && !imageURL.trim()) ||
+                !validDuration(duration) ||
+                createMutation.isPending
+              }
+            >
               {createMutation.isPending ? <Loader2 className="animate-spin" /> : <ArrowUp />}
             </Button>
           </div>
         </div>
-        {createMutation.isError ? <div className="mt-1 px-2 text-[11px] text-destructive">{createMutation.error.message}</div> : null}
+        {createMutation.isError ? (
+          <div className="mt-1 px-2 text-[11px] text-destructive">
+            {createMutation.error.message}
+          </div>
+        ) : null}
       </form>
     </div>
   );
 }
 
-function VideoResult({ requestId, status, loading, error, onRetry }: { requestId: string; status?: VideoStatus; loading: boolean; error: string; onRetry: () => void }) {
+function VideoResult({
+  requestId,
+  status,
+  loading,
+  error,
+  onRetry,
+}: {
+  requestId: string;
+  status?: VideoStatus;
+  loading: boolean;
+  error: string;
+  onRetry: () => void;
+}) {
   const { t } = useTranslation();
   const progress = status?.progress ?? 0;
   return (
     <div className="w-full space-y-4" aria-live="polite">
       <div className="grid gap-3 sm:grid-cols-2">
         <MetaItem label={t("creativeConsole.requestId")} value={requestId} mono />
-        <MetaItem label={t("creativeConsole.status")} value={status ? t(`creativeConsole.videoStatus.${status.status}`) : t("common.loading")} />
+        <MetaItem
+          label={t("creativeConsole.status")}
+          value={status ? t(`creativeConsole.videoStatus.${status.status}`) : t("common.loading")}
+        />
       </div>
       <div className="space-y-2">
-        <div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">{t("creativeConsole.progress")}</span><span className="tabular-nums">{progress}%</span></div>
-        <div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${progress}%` }} /></div>
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-muted-foreground">{t("creativeConsole.progress")}</span>
+          <span className="tabular-nums">{progress}%</span>
+        </div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-[width]"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
       </div>
-      {loading && status?.status !== "done" && status?.status !== "failed" ? <div className="flex items-center gap-2 text-xs text-muted-foreground"><Spinner />{t("creativeConsole.pollingVideo")}</div> : null}
+      {loading && status?.status !== "done" && status?.status !== "failed" ? (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Spinner />
+          {t("creativeConsole.pollingVideo")}
+        </div>
+      ) : null}
       {error ? <RetryableError message={error} onRetry={onRetry} /> : null}
-      {status?.status === "failed" ? <InlineError message={status.error?.message || t("creativeConsole.errors.videoFailed")} /> : null}
+      {status?.status === "failed" ? (
+        <InlineError message={status.error?.message || t("creativeConsole.errors.videoFailed")} />
+      ) : null}
       {status?.status === "done" && status.video ? (
         <div className="space-y-3">
-          <video src={status.video.url} controls preload="metadata" className="max-h-[60vh] w-full rounded-2xl bg-black shadow-sm" />
+          <video
+            src={status.video.url}
+            controls
+            preload="metadata"
+            className="max-h-[60vh] w-full rounded-2xl bg-black shadow-sm"
+          />
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-xs text-muted-foreground">{status.video.duration ? t("creativeConsole.videoDuration", { count: status.video.duration }) : ""}</span>
-            <Button variant="secondary" size="sm" asChild><a href={status.video.url} target="_blank" rel="noreferrer"><ExternalLink />{t("creativeConsole.openVideo")}</a></Button>
+            <span className="text-xs text-muted-foreground">
+              {status.video.duration
+                ? t("creativeConsole.videoDuration", { count: status.video.duration })
+                : ""}
+            </span>
+            <Button variant="secondary" size="sm" asChild>
+              <a href={status.video.url} target="_blank" rel="noreferrer">
+                <ExternalLink />
+                {t("creativeConsole.openVideo")}
+              </a>
+            </Button>
           </div>
         </div>
       ) : null}
@@ -707,47 +1206,123 @@ function VideoResult({ requestId, status, loading, error, onRetry }: { requestId
 function WelcomeState({ title }: { title: string }) {
   return (
     <div className="flex min-h-[20rem] items-center justify-center px-6 text-center">
-      <h2 className="max-w-2xl text-xl font-medium tracking-tight text-muted-foreground sm:text-2xl">{title}</h2>
+      <h2 className="max-w-2xl text-xl font-medium tracking-tight text-muted-foreground sm:text-2xl">
+        {title}
+      </h2>
     </div>
   );
 }
 
-function CompactModelSelect({ value, models, onChange }: { value: string; models: ModelRouteDTO[]; onChange: (model: string) => void }) {
+function CompactModelSelect({
+  value,
+  models,
+  onChange,
+}: {
+  value: string;
+  models: ModelRouteDTO[];
+  onChange: (model: string) => void;
+}) {
   const { t } = useTranslation();
   return (
     <Select value={value} onValueChange={onChange} disabled={models.length === 0}>
-      <SelectTrigger className="h-8 w-auto max-w-56 gap-1 border-0 bg-transparent px-2 shadow-none hover:bg-secondary/70 focus:bg-secondary/70 focus:ring-0" aria-label={t("creativeConsole.model")}>
-        <SelectValue placeholder={models.length === 0 ? t("creativeConsole.noModels") : t("creativeConsole.selectModel")} />
+      <SelectTrigger
+        className="h-8 w-auto max-w-56 gap-1 border-0 bg-transparent px-2 shadow-none hover:bg-secondary/70 focus:bg-secondary/70 focus:ring-0"
+        aria-label={t("creativeConsole.model")}
+      >
+        <SelectValue
+          placeholder={
+            models.length === 0 ? t("creativeConsole.noModels") : t("creativeConsole.selectModel")
+          }
+        />
       </SelectTrigger>
-      <SelectContent>{models.map((item) => <SelectItem key={item.id} value={item.publicId}>{item.publicId}</SelectItem>)}</SelectContent>
+      <SelectContent>
+        {models.map((item) => (
+          <SelectItem key={item.id} value={item.publicId}>
+            {item.publicId}
+          </SelectItem>
+        ))}
+      </SelectContent>
     </Select>
   );
 }
 
-function CompactSelect({ value, options, onChange, ariaLabel, suffix, icon }: { value: string; options: readonly string[]; onChange: (value: string) => void; ariaLabel: string; suffix?: string; icon?: ReactNode }) {
+function CompactSelect({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+  suffix,
+  icon,
+}: {
+  value: string;
+  options: readonly string[];
+  onChange: (value: string) => void;
+  ariaLabel: string;
+  suffix?: string;
+  icon?: ReactNode;
+}) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="h-8 w-auto gap-1.5 border-0 bg-transparent px-2 shadow-none hover:bg-secondary/70 focus:bg-secondary/70 focus:ring-0 [&>svg]:size-3.5 [&>svg]:shrink-0" aria-label={ariaLabel}>
-        {icon}<SelectValue />
+      <SelectTrigger
+        className="h-8 w-auto gap-1.5 border-0 bg-transparent px-2 shadow-none hover:bg-secondary/70 focus:bg-secondary/70 focus:ring-0 [&>svg]:size-3.5 [&>svg]:shrink-0"
+        aria-label={ariaLabel}
+      >
+        {icon}
+        <SelectValue />
       </SelectTrigger>
-      <SelectContent>{options.map((option) => <SelectItem key={option} value={option}>{option}{suffix}</SelectItem>)}</SelectContent>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem key={option} value={option}>
+            {option}
+            {suffix}
+          </SelectItem>
+        ))}
+      </SelectContent>
     </Select>
   );
 }
 
-function CompactIconSelect({ value, options, onChange, ariaLabel, icon, active = false }: { value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void; ariaLabel: string; icon: ReactNode; active?: boolean }) {
+function CompactIconSelect({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+  icon,
+  active = false,
+}: {
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+  ariaLabel: string;
+  icon: ReactNode;
+  active?: boolean;
+}) {
   const selectedLabel = options.find((option) => option.value === value)?.label ?? ariaLabel;
   return (
     <Select value={value} onValueChange={onChange}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <SelectTrigger className={cn("h-8 w-auto min-w-8 gap-1 bg-transparent px-2 shadow-none hover:bg-secondary/70 focus:bg-secondary/70 focus:ring-0", active && "bg-secondary/70 text-foreground")} aria-label={`${ariaLabel}: ${selectedLabel}`}>
+          <SelectTrigger
+            className={cn(
+              "h-8 w-auto min-w-8 gap-1 bg-transparent px-2 shadow-none hover:bg-secondary/70 focus:bg-secondary/70 focus:ring-0",
+              active && "bg-secondary/70 text-foreground",
+            )}
+            aria-label={`${ariaLabel}: ${selectedLabel}`}
+          >
             <span className="flex items-center [&_svg]:size-3.5">{icon}</span>
           </SelectTrigger>
         </TooltipTrigger>
-        <TooltipContent>{ariaLabel} · {selectedLabel}</TooltipContent>
+        <TooltipContent>
+          {ariaLabel} · {selectedLabel}
+        </TooltipContent>
       </Tooltip>
-      <SelectContent>{options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
     </Select>
   );
 }
@@ -760,7 +1335,13 @@ function XSocialIcon({ className }: { className?: string }) {
   );
 }
 
-function ChatMessageItem({ message, loading = false }: { message: ConversationMessage; loading?: boolean }) {
+function ChatMessageItem({
+  message,
+  loading = false,
+}: {
+  message: ConversationMessage;
+  loading?: boolean;
+}) {
   const { t } = useTranslation();
   const isUser = message.role === "user";
   return (
@@ -768,21 +1349,35 @@ function ChatMessageItem({ message, loading = false }: { message: ConversationMe
       <MessageContent className={cn(!isUser && "w-full max-w-full")}>
         {!isUser && message.reasoning ? (
           <div className="w-full rounded-xl bg-secondary/45 px-3 py-2.5 text-xs text-muted-foreground">
-            <div className="mb-1.5 flex items-center gap-1.5 font-medium text-foreground/75"><BrainCircuit className="size-3.5" />{t("creativeConsole.thinkingProcess")}</div>
+            <div className="mb-1.5 flex items-center gap-1.5 font-medium text-foreground/75">
+              <BrainCircuit className="size-3.5" />
+              {t("creativeConsole.thinkingProcess")}
+            </div>
             <div className="whitespace-pre-wrap break-words leading-5">{message.reasoning}</div>
           </div>
         ) : null}
         {!isUser && message.tools?.length ? (
           <div className="flex w-full flex-col gap-1.5">
-            {message.tools.map((tool) => <ToolActivityItem key={tool.id} tool={tool} />)}
+            {message.tools.map((tool) => (
+              <ToolActivityItem key={tool.id} tool={tool} />
+            ))}
           </div>
         ) : null}
         {message.content || isUser ? (
           isUser ? (
-            <div className="whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-secondary px-4 py-2.5 text-sm leading-6">{message.content}</div>
-          ) : <SafeMarkdown content={message.content} />
+            <div className="whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-secondary px-4 py-2.5 text-sm leading-6">
+              {message.content}
+            </div>
+          ) : (
+            <SafeMarkdown content={message.content} />
+          )
         ) : null}
-        {loading ? <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground"><Spinner />{t("creativeConsole.streaming")}</div> : null}
+        {loading ? (
+          <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
+            <Spinner />
+            {t("creativeConsole.streaming")}
+          </div>
+        ) : null}
       </MessageContent>
     </Message>
   );
@@ -801,44 +1396,102 @@ function ToolActivityItem({ tool }: { tool: ChatToolActivity }) {
   return (
     <div className="flex min-w-0 items-start gap-2 rounded-xl bg-secondary/45 px-3 py-2.5 text-xs">
       <span className="mt-0.5 text-muted-foreground">
-        {isWebSearch ? <Globe className="size-3.5" /> : isXSearch ? <XSocialIcon className="size-3.5" /> : <Wrench className="size-3.5" />}
+        {isWebSearch ? (
+          <Globe className="size-3.5" />
+        ) : isXSearch ? (
+          <XSocialIcon className="size-3.5" />
+        ) : (
+          <Wrench className="size-3.5" />
+        )}
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate font-medium">{t("creativeConsole.toolCall")} · {label}</span>
+          <span className="truncate font-medium">
+            {t("creativeConsole.toolCall")} · {label}
+          </span>
           <span className="ml-auto flex shrink-0 items-center gap-1 text-muted-foreground">
-            {tool.status === "in_progress" ? <Loader2 className="size-3 animate-spin" /> : tool.status === "failed" ? <TriangleAlert className="size-3 text-destructive" /> : <CheckCircle2 className="size-3" />}
+            {tool.status === "in_progress" ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : tool.status === "failed" ? (
+              <TriangleAlert className="size-3 text-destructive" />
+            ) : (
+              <CheckCircle2 className="size-3" />
+            )}
             {statusLabel}
           </span>
         </div>
-        {tool.detail ? <div className="mt-1 line-clamp-2 break-all leading-5 text-muted-foreground" title={tool.detail}>{tool.detail}</div> : null}
+        {tool.detail ? (
+          <div
+            className="mt-1 line-clamp-2 break-all leading-5 text-muted-foreground"
+            title={tool.detail}
+          >
+            {tool.detail}
+          </div>
+        ) : null}
       </div>
     </div>
   );
 }
 
 function LoadingResult({ text }: { text: string }) {
-  return <div className="flex min-h-[20rem] items-center justify-center gap-3 text-xs text-muted-foreground"><Spinner className="size-5" />{text}</div>;
+  return (
+    <div className="flex min-h-[20rem] items-center justify-center gap-3 text-xs text-muted-foreground">
+      <Spinner className="size-5" />
+      {text}
+    </div>
+  );
 }
 
 function InlineError({ message }: { message: string }) {
-  return <div role="alert" className="rounded-md bg-destructive/8 px-3 py-2 text-xs leading-5 text-destructive">{message}</div>;
+  return (
+    <div
+      role="alert"
+      className="rounded-md bg-destructive/8 px-3 py-2 text-xs leading-5 text-destructive"
+    >
+      {message}
+    </div>
+  );
 }
 
 function RetryableError({ message, onRetry }: { message: string; onRetry: () => void }) {
   const { t } = useTranslation();
   return (
-    <div role="alert" className="flex flex-col gap-2 rounded-md bg-destructive/8 px-3 py-2 text-xs leading-5 text-destructive sm:flex-row sm:items-center sm:justify-between">
+    <div
+      role="alert"
+      className="flex flex-col gap-2 rounded-md bg-destructive/8 px-3 py-2 text-xs leading-5 text-destructive sm:flex-row sm:items-center sm:justify-between"
+    >
       <span>{message}</span>
-      <Button type="button" variant="ghost" size="sm" className="self-start text-destructive hover:text-destructive sm:self-auto" onClick={onRetry}>
-        <RefreshCw />{t("common.retry")}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="self-start text-destructive hover:text-destructive sm:self-auto"
+        onClick={onRetry}
+      >
+        <RefreshCw />
+        {t("common.retry")}
       </Button>
     </div>
   );
 }
 
-function MetaItem({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
-  return <div className="min-w-0 py-2"><div className="mb-1 text-[11px] text-muted-foreground">{label}</div><div className={cn("truncate text-xs", mono && "font-mono")} title={value}>{value}</div></div>;
+function MetaItem({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="min-w-0 py-2">
+      <div className="mb-1 text-[11px] text-muted-foreground">{label}</div>
+      <div className={cn("truncate text-xs", mono && "font-mono")} title={value}>
+        {value}
+      </div>
+    </div>
+  );
 }
 
 function isUsableKey(key: ClientKeyDTO): boolean {
@@ -860,7 +1513,9 @@ function uniqueModelsByPublicID(models: ModelRouteDTO[]): ModelRouteDTO[] {
   });
 }
 
-async function listAllPaginatedItems<T>(loadPage: (page: number, pageSize: number) => Promise<{ items: T[]; total: number }>): Promise<T[]> {
+async function listAllPaginatedItems<T>(
+  loadPage: (page: number, pageSize: number) => Promise<{ items: T[]; total: number }>,
+): Promise<T[]> {
   const items: T[] = [];
   for (let page = 1; page <= 50; page += 1) {
     const result = await loadPage(page, 100);

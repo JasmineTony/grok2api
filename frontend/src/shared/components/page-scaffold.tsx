@@ -8,14 +8,11 @@ export function PageScaffold({
   className,
 }: {
   children: ReactNode;
-  className?: string;
+  className?: string | undefined;
 }) {
   return (
     <div
-      className={cn(
-        "mx-auto w-full max-w-[1440px] flex-1 px-5 py-8 sm:px-8 lg:py-20",
-        className,
-      )}
+      className={cn("mx-auto w-full max-w-[1440px] flex-1 px-5 py-8 sm:px-8 lg:py-20", className)}
     >
       {children}
     </div>

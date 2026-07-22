@@ -1,12 +1,27 @@
-import { ApiError, apiDownload, apiEventStream, apiRequest, type PaginatedDTO } from "@/shared/api/client";
-import { createObjectDecoder, createPaginatedDecoder, createValidatedDecoder, decodeBooleanResult, decodeCountResult, hasShape, isArrayOf, isBoolean, isNumber, isOneOf, isOptional, isRecordOf, isString } from "@/shared/api/decoder";
+import { type ApiClient, ApiError, type PaginatedDTO } from "@/shared/api/client";
+import {
+  createObjectDecoder,
+  createPaginatedDecoder,
+  createValidatedDecoder,
+  decodeBooleanResult,
+  decodeCountResult,
+  hasShape,
+  isArrayOf,
+  isBoolean,
+  isNumber,
+  isOneOf,
+  isOptional,
+  isRecordOf,
+  isString,
+} from "@/shared/api/decoder";
 import { i18n } from "@/shared/i18n";
 import type { SortOrder } from "@/shared/lib/table-sort";
 
 export type AccountProvider = "grok_build" | "grok_web" | "grok_console";
 export type BuildRouteMode = "auto" | "build" | "xai";
 export type AccountCleanupStatus = "cooldown" | "disabled" | "reauthRequired";
-export type AccountState = "ready" | "degraded" | "cooldown" | "quota_exhausted" | "reauth_required" | "disabled";
+export type AccountState =
+  "ready" | "degraded" | "cooldown" | "quota_exhausted" | "reauth_required" | "disabled";
 
 export type BillingDTO = {
   planCode?: string;
@@ -43,7 +58,13 @@ export type BillingHistoryDTO = {
 
 export type QuotaDTO = {
   type: "free" | "paid" | "unknown";
-  source: "unknown" | "upstreamBilling" | "upstreamExhaustion" | "responseModel" | "billingProfile" | "buildSuperEntitlement";
+  source:
+    | "unknown"
+    | "upstreamBilling"
+    | "upstreamExhaustion"
+    | "responseModel"
+    | "billingProfile"
+    | "buildSuperEntitlement";
   confidence: "estimated" | "observed" | "confirmed" | "";
   status: "active" | "waitingReset" | "probing";
   unit?: "tokens" | "credits" | "percent";
@@ -103,7 +124,17 @@ export type AccountDTO = {
   createdAt: string;
   billing?: BillingDTO;
   quota: QuotaDTO;
-  quotaWindows?: Array<{ mode: string; remaining: number; total: number; usagePercent: number; breakdown?: Array<{ productCode: number; usagePercent: number }>; windowSeconds: number; resetAt?: string; syncedAt?: string; source: "default" | "estimated" | "upstream" }>;
+  quotaWindows?: Array<{
+    mode: string;
+    remaining: number;
+    total: number;
+    usagePercent: number;
+    breakdown?: Array<{ productCode: number; usagePercent: number }>;
+    windowSeconds: number;
+    resetAt?: string;
+    syncedAt?: string;
+    source: "default" | "estimated" | "upstream";
+  }>;
 };
 
 export type AccountStateEventDTO = {
@@ -178,62 +209,189 @@ export type DevicePollDTO = {
 };
 
 const billingHistoryValidator = hasShape({
-  year: isNumber, month: isNumber, periodType: isOptional(isString), periodStart: isOptional(isString), periodEnd: isOptional(isString),
-  includedUsed: isNumber, onDemandUsed: isNumber, totalUsed: isNumber,
+  year: isNumber,
+  month: isNumber,
+  periodType: isOptional(isString),
+  periodStart: isOptional(isString),
+  periodEnd: isOptional(isString),
+  includedUsed: isNumber,
+  onDemandUsed: isNumber,
+  totalUsed: isNumber,
 });
 const billingValidator = hasShape({
-  planCode: isOptional(isString), planName: isOptional(isString), monthlyLimit: isNumber, used: isNumber, remaining: isNumber,
-  onDemandCap: isNumber, onDemandUsed: isNumber, prepaidBalance: isNumber, creditUsagePercent: isNumber,
-  isUnifiedBillingUser: isBoolean, onDemandEnabled: isOptional(isBoolean), topUpMethod: isOptional(isString), usagePeriodType: isOptional(isString),
-  usagePeriodStart: isOptional(isString), usagePeriodEnd: isOptional(isString), billingPeriodStart: isOptional(isString),
-  billingPeriodEnd: isOptional(isString), history: isOptional(isArrayOf(billingHistoryValidator)), syncedAt: isString,
+  planCode: isOptional(isString),
+  planName: isOptional(isString),
+  monthlyLimit: isNumber,
+  used: isNumber,
+  remaining: isNumber,
+  onDemandCap: isNumber,
+  onDemandUsed: isNumber,
+  prepaidBalance: isNumber,
+  creditUsagePercent: isNumber,
+  isUnifiedBillingUser: isBoolean,
+  onDemandEnabled: isOptional(isBoolean),
+  topUpMethod: isOptional(isString),
+  usagePeriodType: isOptional(isString),
+  usagePeriodStart: isOptional(isString),
+  usagePeriodEnd: isOptional(isString),
+  billingPeriodStart: isOptional(isString),
+  billingPeriodEnd: isOptional(isString),
+  history: isOptional(isArrayOf(billingHistoryValidator)),
+  syncedAt: isString,
 });
 const quotaValidator = hasShape({
-  type: isOneOf("free", "paid", "unknown"), source: isOneOf("unknown", "upstreamBilling", "upstreamExhaustion", "responseModel", "billingProfile", "buildSuperEntitlement"),
-  confidence: isOneOf("estimated", "observed", "confirmed", ""), status: isOneOf("active", "waitingReset", "probing"),
-  unit: isOptional(isOneOf("tokens", "credits", "percent")), used: isNumber, limit: isNumber, remaining: isNumber, usagePercent: isNumber,
-  limitKnown: isBoolean, windowHours: isOptional(isNumber), observed: isBoolean, confirmed: isBoolean,
-  periodStart: isOptional(isString), periodEnd: isOptional(isString), exhaustedAt: isOptional(isString),
-  nextProbeAt: isOptional(isString), lastConfirmedAt: isOptional(isString),
+  type: isOneOf("free", "paid", "unknown"),
+  source: isOneOf(
+    "unknown",
+    "upstreamBilling",
+    "upstreamExhaustion",
+    "responseModel",
+    "billingProfile",
+    "buildSuperEntitlement",
+  ),
+  confidence: isOneOf("estimated", "observed", "confirmed", ""),
+  status: isOneOf("active", "waitingReset", "probing"),
+  unit: isOptional(isOneOf("tokens", "credits", "percent")),
+  used: isNumber,
+  limit: isNumber,
+  remaining: isNumber,
+  usagePercent: isNumber,
+  limitKnown: isBoolean,
+  windowHours: isOptional(isNumber),
+  observed: isBoolean,
+  confirmed: isBoolean,
+  periodStart: isOptional(isString),
+  periodEnd: isOptional(isString),
+  exhaustedAt: isOptional(isString),
+  nextProbeAt: isOptional(isString),
+  lastConfirmedAt: isOptional(isString),
 });
 const quotaBreakdownValidator = hasShape({ productCode: isNumber, usagePercent: isNumber });
 const quotaWindowValidator = hasShape({
-  mode: isString, remaining: isNumber, total: isNumber, usagePercent: isNumber, breakdown: isOptional(isArrayOf(quotaBreakdownValidator)),
-  windowSeconds: isNumber, resetAt: isOptional(isString), syncedAt: isOptional(isString), source: isOneOf("default", "estimated", "upstream"),
+  mode: isString,
+  remaining: isNumber,
+  total: isNumber,
+  usagePercent: isNumber,
+  breakdown: isOptional(isArrayOf(quotaBreakdownValidator)),
+  windowSeconds: isNumber,
+  resetAt: isOptional(isString),
+  syncedAt: isOptional(isString),
+  source: isOneOf("default", "estimated", "upstream"),
 });
-const linkedAccountValidator = hasShape({ id: isString, provider: isOneOf("grok_build", "grok_web", "grok_console"), name: isString, email: isOptional(isString), userId: isOptional(isString) });
+const linkedAccountValidator = hasShape({
+  id: isString,
+  provider: isOneOf("grok_build", "grok_web", "grok_console"),
+  name: isString,
+  email: isOptional(isString),
+  userId: isOptional(isString),
+});
 const accountEgressPolicyValidator = hasShape({
-  accountId: isString, strategy: isOneOf("inherit", "node", "direct"), egressNodeId: isOptional(isString),
-  allowDirectFallback: isBoolean, createdAt: isOptional(isString), updatedAt: isOptional(isString),
+  accountId: isString,
+  strategy: isOneOf("inherit", "node", "direct"),
+  egressNodeId: isOptional(isString),
+  allowDirectFallback: isBoolean,
+  createdAt: isOptional(isString),
+  updatedAt: isOptional(isString),
 });
-const accountStateEventValidator = hasShape({ id: isString, fromState: isOneOf("ready", "degraded", "cooldown", "quota_exhausted", "reauth_required", "disabled"), toState: isOneOf("ready", "degraded", "cooldown", "quota_exhausted", "reauth_required", "disabled"), event: isString, reason: isOptional(isString), createdAt: isString });
+const accountStateEventValidator = hasShape({
+  id: isString,
+  fromState: isOneOf(
+    "ready",
+    "degraded",
+    "cooldown",
+    "quota_exhausted",
+    "reauth_required",
+    "disabled",
+  ),
+  toState: isOneOf(
+    "ready",
+    "degraded",
+    "cooldown",
+    "quota_exhausted",
+    "reauth_required",
+    "disabled",
+  ),
+  event: isString,
+  reason: isOptional(isString),
+  createdAt: isString,
+});
 const accountValidator = hasShape({
-  id: isString, provider: isOneOf("grok_build", "grok_web", "grok_console"), authType: isOneOf("oauth", "sso"), webTier: isOptional(isOneOf("auto", "basic", "super", "heavy")),
-  webTierSyncedAt: isOptional(isString), nsfwEnabledAt: isOptional(isString), termsAcceptedAt: isOptional(isString), name: isString, email: isOptional(isString), userId: isOptional(isString), teamId: isOptional(isString),
-  enabled: isBoolean, authStatus: isOneOf("active", "reauthRequired"), state: isOneOf("ready", "degraded", "cooldown", "quota_exhausted", "reauth_required", "disabled"), stateChangedAt: isOptional(isString), expiresAt: isOptional(isString), refreshable: isBoolean, cloudflareCookieConfigured: isBoolean,
-  buildSuperEntitled: isBoolean, buildRouteMode: isOneOf("auto", "build", "xai"), buildBotFlagged: isBoolean, modelSyncFailed: isOptional(isBoolean), refreshDueAt: isOptional(isString), lastRefreshAt: isOptional(isString), refreshFailureCount: isNumber,
-  lastRefreshErrorCode: isOptional(isString), priority: isNumber, maxConcurrent: isNumber, minimumRemaining: isNumber,
-  failureCount: isNumber, cooldownUntil: isOptional(isString), lastError: isOptional(isString), lastUsedAt: isOptional(isString),
-  linkedAccountId: isOptional(isString), linkedAccountName: isOptional(isString), linkedProvider: isOptional(isOneOf("grok_build", "grok_web")), linkedAccounts: isOptional(isArrayOf(linkedAccountValidator)),
-  createdAt: isString, billing: isOptional(billingValidator), quota: quotaValidator, quotaWindows: isOptional(isArrayOf(quotaWindowValidator)),
+  id: isString,
+  provider: isOneOf("grok_build", "grok_web", "grok_console"),
+  authType: isOneOf("oauth", "sso"),
+  webTier: isOptional(isOneOf("auto", "basic", "super", "heavy")),
+  webTierSyncedAt: isOptional(isString),
+  nsfwEnabledAt: isOptional(isString),
+  termsAcceptedAt: isOptional(isString),
+  name: isString,
+  email: isOptional(isString),
+  userId: isOptional(isString),
+  teamId: isOptional(isString),
+  enabled: isBoolean,
+  authStatus: isOneOf("active", "reauthRequired"),
+  state: isOneOf("ready", "degraded", "cooldown", "quota_exhausted", "reauth_required", "disabled"),
+  stateChangedAt: isOptional(isString),
+  expiresAt: isOptional(isString),
+  refreshable: isBoolean,
+  cloudflareCookieConfigured: isBoolean,
+  buildSuperEntitled: isBoolean,
+  buildRouteMode: isOneOf("auto", "build", "xai"),
+  buildBotFlagged: isBoolean,
+  modelSyncFailed: isOptional(isBoolean),
+  refreshDueAt: isOptional(isString),
+  lastRefreshAt: isOptional(isString),
+  refreshFailureCount: isNumber,
+  lastRefreshErrorCode: isOptional(isString),
+  priority: isNumber,
+  maxConcurrent: isNumber,
+  minimumRemaining: isNumber,
+  failureCount: isNumber,
+  cooldownUntil: isOptional(isString),
+  lastError: isOptional(isString),
+  lastUsedAt: isOptional(isString),
+  linkedAccountId: isOptional(isString),
+  linkedAccountName: isOptional(isString),
+  linkedProvider: isOptional(isOneOf("grok_build", "grok_web")),
+  linkedAccounts: isOptional(isArrayOf(linkedAccountValidator)),
+  createdAt: isString,
+  billing: isOptional(billingValidator),
+  quota: quotaValidator,
+  quotaWindows: isOptional(isArrayOf(quotaWindowValidator)),
 });
 const decodeBilling = createValidatedDecoder<BillingDTO>("billing", billingValidator);
 const decodeAccount = createValidatedDecoder<AccountDTO>("account", accountValidator);
-const decodeAccountStateEvents = createValidatedDecoder<AccountStateEventDTO[]>("account state events", isArrayOf(accountStateEventValidator));
-const decodeAccountEgressPolicy = createValidatedDecoder<AccountEgressPolicyDTO>("account egress policy", accountEgressPolicyValidator);
+const decodeAccountStateEvents = createValidatedDecoder<AccountStateEventDTO[]>(
+  "account state events",
+  isArrayOf(accountStateEventValidator),
+);
+const decodeAccountEgressPolicy = createValidatedDecoder<AccountEgressPolicyDTO>(
+  "account egress policy",
+  accountEgressPolicyValidator,
+);
 const decodeAccountPage = createPaginatedDecoder<AccountDTO>(accountValidator);
 const decodeAccountSummary = createObjectDecoder<AccountSummaryDTO>("account summary", {
-  total: isNumber, available: isNumber, recovering: isNumber, attention: isNumber, risk: isNumber,
+  total: isNumber,
+  available: isNumber,
+  recovering: isNumber,
+  attention: isNumber,
+  risk: isNumber,
   providers: isRecordOf(hasShape({ total: isNumber, available: isNumber })),
   recovery: hasShape({ cooldown: isNumber, waitingReset: isNumber, probing: isNumber }),
   issues: hasShape({ disabled: isNumber, reauthRequired: isNumber }),
 });
 const decodeDeviceSession = createObjectDecoder<DeviceSessionDTO>("device session", {
-  sessionId: isString, userCode: isString, verificationUri: isString, verificationUriComplete: isOptional(isString),
-  intervalSeconds: isNumber, expiresAt: isString,
+  sessionId: isString,
+  userCode: isString,
+  verificationUri: isString,
+  verificationUriComplete: isOptional(isString),
+  intervalSeconds: isNumber,
+  expiresAt: isString,
 });
 const decodeDevicePoll = createObjectDecoder<DevicePollDTO>("device poll", {
-  status: isOneOf("pending", "succeeded", "syncFailed"), account: isOptional(accountValidator), synced: isOptional(isNumber), syncFailed: isOptional(isNumber),
+  status: isOneOf("pending", "succeeded", "syncFailed"),
+  account: isOptional(accountValidator),
+  synced: isOptional(isNumber),
+  syncFailed: isOptional(isNumber),
 });
 
 type ListAccountsInput = {
@@ -249,7 +407,10 @@ type ListAccountsInput = {
   sortOrder?: SortOrder;
 };
 
-export function listAccounts(input: ListAccountsInput): Promise<PaginatedDTO<AccountDTO>> {
+export function listAccounts(
+  client: ApiClient,
+  input: ListAccountsInput,
+): Promise<PaginatedDTO<AccountDTO>> {
   const query = new URLSearchParams({ page: String(input.page), pageSize: String(input.pageSize) });
   if (input.search) query.set("search", input.search);
   if (input.type) query.set("type", input.type);
@@ -261,39 +422,80 @@ export function listAccounts(input: ListAccountsInput): Promise<PaginatedDTO<Acc
     query.set("sortOrder", input.sortOrder);
   }
   query.set("provider", input.provider);
-  return apiRequest(`/api/admin/v1/accounts?${query}`, {}, decodeAccountPage);
+  return client.request(`/api/admin/v1/accounts?${query}`, {}, decodeAccountPage);
 }
 
-export function getAccountSummary(): Promise<AccountSummaryDTO> {
-  return apiRequest("/api/admin/v1/accounts/summary", {}, decodeAccountSummary);
+export function getAccountSummary(client: ApiClient): Promise<AccountSummaryDTO> {
+  return client.request("/api/admin/v1/accounts/summary", {}, decodeAccountSummary);
 }
 
-export function updateAccount(id: string, input: AccountUpdateInput): Promise<AccountDTO> {
-  return apiRequest(`/api/admin/v1/accounts/${id}`, { method: "PATCH", body: input }, decodeAccount);
+export function updateAccount(
+  client: ApiClient,
+  id: string,
+  input: AccountUpdateInput,
+): Promise<AccountDTO> {
+  return client.request(
+    `/api/admin/v1/accounts/${id}`,
+    { method: "PATCH", body: input },
+    decodeAccount,
+  );
 }
 
-export function deleteAccount(id: string): Promise<{ deleted: boolean }> {
-  return apiRequest(`/api/admin/v1/accounts/${id}`, { method: "DELETE" }, decodeBooleanResult<{ deleted: boolean }>("deleted"));
+export function deleteAccount(client: ApiClient, id: string): Promise<{ deleted: boolean }> {
+  return client.request(
+    `/api/admin/v1/accounts/${id}`,
+    { method: "DELETE" },
+    decodeBooleanResult<{ deleted: boolean }>("deleted"),
+  );
 }
 
-export function refreshAccountBilling(id: string): Promise<BillingDTO> {
-  return apiRequest(`/api/admin/v1/accounts/${id}/refresh-billing`, { method: "POST" }, decodeBilling);
+export function refreshAccountBilling(client: ApiClient, id: string): Promise<BillingDTO> {
+  return client.request(
+    `/api/admin/v1/accounts/${id}/refresh-billing`,
+    { method: "POST" },
+    decodeBilling,
+  );
 }
 
-export function refreshAccountToken(id: string): Promise<AccountDTO> {
-  return apiRequest(`/api/admin/v1/accounts/${id}/refresh-token`, { method: "POST" }, decodeAccount);
+export function refreshAccountToken(client: ApiClient, id: string): Promise<AccountDTO> {
+  return client.request(
+    `/api/admin/v1/accounts/${id}/refresh-token`,
+    { method: "POST" },
+    decodeAccount,
+  );
 }
 
-export function acceptWebAccountTerms(id: string): Promise<{ completed: boolean }> {
-  return apiRequest(`/api/admin/v1/accounts/web/${id}/accept-terms`, { method: "POST" }, decodeBooleanResult<{ completed: boolean }>("completed"));
+export function acceptWebAccountTerms(
+  client: ApiClient,
+  id: string,
+): Promise<{ completed: boolean }> {
+  return client.request(
+    `/api/admin/v1/accounts/web/${id}/accept-terms`,
+    { method: "POST" },
+    decodeBooleanResult<{ completed: boolean }>("completed"),
+  );
 }
 
-export function setWebAccountBirthDate(id: string): Promise<{ completed: boolean }> {
-  return apiRequest(`/api/admin/v1/accounts/web/${id}/birth-date`, { method: "POST" }, decodeBooleanResult<{ completed: boolean }>("completed"));
+export function setWebAccountBirthDate(
+  client: ApiClient,
+  id: string,
+): Promise<{ completed: boolean }> {
+  return client.request(
+    `/api/admin/v1/accounts/web/${id}/birth-date`,
+    { method: "POST" },
+    decodeBooleanResult<{ completed: boolean }>("completed"),
+  );
 }
 
-export function enableWebAccountNSFW(id: string): Promise<{ completed: boolean }> {
-  return apiRequest(`/api/admin/v1/accounts/web/${id}/nsfw`, { method: "POST" }, decodeBooleanResult<{ completed: boolean }>("completed"));
+export function enableWebAccountNSFW(
+  client: ApiClient,
+  id: string,
+): Promise<{ completed: boolean }> {
+  return client.request(
+    `/api/admin/v1/accounts/web/${id}/nsfw`,
+    { method: "POST" },
+    decodeBooleanResult<{ completed: boolean }>("completed"),
+  );
 }
 
 export type AccountBatchResultDTO = { succeeded: number; failed: number };
@@ -345,17 +547,34 @@ export type AccountImportResultDTO = {
 
 export type WebConsoleSyncResultDTO = AccountImportResultDTO & { skipped: number };
 
-type AccountTaskStreamPayload = Partial<BuildConversionResultDTO & AccountTaskProgressDTO & AccountTokenRefreshResultDTO & AccountImportResultDTO> & {
+type AccountTaskStreamPayload = Partial<
+  BuildConversionResultDTO &
+    AccountTaskProgressDTO &
+    AccountTokenRefreshResultDTO &
+    AccountImportResultDTO
+> & {
   code?: string;
   message?: string;
 };
 
-const decodeAccountTaskStreamPayload = createObjectDecoder<AccountTaskStreamPayload>("account task event", {
-  created: isOptional(isNumber), linked: isOptional(isNumber), skipped: isOptional(isNumber), failed: isOptional(isNumber),
-  synced: isOptional(isNumber), syncFailed: isOptional(isNumber), completed: isOptional(isNumber), total: isOptional(isNumber),
-  phase: isOptional(isOneOf("importing", "converting", "syncing")), updated: isOptional(isNumber), succeeded: isOptional(isNumber),
-  code: isOptional(isString), message: isOptional(isString),
-});
+const decodeAccountTaskStreamPayload = createObjectDecoder<AccountTaskStreamPayload>(
+  "account task event",
+  {
+    created: isOptional(isNumber),
+    linked: isOptional(isNumber),
+    skipped: isOptional(isNumber),
+    failed: isOptional(isNumber),
+    synced: isOptional(isNumber),
+    syncFailed: isOptional(isNumber),
+    completed: isOptional(isNumber),
+    total: isOptional(isNumber),
+    phase: isOptional(isOneOf("importing", "converting", "syncing")),
+    updated: isOptional(isNumber),
+    succeeded: isOptional(isNumber),
+    code: isOptional(isString),
+    message: isOptional(isString),
+  },
+);
 
 function hasNumericResult(value: AccountTaskStreamPayload, fields: string[]): boolean {
   return fields.every((field) => {
@@ -364,7 +583,14 @@ function hasNumericResult(value: AccountTaskStreamPayload, fields: string[]): bo
   });
 }
 
-async function runAccountTask<T>(path: string, body: BodyInit | object | undefined, resultFields: string[], onProgress?: (value: AccountTaskProgressDTO) => void, signal?: AbortSignal): Promise<T> {
+async function runAccountTask<T>(
+  client: ApiClient,
+  path: string,
+  body: BodyInit | object | undefined,
+  resultFields: string[],
+  onProgress?: (value: AccountTaskProgressDTO) => void,
+  signal?: AbortSignal,
+): Promise<T> {
   let result: T | undefined;
   let pendingProgress: AccountTaskProgressDTO | undefined;
   let progressTimer: number | undefined;
@@ -377,7 +603,11 @@ async function runAccountTask<T>(path: string, body: BodyInit | object | undefin
     onProgress(value);
   };
   const reportProgress = (value: AccountTaskProgressDTO) => {
-    if (pendingProgress && pendingProgress.phase !== value.phase && pendingProgress.completed === pendingProgress.total) {
+    if (
+      pendingProgress &&
+      pendingProgress.phase !== value.phase &&
+      pendingProgress.completed === pendingProgress.total
+    ) {
       if (progressTimer !== undefined) window.clearTimeout(progressTimer);
       progressTimer = undefined;
       flushProgress();
@@ -396,27 +626,49 @@ async function runAccountTask<T>(path: string, body: BodyInit | object | undefin
     }
   };
   try {
-    await apiEventStream(path, {
-      method: "POST",
-      headers: { Accept: "text/event-stream" },
-      body,
-      signal,
-    }, decodeAccountTaskStreamPayload, ({ event, data }) => {
-      if (event === "progress" && typeof data.completed === "number" && typeof data.total === "number") {
-        const phase = data.phase === "importing" || data.phase === "converting" || data.phase === "syncing" ? data.phase : undefined;
-        reportProgress({ completed: data.completed, total: data.total, phase });
-        return;
-      }
-      if (event === "complete") {
-        flushProgress();
-        if (hasNumericResult(data, resultFields)) result = data as T;
-        return;
-      }
-      if (event === "error") {
-        const code = data.code ?? "accountConversionFailed";
-        throw new ApiError(502, code, i18n.exists(`apiErrors.${code}`) ? i18n.t(`apiErrors.${code}`) : (data.message ?? i18n.t("apiErrors.requestFailed")));
-      }
-    });
+    await client.eventStream(
+      path,
+      {
+        method: "POST",
+        headers: { Accept: "text/event-stream" },
+        body,
+        signal,
+      },
+      decodeAccountTaskStreamPayload,
+      ({ event, data }) => {
+        if (
+          event === "progress" &&
+          typeof data.completed === "number" &&
+          typeof data.total === "number"
+        ) {
+          const phase =
+            data.phase === "importing" || data.phase === "converting" || data.phase === "syncing"
+              ? data.phase
+              : undefined;
+          reportProgress({
+            completed: data.completed,
+            total: data.total,
+            ...(phase === undefined ? {} : { phase }),
+          });
+          return;
+        }
+        if (event === "complete") {
+          flushProgress();
+          if (hasNumericResult(data, resultFields)) result = data as T;
+          return;
+        }
+        if (event === "error") {
+          const code = data.code ?? "accountConversionFailed";
+          throw new ApiError(
+            502,
+            code,
+            i18n.exists(`apiErrors.${code}`)
+              ? i18n.t(`apiErrors.${code}`)
+              : (data.message ?? i18n.t("apiErrors.requestFailed")),
+          );
+        }
+      },
+    );
   } finally {
     if (progressTimer !== undefined) window.clearTimeout(progressTimer);
     flushProgress();
@@ -427,97 +679,296 @@ async function runAccountTask<T>(path: string, body: BodyInit | object | undefin
   return result;
 }
 
-export function refreshAllAccountBilling(onProgress?: (value: AccountTaskProgressDTO) => void, signal?: AbortSignal): Promise<AccountBatchResultDTO> {
-  return runAccountTask("/api/admin/v1/accounts/refresh-billing", undefined, ["succeeded", "failed"], onProgress, signal);
+export function refreshAllAccountBilling(
+  client: ApiClient,
+  onProgress?: (value: AccountTaskProgressDTO) => void,
+  signal?: AbortSignal,
+): Promise<AccountBatchResultDTO> {
+  return runAccountTask(
+    client,
+    "/api/admin/v1/accounts/refresh-billing",
+    undefined,
+    ["succeeded", "failed"],
+    onProgress,
+    signal,
+  );
 }
 
-export function refreshAllAccountTokens(onProgress?: (value: AccountTaskProgressDTO) => void, signal?: AbortSignal): Promise<AccountTokenRefreshResultDTO> {
-  return runAccountTask("/api/admin/v1/accounts/refresh-tokens", undefined, ["succeeded", "failed", "skipped"], onProgress, signal);
+export function refreshAllAccountTokens(
+  client: ApiClient,
+  onProgress?: (value: AccountTaskProgressDTO) => void,
+  signal?: AbortSignal,
+): Promise<AccountTokenRefreshResultDTO> {
+  return runAccountTask(
+    client,
+    "/api/admin/v1/accounts/refresh-tokens",
+    undefined,
+    ["succeeded", "failed", "skipped"],
+    onProgress,
+    signal,
+  );
 }
 
-export function refreshAllWebAccountQuotas(onProgress?: (value: AccountTaskProgressDTO) => void, signal?: AbortSignal): Promise<AccountBatchResultDTO> {
-  return runAccountTask("/api/admin/v1/accounts/web/refresh-quotas", undefined, ["succeeded", "failed"], onProgress, signal);
+export function refreshAllWebAccountQuotas(
+  client: ApiClient,
+  onProgress?: (value: AccountTaskProgressDTO) => void,
+  signal?: AbortSignal,
+): Promise<AccountBatchResultDTO> {
+  return runAccountTask(
+    client,
+    "/api/admin/v1/accounts/web/refresh-quotas",
+    undefined,
+    ["succeeded", "failed"],
+    onProgress,
+    signal,
+  );
 }
 
-export function refreshAllConsoleAccountQuotas(onProgress?: (value: AccountTaskProgressDTO) => void, signal?: AbortSignal): Promise<AccountBatchResultDTO> {
-  return runAccountTask("/api/admin/v1/accounts/console/refresh-quotas", undefined, ["succeeded", "failed"], onProgress, signal);
+export function refreshAllConsoleAccountQuotas(
+  client: ApiClient,
+  onProgress?: (value: AccountTaskProgressDTO) => void,
+  signal?: AbortSignal,
+): Promise<AccountBatchResultDTO> {
+  return runAccountTask(
+    client,
+    "/api/admin/v1/accounts/console/refresh-quotas",
+    undefined,
+    ["succeeded", "failed"],
+    onProgress,
+    signal,
+  );
 }
 
-export function convertWebAccountsToBuild(input: BuildConversionInput, onProgress?: (value: AccountTaskProgressDTO) => void, signal?: AbortSignal): Promise<BuildConversionResultDTO> {
-  return runAccountTask("/api/admin/v1/accounts/web/convert-to-build", input, ["created", "linked", "skipped", "failed", "synced", "syncFailed"], onProgress, signal);
+export function convertWebAccountsToBuild(
+  client: ApiClient,
+  input: BuildConversionInput,
+  onProgress?: (value: AccountTaskProgressDTO) => void,
+  signal?: AbortSignal,
+): Promise<BuildConversionResultDTO> {
+  return runAccountTask(
+    client,
+    "/api/admin/v1/accounts/web/convert-to-build",
+    input,
+    ["created", "linked", "skipped", "failed", "synced", "syncFailed"],
+    onProgress,
+    signal,
+  );
 }
 
-export function syncWebAccountsToConsole(input: WebConsoleSyncInput, onProgress?: (value: AccountTaskProgressDTO) => void, signal?: AbortSignal): Promise<WebConsoleSyncResultDTO> {
-  return runAccountTask("/api/admin/v1/accounts/web/sync-to-console", input, ["created", "updated", "skipped", "synced", "syncFailed"], onProgress, signal);
+export function syncWebAccountsToConsole(
+  client: ApiClient,
+  input: WebConsoleSyncInput,
+  onProgress?: (value: AccountTaskProgressDTO) => void,
+  signal?: AbortSignal,
+): Promise<WebConsoleSyncResultDTO> {
+  return runAccountTask(
+    client,
+    "/api/admin/v1/accounts/web/sync-to-console",
+    input,
+    ["created", "updated", "skipped", "synced", "syncFailed"],
+    onProgress,
+    signal,
+  );
 }
 
-export function runWebAccountScripts(input: WebAccountScriptsInput, onProgress?: (value: AccountTaskProgressDTO) => void, signal?: AbortSignal): Promise<AccountBatchResultDTO> {
-  return runAccountTask("/api/admin/v1/accounts/web/run-scripts", input, ["succeeded", "failed"], onProgress, signal);
+export function runWebAccountScripts(
+  client: ApiClient,
+  input: WebAccountScriptsInput,
+  onProgress?: (value: AccountTaskProgressDTO) => void,
+  signal?: AbortSignal,
+): Promise<AccountBatchResultDTO> {
+  return runAccountTask(
+    client,
+    "/api/admin/v1/accounts/web/run-scripts",
+    input,
+    ["succeeded", "failed"],
+    onProgress,
+    signal,
+  );
 }
 
-export function importAccounts(files: readonly File[], onProgress?: (value: AccountTaskProgressDTO) => void, signal?: AbortSignal): Promise<AccountImportResultDTO> {
+export function importAccounts(
+  client: ApiClient,
+  files: readonly File[],
+  onProgress?: (value: AccountTaskProgressDTO) => void,
+  signal?: AbortSignal,
+): Promise<AccountImportResultDTO> {
   const body = new FormData();
   files.forEach((file) => body.append("files", file, file.name));
-  return runAccountTask("/api/admin/v1/accounts/import", body, ["created", "updated", "synced", "syncFailed"], onProgress, signal);
+  return runAccountTask(
+    client,
+    "/api/admin/v1/accounts/import",
+    body,
+    ["created", "updated", "synced", "syncFailed"],
+    onProgress,
+    signal,
+  );
 }
 
-export function importWebAccounts(files: readonly File[], onProgress?: (value: AccountTaskProgressDTO) => void, signal?: AbortSignal): Promise<AccountImportResultDTO> {
+export function importWebAccounts(
+  client: ApiClient,
+  files: readonly File[],
+  onProgress?: (value: AccountTaskProgressDTO) => void,
+  signal?: AbortSignal,
+): Promise<AccountImportResultDTO> {
   const body = new FormData();
   files.forEach((file) => body.append("files", file, file.name));
-  return runAccountTask("/api/admin/v1/accounts/web/import", body, ["created", "updated", "synced", "syncFailed"], onProgress, signal);
+  return runAccountTask(
+    client,
+    "/api/admin/v1/accounts/web/import",
+    body,
+    ["created", "updated", "synced", "syncFailed"],
+    onProgress,
+    signal,
+  );
 }
 
-export function importConsoleAccounts(files: readonly File[], onProgress?: (value: AccountTaskProgressDTO) => void, signal?: AbortSignal): Promise<AccountImportResultDTO> {
+export function importConsoleAccounts(
+  client: ApiClient,
+  files: readonly File[],
+  onProgress?: (value: AccountTaskProgressDTO) => void,
+  signal?: AbortSignal,
+): Promise<AccountImportResultDTO> {
   const body = new FormData();
   files.forEach((file) => body.append("files", file, file.name));
-  return runAccountTask("/api/admin/v1/accounts/console/import", body, ["created", "updated", "synced", "syncFailed"], onProgress, signal);
+  return runAccountTask(
+    client,
+    "/api/admin/v1/accounts/console/import",
+    body,
+    ["created", "updated", "synced", "syncFailed"],
+    onProgress,
+    signal,
+  );
 }
 
-export function refreshAccountQuota(id: string): Promise<AccountDTO> {
-  return apiRequest(`/api/admin/v1/accounts/${id}/refresh-quota`, { method: "POST" }, decodeAccount);
+export function refreshAccountQuota(client: ApiClient, id: string): Promise<AccountDTO> {
+  return client.request(
+    `/api/admin/v1/accounts/${id}/refresh-quota`,
+    { method: "POST" },
+    decodeAccount,
+  );
 }
 
-export function exportAccounts(provider: AccountProvider): Promise<Blob> {
-  return apiDownload(`/api/admin/v1/accounts/export?provider=${encodeURIComponent(provider)}`);
+export function exportAccounts(client: ApiClient, provider: AccountProvider): Promise<Blob> {
+  return client.download(`/api/admin/v1/accounts/export?provider=${encodeURIComponent(provider)}`);
 }
 
-export function updateAccountsEnabled(ids: string[], enabled: boolean, provider: AccountProvider): Promise<{ updated: number }> {
-  return apiRequest("/api/admin/v1/accounts/batch", { method: "PATCH", body: { ids, enabled, provider } }, decodeCountResult<{ updated: number }>("updated"));
+export function updateAccountsEnabled(
+  client: ApiClient,
+  ids: string[],
+  enabled: boolean,
+  provider: AccountProvider,
+): Promise<{ updated: number }> {
+  return client.request(
+    "/api/admin/v1/accounts/batch",
+    { method: "PATCH", body: { ids, enabled, provider } },
+    decodeCountResult<{ updated: number }>("updated"),
+  );
 }
 
-export function refreshAccountsQuota(ids: string[], provider: AccountProvider): Promise<{ succeeded: number; failed: number }> {
-  return apiRequest("/api/admin/v1/accounts/batch/refresh-quotas", { method: "POST", body: { ids, provider } }, createObjectDecoder("account batch", { succeeded: isNumber, failed: isNumber }));
+export function refreshAccountsQuota(
+  client: ApiClient,
+  ids: string[],
+  provider: AccountProvider,
+): Promise<{ succeeded: number; failed: number }> {
+  return client.request(
+    "/api/admin/v1/accounts/batch/refresh-quotas",
+    { method: "POST", body: { ids, provider } },
+    createObjectDecoder("account batch", { succeeded: isNumber, failed: isNumber }),
+  );
 }
 
-export function refreshAccountsTokens(ids: string[], provider: AccountProvider): Promise<AccountTokenRefreshResultDTO> {
-  return apiRequest("/api/admin/v1/accounts/batch/refresh-tokens", { method: "POST", body: { ids, provider } }, createObjectDecoder("account token refresh batch", { succeeded: isNumber, failed: isNumber, skipped: isNumber }));
+export function refreshAccountsTokens(
+  client: ApiClient,
+  ids: string[],
+  provider: AccountProvider,
+): Promise<AccountTokenRefreshResultDTO> {
+  return client.request(
+    "/api/admin/v1/accounts/batch/refresh-tokens",
+    { method: "POST", body: { ids, provider } },
+    createObjectDecoder("account token refresh batch", {
+      succeeded: isNumber,
+      failed: isNumber,
+      skipped: isNumber,
+    }),
+  );
 }
 
-export function cleanupAccounts(provider: AccountProvider, statuses: AccountCleanupStatus[]): Promise<{ deleted: number }> {
-  return apiRequest("/api/admin/v1/accounts/cleanup", { method: "POST", body: { provider, statuses } }, decodeCountResult<{ deleted: number }>("deleted"));
+export function cleanupAccounts(
+  client: ApiClient,
+  provider: AccountProvider,
+  statuses: AccountCleanupStatus[],
+): Promise<{ deleted: number }> {
+  return client.request(
+    "/api/admin/v1/accounts/cleanup",
+    { method: "POST", body: { provider, statuses } },
+    decodeCountResult<{ deleted: number }>("deleted"),
+  );
 }
 
-export function deleteAccounts(ids: string[], provider: AccountProvider): Promise<{ deleted: number }> {
-  return apiRequest("/api/admin/v1/accounts", { method: "DELETE", body: { ids, provider } }, decodeCountResult<{ deleted: number }>("deleted"));
+export function deleteAccounts(
+  client: ApiClient,
+  ids: string[],
+  provider: AccountProvider,
+): Promise<{ deleted: number }> {
+  return client.request(
+    "/api/admin/v1/accounts",
+    { method: "DELETE", body: { ids, provider } },
+    decodeCountResult<{ deleted: number }>("deleted"),
+  );
 }
 
-export function startDeviceAuthorization(): Promise<DeviceSessionDTO> {
-  return apiRequest("/api/admin/v1/accounts/device/start", { method: "POST" }, decodeDeviceSession);
+export function startDeviceAuthorization(client: ApiClient): Promise<DeviceSessionDTO> {
+  return client.request(
+    "/api/admin/v1/accounts/device/start",
+    { method: "POST" },
+    decodeDeviceSession,
+  );
 }
 
-export function pollDeviceAuthorization(sessionId: string, signal: AbortSignal): Promise<DevicePollDTO> {
-  return apiRequest(`/api/admin/v1/accounts/device/${sessionId}/poll`, { method: "POST", signal }, decodeDevicePoll);
+export function pollDeviceAuthorization(
+  client: ApiClient,
+  sessionId: string,
+  signal: AbortSignal,
+): Promise<DevicePollDTO> {
+  return client.request(
+    `/api/admin/v1/accounts/device/${sessionId}/poll`,
+    { method: "POST", signal },
+    decodeDevicePoll,
+  );
 }
 
-export function listAccountStateEvents(id: string, limit = 20): Promise<AccountStateEventDTO[]> {
-  return apiRequest(`/api/admin/v1/accounts/${id}/state-events?limit=${Math.min(Math.max(limit, 1), 100)}`, {}, decodeAccountStateEvents);
+export function listAccountStateEvents(
+  client: ApiClient,
+  id: string,
+  limit = 20,
+): Promise<AccountStateEventDTO[]> {
+  return client.request(
+    `/api/admin/v1/accounts/${id}/state-events?limit=${Math.min(Math.max(limit, 1), 100)}`,
+    {},
+    decodeAccountStateEvents,
+  );
 }
 
-
-export function getAccountEgressPolicy(id: string): Promise<AccountEgressPolicyDTO> {
-  return apiRequest(`/api/admin/v1/accounts/${id}/egress-policy`, {}, decodeAccountEgressPolicy);
+export function getAccountEgressPolicy(
+  client: ApiClient,
+  id: string,
+): Promise<AccountEgressPolicyDTO> {
+  return client.request(
+    `/api/admin/v1/accounts/${id}/egress-policy`,
+    {},
+    decodeAccountEgressPolicy,
+  );
 }
 
-export function updateAccountEgressPolicy(id: string, input: AccountEgressPolicyInput): Promise<AccountEgressPolicyDTO> {
-  return apiRequest(`/api/admin/v1/accounts/${id}/egress-policy`, { method: "PUT", body: input }, decodeAccountEgressPolicy);
+export function updateAccountEgressPolicy(
+  client: ApiClient,
+  id: string,
+  input: AccountEgressPolicyInput,
+): Promise<AccountEgressPolicyDTO> {
+  return client.request(
+    `/api/admin/v1/accounts/${id}/egress-policy`,
+    { method: "PUT", body: input },
+    decodeAccountEgressPolicy,
+  );
 }

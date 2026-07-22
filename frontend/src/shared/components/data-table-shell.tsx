@@ -14,14 +14,8 @@ export function DataTableShell({ toolbar, children, footer, className }: DataTab
   return (
     <section className={cn("flex min-w-0 flex-col gap-4", className)}>
       <PageToolbar>{toolbar}</PageToolbar>
-      <div className="min-w-0">
-        {children}
-      </div>
-      {footer ? (
-        <div className="flex min-h-12 items-center py-2">
-          {footer}
-        </div>
-      ) : null}
+      <div className="min-w-0">{children}</div>
+      {footer ? <div className="flex min-h-12 items-center py-2">{footer}</div> : null}
     </section>
   );
 }

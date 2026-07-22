@@ -26,6 +26,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
+import { formatAccountState } from "@/features/accounts/account-state";
 import type {
   AccountCleanupStatus,
   AccountDTO,
@@ -33,13 +34,8 @@ import type {
   AccountStateEventDTO,
   DeviceSessionDTO,
 } from "@/features/accounts/accounts-api";
-import { formatAccountState } from "@/features/accounts/account-state";
 import { CopyButton } from "@/shared/components/copy-button";
-import {
-  EmptyState,
-  ErrorState,
-  LoadingState,
-} from "@/shared/components/data-state";
+import { EmptyState, ErrorState, LoadingState } from "@/shared/components/data-state";
 import { formatDateTime } from "@/shared/lib/format";
 
 export function AccountDeviceDialog({
@@ -71,17 +67,13 @@ export function AccountDeviceDialog({
       <DialogContent className="max-w-[460px] pb-6">
         <DialogHeader className="pr-7">
           <DialogTitle>{t("accounts.deviceTitle")}</DialogTitle>
-          <DialogDescription>
-            {t("accounts.deviceDescription")}
-          </DialogDescription>
+          <DialogDescription>{t("accounts.deviceDescription")}</DialogDescription>
         </DialogHeader>
         {status === "starting" ? <LoadingState className="min-h-28" /> : null}
         {session ? (
           <div className="space-y-4">
             <div className="rounded-lg bg-muted/50 px-3 py-2.5">
-              <span className="text-[11px] text-muted-foreground">
-                {t("accounts.userCode")}
-              </span>
+              <span className="text-[11px] text-muted-foreground">{t("accounts.userCode")}</span>
               <div className="mt-0.5 flex items-center justify-between gap-3">
                 <code className="min-w-0 select-all font-mono text-xl font-semibold tracking-[0.08em] tabular-nums">
                   {session.userCode}
@@ -107,12 +99,7 @@ export function AccountDeviceDialog({
                   <Spinner className="size-3.5" />
                   {t("accounts.waiting")}
                 </span>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="shrink-0"
-                  onClick={openVerification}
-                >
+                <Button type="button" size="sm" className="shrink-0" onClick={openVerification}>
                   <Link />
                   {t("accounts.openVerification")}
                 </Button>
@@ -120,9 +107,7 @@ export function AccountDeviceDialog({
             ) : null}
             {status === "failed" ? (
               <div className="flex items-center justify-between gap-3">
-                <p className="text-xs text-muted-foreground">
-                  {t("apiErrors.deviceLoginFailed")}
-                </p>
+                <p className="text-xs text-muted-foreground">{t("apiErrors.deviceLoginFailed")}</p>
                 <Button
                   type="button"
                   variant="secondary"
@@ -231,20 +216,10 @@ export function AccountQuickImportDialog({
           />
         </div>
         <DialogFooter>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={() => onOpenChange(false)}
-          >
+          <Button type="button" variant="secondary" size="sm" onClick={() => onOpenChange(false)}>
             {t("common.cancel")}
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            disabled={!tokens.trim() || pending}
-            onClick={onSubmit}
-          >
+          <Button type="button" size="sm" disabled={!tokens.trim() || pending} onClick={onSubmit}>
             {pending ? <Spinner /> : null}
             {t("accounts.importAction")}
           </Button>
@@ -286,9 +261,7 @@ export function AccountStateHistoryDialog({
         </DialogHeader>
         {pending ? <LoadingState className="min-h-32" /> : null}
         {error ? <ErrorState message={error} onRetry={onRetry} /> : null}
-        {events?.length === 0 ? (
-          <EmptyState message={t("accounts.noStateEvents")} />
-        ) : null}
+        {events?.length === 0 ? <EmptyState message={t("accounts.noStateEvents")} /> : null}
         {events && events.length > 0 ? (
           <div className="max-h-[50vh] space-y-2 overflow-y-auto pr-1">
             {events.map((event) => (
@@ -343,9 +316,7 @@ export function AccountDeleteDialogs({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("accounts.deleteTitle")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("accounts.deleteDescription")}
-            </AlertDialogDescription>
+            <AlertDialogDescription>{t("accounts.deleteDescription")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
@@ -364,9 +335,7 @@ export function AccountDeleteDialogs({
             <AlertDialogTitle>
               {t("accounts.batchDeleteTitle", { count: selectedCount })}
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("accounts.deleteDescription")}
-            </AlertDialogDescription>
+            <AlertDialogDescription>{t("accounts.deleteDescription")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
@@ -416,12 +385,8 @@ export function AccountCleanupDialog({
     <Dialog open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
       <DialogContent className="max-w-[420px]">
         <DialogHeader>
-          <DialogTitle>
-            {t("accounts.cleanupTitle", { provider: providerName })}
-          </DialogTitle>
-          <DialogDescription>
-            {t("accounts.cleanupDescription")}
-          </DialogDescription>
+          <DialogTitle>{t("accounts.cleanupTitle", { provider: providerName })}</DialogTitle>
+          <DialogDescription>{t("accounts.cleanupDescription")}</DialogDescription>
         </DialogHeader>
         <div className="space-y-1.5">
           {options.map(([status, label]) => (

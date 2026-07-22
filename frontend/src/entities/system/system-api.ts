@@ -1,14 +1,22 @@
-import { apiRequest } from "@/shared/api/client";
-import { createObjectDecoder, isBoolean, isOneOf, isString, type ValueValidator } from "@/shared/api/decoder";
+import { type ApiClient } from "@/shared/api/client";
+import {
+  createObjectDecoder,
+  isBoolean,
+  isOneOf,
+  isString,
+  type ValueValidator,
+} from "@/shared/api/decoder";
 
 export type SystemInfoDTO = {
   publicApiBaseURL: string;
 };
 
-const decodeSystemInfo = createObjectDecoder<SystemInfoDTO>("system info", { publicApiBaseURL: isString });
+const decodeSystemInfo = createObjectDecoder<SystemInfoDTO>("system info", {
+  publicApiBaseURL: isString,
+});
 
-export function getSystemInfo(): Promise<SystemInfoDTO> {
-  return apiRequest("/api/admin/v1/system", {}, decodeSystemInfo);
+export function getSystemInfo(client: ApiClient): Promise<SystemInfoDTO> {
+  return client.request("/api/admin/v1/system", {}, decodeSystemInfo);
 }
 
 export type UpdateStatus = "unchecked" | "up_to_date" | "update_available" | "check_failed";
@@ -39,13 +47,17 @@ const decodeVersionInfo = createObjectDecoder<VersionInfoDTO>("version info", {
   releaseUrl: isString,
   releaseNotes: isString,
   error: isString,
-  repository: isString, upstreamRepository: isString, upstreamLatestVersion: isString, upstreamReleaseUrl: isString, upstreamError: isString,
+  repository: isString,
+  upstreamRepository: isString,
+  upstreamLatestVersion: isString,
+  upstreamReleaseUrl: isString,
+  upstreamError: isString,
 });
 
-export function getVersionInfo(): Promise<VersionInfoDTO> {
-  return apiRequest("/api/admin/v1/system/version", {}, decodeVersionInfo);
+export function getVersionInfo(client: ApiClient): Promise<VersionInfoDTO> {
+  return client.request("/api/admin/v1/system/version", {}, decodeVersionInfo);
 }
 
-export function checkForUpdates(): Promise<VersionInfoDTO> {
-  return apiRequest("/api/admin/v1/system/update/check", { method: "POST" }, decodeVersionInfo);
+export function checkForUpdates(client: ApiClient): Promise<VersionInfoDTO> {
+  return client.request("/api/admin/v1/system/update/check", { method: "POST" }, decodeVersionInfo);
 }

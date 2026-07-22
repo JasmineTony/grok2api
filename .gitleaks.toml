@@ -1,0 +1,8 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Release smoke password is a non-production fixture replaced inside an ephemeral container"
+condition = "AND"
+regexes = ['''SmokeTest-Only-Password-123!''']
+paths = ['''^.github/workflows/release-(?:image|smoke).yml$''']

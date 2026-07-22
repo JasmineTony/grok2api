@@ -2,9 +2,11 @@ export type ApiDecoder<T> = (value: unknown) => T;
 export type ValueValidator = (value: unknown) => boolean;
 
 export const isString: ValueValidator = (value) => typeof value === "string";
-export const isNumber: ValueValidator = (value) => typeof value === "number" && Number.isFinite(value);
+export const isNumber: ValueValidator = (value) =>
+  typeof value === "number" && Number.isFinite(value);
 export const isBoolean: ValueValidator = (value) => typeof value === "boolean";
-export const isObject: ValueValidator = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+export const isObject: ValueValidator = (value) =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 
 export function isOptional(validator: ValueValidator): ValueValidator {
   return (value) => value === undefined || validator(value);
@@ -33,7 +35,10 @@ export function hasShape(shape: Readonly<Record<string, ValueValidator>>): Value
   };
 }
 
-export function createObjectDecoder<T>(name: string, shape: Readonly<Record<string, ValueValidator>>): ApiDecoder<T> {
+export function createObjectDecoder<T>(
+  name: string,
+  shape: Readonly<Record<string, ValueValidator>>,
+): ApiDecoder<T> {
   return createValidatedDecoder(name, hasShape(shape));
 }
 
@@ -53,7 +58,9 @@ export function decodeCountResult<T>(field: string): ApiDecoder<T> {
   return createObjectDecoder<T>("count result", { [field]: isNumber });
 }
 
-export function createPaginatedDecoder<T>(itemValidator: ValueValidator): ApiDecoder<{ items: T[]; page: number; pageSize: number; total: number }> {
+export function createPaginatedDecoder<T>(
+  itemValidator: ValueValidator,
+): ApiDecoder<{ items: T[]; page: number; pageSize: number; total: number }> {
   return createObjectDecoder("paginated result", {
     items: isArrayOf(itemValidator),
     page: isNumber,

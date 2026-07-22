@@ -94,23 +94,15 @@ export function sanitizeHTML(content: string): string {
       continue;
     }
     const href = tag === "a" ? safeLink(element.getAttribute("href")) : "";
-    const title =
-      tag === "a" ? (element.getAttribute("title")?.slice(0, 512) ?? "") : "";
-    const imageSource =
-      tag === "img" ? safeImage(element.getAttribute("src")) : "";
-    const imageAlt =
-      tag === "img" ? (element.getAttribute("alt")?.slice(0, 512) ?? "") : "";
+    const title = tag === "a" ? (element.getAttribute("title")?.slice(0, 512) ?? "") : "";
+    const imageSource = tag === "img" ? safeImage(element.getAttribute("src")) : "";
+    const imageAlt = tag === "img" ? (element.getAttribute("alt")?.slice(0, 512) ?? "") : "";
     const colSpan =
-      tag === "td" || tag === "th"
-        ? boundedTableSpan(element.getAttribute("colspan"))
-        : "";
+      tag === "td" || tag === "th" ? boundedTableSpan(element.getAttribute("colspan")) : "";
     const rowSpan =
-      tag === "td" || tag === "th"
-        ? boundedTableSpan(element.getAttribute("rowspan"))
-        : "";
+      tag === "td" || tag === "th" ? boundedTableSpan(element.getAttribute("rowspan")) : "";
     const open = tag === "details" && element.hasAttribute("open");
-    for (const attribute of Array.from(element.attributes))
-      element.removeAttribute(attribute.name);
+    for (const attribute of Array.from(element.attributes)) element.removeAttribute(attribute.name);
     if (href) {
       element.setAttribute("href", href);
       element.setAttribute("target", "_blank");
@@ -139,9 +131,7 @@ function safeLink(value: string | null): string {
   if (!link) return "";
   try {
     const parsed = new URL(link);
-    return ["http:", "https:", "mailto:"].includes(parsed.protocol)
-      ? parsed.toString()
-      : "";
+    return ["http:", "https:", "mailto:"].includes(parsed.protocol) ? parsed.toString() : "";
   } catch {
     return "";
   }
@@ -161,7 +151,5 @@ function safeImage(value: string | null): string {
 
 function boundedTableSpan(value: string | null): string {
   const parsed = Number.parseInt(value ?? "", 10);
-  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 100
-    ? String(parsed)
-    : "";
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 100 ? String(parsed) : "";
 }

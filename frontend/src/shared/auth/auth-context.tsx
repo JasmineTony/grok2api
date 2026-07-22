@@ -1,25 +1,23 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 
 import {
+  type AdminDTO,
   ApiError,
-  apiRequest,
   decodeAdminDTO,
   decodeLoggedOut,
   decodeLoginResponseDTO,
-  refreshAccessToken,
-  setAccessToken,
-  subscribeSessionInvalidated,
-  type AdminDTO,
 } from "@/shared/api/client";
+import { useApiClient } from "@/shared/api/use-api-client";
 import { AuthContext, type AuthStatus } from "@/shared/auth/auth-state";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const client = useApiClient();
   const [admin, setAdmin] = useState<AdminDTO | null>(null);
   const [status, setStatus] = useState<AuthStatus>("restoring");
 
   const restoreSession = useCallback(async (): Promise<void> => {
     setStatus("restoring");
-    const refreshResult = await refreshAccessToken();
+    const refreshResult = await client.refreshAccessToken();
     if (refreshResult === "invalid") {
       setAdmin(null);
       setStatus("anonymous");
@@ -29,71 +27,84 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setStatus("unavailable");
       return;
     }
-
     try {
-      const value = await apiRequest("/api/admin/v1/me", { retryAuth: false }, decodeAdminDTO);
+      const value = await client.request("/api/admin/v1/me", { retryAuth: false }, decodeAdminDTO);
       setAdmin(value);
       setStatus("authenticated");
     } catch (error) {
-      setAccessToken(null);
+      client.setAccessToken(null);
       setAdmin(null);
       setStatus(error instanceof ApiError && error.status === 401 ? "anonymous" : "unavailable");
     }
-  }, []);
+  }, [client]);
 
   useEffect(() => {
-    const unsubscribe = subscribeSessionInvalidated(() => {
+    const unsubscribe = client.subscribeSessionInvalidated(() => {
       setAdmin(null);
       setStatus("anonymous");
     });
-
-    const restoreTimer = window.setTimeout(() => {
-      void restoreSession();
-    }, 0);
-
+    const restoreTimer = window.setTimeout(() => void restoreSession(), 0);
     return () => {
       window.clearTimeout(restoreTimer);
       unsubscribe();
     };
-  }, [restoreSession]);
+  }, [client, restoreSession]);
 
-  async function login(username: string, password: string): Promise<void> {
-    const response = await apiRequest("/api/admin/v1/auth/login", {
-      method: "POST",
-      body: { username, password },
-      authenticated: false,
-      retryAuth: false,
-    }, decodeLoginResponseDTO);
-    setAccessToken(response.tokens.accessToken);
-    setAdmin(response.admin);
-    setStatus("authenticated");
-  }
+  const login = useCallback(
+    async (username: string, password: string): Promise<void> => {
+      const response = await client.request(
+        "/api/admin/v1/auth/login",
+        {
+          method: "POST",
+          body: { username, password },
+          authenticated: false,
+          retryAuth: false,
+        },
+        decodeLoginResponseDTO,
+      );
+      client.setAccessToken(response.tokens.accessToken);
+      setAdmin(response.admin);
+      setStatus("authenticated");
+    },
+    [client],
+  );
 
-  async function logout(): Promise<void> {
+  const logout = useCallback(async (): Promise<void> => {
     try {
-      await apiRequest("/api/admin/v1/auth/logout", {
-        method: "POST",
-        body: {},
-        authenticated: false,
-        retryAuth: false,
-      }, decodeLoggedOut);
+      await client.request(
+        "/api/admin/v1/auth/logout",
+        {
+          method: "POST",
+          body: {},
+          authenticated: false,
+          retryAuth: false,
+        },
+        decodeLoggedOut,
+      );
     } finally {
-      setAccessToken(null);
+      client.setAccessToken(null);
       setAdmin(null);
       setStatus("anonymous");
     }
-  }
+  }, [client]);
 
-  async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
-    await apiRequest("/api/admin/v1/me/password", {
-      method: "PUT",
-      body: { currentPassword, newPassword },
-    }, () => undefined);
-  }
-
-  return (
-    <AuthContext.Provider value={{ admin, status, retryRestore: restoreSession, login, logout, changePassword }}>
-      {children}
-    </AuthContext.Provider>
+  const changePassword = useCallback(
+    async (currentPassword: string, newPassword: string): Promise<void> => {
+      await client.request(
+        "/api/admin/v1/me/password",
+        {
+          method: "PUT",
+          body: { currentPassword, newPassword },
+        },
+        () => undefined,
+      );
+    },
+    [client],
   );
+
+  const value = useMemo(
+    () => ({ admin, status, retryRestore: restoreSession, login, logout, changePassword }),
+    [admin, status, restoreSession, login, logout, changePassword],
+  );
+  return <AuthContext value={value}>{children}</AuthContext>;
 }

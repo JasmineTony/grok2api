@@ -1,13 +1,18 @@
-import type { MediaAssetDTO, ImageStatsDTO, MediaJobDTO, VideoStatsDTO } from "@/features/media/types";
-import { apiRequest, type PaginatedDTO } from "@/shared/api/client";
+import type {
+  ImageStatsDTO,
+  MediaAssetDTO,
+  MediaJobDTO,
+  VideoStatsDTO,
+} from "@/features/media/types";
+import { type ApiClient, type PaginatedDTO } from "@/shared/api/client";
 import {
   createObjectDecoder,
   createPaginatedDecoder,
   decodeCountResult,
   hasShape,
   isNumber,
-  isString,
   isOneOf,
+  isString,
 } from "@/shared/api/decoder";
 import type { SortOrder } from "@/shared/lib/table-sort";
 
@@ -65,21 +70,35 @@ const decodeVideoStats = createObjectDecoder<VideoStatsDTO>("video stats", {
   queued: isNumber,
 });
 
-export function listImages(input: ListImagesInput): Promise<PaginatedDTO<MediaAssetDTO>> {
+export function listImages(
+  client: ApiClient,
+  input: ListImagesInput,
+): Promise<PaginatedDTO<MediaAssetDTO>> {
   const query = new URLSearchParams({ page: String(input.page), pageSize: String(input.pageSize) });
   if (input.search) query.set("search", input.search);
-  return apiRequest(`/api/admin/v1/media/images?${query}`, {}, createPaginatedDecoder(hasShape(mediaAssetShape)));
+  return client.request(
+    `/api/admin/v1/media/images?${query}`,
+    {},
+    createPaginatedDecoder(hasShape(mediaAssetShape)),
+  );
 }
 
-export function getImageStats(): Promise<ImageStatsDTO> {
-  return apiRequest("/api/admin/v1/media/images/stats", {}, decodeImageStats);
+export function getImageStats(client: ApiClient): Promise<ImageStatsDTO> {
+  return client.request("/api/admin/v1/media/images/stats", {}, decodeImageStats);
 }
 
-export function deleteImages(ids: string[]): Promise<{ deleted: number }> {
-  return apiRequest("/api/admin/v1/media/images", { method: "DELETE", body: { ids } }, decodeCountResult<{ deleted: number }>("deleted"));
+export function deleteImages(client: ApiClient, ids: string[]): Promise<{ deleted: number }> {
+  return client.request(
+    "/api/admin/v1/media/images",
+    { method: "DELETE", body: { ids } },
+    decodeCountResult<{ deleted: number }>("deleted"),
+  );
 }
 
-export function listVideos(input: ListVideosInput): Promise<PaginatedDTO<MediaJobDTO>> {
+export function listVideos(
+  client: ApiClient,
+  input: ListVideosInput,
+): Promise<PaginatedDTO<MediaJobDTO>> {
   const query = new URLSearchParams({ page: String(input.page), pageSize: String(input.pageSize) });
   if (input.status) query.set("status", input.status);
   if (input.search) query.set("search", input.search);
@@ -87,13 +106,21 @@ export function listVideos(input: ListVideosInput): Promise<PaginatedDTO<MediaJo
     query.set("sortBy", input.sortBy);
     query.set("sortOrder", input.sortOrder);
   }
-  return apiRequest(`/api/admin/v1/media/videos?${query}`, {}, createPaginatedDecoder(hasShape(mediaJobShape)));
+  return client.request(
+    `/api/admin/v1/media/videos?${query}`,
+    {},
+    createPaginatedDecoder(hasShape(mediaJobShape)),
+  );
 }
 
-export function getVideoStats(): Promise<VideoStatsDTO> {
-  return apiRequest("/api/admin/v1/media/videos/stats", {}, decodeVideoStats);
+export function getVideoStats(client: ApiClient): Promise<VideoStatsDTO> {
+  return client.request("/api/admin/v1/media/videos/stats", {}, decodeVideoStats);
 }
 
-export function deleteVideos(ids: string[]): Promise<{ deleted: number }> {
-  return apiRequest("/api/admin/v1/media/videos", { method: "DELETE", body: { ids } }, decodeCountResult<{ deleted: number }>("deleted"));
+export function deleteVideos(client: ApiClient, ids: string[]): Promise<{ deleted: number }> {
+  return client.request(
+    "/api/admin/v1/media/videos",
+    { method: "DELETE", body: { ids } },
+    decodeCountResult<{ deleted: number }>("deleted"),
+  );
 }

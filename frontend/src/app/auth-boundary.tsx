@@ -1,5 +1,5 @@
-import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { Navigate, Outlet, useLocation } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -48,8 +48,12 @@ function SessionUnavailableScreen({ onRetry }: { onRetry: () => Promise<void> })
     <div className="flex min-h-screen items-center justify-center bg-background px-6">
       <div className="max-w-sm text-center">
         <h1 className="text-lg font-medium">{t("auth.sessionUnavailable")}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{t("auth.sessionUnavailableDescription")}</p>
-        <Button size="sm" className="mt-5" onClick={() => void onRetry()}>{t("auth.retrySession")}</Button>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {t("auth.sessionUnavailableDescription")}
+        </p>
+        <Button size="sm" className="mt-5" onClick={() => void onRetry()}>
+          {t("auth.retrySession")}
+        </Button>
       </div>
     </div>
   );

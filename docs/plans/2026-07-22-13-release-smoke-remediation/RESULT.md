@@ -26,6 +26,12 @@ v3.1.0 的 Validate、amd64/arm64 构建与推送、provenance、digest manifest
 - Markdown 相对链接、UTF-8 和 `git diff --check`：通过。
 - PR [#30](https://github.com/JasmineTony/grok2api/pull/30) 全绿并 Squash 合并为 `d12f33c5f9426b1920a75e6c1700e828d52a7f84`，未来 Release 工作流挂载路径已修复。首次 main 调度 `29890559049` 证明 release environment 的分支限制会拒绝只读 workflow_dispatch；移除该非必要 environment 后，修复分支手动运行 `29890683090` 成功拉取 `v3.1.0` 并通过 `/healthz`。
 
+## 最终 main 复核
+
+- 后续 PR [#31](https://github.com/JasmineTony/grok2api/pull/31) 将只读 smoke 工作流和最终归档 Squash 合并为 `8ad1997263b846594e639b82269916500b507cff`。
+- main 手动运行 `29891283807` 成功拉取既有 `v3.1.0` 镜像并通过 `/healthz`；未移动标签、未重建 Release、未重新发布 GHCR。
+- `fix/release-smoke-config-path`、`fix/release-smoke-readonly` 远程分支已删除，本地 `main == origin/main`。
+
 ## PR 与回滚
 
 - Pull Request：[#30](https://github.com/JasmineTony/grok2api/pull/30) 完成未来 Release 路径修复；最终只读 environment 兼容与结果归档由后续文档 PR 完成。

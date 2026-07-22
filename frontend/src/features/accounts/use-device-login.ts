@@ -1,10 +1,8 @@
-import { useCallback, type Dispatch, type SetStateAction } from "react";
+import { type Dispatch, type SetStateAction, useCallback } from "react";
 
-import {
-  startDeviceAuthorization,
-  type DeviceSessionDTO,
-} from "@/features/accounts/accounts-api";
+import { type DeviceSessionDTO, startDeviceAuthorization } from "@/features/accounts/accounts-api";
 import type { DeviceAuthorizationStatus } from "@/features/accounts/use-device-authorization";
+import { useApiClient } from "@/shared/api/use-api-client";
 
 /** Starts a device login while keeping the page component free of transport details. */
 export function useStartDeviceLogin({
@@ -18,17 +16,18 @@ export function useStartDeviceLogin({
   setStatus: Dispatch<SetStateAction<DeviceAuthorizationStatus>>;
   onError: (error: unknown) => void;
 }): () => Promise<void> {
+  const apiClient = useApiClient();
   return useCallback(async () => {
     setOpen(true);
     setStatus("starting");
     setSession(null);
     try {
-      const session = await startDeviceAuthorization();
+      const session = await startDeviceAuthorization(apiClient);
       setSession(session);
       setStatus("pending");
     } catch (error) {
       setStatus("failed");
       onError(error);
     }
-  }, [onError, setOpen, setSession, setStatus]);
+  }, [apiClient, onError, setOpen, setSession, setStatus]);
 }

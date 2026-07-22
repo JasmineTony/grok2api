@@ -1,41 +1,97 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, CircleHelp, Copy, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  CircleHelp,
+  Copy,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { z } from "zod";
 
-import { CopyButton } from "@/shared/components/copy-button";
-
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Spinner } from "@/components/ui/spinner";
-import { Table, TableActionCell, TableActionHead, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Switch } from "@/components/ui/switch";
+import {
+  Table,
+  TableActionCell,
+  TableActionHead,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { listModels } from "@/entities/model/model-api";
-import { createClientKey, deleteClientKey, deleteClientKeys, getClientKeySecret, listClientKeys, updateClientKey, updateClientKeysEnabled, type ClientKeyDTO, type CreateKeyResponseDTO } from "@/features/client-keys/client-keys-api";
-import { EmptyState, ErrorState, LoadingState, TableLoadingRow } from "@/shared/components/data-state";
-import { DataTableShell } from "@/shared/components/data-table-shell";
+import {
+  type ClientKeyDTO,
+  createClientKey,
+  type CreateKeyResponseDTO,
+  deleteClientKey,
+  deleteClientKeys,
+  getClientKeySecret,
+  listClientKeys,
+  updateClientKey,
+  updateClientKeysEnabled,
+} from "@/features/client-keys/client-keys-api";
+import { useApiClient } from "@/shared/api/use-api-client";
+import { CopyButton } from "@/shared/components/copy-button";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  TableLoadingRow,
+} from "@/shared/components/data-state";
 import { DataTableFilters } from "@/shared/components/data-table-filters";
+import { DataTableShell } from "@/shared/components/data-table-shell";
 import { DateTimePicker } from "@/shared/components/date-time-picker";
 import { Pagination } from "@/shared/components/pagination";
 import { SortableTableHead } from "@/shared/components/sortable-table-head";
 import { VirtualTableBody } from "@/shared/components/virtual-table-body";
 import { useDebouncedValue } from "@/shared/hooks/use-debounced-value";
 import { cn } from "@/shared/lib/cn";
+import { ticksToUSD, usdToTicks } from "@/shared/lib/cost";
 import { formatDateTime, toDateTimeLocal } from "@/shared/lib/format";
 import { nextTableSort, type SortOrder, type TableSort } from "@/shared/lib/table-sort";
 
-const USD_TICKS = 10_000_000_000;
 const MAX_BILLING_LIMIT_USD = 900_000;
 
 type SecretDialogState = {
@@ -46,6 +102,7 @@ type SecretDialogState = {
 export function ClientKeysPage() {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
+  const apiClient = useApiClient();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [search, setSearch] = useState("");
@@ -62,27 +119,41 @@ export function ClientKeysPage() {
   const [statusReferenceTime] = useState(() => Date.now());
   const debouncedSearch = useDebouncedValue(search);
   const debouncedModelOptionsSearch = useDebouncedValue(modelOptionsSearch);
-  const schema = z.object({
-    name: z.string().min(1, t("errors.required")),
-    enabled: z.boolean(),
-    expiryUnlimited: z.boolean(),
-    expiresAt: z.string(),
-    rpmUnlimited: z.boolean(),
-    rpmLimit: z.number().int().min(1, t("errors.positive")).max(100_000),
-    concurrencyUnlimited: z.boolean(),
-    maxConcurrent: z.number().int().min(1, t("errors.positive")).max(1_024),
-    billingUnlimited: z.boolean(),
-    billingLimitUsd: z.number().min(0.01, t("errors.positive")).max(MAX_BILLING_LIMIT_USD),
-    allowedModelIds: z.array(z.string()),
-  }).superRefine((value, context) => {
-    if (!value.expiryUnlimited && !value.expiresAt) {
-      context.addIssue({ code: "custom", path: ["expiresAt"], message: t("errors.required") });
-    }
-  });
+  const schema = z
+    .object({
+      name: z.string().min(1, t("errors.required")),
+      enabled: z.boolean(),
+      expiryUnlimited: z.boolean(),
+      expiresAt: z.string(),
+      rpmUnlimited: z.boolean(),
+      rpmLimit: z.number().int().min(1, t("errors.positive")).max(100_000),
+      concurrencyUnlimited: z.boolean(),
+      maxConcurrent: z.number().int().min(1, t("errors.positive")).max(1_024),
+      billingUnlimited: z.boolean(),
+      billingLimitUsd: z.number().min(0.01, t("errors.positive")),
+      allowedModelIds: z.array(z.string()),
+    })
+    .superRefine((value, context) => {
+      if (!value.expiryUnlimited && !value.expiresAt) {
+        context.addIssue({ code: "custom", path: ["expiresAt"], message: t("errors.required") });
+      }
+    });
   type KeyForm = z.infer<typeof schema>;
   const form = useForm<KeyForm>({
     resolver: zodResolver(schema),
-    defaultValues: { name: "", enabled: true, expiryUnlimited: true, expiresAt: "", rpmUnlimited: false, rpmLimit: 120, concurrencyUnlimited: false, maxConcurrent: 8, billingUnlimited: true, billingLimitUsd: 10, allowedModelIds: [] },
+    defaultValues: {
+      name: "",
+      enabled: true,
+      expiryUnlimited: true,
+      expiresAt: "",
+      rpmUnlimited: false,
+      rpmLimit: 120,
+      concurrencyUnlimited: false,
+      maxConcurrent: 8,
+      billingUnlimited: true,
+      billingLimitUsd: 10,
+      allowedModelIds: [],
+    },
   });
   const keyEnabled = useWatch({ control: form.control, name: "enabled" });
   const selectedModels = useWatch({ control: form.control, name: "allowedModelIds" });
@@ -92,12 +163,34 @@ export function ClientKeysPage() {
   const billingUnlimited = useWatch({ control: form.control, name: "billingUnlimited" });
 
   const keysQuery = useQuery({
-    queryKey: ["client-keys", page, pageSize, debouncedSearch, statusFilter, modelScopeFilter, sort.field, sort.order],
-    queryFn: () => listClientKeys({ page, pageSize, search: debouncedSearch, status: statusFilter, modelScope: modelScopeFilter, sortBy: sort.field || undefined, sortOrder: sort.field ? sort.order : undefined }),
+    queryKey: [
+      "client-keys",
+      page,
+      pageSize,
+      debouncedSearch,
+      statusFilter,
+      modelScopeFilter,
+      sort.field,
+      sort.order,
+    ],
+    queryFn: () =>
+      listClientKeys(apiClient, {
+        page,
+        pageSize,
+        search: debouncedSearch,
+        status: statusFilter,
+        modelScope: modelScopeFilter,
+        ...(sort.field ? { sortBy: sort.field, sortOrder: sort.order } : {}),
+      }),
   });
   const modelsQuery = useQuery({
     queryKey: ["models", "options", modelOptionsPage, debouncedModelOptionsSearch],
-    queryFn: () => listModels({ page: modelOptionsPage, pageSize: 50, search: debouncedModelOptionsSearch }),
+    queryFn: () =>
+      listModels(apiClient, {
+        page: modelOptionsPage,
+        pageSize: 50,
+        search: debouncedModelOptionsSearch,
+      }),
     enabled: editing !== null,
   });
 
@@ -108,15 +201,15 @@ export function ClientKeysPage() {
         enabled: values.enabled,
         rpmLimit: values.rpmUnlimited ? 0 : values.rpmLimit,
         maxConcurrent: values.concurrencyUnlimited ? 0 : values.maxConcurrent,
-        billingLimitUsdTicks: values.billingUnlimited ? 0 : Math.round(values.billingLimitUsd * USD_TICKS),
+        billingLimitUsdTicks: values.billingUnlimited ? 0 : usdToTicks(values.billingLimitUsd),
         allowedModelIds: values.allowedModelIds,
         expiresAt: values.expiryUnlimited ? "" : new Date(values.expiresAt).toISOString(),
       };
       if (editing === "new") {
-        return createClientKey(body);
+        return createClientKey(apiClient, body);
       }
       if (!editing) throw new Error(t("errors.generic"));
-      return updateClientKey(editing.id, body);
+      return updateClientKey(apiClient, editing.id, body);
     },
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ["client-keys"] });
@@ -132,7 +225,7 @@ export function ClientKeysPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: deleteClientKey,
+    mutationFn: (id: string) => deleteClientKey(apiClient, id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["client-keys"] });
       setDeleting(null);
@@ -142,13 +235,13 @@ export function ClientKeysPage() {
   });
 
   const copyMutation = useMutation({
-    mutationFn: getClientKeySecret,
+    mutationFn: (id: string) => getClientKeySecret(apiClient, id),
     onSuccess: (result) => setSecretDialog({ secret: result.secret, source: "retrieved" }),
     onError: showError,
   });
 
   const batchUpdateMutation = useMutation({
-    mutationFn: (enabled: boolean) => updateClientKeysEnabled([...selected], enabled),
+    mutationFn: (enabled: boolean) => updateClientKeysEnabled(apiClient, [...selected], enabled),
     onSuccess: () => {
       setSelected(new Set());
       void queryClient.invalidateQueries({ queryKey: ["client-keys"] });
@@ -158,7 +251,7 @@ export function ClientKeysPage() {
   });
 
   const batchDeleteMutation = useMutation({
-    mutationFn: () => deleteClientKeys([...selected]),
+    mutationFn: () => deleteClientKeys(apiClient, [...selected]),
     onSuccess: () => {
       setSelected(new Set());
       setBatchDeleteOpen(false);
@@ -176,7 +269,19 @@ export function ClientKeysPage() {
     setEditing("new");
     setModelOptionsPage(1);
     setModelOptionsSearch("");
-    form.reset({ name: "", enabled: true, expiryUnlimited: true, expiresAt: "", rpmUnlimited: false, rpmLimit: 120, concurrencyUnlimited: false, maxConcurrent: 8, billingUnlimited: true, billingLimitUsd: 10, allowedModelIds: [] });
+    form.reset({
+      name: "",
+      enabled: true,
+      expiryUnlimited: true,
+      expiresAt: "",
+      rpmUnlimited: false,
+      rpmLimit: 120,
+      concurrencyUnlimited: false,
+      maxConcurrent: 8,
+      billingUnlimited: true,
+      billingLimitUsd: 10,
+      allowedModelIds: [],
+    });
   }
 
   function beginEdit(key: ClientKeyDTO): void {
@@ -193,14 +298,18 @@ export function ClientKeysPage() {
       concurrencyUnlimited: key.maxConcurrent === 0,
       maxConcurrent: key.maxConcurrent > 0 ? key.maxConcurrent : 8,
       billingUnlimited: key.billingLimitUsdTicks === 0,
-      billingLimitUsd: key.billingLimitUsdTicks > 0 ? key.billingLimitUsdTicks / USD_TICKS : 10,
+      billingLimitUsd: key.billingLimitUsdTicks > 0 ? ticksToUSD(key.billingLimitUsdTicks) : 10,
       allowedModelIds: key.allowedModelIds,
     });
   }
 
   function toggleModel(id: string): void {
     const current = form.getValues("allowedModelIds");
-    form.setValue("allowedModelIds", current.includes(id) ? current.filter((value) => value !== id) : [...current, id], { shouldDirty: true });
+    form.setValue(
+      "allowedModelIds",
+      current.includes(id) ? current.filter((value) => value !== id) : [...current, id],
+      { shouldDirty: true },
+    );
   }
 
   const result = keysQuery.data;
@@ -240,38 +349,108 @@ export function ClientKeysPage() {
       </header>
 
       <DataTableShell
-        toolbar={(
+        toolbar={
           <>
             <div className="flex w-full items-center gap-2 sm:w-auto">
               <div className="relative min-w-0 flex-1 sm:w-64 sm:flex-none">
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input className="h-8 pl-9 text-xs" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder={t("keys.search")} aria-label={t("keys.search")} />
+                <Input
+                  className="h-8 pl-9 text-xs"
+                  value={search}
+                  onChange={(event) => {
+                    setSearch(event.target.value);
+                    setPage(1);
+                  }}
+                  placeholder={t("keys.search")}
+                  aria-label={t("keys.search")}
+                />
               </div>
-              <DataTableFilters filters={[
-                { id: "status", label: t("keys.status"), value: statusFilter, onChange: (value) => { setStatusFilter(value); setPage(1); }, options: [
-                  { value: "active", label: t("keys.statusActive") },
-                  { value: "disabled", label: t("common.disabled") },
-                  { value: "expired", label: t("keys.statusExpired") },
-                ] },
-                { id: "modelScope", label: t("keys.models"), value: modelScopeFilter, onChange: (value) => { setModelScopeFilter(value); setPage(1); }, options: [
-                  { value: "all", label: t("keys.allModels") },
-                  { value: "restricted", label: t("keys.restrictedModels") },
-                ] },
-              ]} />
+              <DataTableFilters
+                filters={[
+                  {
+                    id: "status",
+                    label: t("keys.status"),
+                    value: statusFilter,
+                    onChange: (value) => {
+                      setStatusFilter(value);
+                      setPage(1);
+                    },
+                    options: [
+                      { value: "active", label: t("keys.statusActive") },
+                      { value: "disabled", label: t("common.disabled") },
+                      { value: "expired", label: t("keys.statusExpired") },
+                    ],
+                  },
+                  {
+                    id: "modelScope",
+                    label: t("keys.models"),
+                    value: modelScopeFilter,
+                    onChange: (value) => {
+                      setModelScopeFilter(value);
+                      setPage(1);
+                    },
+                    options: [
+                      { value: "all", label: t("keys.allModels") },
+                      { value: "restricted", label: t("keys.restrictedModels") },
+                    ],
+                  },
+                ]}
+              />
             </div>
             {selected.size > 0 ? (
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="mr-1 text-xs text-muted-foreground">{t("common.selectedCount", { count: selected.size })}</span>
-                <Button variant="secondary" size="sm" onClick={() => batchUpdateMutation.mutate(true)}>{t("common.enable")}</Button>
-                <Button variant="secondary" size="sm" onClick={() => batchUpdateMutation.mutate(false)}>{t("common.disable")}</Button>
-                <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setBatchDeleteOpen(true)}>{t("common.delete")}</Button>
+                <span className="mr-1 text-xs text-muted-foreground">
+                  {t("common.selectedCount", { count: selected.size })}
+                </span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => batchUpdateMutation.mutate(true)}
+                >
+                  {t("common.enable")}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => batchUpdateMutation.mutate(false)}
+                >
+                  {t("common.disable")}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => setBatchDeleteOpen(true)}
+                >
+                  {t("common.delete")}
+                </Button>
               </div>
-            ) : <Button size="sm" onClick={beginCreate}><Plus />{t("keys.create")}</Button>}
+            ) : (
+              <Button size="sm" onClick={beginCreate}>
+                <Plus />
+                {t("keys.create")}
+              </Button>
+            )}
           </>
-        )}
-        footer={result && result.total > 0 ? <Pagination page={result.page} pageSize={result.pageSize} total={result.total} onPageChange={setPage} onPageSizeChange={(value) => { setPageSize(value); setPage(1); }} /> : undefined}
+        }
+        footer={
+          result && result.total > 0 ? (
+            <Pagination
+              page={result.page}
+              pageSize={result.pageSize}
+              total={result.total}
+              onPageChange={setPage}
+              onPageSizeChange={(value) => {
+                setPageSize(value);
+                setPage(1);
+              }}
+            />
+          ) : undefined
+        }
       >
-        {keysQuery.isError ? <ErrorState message={keysQuery.error.message} onRetry={() => void keysQuery.refetch()} /> : null}
+        {keysQuery.isError ? (
+          <ErrorState message={keysQuery.error.message} onRetry={() => void keysQuery.refetch()} />
+        ) : null}
         {result && result.items.length === 0 ? <EmptyState /> : null}
         {keysQuery.isPending || (result && result.items.length > 0) ? (
           <Table viewportRows={20} rowHeight={56} className="min-w-[1120px] table-fixed text-xs">
@@ -289,61 +468,211 @@ export function ClientKeysPage() {
             </colgroup>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead><Checkbox checked={allPageSelected ? true : selectedOnPage.length > 0 ? "indeterminate" : false} onCheckedChange={(checked) => togglePage(checked === true)} aria-label={t("common.selectPage")} /></TableHead>
-                <SortableTableHead field="name" sortBy={sort.field} sortOrder={sort.order} onSort={changeSort}>{t("keys.name")}</SortableTableHead>
-                <SortableTableHead field="prefix" sortBy={sort.field} sortOrder={sort.order} onSort={changeSort}>{t("keys.prefix")}</SortableTableHead>
-                <SortableTableHead field="status" sortBy={sort.field} sortOrder={sort.order} align="center" onSort={changeSort}>{t("keys.status")}</SortableTableHead>
-                <SortableTableHead field="rpmLimit" sortBy={sort.field} sortOrder={sort.order} align="center" onSort={changeSort}>{t("keys.rpmShort")}</SortableTableHead>
-                <SortableTableHead field="maxConcurrent" sortBy={sort.field} sortOrder={sort.order} align="center" onSort={changeSort}>{t("keys.concurrencyShort")}</SortableTableHead>
-                <SortableTableHead field="billingLimit" sortBy={sort.field} sortOrder={sort.order} initialOrder="desc" onSort={changeSort}>{t("keys.billingLimit")}</SortableTableHead>
-                <SortableTableHead field="expiresAt" sortBy={sort.field} sortOrder={sort.order} initialOrder="desc" onSort={changeSort}>{t("keys.expires")}</SortableTableHead>
-                <SortableTableHead field="lastUsedAt" sortBy={sort.field} sortOrder={sort.order} initialOrder="desc" onSort={changeSort}>{t("keys.lastUsed")}</SortableTableHead>
+                <TableHead>
+                  <Checkbox
+                    checked={
+                      allPageSelected ? true : selectedOnPage.length > 0 ? "indeterminate" : false
+                    }
+                    onCheckedChange={(checked) => togglePage(checked === true)}
+                    aria-label={t("common.selectPage")}
+                  />
+                </TableHead>
+                <SortableTableHead
+                  field="name"
+                  sortBy={sort.field}
+                  sortOrder={sort.order}
+                  onSort={changeSort}
+                >
+                  {t("keys.name")}
+                </SortableTableHead>
+                <SortableTableHead
+                  field="prefix"
+                  sortBy={sort.field}
+                  sortOrder={sort.order}
+                  onSort={changeSort}
+                >
+                  {t("keys.prefix")}
+                </SortableTableHead>
+                <SortableTableHead
+                  field="status"
+                  sortBy={sort.field}
+                  sortOrder={sort.order}
+                  align="center"
+                  onSort={changeSort}
+                >
+                  {t("keys.status")}
+                </SortableTableHead>
+                <SortableTableHead
+                  field="rpmLimit"
+                  sortBy={sort.field}
+                  sortOrder={sort.order}
+                  align="center"
+                  onSort={changeSort}
+                >
+                  {t("keys.rpmShort")}
+                </SortableTableHead>
+                <SortableTableHead
+                  field="maxConcurrent"
+                  sortBy={sort.field}
+                  sortOrder={sort.order}
+                  align="center"
+                  onSort={changeSort}
+                >
+                  {t("keys.concurrencyShort")}
+                </SortableTableHead>
+                <SortableTableHead
+                  field="billingLimit"
+                  sortBy={sort.field}
+                  sortOrder={sort.order}
+                  initialOrder="desc"
+                  onSort={changeSort}
+                >
+                  {t("keys.billingLimit")}
+                </SortableTableHead>
+                <SortableTableHead
+                  field="expiresAt"
+                  sortBy={sort.field}
+                  sortOrder={sort.order}
+                  initialOrder="desc"
+                  onSort={changeSort}
+                >
+                  {t("keys.expires")}
+                </SortableTableHead>
+                <SortableTableHead
+                  field="lastUsedAt"
+                  sortBy={sort.field}
+                  sortOrder={sort.order}
+                  initialOrder="desc"
+                  onSort={changeSort}
+                >
+                  {t("keys.lastUsed")}
+                </SortableTableHead>
                 <TableActionHead />
               </TableRow>
             </TableHeader>
             {keysQuery.isPending ? (
-              <TableBody><TableLoadingRow colSpan={10} /></TableBody>
+              <TableBody>
+                <TableLoadingRow colSpan={10} />
+              </TableBody>
             ) : (
-              <VirtualTableBody items={result?.items ?? []} colSpan={10} rowHeight={56} renderRow={(key) => (
-                <TableRow className="group h-14" key={key.id} data-state={selected.has(key.id) ? "selected" : undefined}>
-                  <TableCell><Checkbox checked={selected.has(key.id)} onCheckedChange={(checked) => toggleKey(key.id, checked === true)} aria-label={t("common.selectItem", { name: key.name })} /></TableCell>
-                  <TableCell className="min-w-0">
-                    <span className="block truncate font-medium" title={key.name}>{key.name}</span>
-                    <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
-                      {key.allowedModelIds.length === 0 ? t("keys.allModels") : t("keys.selectedModels", { count: key.allowedModelIds.length })}
-                    </span>
-                  </TableCell>
-                  <TableCell className="overflow-hidden">
-                    <div className="flex w-full min-w-0 items-center gap-1">
-                      <code className="min-w-0 flex-1 truncate rounded bg-muted px-1.5 py-1 text-xs text-muted-foreground" title={`g2a_${key.prefix}_********`}>g2a_{key.prefix}_********</code>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button type="button" variant="ghost" size="icon" className="size-7 shrink-0" disabled={copyMutation.isPending} aria-label={t("keys.copySecret")} onClick={() => copyMutation.mutate(key.id)}>
-                            {copyMutation.isPending && copyMutation.variables === key.id ? <Spinner className="size-3.5" /> : <Copy className="size-3.5" />}
+              <VirtualTableBody
+                items={result?.items ?? []}
+                colSpan={10}
+                rowHeight={56}
+                renderRow={(key) => (
+                  <TableRow
+                    className="group h-14"
+                    key={key.id}
+                    data-state={selected.has(key.id) ? "selected" : undefined}
+                  >
+                    <TableCell>
+                      <Checkbox
+                        checked={selected.has(key.id)}
+                        onCheckedChange={(checked) => toggleKey(key.id, checked === true)}
+                        aria-label={t("common.selectItem", { name: key.name })}
+                      />
+                    </TableCell>
+                    <TableCell className="min-w-0">
+                      <span className="block truncate font-medium" title={key.name}>
+                        {key.name}
+                      </span>
+                      <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
+                        {key.allowedModelIds.length === 0
+                          ? t("keys.allModels")
+                          : t("keys.selectedModels", { count: key.allowedModelIds.length })}
+                      </span>
+                    </TableCell>
+                    <TableCell className="overflow-hidden">
+                      <div className="flex w-full min-w-0 items-center gap-1">
+                        <code
+                          className="min-w-0 flex-1 truncate rounded bg-muted px-1.5 py-1 text-xs text-muted-foreground"
+                          title={`g2a_${key.prefix}_********`}
+                        >
+                          g2a_{key.prefix}_********
+                        </code>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="size-7 shrink-0"
+                              disabled={copyMutation.isPending}
+                              aria-label={t("keys.copySecret")}
+                              onClick={() => copyMutation.mutate(key.id)}
+                            >
+                              {copyMutation.isPending && copyMutation.variables === key.id ? (
+                                <Spinner className="size-3.5" />
+                              ) : (
+                                <Copy className="size-3.5" />
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{t("keys.copySecret")}</TooltipContent>
+                        </Tooltip>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <ClientKeyStatus value={key} referenceTime={statusReferenceTime} />
+                    </TableCell>
+                    <TableCell className="text-center text-xs tabular-nums">
+                      {key.rpmLimit > 0 ? key.rpmLimit : t("keys.unlimited")}
+                    </TableCell>
+                    <TableCell className="text-center text-xs tabular-nums">
+                      {key.maxConcurrent > 0 ? key.maxConcurrent : t("keys.unlimited")}
+                    </TableCell>
+                    <TableCell>
+                      <BillingUsage value={key} />
+                    </TableCell>
+                    <TableCell
+                      className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground"
+                      title={
+                        key.expiresAt
+                          ? formatDateTime(key.expiresAt, i18n.language)
+                          : t("keys.neverExpires")
+                      }
+                    >
+                      {key.expiresAt
+                        ? formatDateTime(key.expiresAt, i18n.language)
+                        : t("keys.neverExpires")}
+                    </TableCell>
+                    <TableCell
+                      className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground"
+                      title={formatDateTime(key.lastUsedAt, i18n.language)}
+                    >
+                      {formatDateTime(key.lastUsedAt, i18n.language)}
+                    </TableCell>
+                    <TableActionCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8"
+                            aria-label={t("common.actions")}
+                          >
+                            <MoreHorizontal />
                           </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>{t("keys.copySecret")}</TooltipContent>
-                      </Tooltip>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-center"><ClientKeyStatus value={key} referenceTime={statusReferenceTime} /></TableCell>
-                  <TableCell className="text-center text-xs tabular-nums">{key.rpmLimit > 0 ? key.rpmLimit : t("keys.unlimited")}</TableCell>
-                  <TableCell className="text-center text-xs tabular-nums">{key.maxConcurrent > 0 ? key.maxConcurrent : t("keys.unlimited")}</TableCell>
-                  <TableCell><BillingUsage value={key} /></TableCell>
-                  <TableCell className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground" title={key.expiresAt ? formatDateTime(key.expiresAt, i18n.language) : t("keys.neverExpires")}>{key.expiresAt ? formatDateTime(key.expiresAt, i18n.language) : t("keys.neverExpires")}</TableCell>
-                  <TableCell className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground" title={formatDateTime(key.lastUsedAt, i18n.language)}>{formatDateTime(key.lastUsedAt, i18n.language)}</TableCell>
-                  <TableActionCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="size-8" aria-label={t("common.actions")}><MoreHorizontal /></Button></DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => beginEdit(key)}><Pencil />{t("common.edit")}</DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setDeleting(key)}><Trash2 />{t("common.delete")}</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableActionCell>
-                </TableRow>
-              )} />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => beginEdit(key)}>
+                            <Pencil />
+                            {t("common.edit")}
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onClick={() => setDeleting(key)}
+                          >
+                            <Trash2 />
+                            {t("common.delete")}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableActionCell>
+                  </TableRow>
+                )}
+              />
             )}
           </Table>
         ) : null}
@@ -352,32 +681,71 @@ export function ClientKeysPage() {
       <Dialog open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
         <DialogContent className="flex max-h-[calc(100svh-2rem)] min-h-0 flex-col gap-0 overflow-hidden p-0 text-xs sm:max-w-[560px]">
           <DialogHeader className="shrink-0 px-5 py-4 pr-12">
-            <DialogTitle>{editing === "new" ? t("keys.createTitle") : t("keys.editTitle")}</DialogTitle>
-            <DialogDescription>{editing === "new" ? t("keys.description") : editing?.prefix}</DialogDescription>
+            <DialogTitle>
+              {editing === "new" ? t("keys.createTitle") : t("keys.editTitle")}
+            </DialogTitle>
+            <DialogDescription>
+              {editing === "new" ? t("keys.description") : editing?.prefix}
+            </DialogDescription>
           </DialogHeader>
-          <form className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" onSubmit={form.handleSubmit((values) => saveMutation.mutate(values))}>
+          <form
+            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+            onSubmit={form.handleSubmit((values) => saveMutation.mutate(values))}
+          >
             <div className="min-h-0 min-w-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-5 pb-4 pt-2">
-              <div className="space-y-2"><Label htmlFor="key-name">{t("keys.name")}</Label><Input id="key-name" {...form.register("name")} />{form.formState.errors.name ? <p className="text-xs text-destructive">{form.formState.errors.name.message}</p> : null}</div>
+              <div className="space-y-2">
+                <Label htmlFor="key-name">{t("keys.name")}</Label>
+                <Input id="key-name" {...form.register("name")} />
+                {form.formState.errors.name ? (
+                  <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
+                ) : null}
+              </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-3">
                     <Label htmlFor="key-rpm">{t("keys.rpm")}</Label>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">{t("keys.unlimited")}</span>
-                      <Switch id="key-rpm-unlimited" checked={rpmUnlimited} onCheckedChange={(checked) => form.setValue("rpmUnlimited", checked, { shouldDirty: true })} />
+                      <Switch
+                        id="key-rpm-unlimited"
+                        checked={rpmUnlimited}
+                        onCheckedChange={(checked) =>
+                          form.setValue("rpmUnlimited", checked, { shouldDirty: true })
+                        }
+                      />
                     </div>
                   </div>
-                  <Input id="key-rpm" type="number" min="1" max="100000" disabled={rpmUnlimited} {...form.register("rpmLimit", { valueAsNumber: true })} />
+                  <Input
+                    id="key-rpm"
+                    type="number"
+                    min="1"
+                    max="100000"
+                    disabled={rpmUnlimited}
+                    {...form.register("rpmLimit", { valueAsNumber: true })}
+                  />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-3">
                     <Label htmlFor="key-concurrency">{t("keys.maxConcurrent")}</Label>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">{t("keys.unlimited")}</span>
-                      <Switch id="key-concurrency-unlimited" checked={concurrencyUnlimited} onCheckedChange={(checked) => form.setValue("concurrencyUnlimited", checked, { shouldDirty: true })} />
+                      <Switch
+                        id="key-concurrency-unlimited"
+                        checked={concurrencyUnlimited}
+                        onCheckedChange={(checked) =>
+                          form.setValue("concurrencyUnlimited", checked, { shouldDirty: true })
+                        }
+                      />
                     </div>
                   </div>
-                  <Input id="key-concurrency" type="number" min="1" max="1024" disabled={concurrencyUnlimited} {...form.register("maxConcurrent", { valueAsNumber: true })} />
+                  <Input
+                    id="key-concurrency"
+                    type="number"
+                    min="1"
+                    max="1024"
+                    disabled={concurrencyUnlimited}
+                    {...form.register("maxConcurrent", { valueAsNumber: true })}
+                  />
                 </div>
               </div>
               <div className="grid items-start gap-3 sm:grid-cols-2">
@@ -387,21 +755,43 @@ export function ClientKeysPage() {
                       <Label htmlFor="key-billing-unlimited">{t("keys.billingLimit")}</Label>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <button type="button" className="text-muted-foreground transition-colors hover:text-foreground" aria-label={t("keys.billingLimitDescription")}>
+                          <button
+                            type="button"
+                            className="text-muted-foreground transition-colors hover:text-foreground"
+                            aria-label={t("keys.billingLimitDescription")}
+                          >
                             <CircleHelp className="size-3.5" />
                           </button>
                         </TooltipTrigger>
-                        <TooltipContent className="max-w-72">{t("keys.billingLimitDescription")}</TooltipContent>
+                        <TooltipContent className="max-w-72">
+                          {t("keys.billingLimitDescription")}
+                        </TooltipContent>
                       </Tooltip>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">{t("keys.unlimited")}</span>
-                      <Switch id="key-billing-unlimited" checked={billingUnlimited} onCheckedChange={(checked) => form.setValue("billingUnlimited", checked, { shouldDirty: true })} />
+                      <Switch
+                        id="key-billing-unlimited"
+                        checked={billingUnlimited}
+                        onCheckedChange={(checked) =>
+                          form.setValue("billingUnlimited", checked, { shouldDirty: true })
+                        }
+                      />
                     </div>
                   </div>
                   <div className="relative">
-                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
-                    <Input className="pl-7" type="number" min="0.01" max={MAX_BILLING_LIMIT_USD} step="0.01" disabled={billingUnlimited} {...form.register("billingLimitUsd", { valueAsNumber: true })} />
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                      $
+                    </span>
+                    <Input
+                      className="pl-7"
+                      type="number"
+                      min="0.01"
+                      max={MAX_BILLING_LIMIT_USD}
+                      step="0.01"
+                      disabled={billingUnlimited}
+                      {...form.register("billingLimitUsd", { valueAsNumber: true })}
+                    />
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -409,53 +799,148 @@ export function ClientKeysPage() {
                     <Label htmlFor="key-expiry-unlimited">{t("keys.expires")}</Label>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">{t("keys.unlimited")}</span>
-                      <Switch id="key-expiry-unlimited" checked={expiryUnlimited} onCheckedChange={(checked) => {
-                        form.setValue("expiryUnlimited", checked, { shouldDirty: true });
-                        if (checked) form.clearErrors("expiresAt");
-                      }} />
+                      <Switch
+                        id="key-expiry-unlimited"
+                        checked={expiryUnlimited}
+                        onCheckedChange={(checked) => {
+                          form.setValue("expiryUnlimited", checked, { shouldDirty: true });
+                          if (checked) form.clearErrors("expiresAt");
+                        }}
+                      />
                     </div>
                   </div>
-                  <Controller control={form.control} name="expiresAt" render={({ field }) => <DateTimePicker value={expiryUnlimited ? "" : field.value} onChange={field.onChange} disabled={expiryUnlimited} placeholder={expiryUnlimited ? t("keys.neverExpires") : t("keys.selectExpiry")} />} />
-                  {form.formState.errors.expiresAt ? <p className="text-xs text-destructive">{form.formState.errors.expiresAt.message}</p> : null}
+                  <Controller
+                    control={form.control}
+                    name="expiresAt"
+                    render={({ field }) => (
+                      <DateTimePicker
+                        value={expiryUnlimited ? "" : field.value}
+                        onChange={field.onChange}
+                        disabled={expiryUnlimited}
+                        placeholder={
+                          expiryUnlimited ? t("keys.neverExpires") : t("keys.selectExpiry")
+                        }
+                      />
+                    )}
+                  />
+                  {form.formState.errors.expiresAt ? (
+                    <p className="text-xs text-destructive">
+                      {form.formState.errors.expiresAt.message}
+                    </p>
+                  ) : null}
                 </div>
               </div>
               <fieldset className="min-w-0 space-y-2">
                 <div className="flex items-center justify-between gap-3">
                   <legend className="text-xs font-medium">{t("keys.models")}</legend>
-                  <Badge variant="secondary" className="min-w-0 max-w-[55%] truncate text-[10px] font-normal">{selectedModels.length === 0 ? t("keys.allModels") : t("keys.selectedModels", { count: selectedModels.length })}</Badge>
+                  <Badge
+                    variant="secondary"
+                    className="min-w-0 max-w-[55%] truncate text-[10px] font-normal"
+                  >
+                    {selectedModels.length === 0
+                      ? t("keys.allModels")
+                      : t("keys.selectedModels", { count: selectedModels.length })}
+                  </Badge>
                 </div>
                 <div className="min-w-0 overflow-hidden rounded-md bg-muted/25 p-1">
                   <div className="relative">
                     <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                    <Input className="bg-transparent pl-8 shadow-none" value={modelOptionsSearch} onChange={(event) => { setModelOptionsSearch(event.target.value); setModelOptionsPage(1); }} placeholder={t("keys.modelSearch")} aria-label={t("keys.modelSearch")} />
+                    <Input
+                      className="bg-transparent pl-8 shadow-none"
+                      value={modelOptionsSearch}
+                      onChange={(event) => {
+                        setModelOptionsSearch(event.target.value);
+                        setModelOptionsPage(1);
+                      }}
+                      placeholder={t("keys.modelSearch")}
+                      aria-label={t("keys.modelSearch")}
+                    />
                   </div>
                   <div className="mt-1 max-h-40 overflow-y-auto overscroll-contain sm:max-h-44">
-                    {modelsQuery.isPending ? <LoadingState className="min-h-20" /> : modelsQuery.data?.items.map((model) => {
-                      const checked = selectedModels.includes(model.id);
-                      const controlId = `allowed-model-${model.id}`;
-                      return (
-                        <label key={model.id} htmlFor={controlId} className={cn("flex h-8 cursor-pointer items-center gap-2.5 rounded-md px-2 text-xs transition-colors hover:bg-accent/55", checked && "bg-accent")}>
-                          <Checkbox id={controlId} checked={checked} onCheckedChange={() => toggleModel(model.id)} aria-label={t("common.selectItem", { name: model.publicId })} />
-                          <span className="min-w-0 flex-1 truncate" title={model.publicId}>{model.publicId}</span>
-                          <span className="hidden max-w-[42%] shrink-0 truncate text-[11px] text-muted-foreground sm:block" title={model.upstreamModel}>{model.upstreamModel}</span>
-                          {!model.enabled ? <Badge variant="secondary" className="shrink-0 text-[10px] font-normal text-muted-foreground">{t("common.disabled")}</Badge> : null}
-                        </label>
-                      );
-                    })}
-                    {modelsQuery.data?.items.length === 0 ? <p className="p-3 text-center text-xs text-muted-foreground">{t("common.noData")}</p> : null}
+                    {modelsQuery.isPending ? (
+                      <LoadingState className="min-h-20" />
+                    ) : (
+                      modelsQuery.data?.items.map((model) => {
+                        const checked = selectedModels.includes(model.id);
+                        const controlId = `allowed-model-${model.id}`;
+                        return (
+                          <label
+                            key={model.id}
+                            htmlFor={controlId}
+                            className={cn(
+                              "flex h-8 cursor-pointer items-center gap-2.5 rounded-md px-2 text-xs transition-colors hover:bg-accent/55",
+                              checked && "bg-accent",
+                            )}
+                          >
+                            <Checkbox
+                              id={controlId}
+                              checked={checked}
+                              onCheckedChange={() => toggleModel(model.id)}
+                              aria-label={t("common.selectItem", { name: model.publicId })}
+                            />
+                            <span className="min-w-0 flex-1 truncate" title={model.publicId}>
+                              {model.publicId}
+                            </span>
+                            <span
+                              className="hidden max-w-[42%] shrink-0 truncate text-[11px] text-muted-foreground sm:block"
+                              title={model.upstreamModel}
+                            >
+                              {model.upstreamModel}
+                            </span>
+                            {!model.enabled ? (
+                              <Badge
+                                variant="secondary"
+                                className="shrink-0 text-[10px] font-normal text-muted-foreground"
+                              >
+                                {t("common.disabled")}
+                              </Badge>
+                            ) : null}
+                          </label>
+                        );
+                      })
+                    )}
+                    {modelsQuery.data?.items.length === 0 ? (
+                      <p className="p-3 text-center text-xs text-muted-foreground">
+                        {t("common.noData")}
+                      </p>
+                    ) : null}
                   </div>
-                  {modelsQuery.data && modelsQuery.data.total > modelsQuery.data.pageSize ? <ModelOptionPagination page={modelsQuery.data.page} pageSize={modelsQuery.data.pageSize} total={modelsQuery.data.total} onPageChange={setModelOptionsPage} /> : null}
+                  {modelsQuery.data && modelsQuery.data.total > modelsQuery.data.pageSize ? (
+                    <ModelOptionPagination
+                      page={modelsQuery.data.page}
+                      pageSize={modelsQuery.data.pageSize}
+                      total={modelsQuery.data.total}
+                      onPageChange={setModelOptionsPage}
+                    />
+                  ) : null}
                 </div>
               </fieldset>
               <section className="flex items-center justify-between gap-4 rounded-lg bg-muted/25 px-3 py-2.5">
                 <div className="min-w-0">
-                  <Label htmlFor="key-enabled">{keyEnabled ? t("common.enabled") : t("common.disabled")}</Label>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{t("keys.enabledDescription")}</p>
+                  <Label htmlFor="key-enabled">
+                    {keyEnabled ? t("common.enabled") : t("common.disabled")}
+                  </Label>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    {t("keys.enabledDescription")}
+                  </p>
                 </div>
-                <Switch className="shrink-0" id="key-enabled" checked={keyEnabled} onCheckedChange={(checked) => form.setValue("enabled", checked)} />
+                <Switch
+                  className="shrink-0"
+                  id="key-enabled"
+                  checked={keyEnabled}
+                  onCheckedChange={(checked) => form.setValue("enabled", checked)}
+                />
               </section>
             </div>
-            <DialogFooter className="shrink-0 gap-2 bg-muted/20 px-5 py-3 sm:gap-0"><Button type="button" variant="secondary" size="sm" onClick={() => setEditing(null)}>{t("common.cancel")}</Button><Button type="submit" size="sm" disabled={saveMutation.isPending}>{saveMutation.isPending ? <Spinner /> : null}{editing === "new" ? t("common.create") : t("common.save")}</Button></DialogFooter>
+            <DialogFooter className="shrink-0 gap-2 bg-muted/20 px-5 py-3 sm:gap-0">
+              <Button type="button" variant="secondary" size="sm" onClick={() => setEditing(null)}>
+                {t("common.cancel")}
+              </Button>
+              <Button type="submit" size="sm" disabled={saveMutation.isPending}>
+                {saveMutation.isPending ? <Spinner /> : null}
+                {editing === "new" ? t("common.create") : t("common.save")}
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
@@ -463,31 +948,80 @@ export function ClientKeysPage() {
       <Dialog open={secretDialog !== null} onOpenChange={(open) => !open && setSecretDialog(null)}>
         <DialogContent className="max-w-[440px]">
           <DialogHeader>
-            <DialogTitle>{t(secretDialog?.source === "created" ? "keys.secretTitle" : "keys.copySecretTitle")}</DialogTitle>
-            <DialogDescription>{t(secretDialog?.source === "created" ? "keys.secretDescription" : "keys.copySecretDescription")}</DialogDescription>
+            <DialogTitle>
+              {t(secretDialog?.source === "created" ? "keys.secretTitle" : "keys.copySecretTitle")}
+            </DialogTitle>
+            <DialogDescription>
+              {t(
+                secretDialog?.source === "created"
+                  ? "keys.secretDescription"
+                  : "keys.copySecretDescription",
+              )}
+            </DialogDescription>
           </DialogHeader>
           <div className="min-w-0 space-y-1.5">
             <Label>{t("keys.secretLabel")}</Label>
             <div className="flex h-8 w-full min-w-0 overflow-hidden rounded-md border border-input bg-secondary/55">
-              <code className="flex min-w-0 flex-1 select-all items-center overflow-x-auto whitespace-nowrap px-3 font-mono text-xs text-muted-foreground">{secretDialog?.secret ?? ""}</code>
-              <CopyButton value={secretDialog?.secret ?? ""} copyLabel={t("keys.copySecret")} disabled={!secretDialog?.secret} className="h-full w-8 shrink-0 rounded-none border-l" onCopied={() => toast.success(t("common.copied"))} />
+              <code className="flex min-w-0 flex-1 select-all items-center overflow-x-auto whitespace-nowrap px-3 font-mono text-xs text-muted-foreground">
+                {secretDialog?.secret ?? ""}
+              </code>
+              <CopyButton
+                value={secretDialog?.secret ?? ""}
+                copyLabel={t("keys.copySecret")}
+                disabled={!secretDialog?.secret}
+                className="h-full w-8 shrink-0 rounded-none border-l"
+                onCopied={() => toast.success(t("common.copied"))}
+              />
             </div>
           </div>
-          <DialogFooter><Button type="button" variant="secondary" size="sm" onClick={() => setSecretDialog(null)}>{t("common.close")}</Button></DialogFooter>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setSecretDialog(null)}
+            >
+              {t("common.close")}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <AlertDialog open={Boolean(deleting)} onOpenChange={(open) => !open && setDeleting(null)}>
         <AlertDialogContent>
-          <AlertDialogHeader><AlertDialogTitle>{t("keys.deleteTitle")}</AlertDialogTitle><AlertDialogDescription>{t("keys.deleteDescription")}</AlertDialogDescription></AlertDialogHeader>
-          <AlertDialogFooter><AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" onClick={() => deleting && deleteMutation.mutate(deleting.id)}>{t("common.delete")}</AlertDialogAction></AlertDialogFooter>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("keys.deleteTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("keys.deleteDescription")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={() => deleting && deleteMutation.mutate(deleting.id)}
+            >
+              {t("common.delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
       <AlertDialog open={batchDeleteOpen} onOpenChange={setBatchDeleteOpen}>
         <AlertDialogContent>
-          <AlertDialogHeader><AlertDialogTitle>{t("keys.batchDeleteTitle", { count: selected.size })}</AlertDialogTitle><AlertDialogDescription>{t("keys.deleteDescription")}</AlertDialogDescription></AlertDialogHeader>
-          <AlertDialogFooter><AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" onClick={() => batchDeleteMutation.mutate()}>{t("common.delete")}</AlertDialogAction></AlertDialogFooter>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("keys.batchDeleteTitle", { count: selected.size })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>{t("keys.deleteDescription")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={() => batchDeleteMutation.mutate()}
+            >
+              {t("common.delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>
@@ -496,40 +1030,87 @@ export function ClientKeysPage() {
 
 function BillingUsage({ value }: { value: ClientKeyDTO }) {
   const { t, i18n } = useTranslation();
-  const used = value.billedUsageUsdTicks / USD_TICKS;
+  const used = ticksToUSD(value.billedUsageUsdTicks);
   if (value.billingLimitUsdTicks <= 0) {
     return (
       <div className="min-w-0">
         <div className="text-xs">{t("keys.unlimited")}</div>
-        <div className="truncate text-xs text-muted-foreground">{t("keys.billedUsage", { value: formatUSD(used, i18n.language) })}</div>
+        <div className="truncate text-xs text-muted-foreground">
+          {t("keys.billedUsage", { value: formatUSD(used, i18n.language) })}
+        </div>
       </div>
     );
   }
-  const limit = value.billingLimitUsdTicks / USD_TICKS;
+  const limit = ticksToUSD(value.billingLimitUsdTicks);
   const percent = Math.min(100, Math.max(0, (used / limit) * 100));
   return (
     <div className="min-w-0 space-y-1.5">
-      <div className="truncate text-xs tabular-nums" title={`${formatUSD(used, i18n.language)} / ${formatUSD(limit, i18n.language)}`}>{formatUSD(used, i18n.language)} / {formatUSD(limit, i18n.language)}</div>
+      <div
+        className="truncate text-xs tabular-nums"
+        title={`${formatUSD(used, i18n.language)} / ${formatUSD(limit, i18n.language)}`}
+      >
+        {formatUSD(used, i18n.language)} / {formatUSD(limit, i18n.language)}
+      </div>
       <div className="h-1 overflow-hidden rounded-full bg-muted" aria-hidden="true">
-        <div className="h-full rounded-full bg-emerald-500 transition-[width]" style={{ width: `${percent}%` }} />
+        <div
+          className="h-full rounded-full bg-emerald-500 transition-[width]"
+          style={{ width: `${percent}%` }}
+        />
       </div>
     </div>
   );
 }
 
 function formatUSD(value: number, locale: string): string {
-  return new Intl.NumberFormat(locale, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
-function ModelOptionPagination({ page, pageSize, total, onPageChange }: { page: number; pageSize: number; total: number; onPageChange: (page: number) => void }) {
+function ModelOptionPagination({
+  page,
+  pageSize,
+  total,
+  onPageChange,
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  onPageChange: (page: number) => void;
+}) {
   const { t } = useTranslation();
   const pages = Math.max(1, Math.ceil(total / pageSize));
   return (
     <div className="flex h-9 items-center justify-between border-t bg-muted/20 px-2">
-      <span className="px-1 text-xs text-muted-foreground">{t("common.pageOf", { page, pages })}</span>
+      <span className="px-1 text-xs text-muted-foreground">
+        {t("common.pageOf", { page, pages })}
+      </span>
       <div className="flex items-center gap-0.5">
-        <Button type="button" variant="ghost" size="icon" className="size-7" disabled={page <= 1} onClick={() => onPageChange(page - 1)} aria-label={t("common.previousPage")}><ChevronLeft /></Button>
-        <Button type="button" variant="ghost" size="icon" className="size-7" disabled={page >= pages} onClick={() => onPageChange(page + 1)} aria-label={t("common.nextPage")}><ChevronRight /></Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-7"
+          disabled={page <= 1}
+          onClick={() => onPageChange(page - 1)}
+          aria-label={t("common.previousPage")}
+        >
+          <ChevronLeft />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-7"
+          disabled={page >= pages}
+          onClick={() => onPageChange(page + 1)}
+          aria-label={t("common.nextPage")}
+        >
+          <ChevronRight />
+        </Button>
       </div>
     </div>
   );
@@ -538,10 +1119,22 @@ function ModelOptionPagination({ page, pageSize, total, onPageChange }: { page: 
 function ClientKeyStatus({ value, referenceTime }: { value: ClientKeyDTO; referenceTime: number }) {
   const { t } = useTranslation();
   if (!value.enabled) {
-    return <Badge variant="outline" className="text-muted-foreground">{t("common.disabled")}</Badge>;
+    return (
+      <Badge variant="outline" className="text-muted-foreground">
+        {t("common.disabled")}
+      </Badge>
+    );
   }
   if (value.expiresAt && new Date(value.expiresAt).getTime() <= referenceTime) {
-    return <Badge variant="secondary" className="bg-amber-500/10 text-amber-700 dark:text-amber-300">{t("keys.statusExpired")}</Badge>;
+    return (
+      <Badge variant="secondary" className="bg-amber-500/10 text-amber-700 dark:text-amber-300">
+        {t("keys.statusExpired")}
+      </Badge>
+    );
   }
-  return <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">{t("keys.statusActive")}</Badge>;
+  return (
+    <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+      {t("keys.statusActive")}
+    </Badge>
+  );
 }

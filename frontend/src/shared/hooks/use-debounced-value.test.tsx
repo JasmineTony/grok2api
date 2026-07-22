@@ -8,10 +8,9 @@ afterEach(() => vi.useRealTimers());
 describe("useDebouncedValue", () => {
   it("updates only after the configured delay", () => {
     vi.useFakeTimers();
-    const { result, rerender } = renderHook(
-      ({ value }) => useDebouncedValue(value, 200),
-      { initialProps: { value: "first" } },
-    );
+    const { result, rerender } = renderHook(({ value }) => useDebouncedValue(value, 200), {
+      initialProps: { value: "first" },
+    });
     rerender({ value: "second" });
     expect(result.current).toBe("first");
     void act(() => vi.advanceTimersByTime(200));

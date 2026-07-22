@@ -25,9 +25,7 @@ export function MetricCard({
         {value}
       </div>
       {detail ? (
-        <div className="mt-1.5 min-h-4 text-[11px] text-muted-foreground">
-          {detail}
-        </div>
+        <div className="mt-1.5 min-h-4 text-[11px] text-muted-foreground">{detail}</div>
       ) : null}
     </article>
   );

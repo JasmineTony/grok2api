@@ -1,7 +1,7 @@
-const USD_TICKS = 10_000_000_000;
+import { ticksToUSD } from "@/shared/lib/cost";
 
 export function formatUSD(ticks: number, locale: string): string {
-  return formatUSDValue(ticks / USD_TICKS, locale);
+  return formatUSDValue(ticksToUSD(ticks), locale);
 }
 
 export function formatUSDValue(value: number, locale: string): string {
@@ -13,9 +13,11 @@ export function formatCompactUSD(value: number, locale: string): string {
 }
 
 export function formatCompactNumber(value: number, locale: string): string {
-  return new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 }).format(value);
+  return new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 }).format(
+    value,
+  );
 }
 
 export function usdTicksToValue(ticks: number): number {
-  return ticks / USD_TICKS;
+  return ticksToUSD(ticks);
 }
