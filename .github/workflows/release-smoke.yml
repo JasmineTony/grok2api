@@ -1,0 +1,93 @@
+name: Smoke test published image
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published SemVer tag to verify (for example v3.1.0)
+        required: true
+        type: string
+
+concurrency:
+  group: release-smoke-${{ inputs.tag }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  smoke_test:
+    name: Smoke test ${{ inputs.tag }}
+    environment: release
+    permissions:
+      contents: read
+      packages: read
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Validate tag and VERSION
+        id: release
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          version="$(tr -d '\r\n' < VERSION)"
+          if [[ "$RELEASE_TAG" != "$version" ]]; then
+            echo "Release tag $RELEASE_TAG does not match VERSION ($version)" >&2
+            exit 1
+          fi
+          semver_prerelease='((0|[1-9][0-9]*)|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
+          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-${semver_prerelease}(\.${semver_prerelease})*)?$ ]]; then
+            echo "Tag must be strict SemVer: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          tag_sha="$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")"
+          git merge-base --is-ancestor "$tag_sha" refs/remotes/origin/main
+          echo "image=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GHCR
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull release image
+        env:
+          IMAGE: ${{ steps.release.outputs.image }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: docker pull "${IMAGE}:${RELEASE_TAG}"
+
+      - name: Start and check health endpoint
+        env:
+          IMAGE: ${{ steps.release.outputs.image }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          config="$RUNNER_TEMP/grok2api-config.yaml"
+          cp config.example.yaml "$config"
+          sed -i 's#replace-with-at-least-32-characters#01234567890123456789012345678901#' "$config"
+          sed -i 's#replace-with-base64-key#MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=#' "$config"
+          sed -i 's#replace-with-a-strong-password#SmokeTest-Only-Password-123!#' "$config"
+          container="grok2api-smoke-${GITHUB_RUN_ID}"
+          cleanup() { docker rm -f "$container" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          docker run -d --name "$container" -p 18000:8000 -v "$config:/run/grok2api/config.yaml:ro" "${IMAGE}:${RELEASE_TAG}"
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:18000/healthz >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs "$container"
+          exit 1
