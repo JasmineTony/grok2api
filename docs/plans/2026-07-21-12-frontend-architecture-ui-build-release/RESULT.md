@@ -2,7 +2,7 @@
 
 - 计划日期：2026-07-21
 - 本地验收日期：2026-07-22
-- 状态：本地实现与验收完成，待 Pull Request、合并与正式发布
+- 状态：完成
 - 分支：`codex/frontend-architecture-ui-build-v3.1.0`
 - 基线：`main@1afee0aabf30e408ad9a5371f78502ec1ae89ac7`
 - 目标版本：`v3.1.0`
@@ -86,7 +86,7 @@
 
 ## PR、Release 与回滚
 
-- Pull Request：[#25](https://github.com/JasmineTony/grok2api/pull/25)，首次推送提交 `18a8c8d6dd0db35047ee393241768a4a0f355fd9`。
-- Squash merge：待 Verify、Visual、CodeQL、amd64/arm64 Docker 全部成功后执行。
-- GitHub Release `v3.1.0`：待合并后创建；Release 必须与 `VERSION` 和最终 `main` 提交一致。
+- Pull Request：[#25](https://github.com/JasmineTony/grok2api/pull/25)，全部检查成功后 Squash 合并为 `7c67dfe05694cc9d5479e63e1df3321659082925`。
+- 合并检查：Verify、Visual、CodeQL、Linux race、amd64/arm64 Docker 全部成功；合并后 main CI `29887089965` 与 CodeQL `29887090078` 成功。
+- GitHub Release [`v3.1.0`](https://github.com/JasmineTony/grok2api/releases/tag/v3.1.0) 已发布，标签精确指向 `7c67dfe05694cc9d5479e63e1df3321659082925`，与 `VERSION` 一致。amd64/arm64 镜像、provenance 和最终标签已发布；原始 smoke 因工作流挂载路径错误误报失败，后续只读运行 `29890683090` 已成功验证 `/healthz`。
 - 回滚方式：回退本轮 squash 提交；如 Release 已发布，保留不可变版本记录并发布后续修复版本，不重写已发布标签。
