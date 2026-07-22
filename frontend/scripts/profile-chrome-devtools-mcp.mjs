@@ -36,7 +36,11 @@ createInterface({ input: server.stdout }).on("line", (line) => {
     const request = pending.get(message.id);
     clearTimeout(request.timer);
     pending.delete(message.id);
-    message.error ? request.reject(new Error(JSON.stringify(message.error))) : request.resolve(message.result);
+    if (message.error) {
+      request.reject(new Error(JSON.stringify(message.error)));
+    } else {
+      request.resolve(message.result);
+    }
   }
 });
 createInterface({ input: server.stderr }).on("line", (line) => errors.push(line));

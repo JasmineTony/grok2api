@@ -199,15 +199,20 @@ function parseDuration(value: string): DurationValue {
   const simple = value.match(/^(\d+(?:\.\d+)?)(ms|s|m|h)$/);
   if (simple) {
     const amount = Number(simple[1]);
-    if (simple[2] === "ms") return { value: amount / 1000, unit: "s" };
-    if (simple[2] === "h" && amount >= 24 && amount % 24 === 0) return { value: amount / 24, unit: "d" };
-    if (isDurationUnit(simple[2])) return { value: amount, unit: simple[2] };
+    const rawUnit = simple[2];
+    if (rawUnit === "ms") return { value: amount / 1000, unit: "s" };
+    if (rawUnit === "h" && amount >= 24 && amount % 24 === 0) return { value: amount / 24, unit: "d" };
+    if (rawUnit && isDurationUnit(rawUnit)) return { value: amount, unit: rawUnit };
   }
 
   const factors: Record<string, number> = { ns: 0.000001, us: 0.001, "µs": 0.001, ms: 1, s: 1000, m: 60_000, h: 3_600_000 };
   const parts = [...value.matchAll(/(\d+(?:\.\d+)?)(ns|us|µs|ms|s|m|h)/g)];
   if (parts.map((part) => part[0]).join("") !== value || parts.length === 0) return { value: 1, unit: "s" };
-  const milliseconds = parts.reduce((total, part) => total + Number(part[1]) * factors[part[2]], 0);
+  const milliseconds = parts.reduce((total, part) => {
+    const amount = Number(part[1] ?? 0);
+    const factor = factors[part[2] ?? ""] ?? 0;
+    return total + amount * factor;
+  }, 0);
   const units: Array<[DurationUnit, number]> = [["d", 86_400_000], ["h", 3_600_000], ["m", 60_000], ["s", 1000]];
   for (const [unit, factor] of units) {
     const amount = milliseconds / factor;
@@ -251,5 +256,8 @@ function internalSignerHostname(value: string): boolean {
   }
   const octets = host.split(".").map(Number);
   if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
-  return octets[0] === 10 || octets[0] === 127 || octets[0] === 169 && octets[1] === 254 || octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31 || octets[0] === 192 && octets[1] === 168;
+  const first = octets[0];
+  const second = octets[1];
+  if (first === undefined || second === undefined) return false;
+  return first === 10 || first === 127 || first === 169 && second === 254 || first === 172 && second >= 16 && second <= 31 || first === 192 && second === 168;
 }

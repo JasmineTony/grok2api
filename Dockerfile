@@ -19,6 +19,7 @@ RUN --mount=type=cache,id=grok2api-pnpm,target=/pnpm/store \
 COPY frontend/index.html frontend/vite.config.ts frontend/tsconfig.json frontend/tsconfig.app.json frontend/tsconfig.node.json ./
 COPY frontend/public ./public
 COPY frontend/src ./src
+COPY frontend/tests ./tests
 RUN --mount=type=cache,id=grok2api-tsc,target=/src/frontend/.cache,sharing=locked \
     pnpm build
 

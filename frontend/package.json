@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings 0",
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "test": "vitest run",
@@ -16,7 +16,12 @@
     "check:chunks": "node scripts/check-chunk-cycles.mjs",
     "profile:devtools": "node scripts/profile-chrome-devtools-mcp.mjs",
     "check:icons": "node scripts/check-icon-imports.mjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "lint:fix": "eslint . --fix",
+    "test:coverage": "vitest run --coverage",
+    "audit:unused": "node scripts/run-knip.mjs",
+    "audit:code": "node scripts/audit-codebase.mjs",
+    "verify": "pnpm typecheck && pnpm lint && pnpm test:coverage && pnpm build && pnpm check:icons && pnpm check:bundle && pnpm check:chunks && pnpm audit:unused && pnpm audit:code"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
@@ -62,11 +67,13 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
+    "@vitest/coverage-v8": "4.1.10",
     "eslint": "^10.7.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.3",
     "globals": "^17.7.0",
     "jsdom": "29.1.1",
+    "knip": "6.27.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.64.0",
