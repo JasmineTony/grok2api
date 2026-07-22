@@ -18,7 +18,6 @@ permissions:
 jobs:
   smoke_test:
     name: Smoke test ${{ inputs.tag }}
-    environment: release
     permissions:
       contents: read
       packages: read
