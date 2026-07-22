@@ -240,10 +240,9 @@ jobs:
           sed -i 's#replace-with-base64-key#MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=#' "$config"
           sed -i 's#replace-with-a-strong-password#SmokeTest-Only-Password-123!#' "$config"
           container="grok2api-smoke-${GITHUB_RUN_ID}"
-          cleanup() { docker rm -f "$container" >/dev/null 2>&1 || true; }
-          trap cleanup EXIT
+          trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
           docker run -d --name "$container" -p 18000:8000 -v "$config:/run/grok2api/config.yaml:ro" "${IMAGE}:${RELEASE_TAG}"
-          for attempt in {1..30}; do
+          for _ in {1..30}; do
             if curl --fail --silent http://127.0.0.1:18000/healthz >/dev/null; then
               exit 0
             fi
