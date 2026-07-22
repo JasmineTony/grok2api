@@ -75,7 +75,7 @@
 - `govulncheck ./...`：通过，0 个可达漏洞。
 - Swagger 重新生成：无 tracked 漂移。
 - `git diff --check`、UTF-8、Markdown 相对链接、冲突标记、敏感信息检查和 `actionlint`：通过。
-- 本机未安装 Docker；amd64/arm64 构建、Linux race、PostgreSQL 服务测试和镜像 smoke test 由 GitHub Actions 作为最终验收。
+- 本机未安装 Docker；首次远程 amd64/arm64 构建发现 Dockerfile 未复制 `frontend/tests/tsconfig.json`。已将 `frontend/tests` 纳入 frontend-builder 上下文并在本地重新通过 `pnpm build`；双架构远程重跑作为最终验收。
 
 ## 兼容性与未解决项
 
@@ -86,7 +86,7 @@
 
 ## PR、Release 与回滚
 
-- Pull Request：待首次统一推送后创建。
+- Pull Request：[#25](https://github.com/JasmineTony/grok2api/pull/25)，首次推送提交 `18a8c8d6dd0db35047ee393241768a4a0f355fd9`。
 - Squash merge：待 Verify、Visual、CodeQL、amd64/arm64 Docker 全部成功后执行。
 - GitHub Release `v3.1.0`：待合并后创建；Release 必须与 `VERSION` 和最终 `main` 提交一致。
 - 回滚方式：回退本轮 squash 提交；如 Release 已发布，保留不可变版本记录并发布后续修复版本，不重写已发布标签。
