@@ -28,9 +28,16 @@ const DashboardCharts = lazy(() =>
 
 function DashboardChartsFallback() {
   return (
-    <div className="grid gap-2 xl:grid-cols-[minmax(0,3fr)_minmax(360px,2fr)]" aria-hidden="true">
-      <div className="h-[21rem] animate-pulse rounded-lg border bg-muted/30" />
-      <div className="h-[21rem] animate-pulse rounded-lg border bg-muted/30" />
+    <div className="space-y-2" aria-hidden="true">
+      <div className="grid gap-2 xl:grid-cols-[minmax(0,3fr)_minmax(360px,2fr)]">
+        <div className="h-[360px] animate-pulse rounded-lg border bg-muted/30" />
+        <div className="h-[360px] animate-pulse rounded-lg border bg-muted/30" />
+      </div>
+      <div className="h-[180px] animate-pulse rounded-lg border bg-muted/25" />
+      <div className="grid gap-2 xl:grid-cols-2">
+        <div className="h-[260px] animate-pulse rounded-lg border bg-muted/25" />
+        <div className="h-[260px] animate-pulse rounded-lg border bg-muted/25" />
+      </div>
     </div>
   );
 }
@@ -106,7 +113,7 @@ export function DashboardPage() {
 
       <DashboardOverview dashboard={dashboard} locale={i18n.language} loading={loading} />
 
-      <div ref={chartsRef} className="min-h-[21rem]">
+      <div ref={chartsRef} className="min-h-[816px]">
         {chartsReady ? (
           <Suspense fallback={<DashboardChartsFallback />}>
             <DashboardCharts dashboard={dashboard} locale={i18n.language} loading={loading} />

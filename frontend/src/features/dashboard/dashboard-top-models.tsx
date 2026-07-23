@@ -1,4 +1,4 @@
-import { useTranslation } from "react-i18next";
+﻿import { useTranslation } from "react-i18next";
 
 import {
   Table,
@@ -31,7 +31,7 @@ export function DashboardTopModels({ dashboard, locale, loading }: DashboardTopM
     <DashboardPanel
       id="dashboard-top-models-title"
       title={t("dashboard.topModels")}
-      className="h-full"
+      className="h-full min-h-[180px]"
     >
       <Table className="min-w-[560px] table-fixed [&_tbody_tr]:border-border/60">
         <TableHeader className="[&_tr]:border-border/70">
