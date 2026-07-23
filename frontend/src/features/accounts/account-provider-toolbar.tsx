@@ -1,4 +1,4 @@
-import {
+﻿import {
   ClipboardPaste,
   Compass,
   Download,
@@ -19,7 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { AccountProvider } from "@/features/accounts/accounts-api";
 
 export function AccountProviderToolbar({
@@ -70,6 +70,9 @@ export function AccountProviderToolbar({
               <span>Grok Console</span>
             </TabsTrigger>
           </TabsList>
+          <TabsContent value="grok_build" className="hidden" aria-hidden="true" />
+          <TabsContent value="grok_web" className="hidden" aria-hidden="true" />
+          <TabsContent value="grok_console" className="hidden" aria-hidden="true" />
         </Tabs>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
