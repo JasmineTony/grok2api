@@ -31,7 +31,8 @@ export function DashboardTopModels({ dashboard, locale, loading }: DashboardTopM
     <DashboardPanel
       id="dashboard-top-models-title"
       title={t("dashboard.topModels")}
-      className="h-full min-h-[180px]"
+      className="h-full"
+      style={{ minHeight: 180 }}
     >
       <Table className="min-w-[560px] table-fixed [&_tbody_tr]:border-border/60">
         <TableHeader className="[&_tr]:border-border/70">
