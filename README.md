@@ -15,7 +15,7 @@
 
 Grok2API 以 Go 服务端和 React 管理端组成统一网关，把 Grok Build OAuth、Grok Web SSO 与 Grok Console SSO 管理为彼此隔离的账号池，并向客户端提供 OpenAI 与 Anthropic 风格接口。项目支持多账号调度、模型路由、客户端密钥、媒体任务、请求审计以及代理出口管理。
 
-当前源码版本为 **v3.1.1**，已精确同步上游 `v3.0.7`；完成第 17 轮发布验收后将成为最新稳定版本。公开 API、配置语义、数据库兼容性和 Go module 路径保持不变。
+当前稳定版本为 **v3.1.1**，已精确同步上游 `v3.0.7`，并已发布 GitHub Release 与多架构 GHCR 镜像。公开 API、配置语义、数据库兼容性和 Go module 路径保持不变。
 
 > [!IMPORTANT]
 > 本项目仅用于技术研究与学习交流。使用者应遵守上游服务条款及所在地法律法规，并自行承担账号、数据与部署风险。
@@ -146,7 +146,7 @@ curl http://127.0.0.1:8000/v1/responses \
 
 ### 为什么找不到 GHCR 镜像？
 
-首个正式 GitHub Release 发布前，`ghcr.io/jasminetony/grok2api` 可能不存在。此时使用 `docker compose up -d --build` 从当前源码构建即可。
+当前稳定镜像位于 `ghcr.io/jasminetony/grok2api`，可使用 `v3.1.1`、`3.1.1`、`3.1`、`3` 或 `latest` 标签。若部署环境无法访问 GHCR，仍可使用 `docker compose up -d --build` 从当前源码构建。
 
 普通分支、`main` 推送或单独推送标签都不会发布镜像。只有发布符合版本要求的 GitHub Release，并通过受保护的 `release` environment 审批后，才会写入 GHCR。
 
