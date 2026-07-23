@@ -48,3 +48,11 @@ condition = "AND"
 regexTarget = "line"
 regexes = ['''g2a__secret.*other_abc123_secret.*gbp_abc123_old_secret''']
 paths = ['''^backend/internal/infra/security/token_test\.go$''']
+
+[[allowlists]]
+description = "Synthetic JWT-shaped upload error fixture used to verify diagnostic redaction"
+targetRules = ["jwt"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''secret := "eyJhbGciOiJIUzI1NiJ9\.eyJ1c2VyIjoiMTIzNDU2In0\.signaturevalue"''']
+paths = ['''^backend/internal/infra/provider/web/protocol_test\.go$''']
