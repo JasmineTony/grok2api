@@ -1,4 +1,4 @@
-﻿import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -37,12 +37,13 @@ import {
 } from "@/components/ui/table";
 import { deleteVideos, getVideoStats, listVideos } from "@/features/media/media-api";
 import type { MediaJobDTO } from "@/features/media/types";
-import { VideoProgress, VideoSummary, VideoTimes } from "@/features/media/video-gallery-components";
 import {
-  formatSpec,
-  isTerminalVideoJob,
-  videoAssetURL,
-} from "@/features/media/video-gallery-utils";
+  VideoPreview,
+  VideoProgress,
+  VideoSummary,
+  VideoTimes,
+} from "@/features/media/video-gallery-components";
+import { formatSpec, isTerminalVideoJob } from "@/features/media/video-gallery-utils";
 import { useApiClient } from "@/shared/api/use-api-client";
 import { EmptyState, ErrorState, TableLoadingRow } from "@/shared/components/data-state";
 import { DataTableFilters } from "@/shared/components/data-table-filters";
@@ -463,24 +464,17 @@ export function VideoGalleryPage() {
       </AlertDialog>
 
       <Dialog open={Boolean(previewing)} onOpenChange={(open) => !open && setPreviewing(null)}>
-        <DialogContent className="max-w-4xl">
-          <DialogHeader>
-            <DialogTitle className="truncate">
+        <DialogContent className="max-h-[calc(100svh-2rem)] max-w-4xl overflow-hidden">
+          <DialogHeader className="min-w-0 pr-8">
+            <DialogTitle className="min-w-0 truncate" title={previewing?.prompt || undefined}>
               {previewing?.prompt || t("media.videos.previewTitle")}
             </DialogTitle>
-            <DialogDescription className="truncate font-mono">{previewing?.id}</DialogDescription>
+            <DialogDescription className="min-w-0 truncate font-mono" title={previewing?.id}>
+              {previewing?.id}
+            </DialogDescription>
           </DialogHeader>
           {previewing?.assetId ? (
-            <div className="overflow-hidden rounded-lg bg-black">
-              <video
-                key={previewing.assetId}
-                className="max-h-[70vh] w-full"
-                src={videoAssetURL(previewing.assetId)}
-                controls
-                playsInline
-                preload="metadata"
-              />
-            </div>
+            <VideoPreview key={previewing.assetId} assetId={previewing.assetId} />
           ) : null}
         </DialogContent>
       </Dialog>

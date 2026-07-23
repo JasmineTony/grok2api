@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { SettingsAccountMaintenancePanel } from "@/features/settings/settings-account-maintenance-panel";
 import { SettingsPane } from "@/features/settings/settings-layout";
 import { SettingsPoliciesPanel } from "@/features/settings/settings-policies-panel";
 import { SettingsProviderPanels } from "@/features/settings/settings-provider-panels";
@@ -122,6 +123,12 @@ export function SettingsPage() {
             </TabsTrigger>
             <TabsTrigger
               className="h-9 w-full shrink-0 justify-start rounded-md px-3 text-xs data-[state=active]:font-medium"
+              value="accounts"
+            >
+              {t("settings.accounts.title")}
+            </TabsTrigger>
+            <TabsTrigger
+              className="h-9 w-full shrink-0 justify-start rounded-md px-3 text-xs data-[state=active]:font-medium"
               value="policies"
             >
               {t("settings.groups.policies")}
@@ -145,6 +152,7 @@ export function SettingsPage() {
               statsigMode={statsigMode}
               statsigManualConfigured={statsigManualConfigured}
             />
+            <SettingsAccountMaintenancePanel t={t} form={form} />
             <SettingsPoliciesPanel t={t} form={form} />
             <SettingsPane value="about">
               <VersionUpdateSection />

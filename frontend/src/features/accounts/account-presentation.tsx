@@ -3,9 +3,11 @@ import { useTranslation } from "react-i18next";
 
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { AccountDTO, QuotaDTO } from "@/features/accounts/accounts-api";
 import { MetricCard } from "@/shared/components/metric-card";
 import { cn } from "@/shared/lib/cn";
+import { formatDateTime } from "@/shared/lib/format";
 
 export function AccountMetricPanel({
   icon,
@@ -102,7 +104,7 @@ export function AccountTypeText({
 }
 
 export function AccountStatus({ account }: { account: AccountDTO }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   if (!account.enabled || account.state === "disabled")
     return (
       <Badge variant="outline" className="text-muted-foreground">
@@ -117,22 +119,51 @@ export function AccountStatus({ account }: { account: AccountDTO }) {
         {t("accounts.statusDegraded")}
       </Badge>
     );
-  if (
-    account.state === "quota_exhausted" ||
-    (account.provider === "grok_console" &&
-      account.quotaWindows?.some((window) => window.mode === "console" && window.remaining <= 0)) ||
-    account.quota.status === "waitingReset"
-  )
+
+  const consoleWindow =
+    account.provider === "grok_console"
+      ? account.quotaWindows?.find((window) => window.mode === "console" && window.remaining <= 0)
+      : undefined;
+  if (consoleWindow) {
+    const detail = consoleWindow.resetAt
+      ? t("accounts.quotaResetAt", { time: formatDateTime(consoleWindow.resetAt, i18n.language) })
+      : t("accounts.quotaResetUnknown");
     return (
-      <Badge variant="secondary" className="bg-amber-500/10 text-amber-700 dark:text-amber-300">
-        {t("accounts.waitingReset")}
-      </Badge>
+      <StatusTooltip content={detail}>
+        <Badge variant="secondary" className="bg-amber-500/10 text-amber-700 dark:text-amber-300">
+          {t("accounts.waitingReset")}
+        </Badge>
+      </StatusTooltip>
     );
+  }
+  if (account.state === "quota_exhausted" || account.quota.status === "waitingReset") {
+    const detail = account.quota.nextProbeAt
+      ? t(
+          account.quota.type === "paid"
+            ? "accounts.paidWaitingResetUntil"
+            : "accounts.waitingResetUntil",
+          { time: formatDateTime(account.quota.nextProbeAt, i18n.language) },
+        )
+      : t("accounts.quotaResetUnknown");
+    return (
+      <StatusTooltip content={detail}>
+        <Badge variant="secondary" className="bg-amber-500/10 text-amber-700 dark:text-amber-300">
+          {t("accounts.waitingReset")}
+        </Badge>
+      </StatusTooltip>
+    );
+  }
   if (account.quota.status === "probing")
     return (
-      <Badge variant="secondary" className="bg-sky-500/10 text-sky-700 dark:text-sky-300">
-        {t("accounts.probing")}
-      </Badge>
+      <StatusTooltip
+        content={t(
+          account.quota.type === "paid" ? "accounts.paidProbingQuota" : "accounts.probingQuota",
+        )}
+      >
+        <Badge variant="secondary" className="bg-primary/10 text-sky-700 dark:text-sky-300">
+          {t("accounts.probing")}
+        </Badge>
+      </StatusTooltip>
     );
   if (
     account.state === "cooldown" ||
@@ -147,5 +178,18 @@ export function AccountStatus({ account }: { account: AccountDTO }) {
     <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
       {t("accounts.statusActive")}
     </Badge>
+  );
+}
+
+function StatusTooltip({ children, content }: { children: ReactNode; content: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span tabIndex={0} className="inline-flex cursor-help">
+          {children}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-72">{content}</TooltipContent>
+    </Tooltip>
   );
 }

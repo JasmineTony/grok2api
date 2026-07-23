@@ -9,7 +9,7 @@ Maintain `JasmineTony/grok2api` as an independent, security-conscious derivative
 - `origin`: `git@github.com:JasmineTony/grok2api.git`
 - `upstream`: `https://github.com/chenyme/grok2api.git`
 - Primary branch: `main`
-- Preserved legacy branch: `legacy-initial`
+- Preserved legacy history: annotated tag `archive/legacy-initial-20260719`
 - Upstream synchronization: dedicated `sync/upstream-YYYYMMDD` branch and pull request
 - No direct automatic force-push synchronization to `main`
 - No upstream tags are copied automatically
@@ -43,8 +43,8 @@ Maintain `JasmineTony/grok2api` as an independent, security-conscious derivative
 
 ## Continuing roadmap
 
-- Review routine Dependabot minor/patch pull requests independently.
+- Freeze routine dependency update pull requests between project major-release preparation cycles; keep security alerts and security updates enabled.
 - Synchronize upstream only through reviewed pull requests.
 - Address unreachable or compatibility-breaking vulnerability findings in dedicated iterations.
 - Consider module-path migration only as an explicitly breaking, separately planned release.
-- Create release notes and a release iteration before the first new `v*` tag is published.
+- Prepare every stable version through a release iteration, explicit tag/`VERSION` validation, protected environment approval, multi-architecture image publication, and read-only smoke verification.

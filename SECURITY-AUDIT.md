@@ -1,5 +1,7 @@
 # Initial Security Hardening Audit
 
+> Historical baseline notice: this record describes the initial v3.0.5 audit. Later upstream synchronization, reliability governance, frontend hardening, release verification, and dependency policy decisions are recorded under `docs/plans/`; current security reporting requirements remain in `SECURITY.md`.
+
 Initial audit date: 2026-07-19
 Release workflow follow-up: 2026-07-20
 Upstream baseline: `chenyme/grok2api@d74b15396686ae68b88c5a52e4e538d058c41d98` (`v3.0.5`)

@@ -1,11 +1,13 @@
-﻿import type { LucideIcon } from "lucide-react";
-import { AlertCircle, CheckCircle2, Clock, ListVideo, Loader2 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, ListVideo, Loader2, RefreshCw } from "lucide-react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { MediaJobDTO, VideoStatsDTO } from "@/features/media/types";
-import { progressTone, statusTone } from "@/features/media/video-gallery-utils";
+import { progressTone, statusTone, videoAssetURL } from "@/features/media/video-gallery-utils";
 import { cn } from "@/shared/lib/cn";
 import { formatDateTime, formatNumber } from "@/shared/lib/format";
 
@@ -165,4 +167,58 @@ export function VideoTimes({ job, locale }: { job: MediaJobDTO; locale: string }
       </div>
     </div>
   );
+}
+
+export function VideoPreview({ assetId }: { assetId: string }) {
+  const { t } = useTranslation();
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+
+  function retry(): void {
+    setState("loading");
+    videoRef.current?.load();
+  }
+
+  return (
+    <div className="relative flex min-h-56 w-full items-center justify-center overflow-hidden rounded-lg bg-black">
+      <video
+        ref={videoRef}
+        className={cn(
+          "h-auto max-h-[70vh] w-auto max-w-full object-contain",
+          state === "error" && "invisible",
+        )}
+        src={videoAssetURL(assetId)}
+        controls
+        playsInline
+        preload="auto"
+        onLoadStart={() => setState("loading")}
+        onLoadedMetadata={(event) => showFirstVideoFrame(event.currentTarget)}
+        onLoadedData={() => setState("ready")}
+        onCanPlay={() => setState("ready")}
+        onEnded={(event) => showFirstVideoFrame(event.currentTarget)}
+        onError={() => setState("error")}
+      />
+      {state === "loading" ? (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black">
+          <Spinner className="size-5 text-white" />
+          <span className="sr-only">{t("common.loading")}</span>
+        </div>
+      ) : null}
+      {state === "error" ? (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black px-6 text-center text-white">
+          <AlertCircle className="size-6 text-red-400" />
+          <p className="text-sm">{t("media.videos.previewUnavailable")}</p>
+          <Button type="button" variant="secondary" size="sm" onClick={retry}>
+            <RefreshCw />
+            {t("common.retry")}
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function showFirstVideoFrame(video: HTMLVideoElement): void {
+  if (!Number.isFinite(video.duration) || video.duration <= 0) return;
+  video.currentTime = Math.min(0.01, video.duration / 2);
 }

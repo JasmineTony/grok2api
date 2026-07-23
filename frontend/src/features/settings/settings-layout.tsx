@@ -72,10 +72,12 @@ export function DurationInput({
   id,
   value,
   onChange,
+  disabled = false,
 }: {
   id: string;
   value?: DurationValue;
   onChange: (value: DurationValue) => void;
+  disabled?: boolean;
 }) {
   const { t } = useTranslation();
   const unit = value?.unit ?? "s";
@@ -88,6 +90,7 @@ export function DurationInput({
         step="any"
         className="min-w-0 rounded-r-none"
         value={Number.isFinite(value?.value) ? value?.value : ""}
+        disabled={disabled}
         onChange={(event) =>
           onChange({
             value: event.target.value === "" ? Number.NaN : Number(event.target.value),
@@ -97,6 +100,7 @@ export function DurationInput({
       />
       <Select
         value={unit}
+        disabled={disabled}
         onValueChange={(nextUnit) => {
           if (isDurationUnit(nextUnit)) onChange({ value: value?.value ?? 1, unit: nextUnit });
         }}
