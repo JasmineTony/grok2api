@@ -1,4 +1,4 @@
-import js from "@eslint/js";
+﻿import js from "@eslint/js";
 import jestDom from "eslint-plugin-jest-dom";
 import jsxA11y from "eslint-plugin-jsx-a11y";
 import react from "@eslint-react/eslint-plugin";
@@ -163,22 +163,6 @@ export default tseslint.config(
       "@typescript-eslint/no-unnecessary-type-assertion": "off",
       "@typescript-eslint/restrict-template-expressions": "off",
     },
-  },
-  {
-    // Temporary phase-14 compatibility baseline. The architecture audit freezes
-    // these files and phase 15 removes this exception after container extraction.
-    files: [
-      "src/features/accounts/accounts-page.tsx",
-      "src/features/accounts/accounts-workspace.tsx",
-      "src/features/audits/request-audits-page.tsx",
-      "src/features/client-keys/client-keys-page.tsx",
-      "src/features/creative-console/creative-console-page.tsx",
-      "src/features/docs/api-docs-page.tsx",
-      "src/features/media/video-gallery-page.tsx",
-      "src/features/models/models-page.tsx",
-      "src/features/settings/settings-page.tsx",
-    ],
-    rules: { "max-lines-per-function": "off" },
   },
   {
     files: ["src/components/ui/**/*.{ts,tsx}"],

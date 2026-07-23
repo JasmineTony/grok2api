@@ -1,4 +1,4 @@
-import { KeyRound, UserRound } from "lucide-react";
+﻿import { KeyRound, UserRound } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import type { DashboardDimensionUsageDTO, DashboardDTO } from "@/features/dashboard/dashboard-api";
@@ -77,7 +77,7 @@ function DimensionPanel({
 }) {
   const { t } = useTranslation();
   return (
-    <DashboardPanel id={id} title={title} className="min-w-0" contentClassName="p-0">
+    <DashboardPanel id={id} title={title} className="min-h-[260px] min-w-0" contentClassName="p-0">
       {loading ? (
         <div className="h-52 animate-pulse rounded-lg bg-muted/30" aria-hidden="true" />
       ) : rows.length === 0 ? (

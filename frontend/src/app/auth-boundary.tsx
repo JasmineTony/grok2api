@@ -1,12 +1,13 @@
-import { useTranslation } from "react-i18next";
+﻿import { useTranslation } from "react-i18next";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { useAuth } from "@/shared/auth/use-auth";
+import { useAuthActions, useAuthState } from "@/shared/auth/use-auth";
 
 export function AuthBoundary() {
-  const { status, retryRestore } = useAuth();
+  const { status } = useAuthState();
+  const { retryRestore } = useAuthActions();
   const location = useLocation();
 
   if (status === "restoring") {
@@ -24,7 +25,8 @@ export function AuthBoundary() {
 }
 
 export function AnonymousBoundary() {
-  const { status, retryRestore } = useAuth();
+  const { status } = useAuthState();
+  const { retryRestore } = useAuthActions();
   if (status === "restoring") {
     return <RestoringScreen />;
   }

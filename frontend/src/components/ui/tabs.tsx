@@ -1,4 +1,4 @@
-import * as TabsPrimitive from "@radix-ui/react-tabs";
+﻿import * as TabsPrimitive from "@radix-ui/react-tabs";
 import * as React from "react";
 
 import { cn } from "@/shared/lib/cn";
@@ -14,6 +14,7 @@ export const TabsList = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.List>
 >(function TabsList({ className, children, ...props }, forwardedRef) {
   const listRef = React.useRef<React.ElementRef<typeof TabsPrimitive.List> | null>(null);
+  const frameRef = React.useRef<number | null>(null);
   const [indicator, setIndicator] = React.useState<IndicatorGeometry | null>(null);
   const setListRef = React.useCallback(
     (node: React.ElementRef<typeof TabsPrimitive.List> | null) => {
@@ -24,7 +25,7 @@ export const TabsList = React.forwardRef<
     [forwardedRef],
   );
 
-  const updateIndicator = React.useCallback(() => {
+  const measureIndicator = React.useCallback(() => {
     const list = listRef.current;
     const active = list?.querySelector<HTMLElement>('[role="tab"][data-state="active"]');
     if (!list || !active) {
@@ -48,11 +49,19 @@ export const TabsList = React.forwardRef<
     );
   }, []);
 
+  const scheduleIndicator = React.useCallback(() => {
+    if (frameRef.current !== null) return;
+    frameRef.current = window.requestAnimationFrame(() => {
+      frameRef.current = null;
+      measureIndicator();
+    });
+  }, [measureIndicator]);
+
   React.useLayoutEffect(() => {
     const list = listRef.current;
     if (!list) return;
-    updateIndicator();
-    const mutationObserver = new MutationObserver(updateIndicator);
+    scheduleIndicator();
+    const mutationObserver = new MutationObserver(scheduleIndicator);
     mutationObserver.observe(list, {
       attributes: true,
       childList: true,
@@ -60,18 +69,20 @@ export const TabsList = React.forwardRef<
       attributeFilter: ["data-state"],
     });
     const resizeObserver =
-      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateIndicator);
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleIndicator);
     resizeObserver?.observe(list);
     list
       .querySelectorAll<HTMLElement>('[role="tab"]')
       .forEach((tab) => resizeObserver?.observe(tab));
-    window.addEventListener("resize", updateIndicator);
+    window.addEventListener("resize", scheduleIndicator);
     return () => {
       mutationObserver.disconnect();
       resizeObserver?.disconnect();
-      window.removeEventListener("resize", updateIndicator);
+      window.removeEventListener("resize", scheduleIndicator);
+      if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
     };
-  }, [updateIndicator]);
+  }, [scheduleIndicator]);
 
   return (
     <TabsPrimitive.List

@@ -1,11 +1,11 @@
 # 第 14 轮迭代结果：前端治理、组件基础与可复现质量门禁
 
 - 完成日期：2026-07-22
-- 状态：本地实施与验收完成，待远程 PR 检查
+- 状态：完成
 - 基线：`8ad1997263b846594e639b82269916500b507cff`
-- 实现提交：`b0075e1`
+- 实现提交：`b0075e1`；最终 Squash 提交：`777a4c7`
 - 工作分支：`codex/frontend-governance-component-foundation`
-- Pull Request：首次推送后创建
+- Pull Request：[#32](https://github.com/JasmineTony/grok2api/pull/32)
 
 ## 已交付
 
@@ -46,13 +46,21 @@
 | 不改变公开接口与后端语义 | 通过 | 无后端业务/API/迁移修改；Go module 路径保持不变。 |
 | Provider 作用域替换全局可变认证状态 | 通过 | ApiClient 隔离、并发 refresh 去重、runtime public base URL、401 invalidation 回归测试通过。 |
 | 第 14 轮使用冻结基线 | 通过 | Prettier 规范化后基线为 9 个超长 view 和 5 个可维护性项；门禁禁止新增或增长，第 15 轮删除基线并归零。 |
-| Firefox/WebKit 分层验收 | 待远程最终确认 | WebKit 本地通过；Firefox 由 Ubuntu CI 单 worker 验收。 |
+| Firefox/WebKit 分层验收 | 通过 | PR #32 的 Ubuntu Firefox/WebKit smoke 成功；WebKit 本地复核也通过。 |
 
 ## 推送门禁证据
 
 - 实现提交 `b0075e1` 在本地完整 `pnpm verify`、后端、Swagger、Chromium、WebKit、actionlint 与 Gitleaks 验收后创建。
 - 在本 RESULT 完成前没有推送分支、创建 PR、标签、Release 或 GHCR 镜像。
 - 首次远程推送仅包含本轮最终本地提交；远程检查失败时只在本分支修复，不绕过检查。
+
+## 远程验收与合并
+
+- PR #32 最终 HEAD：`ae889554566416e8305fff15323a97bd62fd54c6`。
+- CI run `29911713428` 与 CodeQL run `29911713459` 共 15 项检查全部成功，包括 Verify、Visual、CodeQL、amd64/arm64 Docker、Firefox/WebKit、Compose health 与安全审计。
+- Gitleaks 对 GitHub 浅克隆 merge ref 的根提交扫描暴露 11 个既有测试/示例误报；修复为当前工作树扫描，并使用路径、规则与精确行内容联合 allowlist，未使用全局忽略。
+- 2026-07-22 使用 Squash merge 合并为 `777a4c7`，远程与本地功能分支均已删除。
+- 本轮没有创建版本标签、GitHub Release 或 GHCR 镜像。
 
 ## 偏差、延期项与回滚
 

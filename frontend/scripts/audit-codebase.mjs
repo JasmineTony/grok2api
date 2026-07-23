@@ -46,7 +46,7 @@ for (const file of files) {
     report("type-safety", file, "contains a disabled type or lint check");
   if (/(?::\s*any\b|<any>|as\s+any\b)/.test(content))
     report("type-safety", file, "contains an explicit any type");
-  if (/console\.log\s*\(/.test(content) && normalized !== "src/features/docs/api-docs-page.tsx")
+  if (/console\.log\s*\(/.test(content) && !normalized.startsWith("src/features/docs/"))
     report("quality", file, "contains console.log");
   if (
     content.includes("dangerouslySetInnerHTML") &&

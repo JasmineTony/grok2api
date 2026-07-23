@@ -1,5 +1,4 @@
-import { zodResolver } from "@hookform/resolvers/zod";
-import {
+﻿import {
   Box,
   ChevronDown,
   Eye,
@@ -20,22 +19,13 @@ import {
   Video,
 } from "lucide-react";
 import { useTheme } from "next-themes";
-import { type ReactNode, useState } from "react";
-import { useForm } from "react-hook-form";
+import { type ReactNode, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { toast } from "sonner";
-import { z } from "zod";
 
+import { ChangePasswordDialog } from "@/app/change-password-dialog";
+import { prefetchDeferredPage, prefetchPrimaryDeferredPages } from "@/app/deferred-page-prefetch";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,8 +36,6 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Sheet,
   SheetContent,
@@ -58,11 +46,12 @@ import {
 } from "@/components/ui/sheet";
 import { NotificationCenter } from "@/features/system/notification-center";
 import { CurrentVersionLabel } from "@/features/system/version-update";
-import { useAuth } from "@/shared/auth/use-auth";
+import { useAuthActions, useAuthState } from "@/shared/auth/use-auth";
 import { GitHubMark } from "@/shared/components/github-mark";
 import { PageScaffold } from "@/shared/components/page-scaffold";
 import { SiteFooter } from "@/shared/components/site-footer";
 import { cn } from "@/shared/lib/cn";
+import { scheduleIdleTask } from "@/shared/lib/idle-task";
 
 const navigation = [
   { href: "/dashboard", label: "nav.dashboard", icon: LayoutDashboard },
@@ -105,7 +94,8 @@ const documentation = [
 
 export function AppShell() {
   const { t, i18n } = useTranslation();
-  const { admin, logout, changePassword } = useAuth();
+  const { admin } = useAuthState();
+  const { logout } = useAuthActions();
   const location = useLocation();
   const { setTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -115,33 +105,15 @@ export function AppShell() {
     location.pathname,
   );
 
-  const passwordSchema = z.object({
-    currentPassword: z.string().min(1, t("errors.required")),
-    newPassword: z.string().min(8, t("errors.minPassword")),
-  });
-  type PasswordForm = z.infer<typeof passwordSchema>;
-  const passwordForm = useForm<PasswordForm>({
-    resolver: zodResolver(passwordSchema),
-    defaultValues: { currentPassword: "", newPassword: "" },
-  });
-
-  async function submitPassword(values: PasswordForm): Promise<void> {
-    try {
-      await changePassword(values.currentPassword, values.newPassword);
-      toast.success(t("auth.passwordUpdated"));
-      passwordForm.reset();
-      setPasswordOpen(false);
-      await logout();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("errors.generic"));
-    }
-  }
+  useEffect(() => scheduleIdleTask(prefetchPrimaryDeferredPages), []);
 
   function navigationLinks(): ReactNode {
     return navigation.map(({ href, label, icon: Icon }) => (
       <NavLink
         key={href}
         to={href}
+        onPointerEnter={() => prefetchDeferredPage(href)}
+        onFocus={() => prefetchDeferredPage(href)}
         onClick={() => setMobileOpen(false)}
         className={({ isActive }) =>
           cn(
@@ -205,6 +177,8 @@ export function AppShell() {
                   <NavLink
                     key={item.href}
                     to={item.href}
+                    onPointerEnter={() => prefetchDeferredPage(item.href)}
+                    onFocus={() => prefetchDeferredPage(item.href)}
                     onClick={() => setMobileOpen(false)}
                     className={({ isActive }) =>
                       cn(
@@ -310,6 +284,8 @@ export function AppShell() {
       </DropdownMenu>
       <NavLink
         to="/settings"
+        onPointerEnter={() => prefetchDeferredPage("/settings")}
+        onFocus={() => prefetchDeferredPage("/settings")}
         onClick={() => setMobileOpen(false)}
         className={({ isActive }) =>
           cn(
@@ -415,57 +391,11 @@ export function AppShell() {
         {!isMediaWorkspace ? <SiteFooter /> : null}
       </div>
 
-      <Dialog open={passwordOpen} onOpenChange={setPasswordOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("auth.changePassword")}</DialogTitle>
-            <DialogDescription>{admin?.username}</DialogDescription>
-          </DialogHeader>
-          <form className="space-y-4" onSubmit={passwordForm.handleSubmit(submitPassword)}>
-            <div className="space-y-2">
-              <Label htmlFor="current-password">{t("auth.currentPassword")}</Label>
-              <Input
-                id="current-password"
-                type="password"
-                autoComplete="current-password"
-                {...passwordForm.register("currentPassword")}
-              />
-              {passwordForm.formState.errors.currentPassword ? (
-                <p className="text-xs text-destructive">
-                  {passwordForm.formState.errors.currentPassword.message}
-                </p>
-              ) : null}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="new-password">{t("auth.newPassword")}</Label>
-              <Input
-                id="new-password"
-                type="password"
-                autoComplete="new-password"
-                {...passwordForm.register("newPassword")}
-              />
-              {passwordForm.formState.errors.newPassword ? (
-                <p className="text-xs text-destructive">
-                  {passwordForm.formState.errors.newPassword.message}
-                </p>
-              ) : null}
-            </div>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => setPasswordOpen(false)}
-              >
-                {t("common.cancel")}
-              </Button>
-              <Button type="submit" size="sm" disabled={passwordForm.formState.isSubmitting}>
-                {t("common.save")}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <ChangePasswordDialog
+        open={passwordOpen}
+        onOpenChange={setPasswordOpen}
+        adminUsername={admin?.username}
+      />
     </div>
   );
 }
