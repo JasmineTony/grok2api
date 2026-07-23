@@ -3,8 +3,6 @@
 import {
   AuthActionsContext,
   type AuthActionsValue,
-  AuthContext,
-  type AuthContextValue,
   AuthStateContext,
   type AuthStateValue,
 } from "@/shared/auth/auth-state";
@@ -20,9 +18,4 @@ export function useAuthState(): AuthStateValue {
 
 export function useAuthActions(): AuthActionsValue {
   return requireContext(use(AuthActionsContext), "useAuthActions");
-}
-
-/** Backward-compatible combined hook for callers that need state and commands together. */
-export function useAuth(): AuthContextValue {
-  return requireContext(use(AuthContext), "useAuth");
 }

@@ -16,8 +16,5 @@ export type AuthActionsValue = {
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 };
 
-export type AuthContextValue = AuthStateValue & AuthActionsValue;
-
 export const AuthStateContext = createContext<AuthStateValue | null>(null);
 export const AuthActionsContext = createContext<AuthActionsValue | null>(null);
-export const AuthContext = createContext<AuthContextValue | null>(null);

@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+﻿import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -36,15 +36,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { deleteVideos, getVideoStats, listVideos } from "@/features/media/media-api";
+import type { MediaJobDTO } from "@/features/media/types";
+import { VideoProgress, VideoSummary, VideoTimes } from "@/features/media/video-gallery-components";
 import {
   formatSpec,
   isTerminalVideoJob,
-  VideoProgress,
-  VideoSummary,
-  VideoTimes,
   videoAssetURL,
-} from "@/features/media/video-gallery-components";
-import type { MediaJobDTO } from "@/features/media/types";
+} from "@/features/media/video-gallery-utils";
 import { useApiClient } from "@/shared/api/use-api-client";
 import { EmptyState, ErrorState, TableLoadingRow } from "@/shared/components/data-state";
 import { DataTableFilters } from "@/shared/components/data-table-filters";

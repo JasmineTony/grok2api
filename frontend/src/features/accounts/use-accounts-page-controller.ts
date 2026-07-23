@@ -763,5 +763,3 @@ export function useAccountsPageController() {
     cleanupMutation,
   };
 }
-
-export type AccountsPageController = ReturnType<typeof useAccountsPageController>;

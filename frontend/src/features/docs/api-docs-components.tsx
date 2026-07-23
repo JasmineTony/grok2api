@@ -11,8 +11,8 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { ModelRouteDTO } from "@/entities/model/types";
 import {
-  exampleLanguages,
   type ExampleLanguage,
+  exampleLanguages,
   type ExampleView,
   type FieldDefinition,
   type Method,

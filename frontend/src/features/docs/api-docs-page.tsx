@@ -16,9 +16,9 @@ import {
 import {
   createExamples,
   endpoints,
-  fallbackModel,
   type ExampleLanguage,
   type ExampleView,
+  fallbackModel,
   withExampleModel,
 } from "@/features/docs/api-docs-model";
 import { useApiClient } from "@/shared/api/use-api-client";

@@ -8,12 +8,7 @@ import {
   decodeLoginResponseDTO,
 } from "@/shared/api/client";
 import { useApiClient } from "@/shared/api/use-api-client";
-import {
-  AuthActionsContext,
-  AuthContext,
-  AuthStateContext,
-  type AuthStatus,
-} from "@/shared/auth/auth-state";
+import { AuthActionsContext, AuthStateContext, type AuthStatus } from "@/shared/auth/auth-state";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const client = useApiClient();
@@ -112,13 +107,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({ retryRestore: restoreSession, login, logout, changePassword }),
     [restoreSession, login, logout, changePassword],
   );
-  const value = useMemo(() => ({ ...state, ...actions }), [state, actions]);
 
   return (
     <AuthStateContext value={state}>
-      <AuthActionsContext value={actions}>
-        <AuthContext value={value}>{children}</AuthContext>
-      </AuthActionsContext>
+      <AuthActionsContext value={actions}>{children}</AuthActionsContext>
     </AuthStateContext>
   );
 }
