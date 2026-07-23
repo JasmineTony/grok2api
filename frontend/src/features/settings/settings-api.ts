@@ -33,6 +33,10 @@ export type SettingsConfigDTO = {
     statsigManualValue?: string;
     statsigManualConfigured: boolean;
     statsigSignerURL: string;
+    clearanceMode: "manual" | "flaresolverr";
+    flareSolverrURL: string;
+    clearanceTimeout: string;
+    clearanceRefresh: string;
     mediaConcurrency: number;
     allowNSFW: boolean;
     recoveryBackoffBase: string;
@@ -63,6 +67,12 @@ export type SettingsConfigDTO = {
   };
   audit: { bufferSize: number; batchSize: number; flushInterval: string };
   clientKeyDefaults: { rpmLimit: number; maxConcurrent: number };
+  accounts: {
+    autoCleanReauthEnabled: boolean;
+    autoCleanReauthInterval: string;
+    autoCleanReauthMinAge: string;
+    autoCleanIncludeDisabled: boolean;
+  };
 };
 
 export type EgressNodeDTO = {
@@ -73,6 +83,8 @@ export type EgressNodeDTO = {
   proxyConfigured: boolean;
   userAgent: string;
   cookieConfigured: boolean;
+  accountBoundProxy: boolean;
+  proxyPool: boolean;
   health: number;
   failureCount: number;
   cooldownUntil?: string;
@@ -85,6 +97,7 @@ export type EgressNodeInput = {
   enabled: boolean;
   proxyURL?: string;
   clearProxyURL?: boolean;
+  proxyPool?: boolean;
   userAgent: string;
   cloudflareCookies?: string;
   clearCookies?: boolean;
@@ -135,6 +148,10 @@ const settingsConfigValidator = hasShape({
     statsigManualValue: isOptional(isString),
     statsigManualConfigured: isBoolean,
     statsigSignerURL: isString,
+    clearanceMode: isOneOf("manual", "flaresolverr"),
+    flareSolverrURL: isString,
+    clearanceTimeout: isString,
+    clearanceRefresh: isString,
     mediaConcurrency: isNumber,
     allowNSFW: isBoolean,
     recoveryBackoffBase: isString,
@@ -165,14 +182,38 @@ const settingsConfigValidator = hasShape({
   }),
   audit: hasShape({ bufferSize: isNumber, batchSize: isNumber, flushInterval: isString }),
   clientKeyDefaults: hasShape({ rpmLimit: isNumber, maxConcurrent: isNumber }),
+  accounts: isOptional(
+    hasShape({
+      autoCleanReauthEnabled: isBoolean,
+      autoCleanReauthInterval: isString,
+      autoCleanReauthMinAge: isString,
+      autoCleanIncludeDisabled: isBoolean,
+    }),
+  ),
 });
-const decodeSettingsSnapshot = createObjectDecoder<SettingsSnapshotDTO>("settings", {
+const decodeSettingsSnapshotRaw = createObjectDecoder<SettingsSnapshotDTO>("settings", {
   config: settingsConfigValidator,
   recommendedProviderBuild: hasShape({ clientVersion: isString, userAgent: isString }),
   updatedAt: isString,
   revision: isString,
   restartRequired: isArrayOf(isString),
 });
+const defaultAccountsConfig = (): SettingsConfigDTO["accounts"] => ({
+  autoCleanReauthEnabled: false,
+  autoCleanReauthInterval: "10m",
+  autoCleanReauthMinAge: "1h",
+  autoCleanIncludeDisabled: false,
+});
+const decodeSettingsSnapshot = (value: unknown): SettingsSnapshotDTO => {
+  const snapshot = decodeSettingsSnapshotRaw(value);
+  return {
+    ...snapshot,
+    config: {
+      ...snapshot.config,
+      accounts: snapshot.config.accounts ?? defaultAccountsConfig(),
+    },
+  };
+};
 const egressNodeValidator = hasShape({
   id: isString,
   name: isString,
@@ -181,6 +222,8 @@ const egressNodeValidator = hasShape({
   proxyConfigured: isBoolean,
   userAgent: isString,
   cookieConfigured: isBoolean,
+  accountBoundProxy: isBoolean,
+  proxyPool: isBoolean,
   health: isNumber,
   failureCount: isNumber,
   cooldownUntil: isOptional(isString),
@@ -194,6 +237,8 @@ const decodeEgressNode = createObjectDecoder<EgressNodeDTO>("egress node", {
   proxyConfigured: isBoolean,
   userAgent: isString,
   cookieConfigured: isBoolean,
+  accountBoundProxy: isBoolean,
+  proxyPool: isBoolean,
   health: isNumber,
   failureCount: isNumber,
   cooldownUntil: isOptional(isString),
@@ -286,6 +331,17 @@ export function deleteEgressNode(client: ApiClient, id: string): Promise<{ delet
     `/api/admin/v1/egress-nodes/${id}`,
     { method: "DELETE" },
     decodeBooleanResult<{ deleted: boolean }>("deleted"),
+  );
+}
+
+export function refreshEgressClearance(
+  client: ApiClient,
+  id: string,
+): Promise<{ refreshed: boolean }> {
+  return client.request(
+    `/api/admin/v1/egress-nodes/${id}/refresh-clearance`,
+    { method: "POST" },
+    decodeBooleanResult<{ refreshed: boolean }>("refreshed"),
   );
 }
 

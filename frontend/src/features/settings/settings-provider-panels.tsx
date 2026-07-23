@@ -217,6 +217,86 @@ export function SettingsProviderPanels({
               </SettingsField>
             )}
             <SettingsField
+              controlId="web-clearance-mode"
+              className="sm:col-span-2"
+              label={t("settings.web.clearanceMode")}
+              description={t("settings.web.clearanceModeHelp")}
+              error={form.formState.errors.providerWeb?.clearanceMode?.message}
+            >
+              <Controller
+                control={form.control}
+                name="providerWeb.clearanceMode"
+                render={({ field }) => (
+                  <Tabs value={field.value} onValueChange={field.onChange}>
+                    <TabsList
+                      id="web-clearance-mode"
+                      className="grid w-full grid-cols-2 bg-muted/55"
+                    >
+                      <TabsTrigger value="manual" className="font-normal">
+                        {t("settings.web.clearanceManual")}
+                      </TabsTrigger>
+                      <TabsTrigger value="flaresolverr" className="font-normal">
+                        {t("settings.web.clearanceFlareSolverr")}
+                      </TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                )}
+              />
+            </SettingsField>
+            {form.watch("providerWeb.clearanceMode") === "flaresolverr" ? (
+              <>
+                <SettingsField
+                  controlId="web-flaresolverr-url"
+                  className="sm:col-span-2"
+                  label={t("settings.web.flareSolverrURL")}
+                  description={t("settings.web.flareSolverrURLHelp")}
+                  error={form.formState.errors.providerWeb?.flareSolverrURL?.message}
+                >
+                  <Input
+                    id="web-flaresolverr-url"
+                    type="url"
+                    {...form.register("providerWeb.flareSolverrURL")}
+                  />
+                </SettingsField>
+                <SettingsField
+                  controlId="web-clearance-timeout"
+                  label={t("settings.web.clearanceTimeout")}
+                  description={t("settings.web.clearanceTimeoutHelp")}
+                  error={form.formState.errors.providerWeb?.clearanceTimeout?.message}
+                >
+                  <Controller
+                    control={form.control}
+                    name="providerWeb.clearanceTimeout"
+                    render={({ field }) => (
+                      <DurationInput
+                        id="web-clearance-timeout"
+                        value={field.value}
+                        onChange={field.onChange}
+                      />
+                    )}
+                  />
+                </SettingsField>
+                <SettingsField
+                  controlId="web-clearance-refresh"
+                  label={t("settings.web.clearanceRefresh")}
+                  description={t("settings.web.clearanceRefreshHelp")}
+                  error={form.formState.errors.providerWeb?.clearanceRefresh?.message}
+                >
+                  <Controller
+                    control={form.control}
+                    name="providerWeb.clearanceRefresh"
+                    render={({ field }) => (
+                      <DurationInput
+                        id="web-clearance-refresh"
+                        value={field.value}
+                        onChange={field.onChange}
+                      />
+                    )}
+                  />
+                </SettingsField>
+              </>
+            ) : null}
+            <SettingsField
               controlId="web-quota-timeout"
               label={t("settings.web.quotaTimeout")}
               description={t("settings.web.quotaTimeoutHelp")}
@@ -490,7 +570,7 @@ export function SettingsProviderPanels({
         </SettingsSection>
 
         <SettingsSection title={t("settings.egress.title")}>
-          <EgressNodes />
+          <EgressNodes clearanceMode={form.watch("providerWeb.clearanceMode")} />
         </SettingsSection>
       </SettingsPane>
     </>

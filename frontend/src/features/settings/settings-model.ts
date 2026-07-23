@@ -63,6 +63,10 @@ export const settingsSchema = z.object({
       statsigManualValue: z.string().trim().max(4096),
       statsigManualConfigured: z.boolean(),
       statsigSignerURL: z.string().trim().max(2048),
+      clearanceMode: z.enum(["manual", "flaresolverr"]),
+      flareSolverrURL: z.string().trim().max(2048),
+      clearanceTimeout: durationSchema,
+      clearanceRefresh: durationSchema,
       quotaTimeout: durationSchema,
       chatTimeout: durationSchema,
       imageTimeout: durationSchema,
@@ -147,6 +151,18 @@ export const settingsSchema = z.object({
     rpmLimit: positiveInteger.max(100_000),
     maxConcurrent: positiveInteger.max(1_024),
   }),
+  accounts: z.object({
+    autoCleanReauthEnabled: z.boolean(),
+    autoCleanReauthInterval: durationSchema.refine((value) => {
+      const seconds = durationSeconds(value);
+      return seconds >= 60 && seconds <= 3_600;
+    }),
+    autoCleanReauthMinAge: durationSchema.refine((value) => {
+      const seconds = durationSeconds(value);
+      return seconds >= 60 && seconds <= 30 * 86_400;
+    }),
+    autoCleanIncludeDisabled: z.boolean(),
+  }),
 });
 
 export type SettingsForm = z.infer<typeof settingsSchema>;
@@ -158,6 +174,8 @@ export function toSettingsForm(config: SettingsConfigDTO): SettingsForm {
     providerWeb: {
       ...config.providerWeb,
       statsigManualValue: "",
+      clearanceTimeout: parseDuration(config.providerWeb.clearanceTimeout),
+      clearanceRefresh: parseDuration(config.providerWeb.clearanceRefresh),
       quotaTimeout: parseDuration(config.providerWeb.quotaTimeout),
       chatTimeout: parseDuration(config.providerWeb.chatTimeout),
       imageTimeout: parseDuration(config.providerWeb.imageTimeout),
@@ -193,6 +211,12 @@ export function toSettingsForm(config: SettingsConfigDTO): SettingsForm {
       flushInterval: parseDuration(config.audit.flushInterval),
     },
     clientKeyDefaults: config.clientKeyDefaults,
+    accounts: {
+      autoCleanReauthEnabled: config.accounts.autoCleanReauthEnabled,
+      autoCleanReauthInterval: parseDuration(config.accounts.autoCleanReauthInterval),
+      autoCleanReauthMinAge: parseDuration(config.accounts.autoCleanReauthMinAge),
+      autoCleanIncludeDisabled: config.accounts.autoCleanIncludeDisabled,
+    },
   };
 }
 
@@ -206,6 +230,8 @@ export function toSettingsDTO(config: SettingsForm): SettingsConfigDTO {
       chatTimeout: formatDuration(config.providerWeb.chatTimeout),
       imageTimeout: formatDuration(config.providerWeb.imageTimeout),
       videoTimeout: formatDuration(config.providerWeb.videoTimeout),
+      clearanceTimeout: formatDuration(config.providerWeb.clearanceTimeout),
+      clearanceRefresh: formatDuration(config.providerWeb.clearanceRefresh),
       recoveryBackoffBase: formatDuration(config.providerWeb.recoveryBackoffBase),
       recoveryBackoffMax: formatDuration(config.providerWeb.recoveryBackoffMax),
     },
@@ -237,6 +263,12 @@ export function toSettingsDTO(config: SettingsForm): SettingsConfigDTO {
       flushInterval: formatDuration(config.audit.flushInterval),
     },
     clientKeyDefaults: config.clientKeyDefaults,
+    accounts: {
+      autoCleanReauthEnabled: config.accounts.autoCleanReauthEnabled,
+      autoCleanReauthInterval: formatDuration(config.accounts.autoCleanReauthInterval),
+      autoCleanReauthMinAge: formatDuration(config.accounts.autoCleanReauthMinAge),
+      autoCleanIncludeDisabled: config.accounts.autoCleanIncludeDisabled,
+    },
   };
 }
 

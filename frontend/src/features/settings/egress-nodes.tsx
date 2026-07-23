@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, History, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { Activity, History, MoreHorizontal, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -50,6 +50,7 @@ import {
   type EgressScope,
   listEgressHealthChecks,
   listEgressNodes,
+  refreshEgressClearance,
   updateEgressNode,
 } from "@/features/settings/settings-api";
 import { useApiClient } from "@/shared/api/use-api-client";
@@ -65,9 +66,14 @@ const emptyInput: EgressNodeInput = {
   proxyURL: "",
   userAgent: "",
   cloudflareCookies: "",
+  proxyPool: false,
 };
 
-export function EgressNodes() {
+export function EgressNodes({
+  clearanceMode = "manual",
+}: {
+  clearanceMode?: "manual" | "flaresolverr";
+}) {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const apiClient = useApiClient();
@@ -93,6 +99,7 @@ export function EgressNodes() {
         ...(form.scope !== "grok_build" && cloudflareCookies ? { cloudflareCookies } : {}),
         ...(form.clearProxyURL === undefined ? {} : { clearProxyURL: form.clearProxyURL }),
         ...(form.clearCookies === undefined ? {} : { clearCookies: form.clearCookies }),
+        ...(form.proxyPool === undefined ? {} : { proxyPool: form.proxyPool }),
       };
       return editing
         ? updateEgressNode(apiClient, editing.id, input)
@@ -124,6 +131,14 @@ export function EgressNodes() {
     },
     onError: (error) => showError(error, t("settings.egress.healthCheckFailed")),
   });
+  const refreshClearance = useMutation({
+    mutationFn: (id: string) => refreshEgressClearance(apiClient, id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["egress-nodes"] });
+      toast.success(t("settings.egress.clearanceRefreshed"));
+    },
+    onError: (error) => showError(error, t("settings.egress.operationFailed")),
+  });
   const historyQuery = useQuery({
     queryKey: ["egress-health-checks", historyNode?.id],
     queryFn: () => listEgressHealthChecks(apiClient, historyNode?.id ?? ""),
@@ -143,6 +158,7 @@ export function EgressNodes() {
       userAgent: node.scope === "grok_build" ? "" : node.userAgent,
       proxyURL: "",
       cloudflareCookies: "",
+      proxyPool: node.proxyPool,
     });
     setEditing(node);
   }
@@ -304,6 +320,15 @@ export function EgressNodes() {
                             <Activity />
                             {t("settings.egress.check")}
                           </DropdownMenuItem>
+                          {clearanceMode === "flaresolverr" && node.scope === "grok_web" ? (
+                            <DropdownMenuItem
+                              disabled={refreshClearance.isPending}
+                              onClick={() => refreshClearance.mutate(node.id)}
+                            >
+                              <RefreshCw />
+                              {t("settings.egress.refreshClearance")}
+                            </DropdownMenuItem>
+                          ) : null}
                           <DropdownMenuItem onClick={() => setHistoryNode(node)}>
                             <History />
                             {t("settings.egress.history")}
@@ -440,6 +465,19 @@ export function EgressNodes() {
                 onChange={(event) => setForm({ ...form, proxyURL: event.target.value })}
               />
             </Field>
+            <div className="flex items-center justify-between gap-4 rounded-md bg-muted/45 px-3 py-2.5">
+              <div className="space-y-0.5">
+                <Label htmlFor="egress-proxy-pool">{t("settings.egress.proxyPool")}</Label>
+                <p className="text-xs text-muted-foreground">
+                  {t("settings.egress.proxyPoolHelp")}
+                </p>
+              </div>
+              <Switch
+                id="egress-proxy-pool"
+                checked={Boolean(form.proxyPool)}
+                onCheckedChange={(proxyPool) => setForm({ ...form, proxyPool })}
+              />
+            </div>
             {form.scope !== "grok_build" ? (
               <Field label={t("settings.egress.userAgent")} controlId="egress-user-agent">
                 <Input

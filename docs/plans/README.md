@@ -61,3 +61,5 @@ Templates are available in [`templates/`](./templates/).
 3. Finish `PLAN.md` before implementation starts.
 4. Add the directory to the table above.
 5. Keep `RESULT.md` current as verification and delivery are completed.
+| 2026-07-23 16 ? Upstream v3.0.7 sync and dependency policy | [Plan](./2026-07-23-16-upstream-v3.0.7-dependency-policy/PLAN.md) | [Result](./2026-07-23-16-upstream-v3.0.7-dependency-policy/RESULT.md) | In progress |
+| 2026-07-23 17 ? v3.1.1 release closeout | [Plan](./2026-07-23-17-v3.1.1-release-closeout/PLAN.md) | [Result](./2026-07-23-17-v3.1.1-release-closeout/RESULT.md) | Planned |

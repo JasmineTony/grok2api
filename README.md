@@ -15,7 +15,7 @@
 
 Grok2API 以 Go 服务端和 React 管理端组成统一网关，把 Grok Build OAuth、Grok Web SSO 与 Grok Console SSO 管理为彼此隔离的账号池，并向客户端提供 OpenAI 与 Anthropic 风格接口。项目支持多账号调度、模型路由、客户端密钥、媒体任务、请求审计以及代理出口管理。
 
-当前独立发布版本为 **v3.1.0**。本版本强化了 TypeScript/ESLint 门禁、账号与创作控制台模块边界、认证路由烟测、响应式页面骨架、包体预算、Chrome DevTools MCP 性能复核以及 CI/Docker 缓存治理；公开 API、配置语义、数据库兼容性和 Go module 路径保持不变。
+当前源码版本为 **v3.1.1**，已精确同步上游 `v3.0.7`；完成第 17 轮发布验收后将成为最新稳定版本。公开 API、配置语义、数据库兼容性和 Go module 路径保持不变。
 
 > [!IMPORTANT]
 > 本项目仅用于技术研究与学习交流。使用者应遵守上游服务条款及所在地法律法规，并自行承担账号、数据与部署风险。
@@ -34,6 +34,8 @@ upstream https://github.com/chenyme/grok2api.git
 ```
 
 上游同步必须使用 `sync/upstream-YYYYMMDD` 分支和 Pull Request，不直接强制覆盖 `main`，也不自动镜像上游标签。具体流程见 [UPSTREAM.md](./UPSTREAM.md)。
+
+常规依赖升级集中在下一个项目主版本筹备期；补丁版本只接受兼容的安全修复。详见 [依赖更新策略](./docs/reference/dependency-update-policy.md)。
 
 ## 核心能力
 

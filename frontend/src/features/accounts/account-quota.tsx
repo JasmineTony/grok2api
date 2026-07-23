@@ -28,14 +28,11 @@ export function AccountQuota({
   const used = formatNumber(quota.used, locale, 0);
   const limit = formatNumber(quota.limit, locale, 0);
   const isEstimated = !quota.limitKnown;
-  const statusDescription =
-    quota.status === "waitingReset" && quota.nextProbeAt
-      ? t("accounts.waitingResetUntil", { time: formatDateTime(quota.nextProbeAt, locale) })
-      : quota.status === "probing"
-        ? t("accounts.probingQuota")
-        : quota.confirmed
-          ? t("accounts.upstreamConfirmed")
-          : null;
+  const recoveryDescription = quota.nextProbeAt
+    ? t("accounts.waitingResetUntil", { time: formatDateTime(quota.nextProbeAt, locale) })
+    : quota.status === "probing"
+      ? t("accounts.probingQuota")
+      : t("accounts.quotaResetUnknown");
   const usage =
     quota.limit > 0
       ? isEstimated
@@ -59,7 +56,10 @@ export function AccountQuota({
                   <Info className="size-3.5" />
                 </button>
               </TooltipTrigger>
-              <TooltipContent>{t("accounts.freeEstimatedDescription")}</TooltipContent>
+              <TooltipContent className="max-w-72 space-y-1">
+                <div>{t("accounts.freeEstimatedDescription")}</div>
+                <div className="text-muted-foreground">{recoveryDescription}</div>
+              </TooltipContent>
             </Tooltip>
           ) : null}
         </div>
@@ -71,9 +71,6 @@ export function AccountQuota({
       <div className="h-1.5 overflow-hidden rounded-full bg-muted">
         <div className="h-full bg-primary" style={{ width: `${percent}%` }} />
       </div>
-      {statusDescription ? (
-        <div className="text-[11px] text-muted-foreground">{statusDescription}</div>
-      ) : null}
     </div>
   );
 }
