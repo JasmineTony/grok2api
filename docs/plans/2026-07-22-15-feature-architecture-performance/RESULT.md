@@ -1,11 +1,12 @@
 ﻿# 第 15 轮迭代结果：Feature 架构拆分、按需加载与性能收敛
 
 - 完成日期：2026-07-23（本地实现与验收阶段）
-- 状态：PR #34 全部检查通过，待 Squash 合并
+- 状态：完成
 - 基线：`777a4c72a39174b681127ae3f6d94aac278d70b6`
 - 工作分支：`codex/feature-architecture-performance`
-- 最终本地提交：`46c27c9c030548ef44d3bc568791f9942d97cce7`
-- Pull Request：#34 `refactor: complete frontend feature architecture and performance convergence`
+- 实现分支最终提交：`8cfbc566e6e5acd0996dccc78f852781a478faa6`
+- Pull Request：#34 `refactor: complete frontend feature architecture and performance convergence`（Squash 合并）
+- `main` 合并提交：`9cfe0953569f249212a3ad17e7f6b2171cdf108e`
 
 ## 已交付
 
@@ -99,11 +100,11 @@
 - 本机无 Docker 和 gcc，容器构建与 race 由 GitHub Actions 的 amd64/arm64、Compose health 和 Linux PostgreSQL race job 验收。
 - 本轮没有启用真实用户或生产数据；性能数值是本地实验室样本，不代表 RUM/CrUX。
 - Chrome DevTools MCP 没有对真实上游账号执行请求，不采集凭据、Cookie 或请求正文。
-- PR #34 的 Backend、race、Frontend、Visual、Firefox/WebKit、Workflow/secret、Container health、CodeQL、amd64/arm64 Docker 检查均已通过。
+- PR #34 的 Backend、race、Frontend、Visual、Firefox/WebKit、Workflow/secret、Container health、CodeQL、amd64/arm64 Docker 检查均已通过，并已于 2026-07-23 Squash 合并。
 
 ## 推送门禁证据
 
-- 完整本地验收完成后首次推送分支并创建 PR #34；未推送任何实现中间状态。
+- 完整本地验收完成后首次推送分支并创建 PR #34；仅在补记 PR/CI 证据时追加一次文档提交，未推送任何实现中间状态。
 - `origin/main` 仍为 `777a4c7`，`git rev-list --left-right --count origin/main...HEAD` 为 `0 14`（在新增 Dialog 测试前为 0 13；当前最终提交包含该测试）。
 - 首次推送前已执行 `git fetch origin --prune`，没有发现 `main` 新提交。`CI` run `29982577395` 与 `CodeQL Advanced` run `29982577384` 全绿。
 - 未创建版本标签、GitHub Release 或 GHCR 镜像。
@@ -119,5 +120,5 @@
 - [x] 实现符合本地接受范围。
 - [x] 本地测试、安全、性能与文档检查完成。
 - [x] PR 创建且 GitHub 检查全部通过。
-- [ ] Squash 合并、远程分支删除与最终 main 同步完成。
-- [ ] 仓库状态干净且本地 `main` 与远程合并结果一致。
+- [x] Squash 合并、远程分支删除与最终 main 同步完成。
+- [x] 仓库状态干净且本地 `main` 与远程合并结果一致。
