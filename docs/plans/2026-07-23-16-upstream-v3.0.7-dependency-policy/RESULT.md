@@ -14,7 +14,7 @@
 - 同时保留统一错误模型、账号状态机、请求策略、Prometheus 指标、账号级 Egress 和第 15 轮前端组件架构。
 - 纳入默认关闭的 reauth 账号自动清理、`reauth_marked_at` 锚点、活动媒体跳过、分布式锁与批次删除保护。
 - 纳入默认关闭的 FlareSolverr Clearance、代理池故障隔离、compaction 恢复、prompt-cache、x_search、限流元数据、上传诊断、媒体限制与视频预览修复。
-- 58 个跟踪 Markdown 全部有效；没有可安全删除文件，历史计划、安全审计、兼容跳转页和参考文档均保留。
+- 59 个跟踪 Markdown 全部有效；没有可安全删除文件，历史计划、安全审计、兼容跳转页和参考文档均保留。
 - 常规 Dependabot 版本更新冻结到下一个项目主版本筹备期，安全更新保留独立紧急流程。
 - 已启用 Dependency graph、Dependabot alerts 和 Dependabot security updates；核验时开放安全告警为 0。
 - 常规 Dependabot PR #26、#27、#28、#33 已关闭且对应远程分支已删除；关闭原因和重新评估条件已记录。

@@ -23,8 +23,8 @@
 
 ## 最终同步与兼容性
 
-- `HEAD == origin/main == 71b660321ab9f8e77e29194eb832b1fe8d02e0c5`，工作区干净。
-- `11bb5e20e7409ecaa64cf083c1e302fbb6ab30e7` 是最终 main 的祖先。
+- 发布切点 `v3.1.1` 的 peeled commit 为 `71b660321ab9f8e77e29194eb832b1fe8d02e0c5`，且该提交是最终 main 的祖先；第 17 轮归档 PR #37 的后续文档合并不改变已发布标签或镜像。
+- `11bb5e20e7409ecaa64cf083c1e302fbb6ab30e7` 是最终 main 的祖先；PR #37 `docs: finalize v3.1.1 release closeout` 已使用 Squash merge 合并。
 - Dependabot alerts/security updates 已启用，核验时开放安全告警为 0；常规更新 PR 上限冻结为 0，延期到 v4.0.0 筹备期。
 - `/v1/*`、现有 `/api/admin/v1/*`、配置既有语义、数据库兼容性和 Go module 路径保持不变。
 - 原始 Trace、堆快照、凭据、Cookie、Authorization、请求正文和临时数据库未进入 Git。
