@@ -1,4 +1,4 @@
-# Project plans and iteration archive
+﻿# Project plans and iteration archive
 
 This directory is the canonical home for project plans, implementation iterations, and their completion records.
 
@@ -26,15 +26,15 @@ Templates are available in [`templates/`](./templates/).
 
 ## Iterations
 
-| Iteration | Plan | Result | State |
-| --- | --- | --- | --- |
-| 2026-07-19 01 — Repository initialization | [Plan](./2026-07-19-01-repository-initialization/PLAN.md) | [Result](./2026-07-19-01-repository-initialization/RESULT.md) | Complete |
-| 2026-07-19 02 — Initial security hardening | [Plan](./2026-07-19-02-initial-security-hardening/PLAN.md) | [Result](./2026-07-19-02-initial-security-hardening/RESULT.md) | Complete |
-| 2026-07-20 03 — Release pipeline hardening | [Plan](./2026-07-20-03-release-pipeline-hardening/PLAN.md) | [Result](./2026-07-20-03-release-pipeline-hardening/RESULT.md) | Complete |
-| 2026-07-20 04 — Final acceptance | [Plan](./2026-07-20-04-final-acceptance/PLAN.md) | [Result](./2026-07-20-04-final-acceptance/RESULT.md) | Complete |
-| 2026-07-20 05 — Plan documentation standard | [Plan](./2026-07-20-05-plan-documentation-standard/PLAN.md) | [Result](./2026-07-20-05-plan-documentation-standard/RESULT.md) | Complete |
+| Iteration                                          | Plan                                                            | Result                                                              | State    |
+| -------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------- | -------- |
+| 2026-07-19 01 — Repository initialization          | [Plan](./2026-07-19-01-repository-initialization/PLAN.md)       | [Result](./2026-07-19-01-repository-initialization/RESULT.md)       | Complete |
+| 2026-07-19 02 — Initial security hardening         | [Plan](./2026-07-19-02-initial-security-hardening/PLAN.md)      | [Result](./2026-07-19-02-initial-security-hardening/RESULT.md)      | Complete |
+| 2026-07-20 03 — Release pipeline hardening         | [Plan](./2026-07-20-03-release-pipeline-hardening/PLAN.md)      | [Result](./2026-07-20-03-release-pipeline-hardening/RESULT.md)      | Complete |
+| 2026-07-20 04 — Final acceptance                   | [Plan](./2026-07-20-04-final-acceptance/PLAN.md)                | [Result](./2026-07-20-04-final-acceptance/RESULT.md)                | Complete |
+| 2026-07-20 05 — Plan documentation standard        | [Plan](./2026-07-20-05-plan-documentation-standard/PLAN.md)     | [Result](./2026-07-20-05-plan-documentation-standard/RESULT.md)     | Complete |
 | 2026-07-20 06 — SSH agent and Chinese-first README | [Plan](./2026-07-20-06-ssh-agent-readme-simplification/PLAN.md) | [Result](./2026-07-20-06-ssh-agent-readme-simplification/RESULT.md) | Complete |
-| 2026-07-20 07 — Reliability platform foundation | [Plan](./2026-07-20-07-reliability-platform-foundation/PLAN.md) | [Result](./2026-07-20-07-reliability-platform-foundation/RESULT.md) | Complete |
+| 2026-07-20 07 — Reliability platform foundation    | [Plan](./2026-07-20-07-reliability-platform-foundation/PLAN.md) | [Result](./2026-07-20-07-reliability-platform-foundation/RESULT.md) | Complete |
 
 | 2026-07-20 08 — Reliability platform roadmap completion | [Plan](./2026-07-20-08-reliability-platform-roadmap/PLAN.md) | [Result](./2026-07-20-08-reliability-platform-roadmap/RESULT.md) | Complete |
 | 2026-07-21 09 — Remote branch maintenance | [Plan](./2026-07-21-09-remote-branch-maintenance/PLAN.md) | [Result](./2026-07-21-09-remote-branch-maintenance/RESULT.md) | Complete |
@@ -46,7 +46,7 @@ Templates are available in [`templates/`](./templates/).
 
 | 2026-07-22 13 — Release smoke remediation | [Plan](./2026-07-22-13-release-smoke-remediation/PLAN.md) | [Result](./2026-07-22-13-release-smoke-remediation/RESULT.md) | Complete |
 | 2026-07-22 14 — Frontend governance and component foundation | [Plan](./2026-07-22-14-frontend-governance-component-foundation/PLAN.md) | [Result](./2026-07-22-14-frontend-governance-component-foundation/RESULT.md) | Complete |
-| 2026-07-22 15 — Feature architecture and performance convergence | [Plan](./2026-07-22-15-feature-architecture-performance/PLAN.md) | [Result](./2026-07-22-15-feature-architecture-performance/RESULT.md) | In progress |
+| 2026-07-22 15 — Feature architecture and performance convergence | [Plan](./2026-07-22-15-feature-architecture-performance/PLAN.md) | [Result](./2026-07-22-15-feature-architecture-performance/RESULT.md) | Local acceptance complete; PR pending |
 
 ## Push and PR gate
 
