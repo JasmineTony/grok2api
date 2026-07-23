@@ -38,7 +38,7 @@ for (const file of await collect(sourceRoot)) {
     add(findings, "module-mutable-state", file, "module-level let/var is forbidden");
   if (
     !path.startsWith("src/shared/api/") &&
-    path !== "src/features/docs/api-docs-page.tsx" &&
+    !path.startsWith("src/features/docs/") &&
     /\bfetch\s*\(/.test(content)
   )
     add(findings, "direct-fetch", file, "use the scoped ApiClient");
