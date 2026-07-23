@@ -1,33 +1,29 @@
-import { type ComponentType, lazy, type LazyExoticComponent, Suspense } from "react";
+﻿import { type ComponentType, lazy, type LazyExoticComponent, Suspense } from "react";
 
-import { Spinner } from "@/components/ui/spinner";
-
-const AccountsPage = lazyNamed(() => import("@/features/accounts/accounts-page"), "AccountsPage");
-const AdminShell = lazyNamed(() => import("@/app/admin-shell"), "AdminShell");
-const RequestAuditsPage = lazyNamed(
-  () => import("@/features/audits/request-audits-page"),
-  "RequestAuditsPage",
-);
-const ClientKeysPage = lazyNamed(
-  () => import("@/features/client-keys/client-keys-page"),
-  "ClientKeysPage",
-);
-const CreativeConsolePage = lazyNamed(
-  () => import("@/features/creative-console/creative-console-page"),
-  "CreativeConsolePage",
-);
-const DashboardPage = lazyNamed(
-  () => import("@/features/dashboard/dashboard-page"),
-  "DashboardPage",
-);
-const ApiDocsPage = lazyNamed(() => import("@/features/docs/api-docs-page"), "ApiDocsPage");
-const GalleryPage = lazyNamed(() => import("@/features/media/gallery-page"), "GalleryPage");
-const VideoGalleryPage = lazyNamed(
-  () => import("@/features/media/video-gallery-page"),
-  "VideoGalleryPage",
-);
-const ModelsPage = lazyNamed(() => import("@/features/models/models-page"), "ModelsPage");
-const SettingsPage = lazyNamed(() => import("@/features/settings/settings-page"), "SettingsPage");
+import {
+  loadAccountsPage,
+  loadApiDocsPage,
+  loadClientKeysPage,
+  loadCreativeConsolePage,
+  loadDashboardPage,
+  loadGalleryPage,
+  loadModelsPage,
+  loadRequestAuditsPage,
+  loadSettingsPage,
+  loadVideoGalleryPage,
+} from "@/app/deferred-page-prefetch";
+import { loadAdminShell } from "@/app/deferred-shell-prefetch";
+const AccountsPage = lazyNamed(loadAccountsPage, "AccountsPage");
+const AdminShell = lazyNamed(loadAdminShell, "AdminShell");
+const RequestAuditsPage = lazyNamed(loadRequestAuditsPage, "RequestAuditsPage");
+const ClientKeysPage = lazyNamed(loadClientKeysPage, "ClientKeysPage");
+const CreativeConsolePage = lazyNamed(loadCreativeConsolePage, "CreativeConsolePage");
+const DashboardPage = lazyNamed(loadDashboardPage, "DashboardPage");
+const ApiDocsPage = lazyNamed(loadApiDocsPage, "ApiDocsPage");
+const GalleryPage = lazyNamed(loadGalleryPage, "GalleryPage");
+const VideoGalleryPage = lazyNamed(loadVideoGalleryPage, "VideoGalleryPage");
+const ModelsPage = lazyNamed(loadModelsPage, "ModelsPage");
+const SettingsPage = lazyNamed(loadSettingsPage, "SettingsPage");
 
 function lazyNamed<T extends Record<K, ComponentType>, K extends keyof T>(
   loader: () => Promise<T>,
@@ -97,11 +93,18 @@ function PageLoadingFallback({ fullScreen = false }: { fullScreen?: boolean }) {
     <div
       className={
         fullScreen
-          ? "flex min-h-screen items-center justify-center bg-background"
-          : "flex min-h-[calc(100vh-7rem)] items-center justify-center lg:min-h-[calc(100vh-10rem)]"
+          ? "mx-auto flex min-h-screen w-full max-w-7xl flex-col justify-center gap-4 px-6"
+          : "min-h-[calc(100vh-7rem)] space-y-4 lg:min-h-[calc(100vh-10rem)]"
       }
+      aria-hidden="true"
     >
-      <Spinner className="size-5" />
+      <div className="h-8 w-48 animate-pulse rounded-md bg-muted/60" />
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }, (_, index) => (
+          <div key={index} className="h-28 animate-pulse rounded-lg border bg-muted/30" />
+        ))}
+      </div>
+      <div className="h-80 animate-pulse rounded-lg border bg-muted/25" />
     </div>
   );
 }

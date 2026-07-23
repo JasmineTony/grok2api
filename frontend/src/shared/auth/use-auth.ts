@@ -1,11 +1,28 @@
-import { use } from "react";
+﻿import { use } from "react";
 
-import { AuthContext, type AuthContextValue } from "@/shared/auth/auth-state";
+import {
+  AuthActionsContext,
+  type AuthActionsValue,
+  AuthContext,
+  type AuthContextValue,
+  AuthStateContext,
+  type AuthStateValue,
+} from "@/shared/auth/auth-state";
 
-export function useAuth(): AuthContextValue {
-  const value = use(AuthContext);
-  if (!value) {
-    throw new Error("useAuth must be used inside AuthProvider");
-  }
+function requireContext<T>(value: T | null, name: string): T {
+  if (!value) throw new Error(`${name} must be used inside AuthProvider`);
   return value;
+}
+
+export function useAuthState(): AuthStateValue {
+  return requireContext(use(AuthStateContext), "useAuthState");
+}
+
+export function useAuthActions(): AuthActionsValue {
+  return requireContext(use(AuthActionsContext), "useAuthActions");
+}
+
+/** Backward-compatible combined hook for callers that need state and commands together. */
+export function useAuth(): AuthContextValue {
+  return requireContext(use(AuthContext), "useAuth");
 }

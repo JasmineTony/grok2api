@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+﻿import { useQuery } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -11,6 +11,7 @@ import { VersionUpdateBanner } from "@/features/system";
 import { useApiClient } from "@/shared/api/use-api-client";
 import { ErrorState } from "@/shared/components/data-state";
 import { PeriodSelector } from "@/shared/components/period-selector";
+import { useDeferredRender } from "@/shared/hooks/use-deferred-render";
 import { PERIOD_DAYS, type PeriodDays, toPeriodValue } from "@/shared/lib/period";
 import { readStorageJSON, writeStorageJSON } from "@/shared/storage/safe-storage";
 
@@ -67,13 +68,14 @@ export function DashboardPage() {
     });
   }
 
-  if (dashboardQuery.isError && !dashboardQuery.data) {
-    return <ErrorState message={dashboardQuery.error.message} onRetry={refreshAll} />;
-  }
-
   const dashboard = dashboardQuery.data;
   const loading = dashboardQuery.isPending || dashboardQuery.isPlaceholderData;
   const refreshing = dashboardQuery.isFetching || manualRefreshing;
+  const [chartsRef, chartsReady] = useDeferredRender<HTMLDivElement>(Boolean(dashboard));
+
+  if (dashboardQuery.isError && !dashboard) {
+    return <ErrorState message={dashboardQuery.error.message} onRetry={refreshAll} />;
+  }
 
   return (
     <div className="space-y-5">
@@ -104,9 +106,15 @@ export function DashboardPage() {
 
       <DashboardOverview dashboard={dashboard} locale={i18n.language} loading={loading} />
 
-      <Suspense fallback={<DashboardChartsFallback />}>
-        <DashboardCharts dashboard={dashboard} locale={i18n.language} loading={loading} />
-      </Suspense>
+      <div ref={chartsRef} className="min-h-[21rem]">
+        {chartsReady ? (
+          <Suspense fallback={<DashboardChartsFallback />}>
+            <DashboardCharts dashboard={dashboard} locale={i18n.language} loading={loading} />
+          </Suspense>
+        ) : (
+          <DashboardChartsFallback />
+        )}
+      </div>
 
       <div className="grid min-h-0 gap-2 xl:grid-cols-[minmax(0,3fr)_minmax(360px,2fr)]">
         <DashboardActivity dashboard={dashboard} locale={i18n.language} loading={loading} />

@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+﻿import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   type AdminDTO,
@@ -8,7 +8,12 @@ import {
   decodeLoginResponseDTO,
 } from "@/shared/api/client";
 import { useApiClient } from "@/shared/api/use-api-client";
-import { AuthContext, type AuthStatus } from "@/shared/auth/auth-state";
+import {
+  AuthActionsContext,
+  AuthContext,
+  AuthStateContext,
+  type AuthStatus,
+} from "@/shared/auth/auth-state";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const client = useApiClient();
@@ -102,9 +107,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [client],
   );
 
-  const value = useMemo(
-    () => ({ admin, status, retryRestore: restoreSession, login, logout, changePassword }),
-    [admin, status, restoreSession, login, logout, changePassword],
+  const state = useMemo(() => ({ admin, status }), [admin, status]);
+  const actions = useMemo(
+    () => ({ retryRestore: restoreSession, login, logout, changePassword }),
+    [restoreSession, login, logout, changePassword],
   );
-  return <AuthContext value={value}>{children}</AuthContext>;
+  const value = useMemo(() => ({ ...state, ...actions }), [state, actions]);
+
+  return (
+    <AuthStateContext value={state}>
+      <AuthActionsContext value={actions}>
+        <AuthContext value={value}>{children}</AuthContext>
+      </AuthActionsContext>
+    </AuthStateContext>
+  );
 }
