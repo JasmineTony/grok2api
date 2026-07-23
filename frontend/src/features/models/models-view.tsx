@@ -1,0 +1,687 @@
+import { MoreHorizontal, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
+import { Switch } from "@/components/ui/switch";
+import {
+  Table,
+  TableActionCell,
+  TableActionHead,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import type { ModelRouteDTO } from "@/entities/model/types";
+import type { ModelsPageController } from "@/features/models/use-models-page-controller";
+import { EmptyState, ErrorState, TableLoadingRow } from "@/shared/components/data-state";
+import { DataTableFilters } from "@/shared/components/data-table-filters";
+import { DataTableShell } from "@/shared/components/data-table-shell";
+import { Pagination } from "@/shared/components/pagination";
+import { SortableTableHead } from "@/shared/components/sortable-table-head";
+import { VirtualTableBody } from "@/shared/components/virtual-table-body";
+import { cn } from "@/shared/lib/cn";
+import { formatDateTime } from "@/shared/lib/format";
+
+export function ModelsView({ controller }: { controller: ModelsPageController }) {
+  const {
+    t,
+    i18n,
+    setPage,
+    setPageSize,
+    search,
+    setSearch,
+    statusFilter,
+    setStatusFilter,
+    providerFilter,
+    setProviderFilter,
+    sort,
+    selected,
+    editing,
+    setEditing,
+    deleting,
+    setDeleting,
+    batchDeleteOpen,
+    setBatchDeleteOpen,
+    accountSearch,
+    setAccountSearch,
+    form,
+    modelEnabled,
+    selectedProvider,
+    selectedCapability,
+    bindingMode,
+    selectedAccountIDs,
+    modelsQuery,
+    accountOptionsQuery,
+    updateMutation,
+    deleteMutation,
+    batchDeleteMutation,
+    batchUpdateMutation,
+    syncMutation,
+    beginEdit,
+    beginCreate,
+    toggleBoundAccount,
+    visibleAccountOptions,
+    result,
+    selectedOnPage,
+    allPageSelected,
+    togglePage,
+    toggleModel,
+    changeSort,
+  } = controller;
+  return (
+    <div className="space-y-5">
+      <header className="flex min-h-8 items-center">
+        <h1 className="text-xl font-medium">{t("models.title")}</h1>
+        <p className="sr-only">{t("models.description")}</p>
+      </header>
+
+      <DataTableShell
+        toolbar={
+          <>
+            <div className="flex w-full items-center gap-2 sm:w-auto">
+              <div className="relative min-w-0 flex-1 sm:w-64 sm:flex-none">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="models-search"
+                  name="search"
+                  className="h-8 pl-9 text-xs"
+                  value={search}
+                  onChange={(event) => {
+                    setSearch(event.target.value);
+                    setPage(1);
+                  }}
+                  placeholder={t("models.search")}
+                  aria-label={t("models.search")}
+                />
+              </div>
+              <DataTableFilters
+                filters={[
+                  {
+                    id: "provider",
+                    label: t("models.provider"),
+                    value: providerFilter,
+                    onChange: (value) => {
+                      setProviderFilter(value as ModelRouteDTO["provider"] | "");
+                      setPage(1);
+                    },
+                    options: [
+                      { value: "grok_build", label: t("models.providerGrokBuild") },
+                      { value: "grok_web", label: t("models.providerGrokWeb") },
+                      { value: "grok_console", label: t("console.name") },
+                    ],
+                  },
+                  {
+                    id: "status",
+                    label: t("models.status"),
+                    value: statusFilter,
+                    onChange: (value) => {
+                      setStatusFilter(value);
+                      setPage(1);
+                    },
+                    options: [
+                      { value: "enabled", label: t("common.enabled") },
+                      { value: "disabled", label: t("common.disabled") },
+                    ],
+                  },
+                ]}
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {selected.size > 0 ? (
+                <>
+                  <span className="mr-1 text-xs text-muted-foreground">
+                    {t("common.selectedCount", { count: selected.size })}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => batchUpdateMutation.mutate(true)}
+                  >
+                    {t("common.enable")}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => batchUpdateMutation.mutate(false)}
+                  >
+                    {t("common.disable")}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => setBatchDeleteOpen(true)}
+                  >
+                    {t("common.delete")}
+                  </Button>
+                </>
+              ) : null}
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={syncMutation.isPending}
+                onClick={() => syncMutation.mutate()}
+              >
+                {syncMutation.isPending ? <Spinner /> : <RefreshCw />}
+                {t("models.sync")}
+              </Button>
+              <Button size="sm" onClick={beginCreate}>
+                <Plus />
+                {t("models.create")}
+              </Button>
+            </div>
+          </>
+        }
+        footer={
+          result && result.total > 0 ? (
+            <Pagination
+              page={result.page}
+              pageSize={result.pageSize}
+              total={result.total}
+              onPageChange={setPage}
+              onPageSizeChange={(value) => {
+                setPageSize(value);
+                setPage(1);
+              }}
+            />
+          ) : undefined
+        }
+      >
+        {modelsQuery.isError ? (
+          <ErrorState
+            message={modelsQuery.error.message}
+            onRetry={() => void modelsQuery.refetch()}
+          />
+        ) : null}
+        {result && result.items.length === 0 ? <EmptyState /> : null}
+        {modelsQuery.isPending || (result && result.items.length > 0) ? (
+          <Table viewportRows={20} rowHeight={56} className="min-w-[1000px] table-fixed text-xs">
+            <colgroup>
+              <col className="w-10" />
+              <col className="w-56" />
+              <col className="w-52" />
+              <col className="w-24" />
+              <col className="w-32" />
+              <col className="w-40" />
+              <col className="w-44" />
+              <col className="w-10" />
+            </colgroup>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="px-2 text-center">
+                  <Checkbox
+                    checked={
+                      allPageSelected ? true : selectedOnPage.length > 0 ? "indeterminate" : false
+                    }
+                    onCheckedChange={(checked) => togglePage(checked === true)}
+                    aria-label={t("common.selectPage")}
+                  />
+                </TableHead>
+                <SortableTableHead
+                  field="publicId"
+                  sortBy={sort.field}
+                  sortOrder={sort.order}
+                  onSort={changeSort}
+                >
+                  {t("models.model")}
+                </SortableTableHead>
+                <SortableTableHead
+                  field="upstreamModel"
+                  sortBy={sort.field}
+                  sortOrder={sort.order}
+                  onSort={changeSort}
+                >
+                  {t("models.upstream")}
+                </SortableTableHead>
+                <SortableTableHead
+                  field="status"
+                  sortBy={sort.field}
+                  sortOrder={sort.order}
+                  align="center"
+                  onSort={changeSort}
+                >
+                  {t("models.status")}
+                </SortableTableHead>
+                <SortableTableHead
+                  field="provider"
+                  sortBy={sort.field}
+                  sortOrder={sort.order}
+                  align="center"
+                  onSort={changeSort}
+                >
+                  {t("models.provider")}
+                </SortableTableHead>
+                <SortableTableHead
+                  field="accountSupport"
+                  sortBy={sort.field}
+                  sortOrder={sort.order}
+                  initialOrder="desc"
+                  align="center"
+                  onSort={changeSort}
+                >
+                  {t("models.accountSupport")}
+                </SortableTableHead>
+                <SortableTableHead
+                  field="lastSyncedAt"
+                  sortBy={sort.field}
+                  sortOrder={sort.order}
+                  initialOrder="desc"
+                  onSort={changeSort}
+                >
+                  {t("models.lastSyncedAt")}
+                </SortableTableHead>
+                <TableActionHead />
+              </TableRow>
+            </TableHeader>
+            {modelsQuery.isPending ? (
+              <TableBody>
+                <TableLoadingRow colSpan={8} />
+              </TableBody>
+            ) : (
+              <VirtualTableBody
+                items={result?.items ?? []}
+                colSpan={8}
+                rowHeight={56}
+                renderRow={(model) => (
+                  <TableRow
+                    className="group h-14"
+                    key={model.id}
+                    data-state={selected.has(model.id) ? "selected" : undefined}
+                  >
+                    <TableCell className="px-2 text-center">
+                      <Checkbox
+                        checked={selected.has(model.id)}
+                        onCheckedChange={(checked) => toggleModel(model.id, checked === true)}
+                        aria-label={t("common.selectItem", { name: model.publicId })}
+                      />
+                    </TableCell>
+                    <TableCell className="min-w-0">
+                      <span className="block truncate text-xs font-medium" title={model.publicId}>
+                        {model.publicId}
+                      </span>
+                    </TableCell>
+                    <TableCell className="min-w-0">
+                      <span
+                        className="block truncate text-xs text-muted-foreground"
+                        title={model.upstreamModel}
+                      >
+                        {model.upstreamModel}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {model.enabled ? (
+                        <Badge
+                          variant="secondary"
+                          className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                        >
+                          {t("common.enabled")}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-muted-foreground">
+                          {t("common.disabled")}
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <ModelProvider provider={model.provider} />
+                    </TableCell>
+                    <TableCell className="text-center text-xs">
+                      <div
+                        title={t("models.supportSummary", {
+                          supported: model.supportedAccounts,
+                          total: model.totalAccounts,
+                        })}
+                      >
+                        <span className="inline-flex items-baseline gap-1 tabular-nums">
+                          <span
+                            className={cn(
+                              "font-medium",
+                              model.supportedAccounts > 0
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : "text-muted-foreground",
+                            )}
+                          >
+                            {model.supportedAccounts}
+                          </span>
+                          <span className="text-muted-foreground">/ {model.totalAccounts}</span>
+                        </span>
+                        {model.bindingMode ? (
+                          <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                            {t("models.boundAccounts")}
+                          </span>
+                        ) : null}
+                      </div>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                      {formatDateTime(model.lastSyncedAt, i18n.language)}
+                    </TableCell>
+                    <TableActionCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-8"
+                            aria-label={t("common.actions")}
+                          >
+                            <MoreHorizontal />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => beginEdit(model)}>
+                            <Pencil />
+                            {t("common.edit")}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onClick={() => setDeleting(model)}
+                          >
+                            <Trash2 />
+                            {t("common.delete")}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableActionCell>
+                  </TableRow>
+                )}
+              />
+            )}
+          </Table>
+        ) : null}
+      </DataTableShell>
+
+      <Dialog open={Boolean(editing)} onOpenChange={(open) => !open && setEditing(null)}>
+        <DialogContent className="flex max-h-[calc(100svh-2rem)] min-h-0 flex-col gap-0 overflow-hidden p-0 text-xs sm:max-w-[600px]">
+          <DialogHeader className="shrink-0 px-5 py-4 pr-12">
+            <DialogTitle>
+              {t(editing === "new" ? "models.createTitle" : "models.editTitle")}
+            </DialogTitle>
+            <DialogDescription className="truncate">
+              {editing === "new" ? t("models.createDescription") : editing?.upstreamModel}
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+            onSubmit={form.handleSubmit((values) => updateMutation.mutate(values))}
+          >
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-5 pb-4 pt-2">
+              <div className="space-y-2">
+                <Label htmlFor="model-public-id">{t("models.publicId")}</Label>
+                <Input id="model-public-id" {...form.register("publicId")} />
+                {form.formState.errors.publicId ? (
+                  <p className="text-xs text-destructive">
+                    {form.formState.errors.publicId.message}
+                  </p>
+                ) : null}
+              </div>
+              {editing === "new" ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="model-provider">{t("models.provider")}</Label>
+                    <Select name="provider" value={selectedProvider} disabled>
+                      <SelectTrigger id="model-provider">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="grok_build">{t("models.providerGrokBuild")}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="model-capability">{t("models.capability")}</Label>
+                    <Select name="capability" value={selectedCapability} disabled>
+                      <SelectTrigger id="model-capability">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="responses">Responses</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="model-upstream-id">{t("models.upstream")}</Label>
+                    <Input id="model-upstream-id" {...form.register("upstreamModel")} />
+                    {form.formState.errors.upstreamModel ? (
+                      <p className="text-xs text-destructive">
+                        {form.formState.errors.upstreamModel.message}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+              <section className="rounded-lg bg-muted/25 p-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="model-binding-mode">{t("models.bindAccounts")}</Label>
+                      {bindingMode ? (
+                        <Badge
+                          variant="secondary"
+                          className="text-[10px] font-normal tabular-nums"
+                          aria-live="polite"
+                        >
+                          {t("models.selectedAccounts", { count: selectedAccountIDs.length })}
+                        </Badge>
+                      ) : null}
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      {t("models.bindAccountsDescription")}
+                    </p>
+                  </div>
+                  <Switch
+                    className="mt-0.5 shrink-0"
+                    id="model-binding-mode"
+                    name="bindingMode"
+                    checked={bindingMode}
+                    onCheckedChange={(checked) => {
+                      form.setValue("bindingMode", checked);
+                      if (!checked) form.clearErrors("accountIds");
+                    }}
+                  />
+                </div>
+                {bindingMode ? (
+                  <div className="mt-3">
+                    <div className="overflow-hidden rounded-md bg-background/85 p-1">
+                      <div className="relative">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          id="model-account-search"
+                          name="accountSearch"
+                          aria-label={t("models.searchAccounts")}
+                          className="bg-transparent pl-8 shadow-none"
+                          value={accountSearch}
+                          onChange={(event) => setAccountSearch(event.target.value)}
+                          placeholder={t("models.searchAccounts")}
+                        />
+                      </div>
+                      <div className="mt-1 max-h-40 overflow-y-auto overscroll-contain sm:max-h-44">
+                        {accountOptionsQuery.isPending ? (
+                          <div className="flex min-h-20 items-center justify-center">
+                            <Spinner />
+                          </div>
+                        ) : null}
+                        {accountOptionsQuery.isError ? (
+                          <p className="p-3 text-center text-xs text-destructive">
+                            {accountOptionsQuery.error.message}
+                          </p>
+                        ) : null}
+                        {!accountOptionsQuery.isPending && visibleAccountOptions.length === 0 ? (
+                          <p className="p-3 text-center text-xs text-muted-foreground">
+                            {t("models.noBindableAccounts")}
+                          </p>
+                        ) : null}
+                        {visibleAccountOptions.map((account) => {
+                          const controlId = `model-account-${account.id}`;
+                          const checked = selectedAccountIDs.includes(account.id);
+                          return (
+                            <label
+                              key={account.id}
+                              htmlFor={controlId}
+                              className={cn(
+                                "flex h-8 cursor-pointer items-center gap-2.5 rounded-md px-2 text-xs transition-colors hover:bg-accent/55",
+                                checked && "bg-accent",
+                              )}
+                            >
+                              <Checkbox
+                                id={controlId}
+                                checked={checked}
+                                onCheckedChange={(value) =>
+                                  toggleBoundAccount(account.id, value === true)
+                                }
+                              />
+                              <span className="min-w-0 flex-1 truncate" title={account.name}>
+                                {account.name}
+                              </span>
+                              <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                                #{account.id}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    {form.formState.errors.accountIds ? (
+                      <p className="mt-2 text-xs text-destructive">
+                        {form.formState.errors.accountIds.message}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </section>
+              <section className="flex items-center justify-between gap-4 rounded-lg bg-muted/40 px-3 py-2.5">
+                <div className="min-w-0">
+                  <Label htmlFor="model-enabled">
+                    {modelEnabled ? t("common.enabled") : t("common.disabled")}
+                  </Label>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    {t("models.enabledDescription")}
+                  </p>
+                </div>
+                <Switch
+                  id="model-enabled"
+                  name="enabled"
+                  checked={modelEnabled}
+                  onCheckedChange={(checked) => form.setValue("enabled", checked)}
+                />
+              </section>
+            </div>
+            <DialogFooter className="shrink-0 gap-2 bg-muted/20 px-5 py-3 sm:gap-0">
+              <Button type="button" variant="secondary" size="sm" onClick={() => setEditing(null)}>
+                {t("common.cancel")}
+              </Button>
+              <Button type="submit" size="sm" disabled={updateMutation.isPending}>
+                {updateMutation.isPending ? <Spinner /> : null}
+                {editing === "new" ? t("common.create") : t("common.save")}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={Boolean(deleting)} onOpenChange={(open) => !open && setDeleting(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("models.deleteTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("models.deleteDescription", { name: deleting?.publicId ?? "" })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              disabled={deleteMutation.isPending}
+              onClick={() => deleting && deleteMutation.mutate(deleting.id)}
+            >
+              {deleteMutation.isPending ? <Spinner /> : null}
+              {t("common.delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={batchDeleteOpen} onOpenChange={setBatchDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("models.batchDeleteTitle", { count: selected.size })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>{t("models.batchDeleteDescription")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              disabled={batchDeleteMutation.isPending}
+              onClick={() => batchDeleteMutation.mutate()}
+            >
+              {batchDeleteMutation.isPending ? <Spinner /> : null}
+              {t("common.delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+function ModelProvider({ provider }: { provider: ModelRouteDTO["provider"] }) {
+  const { t } = useTranslation();
+  const label =
+    provider === "grok_web"
+      ? t("models.providerGrokWeb")
+      : provider === "grok_console"
+        ? t("console.name")
+        : t("models.providerGrokBuild");
+  const color =
+    provider === "grok_web"
+      ? "bg-quota-product-2"
+      : provider === "grok_console"
+        ? "bg-quota-product-4"
+        : "bg-quota-product-1";
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground">
+      <span className={cn("size-2 rounded-full", color)} />
+      {label}
+    </span>
+  );
+}
