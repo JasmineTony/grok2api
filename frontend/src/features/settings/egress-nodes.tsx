@@ -67,6 +67,7 @@ const emptyInput: EgressNodeInput = {
   userAgent: "",
   cloudflareCookies: "",
   proxyPool: false,
+  accountCapacity: 0,
 };
 
 export function EgressNodes({
@@ -100,6 +101,7 @@ export function EgressNodes({
         ...(form.clearProxyURL === undefined ? {} : { clearProxyURL: form.clearProxyURL }),
         ...(form.clearCookies === undefined ? {} : { clearCookies: form.clearCookies }),
         ...(form.proxyPool === undefined ? {} : { proxyPool: form.proxyPool }),
+        accountCapacity: form.accountCapacity,
       };
       return editing
         ? updateEgressNode(apiClient, editing.id, input)
@@ -159,6 +161,7 @@ export function EgressNodes({
       proxyURL: "",
       cloudflareCookies: "",
       proxyPool: node.proxyPool,
+      accountCapacity: node.accountCapacity,
     });
     setEditing(node);
   }
@@ -463,6 +466,22 @@ export function EgressNodes({
                 }
                 value={form.proxyURL}
                 onChange={(event) => setForm({ ...form, proxyURL: event.target.value })}
+              />
+            </Field>
+            <Field
+              label={t("settings.egress.accountCapacity")}
+              controlId="egress-account-capacity"
+              description={t("settings.egress.accountCapacityHelp")}
+            >
+              <Input
+                id="egress-account-capacity"
+                type="number"
+                min={0}
+                max={100000}
+                value={form.accountCapacity}
+                onChange={(event) =>
+                  setForm({ ...form, accountCapacity: Number(event.target.value) })
+                }
               />
             </Field>
             <div className="flex items-center justify-between gap-4 rounded-md bg-muted/45 px-3 py-2.5">

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	neterrorpkg "github.com/chenyme/grok2api/backend/internal/pkg/neterror"
 )
 
 // FailureCategory ?? Provider ???????????????????????
@@ -51,6 +53,7 @@ type UpstreamFailure struct {
 	AccountID              uint64
 	AccountName            string
 	AccountScoped          bool
+	AccountBlocked         bool
 	PermanentAccountDenial bool
 	QuotaExhausted         bool
 	FreeQuotaExhausted     bool
@@ -132,22 +135,25 @@ func newHTTPUpstreamFailure(status int, body []byte, accountID uint64, accountNa
 		failure.PublicMessage = "上游账号认证失败"
 		failure.AccountScoped = true
 		failure.CredentialRejected = true
+		failure.AccountBlocked = isDefinitiveAccountBlock(metadataText)
 		failure.Category, failure.AccountImpact, failure.Retryable = FailureCredential, ImpactReauth, false
 	case http.StatusPaymentRequired:
 		failure.Code = "upstream_payment_required"
 		failure.PublicMessage = "上游账号额度不足"
 		failure.AccountScoped = true
 		failure.QuotaExhausted = true
+		failure.FreeQuotaExhausted = isFreeQuotaExhaustion(metadataText)
 		failure.Category, failure.AccountImpact, failure.Retryable = FailureQuota, ImpactQuota, false
 	case http.StatusForbidden:
 		failure.Code = "upstream_forbidden"
 		failure.PublicMessage = "上游拒绝了该请求"
+		failure.AccountBlocked = isDefinitiveAccountBlock(metadataText)
 		failure.PermanentAccountDenial = isPermanentAccountDenial(metadataText)
 		failure.ModelQuotaExhausted = isModelQuotaExhaustion(metadataText)
 		failure.FreeQuotaExhausted = failure.ModelQuotaExhausted || isFreeQuotaExhaustion(metadataText)
 		failure.QuotaExhausted = failure.FreeQuotaExhausted || isPaidQuotaExhaustion(metadataText)
 		failure.CredentialRejected = !failure.QuotaExhausted && containsAny(metadataText, "authentication", "unauthorized", "invalid token", "token expired")
-		failure.AccountScoped = failure.PermanentAccountDenial || failure.QuotaExhausted || failure.CredentialRejected || isAccountScopedForbidden(metadataText)
+		failure.AccountScoped = failure.AccountBlocked || failure.PermanentAccountDenial || failure.QuotaExhausted || failure.CredentialRejected || isAccountScopedForbidden(metadataText)
 		switch {
 		case failure.CredentialRejected:
 			failure.Category, failure.AccountImpact, failure.Retryable = FailureCredential, ImpactReauth, false
@@ -179,17 +185,18 @@ func newHTTPUpstreamFailure(status int, body []byte, accountID uint64, accountNa
 }
 
 func newTransportUpstreamFailure(err error, accountID uint64, accountName string) *UpstreamFailure {
-	code, message := "upstream_network_error", "连接上游服务失败"
-	if errors.Is(err, context.DeadlineExceeded) {
-		code, message = "upstream_timeout", "上游服务响应超时"
-	}
+	status, code, message := http.StatusBadGateway, "upstream_network_error", "????????"
 	category := FailureNetwork
-	if errors.Is(err, context.DeadlineExceeded) {
+	if neterrorpkg.IsResponseHeaderTimeout(err) {
+		status, code, message = http.StatusGatewayTimeout, "upstream_header_timeout", "?????????"
+		category = FailureTimeout
+	} else if errors.Is(err, context.DeadlineExceeded) {
+		code, message = "upstream_timeout", "????????"
 		category = FailureTimeout
 	}
 	return &UpstreamFailure{
 		Category: category, Stage: "transport", Retryable: true, AccountImpact: ImpactCooldown,
-		HTTPStatus: http.StatusBadGateway, Code: code, PublicMessage: message,
+		HTTPStatus: status, Code: code, PublicMessage: message,
 		AccountID: accountID, AccountName: accountName, Fingerprint: code, Cause: err,
 	}
 }
@@ -268,10 +275,14 @@ func isAccountScopedForbidden(text string) bool {
 }
 
 func isPermanentAccountDenial(text string) bool {
-	if strings.Contains(text, "access to the chat endpoint is denied") {
+	if containsAny(text, "permission-denied", "permission_denied", "access to the chat endpoint is denied") {
 		return true
 	}
 	return strings.Trim(strings.TrimSpace(text), " .!\t\r\n") == "access denied"
+}
+
+func isDefinitiveAccountBlock(text string) bool {
+	return containsAny(text, "blocked-user", "user is blocked")
 }
 
 func isPaidQuotaExhaustion(text string) bool {

@@ -20,6 +20,15 @@ type AccountUpsertResult struct {
 	Created bool
 }
 
+type ObservedModelWriter interface {
+	UpdateObservedModelIfNewer(ctx context.Context, id uint64, model string, observedAt time.Time) (bool, error)
+}
+
+type RoutingLayerRepository interface {
+	ListRoutingAccountBases(ctx context.Context, provider account.Provider, quotaMode string) ([]account.RoutingAccountBase, error)
+	ListRoutingAccountOverlays(ctx context.Context, provider account.Provider, upstreamModel string) (account.RoutingOverlaySnapshot, error)
+}
+
 // AccountHealthTransition is the single write model for account runtime health.
 // Event drives the next state; callers must not compose State/AuthStatus updates.
 type AccountHealthTransition struct {
@@ -73,6 +82,7 @@ type AccountRepository interface {
 	NextCredentialRefreshDueAt(ctx context.Context) (*time.Time, error)
 	UpdateCredentialRefreshFailure(ctx context.Context, id uint64, failureCount int, retryAt time.Time, errorCode string, permanent bool) error
 	UpdateObservedModel(ctx context.Context, id uint64, model string, observedAt time.Time) error
+	UpdateHealth(ctx context.Context, id uint64, failureCount int, cooldownUntil *time.Time, lastError string, success bool) error
 	TransitionHealth(ctx context.Context, transition AccountHealthTransition) error
 	ListStateEvents(ctx context.Context, accountID uint64, limit int) ([]account.StateHistoryEvent, error)
 	CountStates(ctx context.Context) (map[account.State]uint64, error)

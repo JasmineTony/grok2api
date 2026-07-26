@@ -24,6 +24,23 @@ const consoleChatDuration = durationSchema.refine((value) => {
   const seconds = durationSeconds(value);
   return seconds >= 5 && seconds <= 30 * 60;
 });
+const buildResponseHeaderDuration = durationSchema.refine((value) => {
+  const seconds = durationSeconds(value);
+  return seconds >= 30 && seconds <= 30 * 60;
+});
+const forbiddenCodePattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
+function parseForbiddenCodes(value: string): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of value.split(/[\n,]/)) {
+    const code = item.trim().toLowerCase();
+    if (code === "" || seen.has(code)) continue;
+    seen.add(code);
+    result.push(code);
+  }
+  return result;
+}
 
 function validPublicAPIBaseURL(value: string): boolean {
   const trimmed = value.trim();
@@ -55,6 +72,7 @@ export const settingsSchema = z.object({
     tokenAuth: z.string().trim().min(1),
     tokenAuthConfigured: z.boolean(),
     userAgent: z.string().trim().min(1),
+    responseHeaderTimeout: buildResponseHeaderDuration,
   }),
   providerWeb: z
     .object({
@@ -65,8 +83,12 @@ export const settingsSchema = z.object({
       statsigSignerURL: z.string().trim().max(2048),
       clearanceMode: z.enum(["manual", "flaresolverr"]),
       flareSolverrURL: z.string().trim().max(2048),
-      clearanceTimeout: durationSchema,
-      clearanceRefresh: durationSchema,
+      clearanceTimeout: durationSchema.refine(
+        (value) => durationSeconds(value) >= 10 && durationSeconds(value) <= 300,
+      ),
+      clearanceRefresh: durationSchema.refine(
+        (value) => durationSeconds(value) >= 60 && durationSeconds(value) <= 86_400,
+      ),
       quotaTimeout: durationSchema,
       chatTimeout: durationSchema,
       imageTimeout: durationSchema,
@@ -94,6 +116,9 @@ export const settingsSchema = z.object({
         if (!validStatsigSignerURL(value.statsigSignerURL)) {
           context.addIssue({ code: "custom", path: ["statsigSignerURL"], message: "invalid" });
         }
+      }
+      if (value.clearanceMode === "flaresolverr" && !validHTTPURL(value.flareSolverrURL)) {
+        context.addIssue({ code: "custom", path: ["flareSolverrURL"], message: "invalid" });
       }
     }),
   providerConsole: z.object({
@@ -136,15 +161,25 @@ export const settingsSchema = z.object({
       capacityWait: routingCapacityWaitDuration,
       maxAttempts: positiveInteger.max(10),
       preferFreeBuild: z.boolean(),
+      segmentedSelector: z.object({
+        enabled: z.boolean(),
+        minCandidates: z.number().int().min(100).max(1_000_000),
+        windowSize: z.number().int().min(8).max(256),
+      }),
     })
     .refine((value) => durationSeconds(value.cooldownMax) >= durationSeconds(value.cooldownBase), {
       path: ["cooldownMax"],
-    }),
+    })
+    .refine(
+      (value) => value.segmentedSelector.windowSize <= value.segmentedSelector.minCandidates,
+      { path: ["segmentedSelector", "windowSize"] },
+    ),
   audit: z
     .object({
       bufferSize: positiveInteger.max(262_144),
       batchSize: positiveInteger.max(4_096),
       flushInterval: auditFlushDuration,
+      commitDelayMS: positiveInteger.max(50),
     })
     .refine((value) => value.batchSize <= value.bufferSize, { path: ["batchSize"] }),
   clientKeyDefaults: z.object({
@@ -152,6 +187,17 @@ export const settingsSchema = z.object({
     maxConcurrent: positiveInteger.max(1_024),
   }),
   accounts: z.object({
+    markBuildForbiddenReauth: z.boolean(),
+    buildForbiddenReauthCodes: z.string().superRefine((value, context) => {
+      const codes = parseForbiddenCodes(value);
+      if (
+        codes.length === 0 ||
+        codes.length > 32 ||
+        codes.some((code) => !forbiddenCodePattern.test(code))
+      ) {
+        context.addIssue({ code: "custom", message: "invalid" });
+      }
+    }),
     autoCleanReauthEnabled: z.boolean(),
     autoCleanReauthInterval: durationSchema.refine((value) => {
       const seconds = durationSeconds(value);
@@ -170,7 +216,10 @@ export type SettingsForm = z.infer<typeof settingsSchema>;
 export function toSettingsForm(config: SettingsConfigDTO): SettingsForm {
   return {
     server: config.server,
-    providerBuild: config.providerBuild,
+    providerBuild: {
+      ...config.providerBuild,
+      responseHeaderTimeout: parseDuration(config.providerBuild.responseHeaderTimeout),
+    },
     providerWeb: {
       ...config.providerWeb,
       statsigManualValue: "",
@@ -204,14 +253,18 @@ export function toSettingsForm(config: SettingsConfigDTO): SettingsForm {
       capacityWait: parseDuration(config.routing.capacityWait),
       maxAttempts: config.routing.maxAttempts,
       preferFreeBuild: config.routing.preferFreeBuild,
+      segmentedSelector: config.routing.segmentedSelector,
     },
     audit: {
       bufferSize: config.audit.bufferSize,
       batchSize: config.audit.batchSize,
       flushInterval: parseDuration(config.audit.flushInterval),
+      commitDelayMS: config.audit.commitDelayMS,
     },
     clientKeyDefaults: config.clientKeyDefaults,
     accounts: {
+      markBuildForbiddenReauth: config.accounts.markBuildForbiddenReauth,
+      buildForbiddenReauthCodes: config.accounts.buildForbiddenReauthCodes.join("\n"),
       autoCleanReauthEnabled: config.accounts.autoCleanReauthEnabled,
       autoCleanReauthInterval: parseDuration(config.accounts.autoCleanReauthInterval),
       autoCleanReauthMinAge: parseDuration(config.accounts.autoCleanReauthMinAge),
@@ -223,7 +276,10 @@ export function toSettingsForm(config: SettingsConfigDTO): SettingsForm {
 export function toSettingsDTO(config: SettingsForm): SettingsConfigDTO {
   return {
     server: config.server,
-    providerBuild: config.providerBuild,
+    providerBuild: {
+      ...config.providerBuild,
+      responseHeaderTimeout: formatDuration(config.providerBuild.responseHeaderTimeout),
+    },
     providerWeb: {
       ...config.providerWeb,
       quotaTimeout: formatDuration(config.providerWeb.quotaTimeout),
@@ -256,14 +312,18 @@ export function toSettingsDTO(config: SettingsForm): SettingsConfigDTO {
       capacityWait: formatDuration(config.routing.capacityWait),
       maxAttempts: config.routing.maxAttempts,
       preferFreeBuild: config.routing.preferFreeBuild,
+      segmentedSelector: config.routing.segmentedSelector,
     },
     audit: {
       bufferSize: config.audit.bufferSize,
       batchSize: config.audit.batchSize,
       flushInterval: formatDuration(config.audit.flushInterval),
+      commitDelayMS: config.audit.commitDelayMS,
     },
     clientKeyDefaults: config.clientKeyDefaults,
     accounts: {
+      markBuildForbiddenReauth: config.accounts.markBuildForbiddenReauth,
+      buildForbiddenReauthCodes: parseForbiddenCodes(config.accounts.buildForbiddenReauthCodes),
       autoCleanReauthEnabled: config.accounts.autoCleanReauthEnabled,
       autoCleanReauthInterval: formatDuration(config.accounts.autoCleanReauthInterval),
       autoCleanReauthMinAge: formatDuration(config.accounts.autoCleanReauthMinAge),
@@ -355,6 +415,24 @@ function validStatsigID(value: string): boolean {
 }
 
 function validStatsigSignerURL(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    if (
+      parsed.username !== "" ||
+      parsed.password !== "" ||
+      parsed.search !== "" ||
+      parsed.hash !== ""
+    )
+      return false;
+    const internal = internalSignerHostname(parsed.hostname);
+    if (internal) return parsed.protocol === "http:" || parsed.protocol === "https:";
+    return parsed.protocol === "https:" && (parsed.port === "" || parsed.port === "443");
+  } catch {
+    return false;
+  }
+}
+
+function validHTTPURL(value: string): boolean {
   try {
     const parsed = new URL(value);
     if (

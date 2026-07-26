@@ -204,6 +204,17 @@ func ApplyStateEvent(current State, enabled bool, input StateEventInput) State {
 }
 
 // Credential 表示持久化的上游 OAuth 账号。
+type EgressAssignmentMode string
+
+const (
+	EgressAssignmentManual EgressAssignmentMode = "manual"
+	EgressAssignmentAuto   EgressAssignmentMode = "auto"
+)
+
+func (value EgressAssignmentMode) IsValid() bool {
+	return value == EgressAssignmentManual || value == EgressAssignmentAuto
+}
+
 type Credential struct {
 	ID                        uint64
 	Provider                  Provider
@@ -242,7 +253,10 @@ type Credential struct {
 	WebTierSyncedAt  *time.Time
 	// EgressIdentity 是不含凭据和个人信息的稳定出口身份。
 	// 关联到同一 Web 账号的 Build/Console 只共享该值，不共享任何运行状态。
-	EgressIdentity string
+	EgressIdentity       string
+	EgressNodeID         uint64
+	EgressAssignmentMode EgressAssignmentMode
+	EgressAssignedAt     *time.Time
 	// WebNSFWEnabledAt 记录 Grok Web 上游首次确认 NSFW 已成功开启的时间。
 	// 普通导入、额度同步和凭据更新不得清除。
 	WebNSFWEnabledAt *time.Time
@@ -419,6 +433,26 @@ type QuotaRecovery struct {
 }
 
 // RoutingCandidate 聚合账号选择热路径所需的持久化快照。
+type RoutingAccountBase struct {
+	Credential    Credential
+	Billing       *Billing
+	QuotaRecovery *QuotaRecovery
+	QuotaWindow   *QuotaWindow
+}
+
+type RoutingAccountOverlay struct {
+	AccountID            uint64
+	Bound                bool
+	ModelCapabilityKnown bool
+	SupportsModel        bool
+	ModelQuotaBlock      *ModelQuotaBlock
+}
+
+type RoutingOverlaySnapshot struct {
+	HasBindings bool
+	Values      []RoutingAccountOverlay
+}
+
 type RoutingCandidate struct {
 	Credential           Credential
 	Billing              *Billing
