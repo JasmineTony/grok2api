@@ -52,6 +52,8 @@ Templates are available in [`templates/`](./templates/).
 
 | 2026-07-26 18 - Upstream v3.0.8-hotfix.1/v3.0.9 sync and settings split | [Plan](./2026-07-26-18-upstream-v3.0.9-settings-split/PLAN.md) | [Result](./2026-07-26-18-upstream-v3.0.9-settings-split/RESULT.md) | Local complete; push pending |
 
+| 2026-07-26 19 - v3.2.0 release and upstream v3.0.9 closeout | [Plan](./2026-07-26-19-v3.2.0-release/PLAN.md) | [Result](./2026-07-26-19-v3.2.0-release/RESULT.md) | In progress |
+
 ## Push and PR gate
 
 - The accepted PLAN.md is the delivery unit. Keep its branch local until all scope, tests and acceptance, and assumptions/defaults are complete.
