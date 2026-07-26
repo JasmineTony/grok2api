@@ -7,7 +7,7 @@ FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-alpine AS frontend-builder
 WORKDIR /src/frontend
 RUN corepack enable
 
-COPY frontend/package.json frontend/pnpm-lock.yaml ./
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
 RUN --mount=type=cache,id=grok2api-pnpm,target=/pnpm/store \
     pnpm config set store-dir /pnpm/store && \
     pnpm fetch --frozen-lockfile

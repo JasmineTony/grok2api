@@ -341,6 +341,7 @@ func toAuditModels(value audit.Record) (requestAuditModel, []requestAuditAttempt
 	}
 	eventID := strings.TrimSpace(value.EventID)
 	if eventID == "" {
+		// lgtm[go/weak-sensitive-data-hashing] This digest is an idempotency identifier over request metadata, not password hashing.
 		digest := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%d\x00%d\x00%d", value.RequestID, value.ClientKeyID, value.ModelRouteID, value.CreatedAt.UnixNano())))
 		eventID = fmt.Sprintf("evt_%x", digest[:18])
 	}

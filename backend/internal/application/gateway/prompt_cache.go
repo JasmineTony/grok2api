@@ -66,12 +66,14 @@ func resolveBuildSessionIdentity(clientKeyID uint64, provider accountdomain.Prov
 }
 
 func digestUUID(source string) string {
+	// lgtm[go/weak-sensitive-data-hashing] This digest creates a stable non-credential session identifier; it is not password hashing.
 	digest := sha256.Sum256([]byte(source))
 	hexID := hex.EncodeToString(digest[:16])
 	return fmt.Sprintf("%s-%s-%s-%s-%s", hexID[0:8], hexID[8:12], hexID[12:16], hexID[16:20], hexID[20:32])
 }
 
 func hexDigest(source string) string {
+	// lgtm[go/weak-sensitive-data-hashing] This digest creates a stable non-credential affinity key; it is not password hashing.
 	digest := sha256.Sum256([]byte(source))
 	return hex.EncodeToString(digest[:])
 }
