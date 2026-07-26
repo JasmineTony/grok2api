@@ -50,7 +50,7 @@ Templates are available in [`templates/`](./templates/).
 | 2026-07-23 16 — Upstream v3.0.7 sync and dependency policy | [Plan](./2026-07-23-16-upstream-v3.0.7-dependency-policy/PLAN.md) | [Result](./2026-07-23-16-upstream-v3.0.7-dependency-policy/RESULT.md) | Complete |
 | 2026-07-23 17 — v3.1.1 release closeout | [Plan](./2026-07-23-17-v3.1.1-release-closeout/PLAN.md) | [Result](./2026-07-23-17-v3.1.1-release-closeout/RESULT.md) | Complete |
 
-| 2026-07-26 18 - Upstream v3.0.8-hotfix.1/v3.0.9 sync and settings split | [Plan](./2026-07-26-18-upstream-v3.0.9-settings-split/PLAN.md) | [Result](./2026-07-26-18-upstream-v3.0.9-settings-split/RESULT.md) | In progress |
+| 2026-07-26 18 - Upstream v3.0.8-hotfix.1/v3.0.9 sync and settings split | [Plan](./2026-07-26-18-upstream-v3.0.9-settings-split/PLAN.md) | [Result](./2026-07-26-18-upstream-v3.0.9-settings-split/RESULT.md) | Local complete; push pending |
 
 ## Push and PR gate
 

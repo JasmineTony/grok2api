@@ -3,7 +3,7 @@
 - Date: 2026-07-26
 - Sequence: 18
 - Owner: JasmineTony
-- Status: In progress
+- Status: Local implementation complete; remote delivery pending
 - Base commit: `7a1c5b7c199d461aa3ae82bdfbdaa0c4710d90de`
 - Working branch: `sync/upstream-v3.0.9-settings-split-20260726`
 - Upstream tags: `v3.0.8-hotfix.1@dae50ce67b95d5cad2b4168e32332c790b2c9ce6`, `v3.0.9@834f9f70e57882438177b8ab89c3aaee52dffe2e`
