@@ -1,14 +1,9 @@
-﻿import type { TFunction } from "i18next";
+import type { TFunction } from "i18next";
 import { Controller, type UseFormReturn } from "react-hook-form";
 
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import {
-  DurationInput,
-  SettingsField,
-  SettingsPane,
-  SettingsSection,
-} from "@/features/settings/settings-layout";
+import { DurationInput, SettingsField, SettingsSection } from "@/features/settings/settings-layout";
 import type { SettingsForm } from "@/features/settings/settings-model";
 
 type SettingsPoliciesPanelProps = {
@@ -18,7 +13,7 @@ type SettingsPoliciesPanelProps = {
 
 export function SettingsPoliciesPanel({ t, form }: SettingsPoliciesPanelProps) {
   return (
-    <SettingsPane value="policies">
+    <div className="space-y-8">
       <SettingsSection title={t("settings.server.title")}>
         <div className="space-y-0">
           <SettingsField
@@ -310,6 +305,6 @@ export function SettingsPoliciesPanel({ t, form }: SettingsPoliciesPanelProps) {
           </SettingsField>
         </div>
       </SettingsSection>
-    </SettingsPane>
+    </div>
   );
 }

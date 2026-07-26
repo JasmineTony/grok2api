@@ -1,19 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, History, MoreHorizontal, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,17 +13,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Spinner } from "@/components/ui/spinner";
-import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableActionCell,
@@ -42,24 +23,25 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  EgressNodeEditorDialog,
+  EgressNodeHistoryDialog,
+} from "@/features/settings/egress-node-dialogs";
+import {
   checkEgressNode,
   createEgressNode,
   deleteEgressNode,
   type EgressNodeDTO,
   type EgressNodeInput,
   type EgressScope,
-  listEgressHealthChecks,
   listEgressNodes,
   refreshEgressClearance,
   updateEgressNode,
 } from "@/features/settings/settings-api";
 import { useApiClient } from "@/shared/api/use-api-client";
-import { EmptyState, ErrorState, LoadingState } from "@/shared/components/data-state";
+import { ErrorState } from "@/shared/components/data-state";
 import { SortableTableHead } from "@/shared/components/sortable-table-head";
-import { formatDateTime } from "@/shared/lib/format";
 import { nextTableSort, type SortOrder, type TableSort } from "@/shared/lib/table-sort";
-
-const emptyInput: EgressNodeInput = {
+const EMPTY_EGRESS_NODE_INPUT: EgressNodeInput = {
   name: "",
   scope: "grok_build",
   enabled: true,
@@ -67,6 +49,7 @@ const emptyInput: EgressNodeInput = {
   userAgent: "",
   cloudflareCookies: "",
   proxyPool: false,
+  accountCapacity: 0,
 };
 
 export function EgressNodes({
@@ -74,11 +57,11 @@ export function EgressNodes({
 }: {
   clearanceMode?: "manual" | "flaresolverr";
 }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const apiClient = useApiClient();
   const [editing, setEditing] = useState<EgressNodeDTO | null | undefined>(undefined);
-  const [form, setForm] = useState<EgressNodeInput>(emptyInput);
+  const [form, setForm] = useState<EgressNodeInput>(EMPTY_EGRESS_NODE_INPUT);
   const [sort, setSort] = useState<TableSort>({ field: "", order: "asc" });
   const [historyNode, setHistoryNode] = useState<EgressNodeDTO | null>(null);
   const query = useQuery({
@@ -86,27 +69,16 @@ export function EgressNodes({
     queryFn: () =>
       listEgressNodes(apiClient, sort.field ? { sortBy: sort.field, sortOrder: sort.order } : {}),
   });
+  const invalidateNodes = () => queryClient.invalidateQueries({ queryKey: ["egress-nodes"] });
   const save = useMutation({
     mutationFn: () => {
-      const proxyURL = form.proxyURL?.trim();
-      const cloudflareCookies = form.cloudflareCookies?.trim();
-      const input: EgressNodeInput = {
-        name: form.name,
-        scope: form.scope,
-        enabled: form.enabled,
-        userAgent: form.scope === "grok_build" ? "" : form.userAgent,
-        ...(proxyURL ? { proxyURL } : {}),
-        ...(form.scope !== "grok_build" && cloudflareCookies ? { cloudflareCookies } : {}),
-        ...(form.clearProxyURL === undefined ? {} : { clearProxyURL: form.clearProxyURL }),
-        ...(form.clearCookies === undefined ? {} : { clearCookies: form.clearCookies }),
-        ...(form.proxyPool === undefined ? {} : { proxyPool: form.proxyPool }),
-      };
+      const input = normalizeNodeInput(form);
       return editing
         ? updateEgressNode(apiClient, editing.id, input)
         : createEgressNode(apiClient, input);
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["egress-nodes"] });
+      void invalidateNodes();
       setEditing(undefined);
       toast.success(t("settings.egress.saved"));
     },
@@ -115,7 +87,7 @@ export function EgressNodes({
   const remove = useMutation({
     mutationFn: (id: string) => deleteEgressNode(apiClient, id),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["egress-nodes"] });
+      void invalidateNodes();
       toast.success(t("settings.egress.deleted"));
     },
     onError: (error) => showError(error, t("settings.egress.operationFailed")),
@@ -123,7 +95,7 @@ export function EgressNodes({
   const check = useMutation({
     mutationFn: (id: string) => checkEgressNode(apiClient, id),
     onSuccess: (result) => {
-      void queryClient.invalidateQueries({ queryKey: ["egress-nodes"] });
+      void invalidateNodes();
       void queryClient.invalidateQueries({ queryKey: ["egress-health-checks", result.nodeId] });
       toast[result.healthy ? "success" : "error"](
         t(result.healthy ? "settings.egress.healthy" : "settings.egress.unhealthy"),
@@ -134,23 +106,17 @@ export function EgressNodes({
   const refreshClearance = useMutation({
     mutationFn: (id: string) => refreshEgressClearance(apiClient, id),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["egress-nodes"] });
+      void invalidateNodes();
       toast.success(t("settings.egress.clearanceRefreshed"));
     },
     onError: (error) => showError(error, t("settings.egress.operationFailed")),
   });
-  const historyQuery = useQuery({
-    queryKey: ["egress-health-checks", historyNode?.id],
-    queryFn: () => listEgressHealthChecks(apiClient, historyNode?.id ?? ""),
-    enabled: Boolean(historyNode),
-  });
 
-  function openCreate() {
-    setForm(emptyInput);
+  const openCreate = () => {
+    setForm(EMPTY_EGRESS_NODE_INPUT);
     setEditing(null);
-  }
-
-  function openEdit(node: EgressNodeDTO) {
+  };
+  const openEdit = (node: EgressNodeDTO) => {
     setForm({
       name: node.name,
       scope: node.scope,
@@ -159,11 +125,11 @@ export function EgressNodes({
       proxyURL: "",
       cloudflareCookies: "",
       proxyPool: node.proxyPool,
+      accountCapacity: node.accountCapacity,
     });
     setEditing(node);
-  }
-
-  function changeScope(scope: EgressScope) {
+  };
+  const changeScope = (scope: EgressScope) => {
     const previousDefault = query.data?.defaultUserAgents[form.scope] ?? "";
     const nextDefault = query.data?.defaultUserAgents[scope] ?? "";
     setForm({
@@ -181,18 +147,15 @@ export function EgressNodes({
           ? {}
           : { cloudflareCookies: form.cloudflareCookies }),
     });
-  }
-
-  function scopeLabel(scope: EgressScope) {
+  };
+  const scopeLabel = (scope: EgressScope) => {
     if (scope === "grok_build") return t("settings.egress.scopeBuild");
     if (scope === "grok_console") return t("console.name");
     if (scope === "grok_web_asset") return t("settings.egress.scopeWebAsset");
     return t("settings.egress.scopeWeb");
-  }
-
-  function changeSort(field: string, initialOrder: SortOrder): void {
+  };
+  const changeSort = (field: string, initialOrder: SortOrder) =>
     setSort((current) => nextTableSort(current, field, initialOrder));
-  }
 
   const nodes = query.data?.items ?? [];
   return (
@@ -268,83 +231,19 @@ export function EgressNodes({
                 </TableRow>
               ) : (
                 nodes.map((node) => (
-                  <TableRow className="group" key={node.id}>
-                    <TableCell>
-                      <div className="text-xs font-medium">{node.name}</div>
-                      {node.lastError ? (
-                        <div className="mt-0.5 max-w-72 truncate text-[11px] text-destructive">
-                          {node.lastError}
-                        </div>
-                      ) : null}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Badge variant="secondary" className="text-[10px]">
-                        {scopeLabel(node.scope)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-center text-xs text-muted-foreground">
-                      {node.proxyConfigured
-                        ? t("settings.egress.configured")
-                        : t("settings.egress.direct")}
-                    </TableCell>
-                    <TableCell className="text-center text-xs text-muted-foreground">
-                      {node.cookieConfigured
-                        ? t("settings.egress.configured")
-                        : t("settings.egress.none")}
-                    </TableCell>
-                    <TableCell className="text-center text-xs tabular-nums">
-                      {Math.round(node.health * 100)}%
-                    </TableCell>
-                    <TableActionCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="size-8"
-                            aria-label={t("common.actions")}
-                          >
-                            <MoreHorizontal />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openEdit(node)}>
-                            <Pencil />
-                            {t("common.edit")}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            disabled={check.isPending}
-                            onClick={() => check.mutate(node.id)}
-                          >
-                            <Activity />
-                            {t("settings.egress.check")}
-                          </DropdownMenuItem>
-                          {clearanceMode === "flaresolverr" && node.scope === "grok_web" ? (
-                            <DropdownMenuItem
-                              disabled={refreshClearance.isPending}
-                              onClick={() => refreshClearance.mutate(node.id)}
-                            >
-                              <RefreshCw />
-                              {t("settings.egress.refreshClearance")}
-                            </DropdownMenuItem>
-                          ) : null}
-                          <DropdownMenuItem onClick={() => setHistoryNode(node)}>
-                            <History />
-                            {t("settings.egress.history")}
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            className="text-destructive focus:text-destructive"
-                            onClick={() => remove.mutate(node.id)}
-                          >
-                            <Trash2 />
-                            {t("common.delete")}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableActionCell>
-                  </TableRow>
+                  <EgressNodeRow
+                    key={node.id}
+                    node={node}
+                    scopeLabel={scopeLabel(node.scope)}
+                    clearanceMode={clearanceMode}
+                    checking={check.isPending}
+                    refreshingClearance={refreshClearance.isPending}
+                    onEdit={() => openEdit(node)}
+                    onCheck={() => check.mutate(node.id)}
+                    onRefreshClearance={() => refreshClearance.mutate(node.id)}
+                    onHistory={() => setHistoryNode(node)}
+                    onDelete={() => remove.mutate(node.id)}
+                  />
                 ))
               )}
             </TableBody>
@@ -352,198 +251,132 @@ export function EgressNodes({
         </div>
       )}
 
-      <Dialog open={Boolean(historyNode)} onOpenChange={(open) => !open && setHistoryNode(null)}>
-        <DialogContent className="max-w-[560px]">
-          <DialogHeader>
-            <DialogTitle>{t("settings.egress.history")}</DialogTitle>
-            <DialogDescription>{historyNode?.name}</DialogDescription>
-          </DialogHeader>
-          {historyQuery.isPending ? <LoadingState className="min-h-32" /> : null}
-          {historyQuery.isError ? (
-            <ErrorState
-              message={historyQuery.error.message}
-              onRetry={() => void historyQuery.refetch()}
-            />
-          ) : null}
-          {historyQuery.data?.items.length === 0 ? (
-            <EmptyState message={t("settings.egress.noHistory")} />
-          ) : null}
-          {historyQuery.data?.items.length ? (
-            <div className="max-h-[50vh] space-y-2 overflow-y-auto pr-1">
-              {historyQuery.data.items.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-center justify-between gap-3 rounded-md border p-3 text-xs"
-                >
-                  <div>
-                    <Badge variant={item.healthy ? "secondary" : "destructive"}>
-                      {t(item.healthy ? "settings.egress.healthy" : "settings.egress.unhealthy")}
-                    </Badge>
-                    {item.errorCode ? (
-                      <span className="ml-2 text-muted-foreground">{item.errorCode}</span>
-                    ) : null}
-                  </div>
-                  <div className="text-right text-muted-foreground">
-                    <div>{item.durationMs} ms</div>
-                    <div>{formatDateTime(item.checkedAt, i18n.language)}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={editing !== undefined}
-        onOpenChange={(open) => {
-          if (!open) setEditing(undefined);
-        }}
-      >
-        <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-[520px]">
-          <DialogHeader className="pr-8">
-            <DialogTitle>
-              {editing ? t("settings.egress.editTitle") : t("settings.egress.addTitle")}
-            </DialogTitle>
-            <DialogDescription>{t("console.egressDialogDescription")}</DialogDescription>
-          </DialogHeader>
-          <form
-            className="space-y-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              save.mutate();
-            }}
-          >
-            <div className="flex items-center justify-between gap-4 rounded-md bg-muted/45 px-3 py-2.5">
-              <Label htmlFor="egress-enabled">{t("settings.egress.enabled")}</Label>
-              <Switch
-                id="egress-enabled"
-                checked={form.enabled}
-                onCheckedChange={(enabled) => setForm({ ...form, enabled })}
-              />
-            </div>
-            <Field label={t("settings.egress.name")} controlId="egress-name">
-              <Input
-                id="egress-name"
-                value={form.name}
-                onChange={(event) => setForm({ ...form, name: event.target.value })}
-              />
-            </Field>
-            <Field label={t("settings.egress.scope")} controlId="egress-scope">
-              <Select
-                value={form.scope}
-                onValueChange={(value) => changeScope(value as EgressScope)}
-              >
-                <SelectTrigger id="egress-scope">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="grok_build">{t("settings.egress.scopeBuild")}</SelectItem>
-                  <SelectItem value="grok_web">{t("settings.egress.scopeWeb")}</SelectItem>
-                  <SelectItem value="grok_console">{t("console.name")}</SelectItem>
-                  <SelectItem value="grok_web_asset">
-                    {t("settings.egress.scopeWebAsset")}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field
-              label={t("settings.egress.proxyURL")}
-              controlId="egress-proxy"
-              description={t("settings.egress.proxyProtocols")}
-            >
-              <Input
-                id="egress-proxy"
-                type="password"
-                autoComplete="new-password"
-                placeholder={
-                  editing?.proxyConfigured
-                    ? t("settings.egress.keepConfigured")
-                    : "socks5h://user:pass@host:port"
-                }
-                value={form.proxyURL}
-                onChange={(event) => setForm({ ...form, proxyURL: event.target.value })}
-              />
-            </Field>
-            <div className="flex items-center justify-between gap-4 rounded-md bg-muted/45 px-3 py-2.5">
-              <div className="space-y-0.5">
-                <Label htmlFor="egress-proxy-pool">{t("settings.egress.proxyPool")}</Label>
-                <p className="text-xs text-muted-foreground">
-                  {t("settings.egress.proxyPoolHelp")}
-                </p>
-              </div>
-              <Switch
-                id="egress-proxy-pool"
-                checked={Boolean(form.proxyPool)}
-                onCheckedChange={(proxyPool) => setForm({ ...form, proxyPool })}
-              />
-            </div>
-            {form.scope !== "grok_build" ? (
-              <Field label={t("settings.egress.userAgent")} controlId="egress-user-agent">
-                <Input
-                  id="egress-user-agent"
-                  value={form.userAgent}
-                  onChange={(event) => setForm({ ...form, userAgent: event.target.value })}
-                />
-              </Field>
-            ) : null}
-            {form.scope !== "grok_build" ? (
-              <Field label={t("settings.egress.cloudflareCookie")} controlId="egress-cookie">
-                <Input
-                  id="egress-cookie"
-                  type="password"
-                  autoComplete="new-password"
-                  placeholder={
-                    editing?.cookieConfigured
-                      ? t("settings.egress.keepConfigured")
-                      : "cf_clearance=...; __cf_bm=..."
-                  }
-                  value={form.cloudflareCookies}
-                  onChange={(event) => setForm({ ...form, cloudflareCookies: event.target.value })}
-                />
-              </Field>
-            ) : null}
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => setEditing(undefined)}
-              >
-                {t("common.cancel")}
-              </Button>
-              <Button type="submit" size="sm" disabled={!form.name.trim() || save.isPending}>
-                {save.isPending ? <Spinner /> : null}
-                {t("common.save")}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <EgressNodeHistoryDialog node={historyNode} onClose={() => setHistoryNode(null)} />
+      <EgressNodeEditorDialog
+        editing={editing}
+        form={form}
+        pending={save.isPending}
+        onClose={() => setEditing(undefined)}
+        onFormChange={setForm}
+        onScopeChange={changeScope}
+        onSubmit={() => save.mutate()}
+      />
     </div>
   );
 }
 
-function Field({
-  label,
-  controlId,
-  description,
-  children,
-}: {
-  label: string;
-  controlId: string;
-  description?: string;
-  children: ReactNode;
-}) {
+type EgressNodeRowProps = {
+  node: EgressNodeDTO;
+  scopeLabel: string;
+  clearanceMode: "manual" | "flaresolverr";
+  checking: boolean;
+  refreshingClearance: boolean;
+  onEdit: () => void;
+  onCheck: () => void;
+  onRefreshClearance: () => void;
+  onHistory: () => void;
+  onDelete: () => void;
+};
+
+function EgressNodeRow({
+  node,
+  scopeLabel,
+  clearanceMode,
+  checking,
+  refreshingClearance,
+  onEdit,
+  onCheck,
+  onRefreshClearance,
+  onHistory,
+  onDelete,
+}: EgressNodeRowProps) {
+  const { t } = useTranslation();
   return (
-    <div className="space-y-2">
-      <Label htmlFor={controlId}>{label}</Label>
-      {children}
-      {description ? (
-        <p className="whitespace-pre-line text-xs leading-5 text-muted-foreground">{description}</p>
-      ) : null}
-    </div>
+    <TableRow className="group">
+      <TableCell>
+        <div className="text-xs font-medium">{node.name}</div>
+        {node.lastError ? (
+          <div className="mt-0.5 max-w-72 truncate text-[11px] text-destructive">
+            {node.lastError}
+          </div>
+        ) : null}
+      </TableCell>
+      <TableCell className="text-center">
+        <Badge variant="secondary" className="text-[10px]">
+          {scopeLabel}
+        </Badge>
+      </TableCell>
+      <TableCell className="text-center text-xs text-muted-foreground">
+        {t(node.proxyConfigured ? "settings.egress.configured" : "settings.egress.direct")}
+      </TableCell>
+      <TableCell className="text-center text-xs text-muted-foreground">
+        {t(node.cookieConfigured ? "settings.egress.configured" : "settings.egress.none")}
+      </TableCell>
+      <TableCell className="text-center text-xs tabular-nums">
+        {Math.round(node.health * 100)}%
+      </TableCell>
+      <TableActionCell>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              aria-label={t("common.actions")}
+            >
+              <MoreHorizontal />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={onEdit}>
+              <Pencil />
+              {t("common.edit")}
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={checking} onClick={onCheck}>
+              <Activity />
+              {t("settings.egress.check")}
+            </DropdownMenuItem>
+            {clearanceMode === "flaresolverr" && node.scope === "grok_web" ? (
+              <DropdownMenuItem disabled={refreshingClearance} onClick={onRefreshClearance}>
+                <RefreshCw />
+                {t("settings.egress.refreshClearance")}
+              </DropdownMenuItem>
+            ) : null}
+            <DropdownMenuItem onClick={onHistory}>
+              <History />
+              {t("settings.egress.history")}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={onDelete}
+            >
+              <Trash2 />
+              {t("common.delete")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </TableActionCell>
+    </TableRow>
   );
+}
+
+function normalizeNodeInput(form: EgressNodeInput): EgressNodeInput {
+  const proxyURL = form.proxyURL?.trim();
+  const cloudflareCookies = form.cloudflareCookies?.trim();
+  return {
+    name: form.name,
+    scope: form.scope,
+    enabled: form.enabled,
+    userAgent: form.scope === "grok_build" ? "" : form.userAgent,
+    ...(proxyURL ? { proxyURL } : {}),
+    ...(form.scope !== "grok_build" && cloudflareCookies ? { cloudflareCookies } : {}),
+    ...(form.clearProxyURL === undefined ? {} : { clearProxyURL: form.clearProxyURL }),
+    ...(form.clearCookies === undefined ? {} : { clearCookies: form.clearCookies }),
+    ...(form.proxyPool === undefined ? {} : { proxyPool: form.proxyPool }),
+    accountCapacity: form.accountCapacity,
+  };
 }
 
 function showError(error: unknown, fallback: string) {

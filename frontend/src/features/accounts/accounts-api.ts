@@ -105,6 +105,8 @@ export type AccountDTO = {
   buildSuperEntitled: boolean;
   buildRouteMode: BuildRouteMode;
   buildBotFlagged: boolean;
+  egressNodeId?: string;
+  egressAssignmentMode?: "manual" | "auto";
   modelSyncFailed?: boolean;
   refreshDueAt?: string;
   lastRefreshAt?: string;
@@ -337,6 +339,8 @@ const accountValidator = hasShape({
   buildSuperEntitled: isBoolean,
   buildRouteMode: isOneOf("auto", "build", "xai"),
   buildBotFlagged: isBoolean,
+  egressNodeId: isOptional(isString),
+  egressAssignmentMode: isOptional(isOneOf("manual", "auto")),
   modelSyncFailed: isOptional(isBoolean),
   refreshDueAt: isOptional(isString),
   lastRefreshAt: isOptional(isString),
@@ -400,8 +404,11 @@ type ListAccountsInput = {
   search?: string;
   type?: string;
   status?: string;
+  egress?: string;
   renewal?: string;
   risk?: string;
+  agreement?: string;
+  association?: string;
   provider: AccountProvider;
   sortBy?: string;
   sortOrder?: SortOrder;
@@ -415,8 +422,11 @@ export function listAccounts(
   if (input.search) query.set("search", input.search);
   if (input.type) query.set("type", input.type);
   if (input.status) query.set("status", input.status);
+  if (input.egress) query.set("egress", input.egress);
   if (input.renewal) query.set("renewal", input.renewal);
   if (input.risk) query.set("risk", input.risk);
+  if (input.agreement) query.set("agreement", input.agreement);
+  if (input.association) query.set("association", input.association);
   if (input.sortBy && input.sortOrder) {
     query.set("sortBy", input.sortBy);
     query.set("sortOrder", input.sortOrder);
@@ -537,6 +547,25 @@ export function refreshAccountsQuota(
   );
 }
 
+export function resetAccountsQuota(
+  client: ApiClient,
+  ids: string[],
+  provider: AccountProvider,
+): Promise<{ reset: number }> {
+  return client.request(
+    "/api/admin/v1/accounts/batch/reset-quota",
+    { method: "POST", body: { ids, provider } },
+    decodeCountResult<{ reset: number }>("reset"),
+  );
+}
+
+export function resetAllAccountQuota(client: ApiClient): Promise<{ reset: number }> {
+  return client.request(
+    "/api/admin/v1/accounts/reset-quota",
+    { method: "POST" },
+    decodeCountResult<{ reset: number }>("reset"),
+  );
+}
 export function refreshAccountsTokens(
   client: ApiClient,
   ids: string[],

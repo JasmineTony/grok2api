@@ -7,6 +7,8 @@ const routes = [
   ["/client-keys", "keys"],
   ["/request-audits", "audits"],
   ["/settings", "settings"],
+  ["/settings/media", "settings-media"],
+  ["/settings/network", "settings-network"],
   ["/creative-console", "creative-console"],
 ] as const;
 

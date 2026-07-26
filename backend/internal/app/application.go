@@ -50,10 +50,20 @@ import (
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
 	metricsobs "github.com/chenyme/grok2api/backend/internal/observability"
 	"github.com/chenyme/grok2api/backend/internal/pkg/batch"
+	"github.com/chenyme/grok2api/backend/internal/pkg/perfmetrics"
 	"github.com/chenyme/grok2api/backend/internal/pkg/reasoningreplay"
 	"github.com/chenyme/grok2api/backend/internal/repository"
 	httpserver "github.com/chenyme/grok2api/backend/internal/transport/http"
 	httpmiddleware "github.com/chenyme/grok2api/backend/internal/transport/http/middleware"
+)
+
+const (
+	responseOwnershipCleanupBatchSize = 1000
+	webResponseStateCleanupBatchSize  = 50
+	responseCleanupMaxBatches         = 100
+	responseCleanupInterval           = 5 * time.Minute
+	responseCleanupBudget             = 30 * time.Second
+	responseCleanupLockTTL            = 2 * time.Minute
 )
 
 // Application 管理后端进程生命周期和本地后台任务。
@@ -65,6 +75,7 @@ type Application struct {
 	metricsConfig   metricsobs.PrometheusConfig
 	audits          *auditapp.Service
 	responses       repository.ResponseRepository
+	cleanupLock     repository.DistributedLock
 	runtime         io.Closer
 	settingsBus     repository.SettingsChangeBus
 	settings        *settingsapp.Service
@@ -86,7 +97,6 @@ type Application struct {
 	providers       *provider.Registry
 	web             *webprovider.Adapter
 	startup         *startupState
-
 }
 
 // New 完成数据库、Provider、应用服务和 HTTP 路由装配。
@@ -237,7 +247,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	cliAdapter := cliprovider.NewAdapter(cliprovider.Config{
 		BaseURL: cfg.Provider.Build.BaseURL, FallbackBaseURL: config.NormalizeBuildFallbackBaseURL(cfg.Provider.Build.FallbackBaseURL),
 		ClientVersion: cfg.Provider.Build.ClientVersion, ClientIdentifier: cfg.Provider.Build.ClientIdentifier,
-		TokenAuth: cfg.Provider.Build.TokenAuth, UserAgent: cfg.Provider.Build.UserAgent,
+		TokenAuth: cfg.Provider.Build.TokenAuth, UserAgent: cfg.Provider.Build.UserAgent, ResponseHeaderTimeout: cfg.Provider.Build.ResponseHeaderTimeout.Value(),
 	}, cipher)
 	cliAdapter.SetLogger(logger)
 	cliAdapter.SetEgress(egressManager)
@@ -321,17 +331,24 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	accountSyncService := accountsyncapp.NewService(logger, accountService, accountService, accountService, modelService)
 	accountSyncService.SetBulkPool(importPool)
 	accountSyncService.UpdateConcurrency(cfg.Batch.ImportConcurrency)
-	egressService := egressapp.NewService(egressRepo, cipher, infraegress.DefaultUserAgent)
+	egressService := egressapp.NewService(egressRepo, cipher, infraegress.DefaultUserAgent, accountRepo)
 	egressService.SetNotifications(notificationService)
 	egressService.SetClearanceManager(egressManager)
+	egressService.SetNodeProber(egressManager)
+	egressService.SetOperationsConfigInvalidator(egressManager)
 	clientKeyService := clientkeyapp.NewService(clientKeyRepo, rateLimiter, concurrency, cfg.ClientKeyDefaults.RPMLimit, cfg.ClientKeyDefaults.MaxConcurrent, cipher)
 	auditService := auditapp.NewService(auditRepo, logger, cfg.Audit.BufferSize, cfg.Audit.BatchSize, cfg.Audit.FlushInterval.Value())
+	auditService.UpdateWriterConfig(cfg.Audit.BatchSize, cfg.Audit.FlushInterval.Value(), cfg.Audit.CommitDelay.Value())
+	auditService.UpdateLedgerConfig(auditLedgerConfig(cfg.Audit))
 	dashboardService := dashboardapp.NewService(dashboardRepo)
 	selector := gateway.NewSelector(accountRepo, concurrency, sticky, providers, cfg.Routing.StickyTTL.Value(), cfg.Routing.CooldownBase.Value(), cfg.Routing.CooldownMax.Value(), cfg.Routing.CapacityWait.Value())
 	selector.UpdatePreferFreeBuild(cfg.Routing.PreferFreeBuild)
+	selector.UpdateSegmentedSelector(cfg.Routing.SegmentedSelectorEnabled, cfg.Routing.SegmentedMinCandidates, cfg.Routing.SegmentedWindowSize)
 	selector.SetNotifications(notificationService)
 	gatewayService := gateway.NewService(modelService, auditService, accountService, clientKeyService, providers, selector, responseRepo, cfg.Routing.MaxAttempts)
 	gatewayService.SetLogger(logger)
+	gatewayService.UpdateBuildForbiddenReauthPolicy(cfg.Accounts.MarkBuildForbiddenReauth, cfg.Accounts.BuildForbiddenReauthCodes)
+	gatewayService.UpdateRequestTimeout(cfg.Server.RequestTimeout.Value())
 	gatewayService.ConfigureMedia(mediaJobRepo, cfg.Provider.Web.MediaConcurrency)
 	gatewayService.ConfigureMediaAssets(mediaService)
 	requestSnapshotService.SetReplaySender(func(replayCtx context.Context, snapshot requestsnapshotdomain.Snapshot, payload []byte, replayID, rawClientKey string) error {
@@ -421,7 +438,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 		cliAdapter.UpdateConfig(cliprovider.Config{
 			BaseURL: next.Provider.Build.BaseURL, FallbackBaseURL: config.NormalizeBuildFallbackBaseURL(next.Provider.Build.FallbackBaseURL),
 			ClientVersion: next.Provider.Build.ClientVersion, ClientIdentifier: next.Provider.Build.ClientIdentifier,
-			TokenAuth: next.Provider.Build.TokenAuth, UserAgent: next.Provider.Build.UserAgent,
+			TokenAuth: next.Provider.Build.TokenAuth, UserAgent: next.Provider.Build.UserAgent, ResponseHeaderTimeout: next.Provider.Build.ResponseHeaderTimeout.Value(),
 		})
 		webAdapter.UpdateConfig(webProviderConfig(next))
 		egressManager.UpdateClearanceConfig(clearanceConfig(next))
@@ -431,9 +448,13 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 		accountSyncService.UpdateConcurrency(next.Batch.ImportConcurrency)
 		selector.UpdateConfig(next.Routing.StickyTTL.Value(), next.Routing.CooldownBase.Value(), next.Routing.CooldownMax.Value(), next.Routing.CapacityWait.Value())
 		selector.UpdatePreferFreeBuild(next.Routing.PreferFreeBuild)
+		selector.UpdateSegmentedSelector(next.Routing.SegmentedSelectorEnabled, next.Routing.SegmentedMinCandidates, next.Routing.SegmentedWindowSize)
 		reasoningReplay.UpdateConfig(reasoningreplay.Config{Enabled: next.Routing.ReasoningReplayEnabled, TTL: next.Routing.ReasoningReplayTTL.Value()})
 		gatewayService.UpdateMaxAttempts(next.Routing.MaxAttempts)
-		auditService.UpdateConfig(next.Audit.BatchSize, next.Audit.FlushInterval.Value())
+		gatewayService.UpdateBuildForbiddenReauthPolicy(next.Accounts.MarkBuildForbiddenReauth, next.Accounts.BuildForbiddenReauthCodes)
+		gatewayService.UpdateRequestTimeout(next.Server.RequestTimeout.Value())
+		auditService.UpdateWriterConfig(next.Audit.BatchSize, next.Audit.FlushInterval.Value(), next.Audit.CommitDelay.Value())
+		auditService.UpdateLedgerConfig(auditLedgerConfig(next.Audit))
 		clientKeyService.UpdateDefaults(next.ClientKeyDefaults.RPMLimit, next.ClientKeyDefaults.MaxConcurrent)
 		accountService.UpdateAutoCleanConfig(accountAutoCleanConfig(next.Accounts))
 	})
@@ -441,7 +462,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 
 	startup := newStartupState(len(windows))
 	readiness := func(readyCtx context.Context) httpserver.ReadinessSnapshot {
-		return readinessSnapshot(readyCtx, startup, runtimeHealth, modelRepo, accountRepo, providers)
+		return readinessSnapshot(readyCtx, startup, runtimeHealth, modelRepo, accountRepo, providers, auditService)
 	}
 	metrics := metricsobs.NewMetrics()
 	gatewayService.ConfigureMetrics(metrics)
@@ -450,7 +471,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	return &Application{
 		logger: logger, database: database, server: server,
 		metrics: metrics, metricsConfig: metricsobs.PrometheusConfig{Enabled: cfg.Observability.Prometheus.Enabled, Listen: cfg.Observability.Prometheus.Listen},
-		audits: auditService, responses: responseRepo, runtime: runtimeStore,
+		audits: auditService, responses: responseRepo, cleanupLock: refreshLock, runtime: runtimeStore,
 		settingsBus: settingsBus, settings: settingsService, gateway: gatewayService, media: mediaService, quotaRecovery: quotaRecoveryService, accounts: accountService, models: modelService, clientKeys: clientKeyService, updates: updateService, egress: egressService, egressManager: egressManager,
 		accountRepo: accountRepo, modelRepo: modelRepo, providers: providers, web: webAdapter, usageRollups: usageRollupRepo, backup: backupService, notifications: notificationService, requestPolicies: requestPolicyService, startup: startup,
 	}, nil
@@ -492,6 +513,15 @@ func accountAutoCleanConfig(value config.AccountsConfig) accountapp.AutoCleanCon
 		Interval:        value.AutoCleanReauthInterval.Value(),
 		MinAge:          value.AutoCleanReauthMinAge.Value(),
 		IncludeDisabled: value.AutoCleanIncludeDisabled,
+	}
+}
+
+func auditLedgerConfig(value config.AuditConfig) auditapp.LedgerConfig {
+	return auditapp.LedgerConfig{
+		Mode:                      auditapp.LedgerMode(value.LedgerMode),
+		FailureThreshold:          value.LedgerFailureThreshold,
+		UnhealthyGrace:            value.LedgerUnhealthyGrace.Value(),
+		QueueHighWatermarkPercent: value.LedgerQueueHighWatermarkPct,
 	}
 }
 
@@ -603,10 +633,16 @@ func (a *Application) Run(ctx context.Context) error {
 		return nil
 	})
 	startBackground("response_ownership_cleanup", func(taskCtx context.Context) error {
-		a.runPeriodicTask(taskCtx, 24*time.Hour, "response_ownership_cleanup", func(runCtx context.Context) error {
-			_, err := a.responses.DeleteExpired(runCtx, time.Now().UTC())
-			return err
+		a.runPeriodicTask(taskCtx, responseCleanupInterval, "response_ownership_cleanup", func(runCtx context.Context) error {
+			return a.cleanupExpiredResponses(runCtx, time.Now().UTC())
 		})
+		return nil
+	})
+	startBackground("egress_operations", func(taskCtx context.Context) error {
+		if err := a.egress.RunMaintenance(taskCtx); err != nil {
+			a.logger.Warn("egress_operations_initial_run_failed", "error", err)
+		}
+		a.runPeriodicTask(taskCtx, time.Minute, "egress_operations", a.egress.RunMaintenance)
 		return nil
 	})
 	startBackground("quota_recovery", func(taskCtx context.Context) error {
@@ -797,4 +833,56 @@ func minDuration(left, right time.Duration) time.Duration {
 		return left
 	}
 	return right
+}
+
+func (a *Application) cleanupExpiredResponses(ctx context.Context, now time.Time) error {
+	cleanupCtx, cancel := context.WithTimeout(ctx, responseCleanupBudget)
+	defer cancel()
+	if a.cleanupLock != nil {
+		release, acquired, err := a.cleanupLock.Acquire(cleanupCtx, "response-ownership-cleanup", responseCleanupLockTTL)
+		if err != nil {
+			return err
+		}
+		if !acquired {
+			return nil
+		}
+		defer release()
+	}
+	var totalOwnership, totalWebState int64
+	for range responseCleanupMaxBatches {
+		if err := cleanupCtx.Err(); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			a.recordResponseCleanup(totalOwnership, totalWebState, true)
+			return nil
+		}
+		result, err := a.responses.DeleteExpired(cleanupCtx, now, responseOwnershipCleanupBatchSize, webResponseStateCleanupBatchSize)
+		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+				a.recordResponseCleanup(totalOwnership, totalWebState, true)
+				return nil
+			}
+			return err
+		}
+		totalOwnership += result.OwnershipDeleted
+		totalWebState += result.WebStateDeleted
+		if !result.HasMore {
+			a.recordResponseCleanup(totalOwnership, totalWebState, false)
+			return nil
+		}
+	}
+	a.recordResponseCleanup(totalOwnership, totalWebState, true)
+	return nil
+}
+
+func (a *Application) recordResponseCleanup(ownershipDeleted, webStateDeleted int64, backlog bool) {
+	outcome := "complete"
+	if backlog {
+		outcome = "backlog"
+		a.logger.Warn("response_cleanup_backlog", "ownership_deleted", ownershipDeleted, "web_state_deleted", webStateDeleted)
+	}
+	labels := perfmetrics.Labels{Subsystem: "response", Operation: "cleanup", Outcome: outcome}
+	perfmetrics.Default.Add("response_cleanup_ownership_rows", labels, ownershipDeleted)
+	perfmetrics.Default.Add("response_cleanup_web_state_rows", labels, webStateDeleted)
 }

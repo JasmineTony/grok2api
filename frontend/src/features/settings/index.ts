@@ -1,1 +1,7 @@
-export { type EgressNodeDTO, listEgressNodes } from "@/features/settings/settings-api";
+export {
+  assignEgressAccounts,
+  type EgressNodeDTO,
+  type EgressScope,
+  listEgressNodes,
+  unassignEgressAccounts,
+} from "@/features/settings/settings-api";

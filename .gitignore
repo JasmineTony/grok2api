@@ -55,3 +55,4 @@ Thumbs.db
 /release/
 /.tmp/
 /tmp/
+/docs/rules/*

@@ -3,15 +3,18 @@ import {
   CheckCircle2,
   Globe,
   Loader2,
+  Pencil,
   RefreshCw,
+  Square,
+  Trash2,
   TriangleAlert,
   Wrench,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
-import { Message, MessageContent } from "@/components/ui/message";
+import { Message, MessageContent, MessageFooter } from "@/components/ui/message";
 import {
   Select,
   SelectContent,
@@ -20,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
+import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ModelRouteDTO } from "@/entities/model/types";
 import type { ConversationMessage } from "@/features/creative-console/chat-history";
@@ -162,12 +166,38 @@ export function XSocialIcon({ className }: { className?: string }) {
 export function ChatMessageItem({
   message,
   loading = false,
+  busy = false,
+  editing = false,
+  editDraft = "",
+  onEditDraftChange,
+  onStartEdit,
+  onCancelEdit,
+  onSaveEdit,
+  onEditKeyDown,
+  onRegenerate,
+  onStop,
+  onDelete,
 }: {
   message: ConversationMessage;
   loading?: boolean;
+  busy?: boolean;
+  editing?: boolean;
+  editDraft?: string;
+  onEditDraftChange?: (value: string) => void;
+  onStartEdit?: () => void;
+  onCancelEdit?: () => void;
+  onSaveEdit?: () => void;
+  onEditKeyDown?: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  onRegenerate?: () => void;
+  onStop?: () => void;
+  onDelete?: () => void;
 }) {
   const { t } = useTranslation();
   const isUser = message.role === "user";
+  const canStop = loading && !editing && onStop;
+  const canRegenerate = !isUser && !editing && (!busy || loading) && onRegenerate;
+  const canEdit = !loading && !busy && onStartEdit;
+  const canDelete = !loading && !busy && !editing && onDelete;
   return (
     <Message align={isUser ? "end" : "start"}>
       <MessageContent className={cn(!isUser && "w-full max-w-full")}>
@@ -187,7 +217,30 @@ export function ChatMessageItem({
             ))}
           </div>
         ) : null}
-        {message.content || isUser ? (
+        {editing ? (
+          <div className="w-full space-y-2">
+            <Textarea
+              value={editDraft}
+              onChange={(event) => onEditDraftChange?.(event.target.value)}
+              onKeyDown={onEditKeyDown}
+              className="min-h-24 resize-y bg-background/70 text-sm"
+              aria-label={t("creativeConsole.editMessage")}
+            />
+            {!isUser ? (
+              <p className="text-[11px] leading-4 text-muted-foreground">
+                {t("creativeConsole.localEditNote")}
+              </p>
+            ) : null}
+            <div className={cn("flex items-center gap-2", isUser && "justify-end")}>
+              <Button type="button" variant="ghost" size="sm" onClick={onCancelEdit}>
+                {t("creativeConsole.cancelEdit")}
+              </Button>
+              <Button type="button" size="sm" onClick={onSaveEdit} disabled={!editDraft.trim()}>
+                {isUser ? t("creativeConsole.saveAndRegenerate") : t("creativeConsole.saveEdit")}
+              </Button>
+            </div>
+          </div>
+        ) : message.content || isUser ? (
           isUser ? (
             <div className="whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-secondary px-4 py-2.5 text-sm leading-6">
               {message.content}
@@ -202,8 +255,69 @@ export function ChatMessageItem({
             {t("creativeConsole.streaming")}
           </div>
         ) : null}
+        {!editing && (canStop || canRegenerate || canEdit || canDelete) ? (
+          <MessageFooter className="gap-0.5 opacity-100 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/message:opacity-100 [@media(hover:hover)]:group-focus-within/message:opacity-100">
+            {canStop ? (
+              <ActionButton label={t("creativeConsole.stopGenerating")} onClick={onStop}>
+                <Square className="size-3.5 fill-current" />
+              </ActionButton>
+            ) : null}
+            {canRegenerate ? (
+              <ActionButton label={t("creativeConsole.regenerate")} onClick={onRegenerate}>
+                <RefreshCw className="size-3.5" />
+              </ActionButton>
+            ) : null}
+            {canEdit ? (
+              <ActionButton label={t("creativeConsole.editMessage")} onClick={onStartEdit}>
+                <Pencil className="size-3.5" />
+              </ActionButton>
+            ) : null}
+            {canDelete ? (
+              <ActionButton
+                label={t("creativeConsole.deleteMessage")}
+                onClick={onDelete}
+                destructive
+              >
+                <Trash2 className="size-3.5" />
+              </ActionButton>
+            ) : null}
+          </MessageFooter>
+        ) : null}
       </MessageContent>
     </Message>
+  );
+}
+
+function ActionButton({
+  label,
+  onClick,
+  destructive = false,
+  children,
+}: {
+  label: string;
+  onClick?: () => void;
+  destructive?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className={cn(
+            "size-7 rounded-full",
+            destructive && "text-destructive hover:text-destructive",
+          )}
+          aria-label={label}
+          onClick={onClick}
+        >
+          {children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   );
 }
 

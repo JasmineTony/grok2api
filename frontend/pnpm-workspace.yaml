@@ -1,0 +1,9 @@
+packages:
+  - "."
+
+overrides:
+  brace-expansion: 5.0.8
+
+auditConfig:
+  ignoreGhsas:
+    - GHSA-qwww-vcr4-c8h2
