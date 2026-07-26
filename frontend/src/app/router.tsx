@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate } from "react-router-dom";
+﻿import { createBrowserRouter, Navigate } from "react-router-dom";
 
 import { AnonymousBoundary, AuthBoundary } from "@/app/auth-boundary";
 import {
@@ -9,9 +9,12 @@ import {
   DeferredCreativeConsolePage,
   DeferredDashboardPage,
   DeferredGalleryPage,
+  DeferredMediaSettingsPage,
   DeferredModelsPage,
+  DeferredNetworkSettingsPage,
   DeferredRequestAuditsPage,
   DeferredSettingsPage,
+  DeferredSettingsRouteShell,
   DeferredVideoGalleryPage,
 } from "@/app/deferred-pages";
 import { RouteErrorBoundary } from "@/app/route-error-boundary";
@@ -41,7 +44,15 @@ export const router = createBrowserRouter([
           { path: "/request-audits", element: <DeferredRequestAuditsPage /> },
           { path: "/docs", element: <Navigate to="/docs/chat/completions" replace /> },
           { path: "/docs/:category/:endpoint", element: <DeferredApiDocsPage /> },
-          { path: "/settings", element: <DeferredSettingsPage /> },
+          {
+            path: "/settings",
+            element: <DeferredSettingsRouteShell />,
+            children: [
+              { index: true, element: <DeferredSettingsPage /> },
+              { path: "media", element: <DeferredMediaSettingsPage /> },
+              { path: "network", element: <DeferredNetworkSettingsPage /> },
+            ],
+          },
         ],
       },
     ],

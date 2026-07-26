@@ -88,7 +88,7 @@ func toAccountDomain(value accountModel) account.Credential {
 }
 
 func fromAccountDomain(value account.Credential) accountModel {
-	// ?????????? State?????? ready??????? upsert ???
+	// Older callers may omit State; derive a compatible value so partial upserts remain safe.
 	state := value.State
 	if !state.IsValid() {
 		if !value.Enabled {

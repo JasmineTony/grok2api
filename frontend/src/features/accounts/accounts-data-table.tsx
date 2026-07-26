@@ -64,6 +64,12 @@ export function AccountsDataTable(props: AccountsWorkspaceProps) {
     setTypeFilter,
     statusFilter,
     setStatusFilter,
+    egressFilter,
+    setEgressFilter,
+    agreementFilter,
+    setAgreementFilter,
+    associationFilter,
+    setAssociationFilter,
     renewalFilter,
     setRenewalFilter,
     riskFilter,
@@ -77,6 +83,9 @@ export function AccountsDataTable(props: AccountsWorkspaceProps) {
     openWebConversion,
     setWebAccountScriptsTargets,
     batchBillingMutation,
+    batchQuotaResetMutation,
+    allQuotaResetMutation,
+    setEgressConfigurationOpen,
     batchTokenMutation,
     setBatchDeleteOpen,
     setSyncAllOpen,
@@ -194,6 +203,49 @@ export function AccountsDataTable(props: AccountsWorkspaceProps) {
                     { value: "probing", label: t("accounts.probing") },
                   ],
                 },
+                {
+                  id: "egress",
+                  label: t("accounts.egressFilter"),
+                  value: egressFilter,
+                  onChange: (value: string) => {
+                    setEgressFilter(value);
+                    setPage(1);
+                  },
+                  options: [
+                    { value: "assigned", label: t("accounts.egressAssigned") },
+                    { value: "unassigned", label: t("accounts.egressUnassigned") },
+                  ],
+                },
+                ...(provider === "grok_web"
+                  ? [
+                      {
+                        id: "agreement",
+                        label: t("accounts.agreementFilter"),
+                        value: agreementFilter,
+                        onChange: (value: string) => {
+                          setAgreementFilter(value);
+                          setPage(1);
+                        },
+                        options: [
+                          { value: "termsAccepted", label: t("accounts.agreementTermsAccepted") },
+                          { value: "nsfwEnabled", label: t("accounts.agreementNsfwEnabled") },
+                        ],
+                      },
+                      {
+                        id: "association",
+                        label: t("accounts.associationFilter"),
+                        value: associationFilter,
+                        onChange: (value: string) => {
+                          setAssociationFilter(value);
+                          setPage(1);
+                        },
+                        options: [
+                          { value: "buildLinked", label: t("accounts.associationBuildLinked") },
+                          { value: "consoleLinked", label: t("accounts.associationConsoleLinked") },
+                        ],
+                      },
+                    ]
+                  : []),
                 ...(provider === "grok_build"
                   ? [
                       {
@@ -297,11 +349,30 @@ export function AccountsDataTable(props: AccountsWorkspaceProps) {
                   variant="secondary"
                   size="sm"
                   disabled={bulkTaskPending}
+                  onClick={() => batchQuotaResetMutation.mutate()}
+                >
+                  {t("accounts.resetQuota")}
+                </Button>
+              ) : null}
+              {provider === "grok_build" ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={bulkTaskPending}
                   onClick={() => batchTokenMutation.mutate()}
                 >
                   {t("accountCredential.refreshAction")}
                 </Button>
               ) : null}
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={bulkTaskPending}
+                onClick={() => setEgressConfigurationOpen(true)}
+              >
+                <Network />
+                {t("accounts.egressConfiguration")}
+              </Button>
               <Button
                 variant="secondary"
                 size="sm"
@@ -342,6 +413,16 @@ export function AccountsDataTable(props: AccountsWorkspaceProps) {
                   onClick={() => setSyncAllOpen(true)}
                 >
                   {t("accountCredential.quotaSyncAction")}
+                </Button>
+              ) : null}
+              {hasProviderAccounts && provider === "grok_build" ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={bulkTaskPending}
+                  onClick={() => allQuotaResetMutation.mutate()}
+                >
+                  {t("accounts.resetQuota")}
                 </Button>
               ) : null}
               {hasProviderAccounts && provider === "grok_build" ? (

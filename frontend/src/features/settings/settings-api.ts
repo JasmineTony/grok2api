@@ -575,6 +575,32 @@ export function updateEgressOperationsConfig(
     decodeEgressOperationsConfig,
   );
 }
+export function assignEgressAccounts(
+  client: ApiClient,
+  nodeID: string,
+  provider: "grok_build" | "grok_web" | "grok_console",
+  ids: string[],
+  mode: "manual" | "auto" = "manual",
+): Promise<{ assigned: number }> {
+  return client.request(
+    `/api/admin/v1/egress-nodes/${nodeID}/accounts`,
+    { method: "POST", body: { provider, ids, mode } },
+    createObjectDecoder<{ assigned: number }>("egress account assignment", { assigned: isNumber }),
+  );
+}
+
+export function unassignEgressAccounts(
+  client: ApiClient,
+  provider: "grok_build" | "grok_web" | "grok_console",
+  ids: string[],
+): Promise<{ assigned: number }> {
+  return client.request(
+    "/api/admin/v1/egress-nodes/accounts",
+    { method: "DELETE", body: { provider, ids } },
+    createObjectDecoder<{ assigned: number }>("egress account assignment", { assigned: isNumber }),
+  );
+}
+
 export function rebalanceEgressAccounts(client: ApiClient): Promise<EgressRebalanceResultDTO> {
   return client.request(
     "/api/admin/v1/egress-operations/rebalance",

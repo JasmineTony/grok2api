@@ -9,6 +9,7 @@ import {
   AccountStateHistoryDialog,
 } from "@/features/accounts/account-dialogs";
 import { AccountEditDialog } from "@/features/accounts/account-edit-dialog";
+import { AccountEgressBulkDialog } from "@/features/accounts/account-egress-bulk-dialog";
 import { AccountEgressPolicyDialog } from "@/features/accounts/account-egress-policy-dialog";
 import { WebAccountScriptsDialog } from "@/features/accounts/web-account-scripts";
 import { WebAccountSettingsDialogs } from "@/features/accounts/web-account-settings";
@@ -23,6 +24,7 @@ type AccountsDialogsPortalProps = {
   quickImport: ComponentProps<typeof AccountQuickImportDialog>;
   edit: ComponentProps<typeof AccountEditDialog>;
   egress: ComponentProps<typeof AccountEgressPolicyDialog>;
+  egressBulk: ComponentProps<typeof AccountEgressBulkDialog>;
   history: ComponentProps<typeof AccountStateHistoryDialog>;
   deletion: ComponentProps<typeof AccountDeleteDialogs>;
   cleanup: ComponentProps<typeof AccountCleanupDialog>;
@@ -37,6 +39,7 @@ export function AccountsDialogsPortal({
   quickImport,
   edit,
   egress,
+  egressBulk,
   history,
   deletion,
   cleanup,
@@ -58,6 +61,7 @@ export function AccountsDialogsPortal({
       <AccountQuickImportDialog {...quickImport} />
       <AccountEditDialog {...edit} />
       <AccountEgressPolicyDialog {...egress} />
+      <AccountEgressBulkDialog {...egressBulk} />
       <AccountStateHistoryDialog {...history} />
       <AccountDeleteDialogs {...deletion} />
       <AccountCleanupDialog {...cleanup} />

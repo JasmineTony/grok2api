@@ -1,22 +1,25 @@
-﻿import type { TFunction } from "i18next";
+import type { TFunction } from "i18next";
 import { Sparkles } from "lucide-react";
+import { lazy, Suspense } from "react";
 import { Controller, type UseFormReturn } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { EgressNodes } from "@/features/settings/egress-nodes";
 import type { SettingsSnapshotDTO } from "@/features/settings/settings-api";
 import {
-  ByteSizeInput,
   DurationInput,
   SettingsField,
   SettingsPane,
   SettingsSection,
 } from "@/features/settings/settings-layout";
 import type { SettingsForm } from "@/features/settings/settings-model";
+
+const EgressOperations = lazy(async () => ({
+  default: (await import("@/features/settings/egress-operations")).EgressOperations,
+}));
 
 type SettingsProviderPanelsProps = {
   t: TFunction;
@@ -333,57 +336,6 @@ export function SettingsProviderPanels({
               />
             </SettingsField>
             <SettingsField
-              controlId="web-image-timeout"
-              label={t("settings.web.imageTimeout")}
-              description={t("settings.web.imageTimeoutHelp")}
-              error={form.formState.errors.providerWeb?.imageTimeout?.message}
-            >
-              <Controller
-                control={form.control}
-                name="providerWeb.imageTimeout"
-                render={({ field }) => (
-                  <DurationInput
-                    id="web-image-timeout"
-                    value={field.value}
-                    onChange={field.onChange}
-                  />
-                )}
-              />
-            </SettingsField>
-            <SettingsField
-              controlId="web-video-timeout"
-              label={t("settings.web.videoTimeout")}
-              description={t("settings.web.videoTimeoutHelp")}
-              error={form.formState.errors.providerWeb?.videoTimeout?.message}
-            >
-              <Controller
-                control={form.control}
-                name="providerWeb.videoTimeout"
-                render={({ field }) => (
-                  <DurationInput
-                    id="web-video-timeout"
-                    value={field.value}
-                    onChange={field.onChange}
-                  />
-                )}
-              />
-            </SettingsField>
-            <SettingsField
-              controlId="web-media-concurrency"
-              label={t("settings.web.mediaConcurrency")}
-              description={t("settings.web.mediaConcurrencyHelp")}
-              badge={t("settings.restartRequired")}
-              error={form.formState.errors.providerWeb?.mediaConcurrency?.message}
-            >
-              <Input
-                id="web-media-concurrency"
-                type="number"
-                min={1}
-                max={64}
-                {...form.register("providerWeb.mediaConcurrency", { valueAsNumber: true })}
-              />
-            </SettingsField>
-            <SettingsField
               controlId="web-recovery-base"
               label={t("settings.web.recoveryBackoffBase")}
               description={t("settings.web.recoveryBackoffBaseHelp")}
@@ -416,21 +368,6 @@ export function SettingsProviderPanels({
                     value={field.value}
                     onChange={field.onChange}
                   />
-                )}
-              />
-            </SettingsField>
-            <SettingsField
-              controlId="web-nsfw"
-              label={t("settings.web.allowNSFW")}
-              description={t("settings.web.allowNSFWHelp")}
-            >
-              <Controller
-                control={form.control}
-                name="providerWeb.allowNSFW"
-                render={({ field }) => (
-                  <div className="flex h-8 items-center">
-                    <Switch id="web-nsfw" checked={field.value} onCheckedChange={field.onChange} />
-                  </div>
                 )}
               />
             </SettingsField>
@@ -476,100 +413,17 @@ export function SettingsProviderPanels({
         </SettingsSection>
       </SettingsPane>
 
-      <SettingsPane value="delivery">
-        <SettingsSection title={t("settings.media.title")}>
-          <div className="space-y-0">
-            <SettingsField
-              controlId="media-max-image-size"
-              label={t("settings.media.maxImageSize")}
-              description={t("settings.media.maxImageSizeHelp")}
-              error={form.formState.errors.media?.maxImageSize?.message}
-            >
-              <Controller
-                control={form.control}
-                name="media.maxImageSize"
-                render={({ field }) => (
-                  <ByteSizeInput
-                    id="media-max-image-size"
-                    value={field.value}
-                    onChange={field.onChange}
-                  />
-                )}
-              />
-            </SettingsField>
-            <SettingsField
-              controlId="media-max-total-size"
-              label={t("settings.media.maxTotalSize")}
-              description={t("settings.media.maxTotalSizeHelp")}
-              error={form.formState.errors.media?.maxTotalSize?.message}
-            >
-              <Controller
-                control={form.control}
-                name="media.maxTotalSize"
-                render={({ field }) => (
-                  <ByteSizeInput
-                    id="media-max-total-size"
-                    value={field.value}
-                    onChange={field.onChange}
-                  />
-                )}
-              />
-            </SettingsField>
-            <SettingsField
-              controlId="media-cleanup-threshold"
-              label={t("settings.media.cleanupThresholdPercent")}
-              description={t("settings.media.cleanupThresholdPercentHelp")}
-              error={form.formState.errors.media?.cleanupThresholdPercent?.message}
-            >
-              <div className="flex min-w-0">
-                <Input
-                  id="media-cleanup-threshold"
-                  type="number"
-                  min={50}
-                  max={95}
-                  className="min-w-0 rounded-r-none"
-                  {...form.register("media.cleanupThresholdPercent", { valueAsNumber: true })}
-                />
-                <div className="flex h-8 w-24 shrink-0 items-center justify-start rounded-r-md bg-secondary/55 px-3 text-xs text-foreground">
-                  %
-                </div>
-              </div>
-            </SettingsField>
-            <SettingsField
-              controlId="media-cleanup-interval"
-              label={t("settings.media.cleanupInterval")}
-              description={t("settings.media.cleanupIntervalHelp")}
-              error={form.formState.errors.media?.cleanupInterval?.message}
-            >
-              <Controller
-                control={form.control}
-                name="media.cleanupInterval"
-                render={({ field }) => (
-                  <DurationInput
-                    id="media-cleanup-interval"
-                    value={field.value}
-                    onChange={field.onChange}
-                  />
-                )}
-              />
-            </SettingsField>
-            <SettingsField
-              controlId="frontend-public-api-base-url"
-              label={t("settings.media.publicApiBaseURL")}
-              description={t("settings.media.publicApiBaseURLHelp")}
-              error={form.formState.errors.frontend?.publicApiBaseURL?.message}
-              className="sm:col-span-2"
-            >
-              <Input
-                id="frontend-public-api-base-url"
-                placeholder="https://api.example.com"
-                {...form.register("frontend.publicApiBaseURL")}
-              />
-            </SettingsField>
-          </div>
-        </SettingsSection>
-
+      <SettingsPane value="egress">
         <SettingsSection title={t("settings.egress.title")}>
+          <Suspense fallback={<div className="h-32 animate-pulse rounded-lg bg-muted/30" />}>
+            <EgressOperations
+              scopeLabel={(scope) =>
+                t(
+                  `settings.egress.scope${scope === "grok_build" ? "Build" : scope === "grok_web" ? "Web" : scope === "grok_console" ? "Console" : "WebAsset"}`,
+                )
+              }
+            />
+          </Suspense>
           <EgressNodes clearanceMode={form.watch("providerWeb.clearanceMode")} />
         </SettingsSection>
       </SettingsPane>

@@ -7,12 +7,16 @@ import {
   loadCreativeConsolePage,
   loadDashboardPage,
   loadGalleryPage,
+  loadMediaSettingsPage,
   loadModelsPage,
+  loadNetworkSettingsPage,
   loadRequestAuditsPage,
   loadSettingsPage,
+  loadSettingsRouteShell,
   loadVideoGalleryPage,
 } from "@/app/deferred-page-prefetch";
 import { loadAdminShell } from "@/app/deferred-shell-prefetch";
+
 const AccountsPage = lazyNamed(loadAccountsPage, "AccountsPage");
 const AdminShell = lazyNamed(loadAdminShell, "AdminShell");
 const RequestAuditsPage = lazyNamed(loadRequestAuditsPage, "RequestAuditsPage");
@@ -23,7 +27,10 @@ const ApiDocsPage = lazyNamed(loadApiDocsPage, "ApiDocsPage");
 const GalleryPage = lazyNamed(loadGalleryPage, "GalleryPage");
 const VideoGalleryPage = lazyNamed(loadVideoGalleryPage, "VideoGalleryPage");
 const ModelsPage = lazyNamed(loadModelsPage, "ModelsPage");
+const SettingsRouteShell = lazyNamed(loadSettingsRouteShell, "SettingsRouteShell");
 const SettingsPage = lazyNamed(loadSettingsPage, "SettingsPage");
+const MediaSettingsPage = lazyNamed(loadMediaSettingsPage, "MediaSettingsPage");
+const NetworkSettingsPage = lazyNamed(loadNetworkSettingsPage, "NetworkSettingsPage");
 
 function lazyNamed<T extends Record<K, ComponentType>, K extends keyof T>(
   loader: () => Promise<T>,
@@ -43,7 +50,6 @@ function DeferredPage({ page: Page }: { page: ComponentType }) {
 export function DeferredAccountsPage() {
   return <DeferredPage page={AccountsPage} />;
 }
-
 export function DeferredAppShell() {
   return (
     <Suspense fallback={<PageLoadingFallback fullScreen />}>
@@ -51,41 +57,41 @@ export function DeferredAppShell() {
     </Suspense>
   );
 }
-
 export function DeferredDashboardPage() {
   return <DeferredPage page={DashboardPage} />;
 }
-
 export function DeferredModelsPage() {
   return <DeferredPage page={ModelsPage} />;
 }
-
 export function DeferredClientKeysPage() {
   return <DeferredPage page={ClientKeysPage} />;
 }
-
 export function DeferredCreativeConsolePage() {
   return <DeferredPage page={CreativeConsolePage} />;
 }
-
 export function DeferredRequestAuditsPage() {
   return <DeferredPage page={RequestAuditsPage} />;
 }
-
 export function DeferredGalleryPage() {
   return <DeferredPage page={GalleryPage} />;
 }
-
 export function DeferredVideoGalleryPage() {
   return <DeferredPage page={VideoGalleryPage} />;
 }
-
 export function DeferredApiDocsPage() {
   return <DeferredPage page={ApiDocsPage} />;
 }
-
+export function DeferredSettingsRouteShell() {
+  return <DeferredPage page={SettingsRouteShell} />;
+}
 export function DeferredSettingsPage() {
   return <DeferredPage page={SettingsPage} />;
+}
+export function DeferredMediaSettingsPage() {
+  return <DeferredPage page={MediaSettingsPage} />;
+}
+export function DeferredNetworkSettingsPage() {
+  return <DeferredPage page={NetworkSettingsPage} />;
 }
 
 function PageLoadingFallback({ fullScreen = false }: { fullScreen?: boolean }) {

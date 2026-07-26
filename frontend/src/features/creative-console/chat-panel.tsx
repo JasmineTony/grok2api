@@ -1,17 +1,9 @@
 import { useMutation } from "@tanstack/react-query";
-import { ArrowUp, Check, Globe, History, Loader2, Sparkle, SquarePen, Trash2 } from "lucide-react";
+import { ArrowUp, Globe, Sparkle, Square } from "lucide-react";
 import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -21,7 +13,6 @@ import {
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
 import { Textarea } from "@/components/ui/textarea";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   type ChatSession,
   type ConversationMessage,
@@ -30,11 +21,15 @@ import {
   createCreativeCacheKey,
   createCreativeMessageId,
   currentTimestamp,
-  formatChatSessionTime,
   loadChatSessions,
   persistChatSessions,
   upsertChatSession,
 } from "@/features/creative-console/chat-history";
+import { ChatToolbarPortal } from "@/features/creative-console/chat-toolbar-portal";
+import {
+  ChatTruncateDialog,
+  type PendingTruncateAction,
+} from "@/features/creative-console/chat-truncate-dialog";
 import {
   type ChatMessage,
   type ChatStreamSnapshot,
@@ -61,6 +56,7 @@ type ChatRequest = {
   assistantMessageId: string;
   apiKey: string;
   model: string;
+  requestSeq: number;
 };
 
 const composerClassName =
@@ -74,7 +70,7 @@ export function ChatPanel({
   storageScope,
   toolbarElement,
 }: CreativePanelProps & { storageScope: string; toolbarElement: HTMLDivElement | null }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const apiClient = useApiClient();
   const [initialHistory] = useState(() => {
     const sessions = loadChatSessions(storageScope);
@@ -91,9 +87,15 @@ export function ChatPanel({
   const [promptCacheKey, setPromptCacheKey] = useState(initialHistory.active.promptCacheKey);
   const [prompt, setPrompt] = useState("");
   const [messages, setMessages] = useState<ConversationMessage[]>(initialHistory.active.messages);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [pendingTruncate, setPendingTruncate] = useState<PendingTruncateAction | null>(null);
   const streamSnapshotRef = useRef<ChatStreamSnapshot>({ text: "", reasoning: "", tools: [] });
   const streamFrameRef = useRef<number | null>(null);
   const requestControllerRef = useRef<AbortController | null>(null);
+  // requestSeq starts at 1 and increases; 0 means no active request owns the stream callbacks.
+  const requestSeqRef = useRef(0);
+  const activeRequestSeqRef = useRef(0);
   const restoredInitialModelRef = useRef(false);
 
   useEffect(() => {
@@ -142,16 +144,56 @@ export function ChatPanel({
 
   useEffect(
     () => () => {
-      if (streamFrameRef.current !== null) cancelAnimationFrame(streamFrameRef.current);
-      requestControllerRef.current?.abort();
+      cancelActiveRequest();
     },
     [],
   );
 
-  function renderStreamSnapshot(messageId: string): void {
+  function isActiveRequest(requestSeq: number): boolean {
+    return activeRequestSeqRef.current === requestSeq;
+  }
+
+  function cancelActiveRequest(): void {
+    if (streamFrameRef.current !== null) {
+      cancelAnimationFrame(streamFrameRef.current);
+      streamFrameRef.current = null;
+    }
+    requestControllerRef.current?.abort();
+    requestControllerRef.current = null;
+    // 0 = no active request owns stream callbacks.
+    activeRequestSeqRef.current = 0;
+    streamSnapshotRef.current = { text: "", reasoning: "", tools: [] };
+  }
+
+  function invalidatePromptCache(): string {
+    const next = createCreativeCacheKey();
+    setPromptCacheKey(next);
+    return next;
+  }
+
+  function toRequestMessages(items: ConversationMessage[]): ChatMessage[] {
+    return items
+      .filter((message) => message.role === "user" || message.role === "assistant")
+      .filter((message) => message.content.trim())
+      .map(({ role, content }) => ({ role, content }));
+  }
+
+  function clearEditState(): void {
+    setEditingMessageId(null);
+    setEditDraft("");
+  }
+
+  function clearEditStateIfAtOrAfter(index: number): void {
+    if (!editingMessageId) return;
+    const editIndex = messages.findIndex((message) => message.id === editingMessageId);
+    if (editIndex < 0 || editIndex >= index) clearEditState();
+  }
+
+  function renderStreamSnapshot(messageId: string, requestSeq: number): void {
     if (streamFrameRef.current !== null) return;
     streamFrameRef.current = requestAnimationFrame(() => {
       streamFrameRef.current = null;
+      if (!isActiveRequest(requestSeq)) return;
       const snapshot = streamSnapshotRef.current;
       setMessages((current) =>
         current.map((message) =>
@@ -173,6 +215,7 @@ export function ChatPanel({
       streamSnapshotRef.current = { text: "", reasoning: "", tools: [] };
       const controller = new AbortController();
       requestControllerRef.current = controller;
+      activeRequestSeqRef.current = request.requestSeq;
       return createChatResponse(apiClient, {
         apiKey: request.apiKey,
         model: request.model,
@@ -183,12 +226,14 @@ export function ChatPanel({
         xSearch: request.xSearch,
         signal: controller.signal,
         onUpdate: (snapshot) => {
+          if (!isActiveRequest(request.requestSeq)) return;
           streamSnapshotRef.current = snapshot;
-          renderStreamSnapshot(request.assistantMessageId);
+          renderStreamSnapshot(request.assistantMessageId, request.requestSeq);
         },
       });
     },
     onSuccess: (result, request) => {
+      if (!isActiveRequest(request.requestSeq)) return;
       if (streamFrameRef.current !== null) cancelAnimationFrame(streamFrameRef.current);
       streamFrameRef.current = null;
       setMessages((current) =>
@@ -199,15 +244,22 @@ export function ChatPanel({
         ),
       );
       requestControllerRef.current = null;
+      activeRequestSeqRef.current = 0;
     },
-    onError: (_error, request) => {
+    onError: (error, request) => {
+      if (!isActiveRequest(request.requestSeq)) return;
       if (streamFrameRef.current !== null) cancelAnimationFrame(streamFrameRef.current);
       streamFrameRef.current = null;
       const snapshot = streamSnapshotRef.current;
+      const aborted = isAbortError(error);
       setMessages((current) =>
         current.flatMap((message) => {
           if (message.id !== request.assistantMessageId) return [message];
-          if (!snapshot.text.trim() && !snapshot.reasoning.trim() && snapshot.tools.length === 0)
+          // Drop empty/aborted assistant placeholders; keep partial text from real failures.
+          if (
+            aborted ||
+            (!snapshot.text.trim() && !snapshot.reasoning.trim() && snapshot.tools.length === 0)
+          )
             return [];
           return [
             {
@@ -220,8 +272,59 @@ export function ChatPanel({
         }),
       );
       requestControllerRef.current = null;
+      activeRequestSeqRef.current = 0;
     },
   });
+
+  function beginAssistantRequest(params: {
+    history: ConversationMessage[];
+    assistantMessage: ConversationMessage;
+    cacheKey: string;
+    cancelPrevious?: boolean;
+  }): void {
+    if (!apiKey || !model) return;
+    if (params.cancelPrevious) cancelActiveRequest();
+    const requestSeq = ++requestSeqRef.current;
+    const requestMessages = toRequestMessages(params.history);
+    mutation.reset();
+    mutation.mutate({
+      messages: requestMessages,
+      promptCacheKey: params.cacheKey,
+      reasoningEffort,
+      webSearch,
+      xSearch,
+      assistantMessageId: params.assistantMessage.id,
+      apiKey,
+      model,
+      requestSeq,
+    });
+  }
+
+  function stopGenerating(): void {
+    if (!mutation.isPending) return;
+    const assistantMessageId = mutation.variables?.assistantMessageId;
+    const snapshot = streamSnapshotRef.current;
+    cancelActiveRequest();
+    if (assistantMessageId) {
+      setMessages((current) =>
+        current.flatMap((message) => {
+          if (message.id !== assistantMessageId) return [message];
+          const updated = hasChatStreamContent(snapshot)
+            ? {
+                ...message,
+                content: snapshot.text,
+                reasoning: snapshot.reasoning,
+                tools: snapshot.tools,
+              }
+            : message;
+          if (!updated.content.trim() && !updated.reasoning?.trim() && !updated.tools?.length)
+            return [];
+          return [updated];
+        }),
+      );
+    }
+    mutation.reset();
+  }
 
   function submit(event?: FormEvent): void {
     event?.preventDefault();
@@ -239,28 +342,162 @@ export function ChatPanel({
       reasoning: "",
       tools: [],
     };
-    const requestMessages: ChatMessage[] = [
-      ...messages
-        .filter((message) => message.content.trim())
-        .map(({ role, content }) => ({ role, content })),
-      { role: "user", content: userText },
-    ];
-    setMessages((current) => [...current, userMessage, assistantMessage]);
+    const history = [...messages, userMessage];
+    setMessages([...history, assistantMessage]);
     setPrompt("");
+    clearEditState();
+    beginAssistantRequest({ history, assistantMessage, cacheKey: promptCacheKey });
+  }
+
+  function applyRegenerateAssistant(messageId: string): void {
+    if (!apiKey || !model) return;
+    const index = messages.findIndex((message) => message.id === messageId);
+    if (index < 0 || messages[index]?.role !== "assistant") return;
+    const history = messages.slice(0, index);
+    if (!history.some((message) => message.role === "user" && message.content.trim())) return;
+    // Allow interrupt-regenerate: cancel the in-flight stream first, then start a new one.
+    const cacheKey = invalidatePromptCache();
+    const assistantMessage: ConversationMessage = {
+      id: messageId,
+      role: "assistant",
+      content: "",
+      reasoning: "",
+      tools: [],
+    };
+    setMessages([...history, assistantMessage]);
+    clearEditState();
+    beginAssistantRequest({ history, assistantMessage, cacheKey, cancelPrevious: true });
+  }
+
+  function regenerateAssistant(messageId: string): void {
+    if (!apiKey || !model) return;
+    const index = messages.findIndex((message) => message.id === messageId);
+    if (index < 0 || messages[index]?.role !== "assistant") return;
+    const trailingCount = messages.length - index - 1;
+    if (trailingCount > 0) {
+      setPendingTruncate({ kind: "regenerate", messageId, trailingCount });
+      return;
+    }
+    applyRegenerateAssistant(messageId);
+  }
+
+  function startEditMessage(messageId: string): void {
+    if (mutation.isPending) return;
+    const target = messages.find((message) => message.id === messageId);
+    if (!target) return;
+    setEditingMessageId(messageId);
+    setEditDraft(target.content);
+  }
+
+  function cancelEditMessage(): void {
+    clearEditState();
+  }
+
+  function applyUserEditAndRegenerate(messageId: string, nextContent: string): void {
+    if (!apiKey || !model) return;
+    const index = messages.findIndex((message) => message.id === messageId);
+    if (index < 0) return;
+    const target = messages[index];
+    if (!target || target.role !== "user") return;
+    const cacheKey = invalidatePromptCache();
+    const historyPrefix = messages.slice(0, index);
+    const userMessage: ConversationMessage = { ...target, content: nextContent };
+    const assistantMessage: ConversationMessage = {
+      id: createCreativeMessageId(),
+      role: "assistant",
+      content: "",
+      reasoning: "",
+      tools: [],
+    };
+    const history = [...historyPrefix, userMessage];
+    setMessages([...history, assistantMessage]);
+    clearEditState();
+    beginAssistantRequest({ history, assistantMessage, cacheKey, cancelPrevious: true });
+  }
+
+  function applyDeleteMessage(messageId: string): void {
+    const index = messages.findIndex((message) => message.id === messageId);
+    if (index < 0) return;
+    cancelActiveRequest();
+    invalidatePromptCache();
+    // Drop the selected message and every turn after it so the transcript stays a single continuous branch.
+    const nextMessages = messages.slice(0, index);
+    setMessages(nextMessages);
+    if (nextMessages.length === 0) {
+      setSessions((current) => {
+        const next = current.filter((session) => session.id !== sessionId);
+        return persistChatSessions(storageScope, next);
+      });
+    }
+    clearEditStateIfAtOrAfter(index);
     mutation.reset();
-    mutation.mutate({
-      messages: requestMessages,
-      promptCacheKey,
-      reasoningEffort,
-      webSearch,
-      xSearch,
-      assistantMessageId: assistantMessage.id,
-      apiKey,
-      model,
-    });
+  }
+
+  function saveEditMessage(messageId: string): void {
+    if (mutation.isPending) return;
+    const nextContent = editDraft.trim();
+    if (!nextContent) return;
+    const index = messages.findIndex((message) => message.id === messageId);
+    if (index < 0) return;
+    const target = messages[index];
+    if (!target) return;
+
+    if (target.role === "assistant") {
+      // Local-only edit for assistant replies; keep subsequent turns intact.
+      // Clear reasoning/tools so they cannot contradict the edited body.
+      if (index < messages.length - 1) invalidatePromptCache();
+      setMessages((current) =>
+        current.map((message) => {
+          if (message.id !== messageId) return message;
+          const next = { ...message, content: nextContent };
+          delete next.reasoning;
+          delete next.tools;
+          return next;
+        }),
+      );
+      clearEditState();
+      return;
+    }
+
+    // Editing a user message truncates the branch and re-requests a new reply.
+    if (!apiKey || !model) return;
+    const trailingCount = messages.length - index - 1;
+    if (trailingCount > 0) {
+      setPendingTruncate({ kind: "edit-user", messageId, content: nextContent, trailingCount });
+      return;
+    }
+    applyUserEditAndRegenerate(messageId, nextContent);
+  }
+
+  function deleteMessage(messageId: string): void {
+    if (mutation.isPending) return;
+    const index = messages.findIndex((message) => message.id === messageId);
+    if (index < 0) return;
+    const trailingCount = messages.length - index - 1;
+    if (trailingCount > 0) {
+      setPendingTruncate({ kind: "delete", messageId, trailingCount });
+      return;
+    }
+    applyDeleteMessage(messageId);
+  }
+
+  function confirmPendingTruncate(): void {
+    if (!pendingTruncate) return;
+    const action = pendingTruncate;
+    setPendingTruncate(null);
+    if (action.kind === "delete") {
+      applyDeleteMessage(action.messageId);
+      return;
+    }
+    if (action.kind === "regenerate") {
+      applyRegenerateAssistant(action.messageId);
+      return;
+    }
+    applyUserEditAndRegenerate(action.messageId, action.content);
   }
 
   function clearConversation(): void {
+    cancelActiveRequest();
     setSessions((current) => {
       const next = current.filter((session) => session.id !== sessionId);
       return persistChatSessions(storageScope, next);
@@ -271,6 +508,8 @@ export function ChatPanel({
     setMessages([]);
     setPromptCacheKey(blank.promptCacheKey);
     setPrompt("");
+    clearEditState();
+    setPendingTruncate(null);
     mutation.reset();
   }
 
@@ -303,6 +542,8 @@ export function ChatPanel({
     setWebSearch(blank.webSearch);
     setXSearch(blank.xSearch);
     setPrompt("");
+    clearEditState();
+    setPendingTruncate(null);
     mutation.reset();
   }
 
@@ -335,6 +576,8 @@ export function ChatPanel({
     setWebSearch(target.webSearch);
     setXSearch(target.xSearch);
     setPrompt("");
+    clearEditState();
+    setPendingTruncate(null);
     mutation.reset();
     if (target.model && modelOptions.some((option) => option.publicId === target.model))
       onModelChange(target.model);
@@ -347,88 +590,29 @@ export function ChatPanel({
     }
   }
 
+  function handleEditKeyDown(event: KeyboardEvent<HTMLTextAreaElement>, messageId: string): void {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancelEditMessage();
+      return;
+    }
+    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      saveEditMessage(messageId);
+    }
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      {toolbarElement
-        ? createPortal(
-            <>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="rounded-full"
-                    aria-label={t("creativeConsole.newConversation")}
-                    onClick={startNewConversation}
-                    disabled={mutation.isPending}
-                  >
-                    <SquarePen />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{t("creativeConsole.newConversation")}</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="rounded-full"
-                    aria-label={t("creativeConsole.clearCurrent")}
-                    onClick={clearConversation}
-                    disabled={messages.length === 0 || mutation.isPending}
-                  >
-                    <Trash2 />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{t("creativeConsole.clearCurrent")}</TooltipContent>
-              </Tooltip>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="rounded-full"
-                    aria-label={t("creativeConsole.history")}
-                    disabled={mutation.isPending}
-                  >
-                    <History />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-80">
-                  <DropdownMenuLabel>{t("creativeConsole.history")}</DropdownMenuLabel>
-                  {sessions.length === 0 ? (
-                    <div className="px-2 py-5 text-center text-xs text-muted-foreground">
-                      {t("creativeConsole.noHistory")}
-                    </div>
-                  ) : (
-                    sessions.map((session) => (
-                      <DropdownMenuItem
-                        key={session.id}
-                        className="min-h-12 gap-2"
-                        onSelect={() => switchConversation(session.id)}
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-xs">{session.title}</div>
-                          <div className="mt-0.5 truncate text-[10px] text-muted-foreground">
-                            {session.model || t("creativeConsole.model")} ·{" "}
-                            {formatChatSessionTime(session.updatedAt, i18n.language)}
-                          </div>
-                        </div>
-                        {session.id === sessionId ? (
-                          <Check className="text-muted-foreground" />
-                        ) : null}
-                      </DropdownMenuItem>
-                    ))
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </>,
-            toolbarElement,
-          )
-        : null}
+      <ChatToolbarPortal
+        toolbarElement={toolbarElement}
+        sessions={sessions}
+        sessionId={sessionId}
+        pending={mutation.isPending}
+        onNewConversation={startNewConversation}
+        onClearConversation={clearConversation}
+        onSwitchConversation={switchConversation}
+      />
       <MessageScrollerProvider autoScroll defaultScrollPosition="end">
         <MessageScroller className="min-h-0 flex-1">
           <MessageScrollerViewport aria-label={t("creativeConsole.messageList")}>
@@ -452,6 +636,17 @@ export function ChatPanel({
                     loading={
                       mutation.isPending && mutation.variables?.assistantMessageId === message.id
                     }
+                    busy={mutation.isPending}
+                    editing={editingMessageId === message.id}
+                    editDraft={editingMessageId === message.id ? editDraft : ""}
+                    onEditDraftChange={setEditDraft}
+                    onStartEdit={() => startEditMessage(message.id)}
+                    onCancelEdit={cancelEditMessage}
+                    onSaveEdit={() => saveEditMessage(message.id)}
+                    onEditKeyDown={(event) => handleEditKeyDown(event, message.id)}
+                    onRegenerate={() => regenerateAssistant(message.id)}
+                    onStop={stopGenerating}
+                    onDelete={() => deleteMessage(message.id)}
                   />
                 </MessageScrollerItem>
               ))}
@@ -510,20 +705,46 @@ export function ChatPanel({
                 active={reasoningEffort !== "auto" && reasoningEffort !== "none"}
               />
             </div>
-            <Button
-              type="submit"
-              size="icon"
-              aria-label={t("creativeConsole.send")}
-              disabled={!apiKey || !model || !prompt.trim() || mutation.isPending}
-            >
-              {mutation.isPending ? <Loader2 className="animate-spin" /> : <ArrowUp />}
-            </Button>
+            {mutation.isPending ? (
+              <Button
+                type="button"
+                size="icon"
+                variant="secondary"
+                aria-label={t("creativeConsole.stopGenerating")}
+                onClick={stopGenerating}
+              >
+                <Square className="size-3.5 fill-current" />
+              </Button>
+            ) : (
+              <Button
+                type="submit"
+                size="icon"
+                aria-label={t("creativeConsole.send")}
+                disabled={!apiKey || !model || !prompt.trim()}
+              >
+                <ArrowUp />
+              </Button>
+            )}
           </div>
         </div>
         {mutation.isError ? (
           <div className="mt-1 px-2 text-[11px] text-destructive">{mutation.error.message}</div>
         ) : null}
       </form>
+
+      <ChatTruncateDialog
+        pending={pendingTruncate}
+        onClose={() => setPendingTruncate(null)}
+        onConfirm={confirmPendingTruncate}
+      />
     </div>
   );
+}
+
+function isAbortError(error: unknown): boolean {
+  return (error instanceof DOMException || error instanceof Error) && error.name === "AbortError";
+}
+
+function hasChatStreamContent(snapshot: ChatStreamSnapshot): boolean {
+  return Boolean(snapshot.text.trim() || snapshot.reasoning.trim() || snapshot.tools.length);
 }

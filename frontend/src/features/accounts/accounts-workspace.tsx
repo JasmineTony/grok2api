@@ -35,6 +35,12 @@ export type AccountsWorkspaceProps = {
   setTypeFilter: Dispatch<SetStateAction<string>>;
   statusFilter: string;
   setStatusFilter: Dispatch<SetStateAction<string>>;
+  egressFilter: string;
+  setEgressFilter: Dispatch<SetStateAction<string>>;
+  agreementFilter: string;
+  setAgreementFilter: Dispatch<SetStateAction<string>>;
+  associationFilter: string;
+  setAssociationFilter: Dispatch<SetStateAction<string>>;
   renewalFilter: string;
   setRenewalFilter: Dispatch<SetStateAction<string>>;
   riskFilter: string;
@@ -48,6 +54,9 @@ export type AccountsWorkspaceProps = {
   openWebConversion: (targets: string[] | "all") => void;
   setWebAccountScriptsTargets: Dispatch<SetStateAction<string[] | "all" | null>>;
   batchBillingMutation: VoidMutation;
+  batchQuotaResetMutation: VoidMutation;
+  allQuotaResetMutation: VoidMutation;
+  setEgressConfigurationOpen: Dispatch<SetStateAction<boolean>>;
   batchTokenMutation: VoidMutation;
   setBatchDeleteOpen: Dispatch<SetStateAction<boolean>>;
   setSyncAllOpen: Dispatch<SetStateAction<boolean>>;

@@ -1,4 +1,4 @@
-﻿import { type TFunction } from "i18next";
+import { type TFunction } from "i18next";
 import { useState } from "react";
 import { Controller, type UseFormReturn } from "react-hook-form";
 
@@ -13,12 +13,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Switch } from "@/components/ui/switch";
-import {
-  DurationInput,
-  SettingsField,
-  SettingsPane,
-  SettingsSection,
-} from "@/features/settings/settings-layout";
+import { DurationInput, SettingsField, SettingsSection } from "@/features/settings/settings-layout";
 import type { SettingsForm } from "@/features/settings/settings-model";
 
 type Confirmation = "enabled" | "includeDisabled" | null;
@@ -51,7 +46,7 @@ export function SettingsAccountMaintenancePanel({
   }
 
   return (
-    <SettingsPane value="accounts">
+    <div className="space-y-8">
       <SettingsSection title={t("settings.accounts.title")}>
         <div className="space-y-0">
           <SettingsField
@@ -184,6 +179,6 @@ export function SettingsAccountMaintenancePanel({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </SettingsPane>
+    </div>
   );
 }

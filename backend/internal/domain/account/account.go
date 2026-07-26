@@ -110,7 +110,7 @@ const (
 	AuthStatusReauthRequired AuthStatus = "reauthRequired"
 )
 
-// State ???????????????AuthStatus ????????? API?
+// State models routing health independently from the legacy AuthStatus compatibility field.
 type State string
 
 const (
@@ -135,7 +135,7 @@ var states = [...]State{StateReady, StateDegraded, StateCooldown, StateQuotaExha
 
 func States() []State { return append([]State(nil), states[:]...) }
 
-// StateEvent ??????????????????? ApplyStateEvent ?????
+// StateEvent is the normalized input consumed by ApplyStateEvent.
 type StateEvent string
 
 const (
@@ -150,7 +150,7 @@ const (
 	EventEnabled             StateEvent = "enabled"
 )
 
-// StateEventInput ?????????????
+// StateEventInput contains the evidence used for a state transition.
 type StateEventInput struct {
 	Event      StateEvent
 	At         time.Time
@@ -169,7 +169,7 @@ type StateHistoryEvent struct {
 	CreatedAt time.Time
 }
 
-// ApplyStateEvent ?????????????????????????
+// ApplyStateEvent deterministically computes the next account state from a normalized event.
 func ApplyStateEvent(current State, enabled bool, input StateEventInput) State {
 	if !enabled || input.Event == EventDisabled {
 		return StateDisabled

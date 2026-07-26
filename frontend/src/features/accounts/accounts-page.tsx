@@ -24,6 +24,12 @@ export function AccountsPage() {
     setTypeFilter,
     statusFilter,
     setStatusFilter,
+    egressFilter,
+    setEgressFilter,
+    agreementFilter,
+    setAgreementFilter,
+    associationFilter,
+    setAssociationFilter,
     renewalFilter,
     setRenewalFilter,
     riskFilter,
@@ -37,6 +43,17 @@ export function AccountsPage() {
     openWebConversion,
     setWebAccountScriptsTargets,
     batchBillingMutation,
+    batchQuotaResetMutation,
+    allQuotaResetMutation,
+    egressConfigurationOpen,
+    setEgressConfigurationOpen,
+    egressConfigurationTask,
+    setEgressConfigurationTask,
+    egressNodeID,
+    setEgressNodeID,
+    egressNodesQuery,
+    bindEgressMutation,
+    unbindEgressMutation,
     batchTokenMutation,
     setBatchDeleteOpen,
     setSyncAllOpen,
@@ -148,6 +165,12 @@ export function AccountsPage() {
         setTypeFilter={setTypeFilter}
         statusFilter={statusFilter}
         setStatusFilter={setStatusFilter}
+        egressFilter={egressFilter}
+        setEgressFilter={setEgressFilter}
+        agreementFilter={agreementFilter}
+        setAgreementFilter={setAgreementFilter}
+        associationFilter={associationFilter}
+        setAssociationFilter={setAssociationFilter}
         renewalFilter={renewalFilter}
         setRenewalFilter={setRenewalFilter}
         riskFilter={riskFilter}
@@ -161,6 +184,9 @@ export function AccountsPage() {
         openWebConversion={openWebConversion}
         setWebAccountScriptsTargets={setWebAccountScriptsTargets}
         batchBillingMutation={batchBillingMutation}
+        batchQuotaResetMutation={batchQuotaResetMutation}
+        allQuotaResetMutation={allQuotaResetMutation}
+        setEgressConfigurationOpen={setEgressConfigurationOpen}
         batchTokenMutation={batchTokenMutation}
         setBatchDeleteOpen={setBatchDeleteOpen}
         setSyncAllOpen={setSyncAllOpen}
@@ -233,6 +259,25 @@ export function AccountsPage() {
           exportPending: exportMutation.isPending,
           onExportOpenChange: setExportOpen,
           onExport: () => exportMutation.mutate(),
+        }}
+        egressBulk={{
+          open: egressConfigurationOpen,
+          provider,
+          count: selected.size,
+          task: egressConfigurationTask,
+          nodeID: egressNodeID,
+          nodes: egressNodesQuery.data?.items ?? [],
+          pending: bindEgressMutation.isPending || unbindEgressMutation.isPending,
+          onOpenChange: (open) => {
+            setEgressConfigurationOpen(open);
+            if (!open) setEgressNodeID("");
+          },
+          onTaskChange: setEgressConfigurationTask,
+          onNodeChange: setEgressNodeID,
+          onSubmit: () => {
+            if (egressConfigurationTask === "bind") bindEgressMutation.mutate();
+            else unbindEgressMutation.mutate();
+          },
         }}
         device={{
           open: deviceOpen,

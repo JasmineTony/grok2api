@@ -16,6 +16,109 @@ export function createTokenFixture() {
   } as const;
 }
 
+function createSettingsSnapshotFixture() {
+  return {
+    config: {
+      server: { maxConcurrentRequests: 100 },
+      providerBuild: {
+        baseURL: "https://build.example.test",
+        fallbackBaseURL: "https://api.x.ai",
+        clientVersion: "0.2.111",
+        clientIdentifier: "grok-build",
+        tokenAuth: "configured",
+        tokenAuthConfigured: true,
+        userAgent: "Grok/0.2.111",
+        responseHeaderTimeout: "45s",
+      },
+      providerWeb: {
+        baseURL: "https://grok.com",
+        quotaTimeout: "30s",
+        chatTimeout: "2m",
+        imageTimeout: "5m",
+        videoTimeout: "10m",
+        statsigMode: "url",
+        statsigManualValue: "",
+        statsigManualConfigured: false,
+        statsigSignerURL: "http://statsig.local/sign",
+        clearanceMode: "manual",
+        flareSolverrURL: "http://flaresolverr.local/v1",
+        clearanceTimeout: "30s",
+        clearanceRefresh: "1h",
+        mediaConcurrency: 2,
+        allowNSFW: false,
+        recoveryBackoffBase: "30s",
+        recoveryBackoffMax: "5m",
+      },
+      providerConsole: { baseURL: "https://console.x.ai", chatTimeout: "30s" },
+      batch: {
+        importConcurrency: 2,
+        conversionConcurrency: 2,
+        syncConcurrency: 2,
+        refreshConcurrency: 2,
+        randomDelay: "250ms",
+      },
+      media: {
+        maxImageBytes: 8388608,
+        maxTotalBytes: 8589934592,
+        cleanupThresholdPercent: 80,
+        cleanupInterval: "1h",
+      },
+      frontend: { publicApiBaseURL: "https://api.example.test" },
+      routing: {
+        stickyTTL: "1h",
+        cooldownBase: "30s",
+        cooldownMax: "5m",
+        capacityWait: "1s",
+        maxAttempts: 3,
+        preferFreeBuild: true,
+        segmentedSelector: { enabled: true, minCandidates: 100, windowSize: 16 },
+      },
+      audit: { bufferSize: 1024, batchSize: 64, flushInterval: "1s", commitDelayMS: 10 },
+      clientKeyDefaults: { rpmLimit: 60, maxConcurrent: 4 },
+      accounts: {
+        markBuildForbiddenReauth: false,
+        buildForbiddenReauthCodes: ["blocked-user"],
+        autoCleanReauthEnabled: false,
+        autoCleanReauthInterval: "10m",
+        autoCleanReauthMinAge: "1h",
+        autoCleanIncludeDisabled: false,
+      },
+    },
+    recommendedProviderBuild: { clientVersion: "0.2.111", userAgent: "Grok/0.2.111" },
+    updatedAt: "2099-01-01T00:00:00Z",
+    revision: "fixture-revision",
+    restartRequired: [],
+  };
+}
+
+function createEgressNodesFixture() {
+  return {
+    items: [],
+    defaultUserAgents: {
+      grok_build: "",
+      grok_web: "Mozilla/5.0",
+      grok_console: "Mozilla/5.0",
+      grok_web_asset: "Mozilla/5.0",
+    },
+  };
+}
+
+function createEgressOperationsFixture() {
+  return {
+    probeIntervalSeconds: 300,
+    autoAssignEnabled: false,
+    autoBalanceEnabled: false,
+    assignmentIntervalSeconds: 600,
+    fallbacks: {
+      grok_build: { mode: "none" },
+      grok_web: { mode: "direct" },
+      grok_console: { mode: "none" },
+      grok_web_asset: { mode: "direct" },
+    },
+    updatedAt: "2099-01-01T00:00:00Z",
+  };
+}
+
 function ok(data: unknown) {
   return {
     status: 200,
@@ -37,8 +140,24 @@ export async function installAuthenticatedApiMocks(page: Page): Promise<void> {
       await route.fulfill(ok(admin));
       return;
     }
+    if (url.pathname.endsWith("/settings")) {
+      await route.fulfill(ok(createSettingsSnapshotFixture()));
+      return;
+    }
+    if (url.pathname.endsWith("/egress-nodes")) {
+      await route.fulfill(ok(createEgressNodesFixture()));
+      return;
+    }
+    if (url.pathname.endsWith("/egress-sources")) {
+      await route.fulfill(ok({ items: [] }));
+      return;
+    }
+    if (url.pathname.endsWith("/egress-operations")) {
+      await route.fulfill(ok(createEgressOperationsFixture()));
+      return;
+    }
     // These fixtures exercise shell and lazy-route boundaries. Feature-level
-    // decoders and component tests own the detailed response contracts.
+    // decoders and component tests own the remaining detailed response contracts.
     await route.fulfill(ok({}));
   });
 }

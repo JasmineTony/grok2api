@@ -33,7 +33,6 @@ import {
   cleanupAccounts,
   convertWebAccountsToBuild,
   deleteAccount,
-  deleteAccounts,
   type DeviceSessionDTO,
   enableWebAccountNSFW,
   exportAccounts,
@@ -46,7 +45,6 @@ import {
   refreshAccountBilling,
   refreshAccountQuota,
   refreshAccountsQuota,
-  refreshAccountsTokens,
   refreshAccountToken,
   refreshAllAccountBilling,
   refreshAllAccountTokens,
@@ -61,6 +59,8 @@ import {
   type WebAccountScriptsInput,
   type WebConsoleSyncInput,
 } from "@/features/accounts/accounts-api";
+import { useAccountBulkMaintenance } from "@/features/accounts/use-account-bulk-maintenance";
+import { useAccountEgressBinding } from "@/features/accounts/use-account-egress-binding";
 import {
   type DeviceAuthorizationStatus,
   useDeviceAuthorization,
@@ -90,6 +90,9 @@ export function useAccountsPageController() {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [egressFilter, setEgressFilter] = useState("");
+  const [agreementFilter, setAgreementFilter] = useState("");
+  const [associationFilter, setAssociationFilter] = useState("");
   const [renewalFilter, setRenewalFilter] = useState("");
   const [riskFilter, setRiskFilter] = useState("");
   const [sort, setSort] = useState<TableSort>({
@@ -179,6 +182,9 @@ export function useAccountsPageController() {
       debouncedSearch,
       typeFilter,
       statusFilter,
+      egressFilter,
+      agreementFilter,
+      associationFilter,
       renewalFilter,
       riskFilter,
       sort.field,
@@ -192,6 +198,10 @@ export function useAccountsPageController() {
         search: debouncedSearch,
         type: typeFilter,
         status: statusFilter,
+        egress: egressFilter,
+        ...(provider === "grok_web"
+          ? { agreement: agreementFilter, association: associationFilter }
+          : {}),
         ...(provider === "grok_build" ? { renewal: renewalFilter, risk: riskFilter } : {}),
         sortBy: sort.field,
         sortOrder: sort.order,
@@ -206,10 +216,27 @@ export function useAccountsPageController() {
     queryFn: () => listAccountStateEvents(apiClient, stateHistoryAccount?.id ?? ""),
     enabled: Boolean(stateHistoryAccount),
   });
+  const result = accountsQuery.data;
+  const pageIDs = result?.items.map((account) => account.id) ?? [];
+  const { selected, selectedOnPage, allPageSelected, resetSelection, togglePage, toggleAccount } =
+    useAccountSelection(provider, pageIDs);
+
+  function clearSelection(): void {
+    resetSelection();
+  }
+
   const invalidateAccountData = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["accounts"] });
     void queryClient.invalidateQueries({ queryKey: ["accounts", "summary"] });
   }, [queryClient]);
+  const egressBinding = useAccountEgressBinding({
+    provider,
+    selected,
+    onSuccess: () => {
+      clearSelection();
+      invalidateAccountData();
+    },
+  });
   const updateMutation = useMutation({
     mutationFn: (values: AccountFormValues) => {
       if (!editing) throw new Error(t("errors.generic"));
@@ -502,23 +529,12 @@ export function useAccountsPageController() {
     },
     onError: showError,
   });
-  const batchTokenMutation = useMutation({
-    mutationFn: () => refreshAccountsTokens(apiClient, [...selected], provider),
-    onSuccess: (result) => {
-      clearSelection();
-      invalidateAccountData();
-      toast.success(t("accounts.allTokensRefreshed", result));
-    },
-    onError: showError,
-  });
-  const batchDeleteMutation = useMutation({
-    mutationFn: () => deleteAccounts(apiClient, [...selected], provider),
-    onSuccess: () => {
-      clearSelection();
-      setBatchDeleteOpen(false);
-      invalidateAccountData();
-      toast.success(t("accounts.deleted"));
-    },
+  const bulkMaintenance = useAccountBulkMaintenance({
+    provider,
+    selected,
+    onClearSelection: clearSelection,
+    onBatchDeleteClose: () => setBatchDeleteOpen(false),
+    onRefresh: invalidateAccountData,
     onError: showError,
   });
   const cleanupMutation = useMutation({
@@ -556,6 +572,9 @@ export function useAccountsPageController() {
     resetSelection(value);
     setTypeFilter("");
     setStatusFilter("");
+    setEgressFilter("");
+    setAgreementFilter("");
+    setAssociationFilter("");
     setRenewalFilter("");
     setRiskFilter("");
     setQuickImportOpen(false);
@@ -625,15 +644,6 @@ export function useAccountsPageController() {
     showAccountError(error, t);
   }
 
-  const result = accountsQuery.data;
-  const pageIDs = result?.items.map((account) => account.id) ?? [];
-  const { selected, selectedOnPage, allPageSelected, resetSelection, togglePage, toggleAccount } =
-    useAccountSelection(provider, pageIDs);
-
-  function clearSelection(): void {
-    resetSelection();
-  }
-
   function changeSort(field: string, initialOrder: SortOrder): void {
     setSort((current) => nextTableSort(current, field, initialOrder));
     setPage(1);
@@ -648,8 +658,11 @@ export function useAccountsPageController() {
     importMutation.isPending ||
     batchUpdateMutation.isPending ||
     batchBillingMutation.isPending ||
-    batchTokenMutation.isPending ||
-    batchDeleteMutation.isPending ||
+    bulkMaintenance.batchQuotaResetMutation.isPending ||
+    bulkMaintenance.allQuotaResetMutation.isPending ||
+    bulkMaintenance.batchTokenMutation.isPending ||
+    bulkMaintenance.batchDeleteMutation.isPending ||
+    egressBinding.pending ||
     cleanupMutation.isPending ||
     webConfirmationMutation.isPending ||
     webAccountScriptsMutation.isPending;
@@ -674,6 +687,12 @@ export function useAccountsPageController() {
     setTypeFilter,
     statusFilter,
     setStatusFilter,
+    egressFilter,
+    setEgressFilter,
+    agreementFilter,
+    setAgreementFilter,
+    associationFilter,
+    setAssociationFilter,
     renewalFilter,
     setRenewalFilter,
     riskFilter,
@@ -687,7 +706,18 @@ export function useAccountsPageController() {
     openWebConversion,
     setWebAccountScriptsTargets,
     batchBillingMutation,
-    batchTokenMutation,
+    batchQuotaResetMutation: bulkMaintenance.batchQuotaResetMutation,
+    allQuotaResetMutation: bulkMaintenance.allQuotaResetMutation,
+    egressConfigurationOpen: egressBinding.open,
+    setEgressConfigurationOpen: egressBinding.setOpen,
+    egressConfigurationTask: egressBinding.task,
+    setEgressConfigurationTask: egressBinding.setTask,
+    egressNodeID: egressBinding.nodeID,
+    setEgressNodeID: egressBinding.setNodeID,
+    egressNodesQuery: egressBinding.nodesQuery,
+    bindEgressMutation: egressBinding.bindMutation,
+    unbindEgressMutation: egressBinding.unbindMutation,
+    batchTokenMutation: bulkMaintenance.batchTokenMutation,
     setBatchDeleteOpen,
     setSyncAllOpen,
     setRenewAllOpen,
@@ -757,7 +787,7 @@ export function useAccountsPageController() {
     deleting,
     batchDeleteOpen,
     deleteMutation,
-    batchDeleteMutation,
+    batchDeleteMutation: bulkMaintenance.batchDeleteMutation,
     cleanupOpen,
     cleanupStatuses,
     cleanupMutation,

@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -27,6 +28,7 @@ import (
 	infraegress "github.com/chenyme/grok2api/backend/internal/infra/egress"
 	"github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
+	neterrorpkg "github.com/chenyme/grok2api/backend/internal/pkg/neterror"
 	"github.com/chenyme/grok2api/backend/internal/repository"
 )
 
@@ -37,7 +39,7 @@ var (
 	ErrResponseAccountUnavailable = errors.New("Response 绑定的上游账号不可用")
 	ErrResponseStateUnsupported   = errors.New("目标模型不支持有状态 Response")
 	ErrConversationUnsupported    = errors.New("目标模型不支持当前对话协议")
-	ErrLedgerUnavailable          = errors.New("????????")
+	ErrLedgerUnavailable          = errors.New("计费账本暂不可用")
 	ErrVideoInputTooLarge         = errors.New("视频参考图片总大小超过 32 MiB")
 )
 
@@ -63,7 +65,7 @@ type Input struct {
 	// It only controls whether native x_search is added to existing client tools; it is not an authentication result.
 	AllowClientToolCacheRoute bool
 	PreviousResponseID        string
-	// GrokTurnIndex ????? Grok Shell ???????????????????
+	// GrokTurnIndex forwards only the turn supplied by a real Grok Shell client; the server never infers or increments it.
 	GrokTurnIndex  string
 	Operation      audit.Operation
 	ForcedProvider string
@@ -624,9 +626,9 @@ attemptLoop:
 		var err error
 		selectionStarted := time.Now()
 		if ownership != nil {
-			lease, err = s.selector.AcquirePinned(ctx, route.Provider, ownership.AccountID, route.UpstreamModel, quotaMode, true)
+			lease, err = s.selector.AcquirePinned(ctx, route.Provider, ownership.AccountID, route.ID, route.UpstreamModel, quotaMode, true)
 		} else {
-			lease, err = s.selector.Acquire(ctx, route.Provider, route.UpstreamModel, quotaMode, affinityKey, excluded, !quotaProbeAttempted)
+			lease, err = s.selector.Acquire(ctx, route.Provider, route.ID, route.UpstreamModel, quotaMode, affinityKey, excluded, !quotaProbeAttempted)
 		}
 		timing.markSelection(time.Since(selectionStarted))
 		if err != nil {
@@ -684,6 +686,9 @@ attemptLoop:
 				continue
 			}
 			lastFailure = newTransportUpstreamFailure(err, credential.ID, credential.Name)
+			if !isRetryableTransportFailure(credential.Provider, err) {
+				break
+			}
 			failureFingerprints[lastFailure.Fingerprint]++
 			if failureFingerprints[lastFailure.Fingerprint] >= 2 {
 				break
@@ -728,6 +733,9 @@ attemptLoop:
 					break
 				} else {
 					lastFailure = newTransportUpstreamFailure(err, credential.ID, credential.Name)
+					if !isRetryableTransportFailure(credential.Provider, err) {
+						break attemptLoop
+					}
 				}
 				continue
 			}
@@ -743,17 +751,35 @@ attemptLoop:
 		}
 		egressForbidden := s.providers.RetryForbiddenAsEgress(credential.Provider) && response.StatusCode == http.StatusForbidden
 		finalEgressForbidden := egressForbidden && (attempt > 0 || attempt+1 >= attempts)
+		// Classify 403 bodies before egress retry. Definitive blocked-account signals invalidate and rotate the account;
+		// all other 403 responses retain the egress retry path without penalizing the account.
+		if response.StatusCode == http.StatusForbidden {
+			retryAfter := parseRetryAfter(response.Header.Get("Retry-After"), time.Now().UTC())
+			body, _ := readRetryableBody(response.Body)
+			lastFailure = newHTTPUpstreamFailure(response.StatusCode, body, credential.ID, credential.Name)
+			if lastFailure.AccountBlocked {
+				failureHandled := s.markReauthRequired(ctx, input.RequestID, credential, fmt.Sprintf("%s account is blocked", credential.Provider))
+				if lastFailure.AccountScoped && !failureHandled {
+					s.selector.MarkFailure(ctx, credential, response.StatusCode, retryAfter)
+				}
+				lease.Release()
+				lastErr = fmt.Errorf("上游返回 %d", response.StatusCode)
+				s.logger.Warn("upstream_request_failed", "request_id", input.RequestID, "account_id", credential.ID, "provider", credential.Provider, "status", response.StatusCode, "upstream_code", lastFailure.UpstreamCode, "account_scoped", lastFailure.AccountScoped, "account_blocked", true)
+				continue
+			}
+			if egressForbidden && !finalEgressForbidden {
+				// A non-blocking 403 is an egress/browser-session failure and must not penalize the account.
+				delete(excluded, credential.ID)
+				lease.Release()
+				lastErr = fmt.Errorf("上游出口会话被拒绝")
+				continue
+			}
+			// Restore the consumed final non-blocking 403 body for the common response path.
+			response.Body = io.NopCloser(bytes.NewReader(body))
+		}
 		if isRetryableResponse(response, route.Provider) && !finalEgressForbidden {
 			retryAfter := parseRetryAfter(response.Header.Get("Retry-After"), time.Now().UTC())
 			body, _ := readRetryableBody(response.Body)
-			if egressForbidden {
-				// Web 403/code 7 means the browser session at the egress was rejected; the Provider rebuilt it and reduced node health, so do not penalize the account.
-				delete(excluded, credential.ID)
-				lease.Release()
-				lastErr = fmt.Errorf("Grok Web 出口会话被反机器人规则拒绝")
-				lastFailure = newHTTPUpstreamFailure(response.StatusCode, body, credential.ID, credential.Name)
-				continue
-			}
 			lastFailure = newHTTPUpstreamFailure(response.StatusCode, body, credential.ID, credential.Name)
 			buildForbiddenReauth := credential.Provider == accountdomain.ProviderBuild && s.shouldInvalidateBuildForbidden(lastFailure)
 			if buildForbiddenReauth {
@@ -797,6 +823,9 @@ attemptLoop:
 						break attemptLoop
 					}
 					lastFailure = newTransportUpstreamFailure(err, credential.ID, credential.Name)
+					if !isRetryableTransportFailure(credential.Provider, err) {
+						break attemptLoop
+					}
 					continue attemptLoop
 				}
 				goto handleResponse
@@ -813,7 +842,7 @@ attemptLoop:
 				s.selector.MarkFreeQuotaExhausted(ctx, credential, used, limit, quotaRecoveryHints{Billing: lease.Billing, QuotaMode: lease.QuotaMode, RetryAfter: retryAfter})
 				failureHandled = true
 			} else if lastFailure.ModelQuotaExhausted {
-				s.selector.MarkModelQuotaExhausted(ctx, credential, route.UpstreamModel, retryAfter)
+				s.selector.MarkModelQuotaExhausted(ctx, credential, lease.Billing, route.UpstreamModel, retryAfter)
 				failureHandled = true
 			} else if lastFailure.FreeQuotaExhausted {
 				s.selector.MarkFreeQuotaExhausted(ctx, credential, 0, 0, quotaRecoveryHints{Billing: lease.Billing, QuotaMode: lease.QuotaMode, RetryAfter: retryAfter})
@@ -1046,6 +1075,10 @@ func isUpstreamStreamFailure(errorCode string) bool {
 	}
 }
 
+func isRetryableTransportFailure(providerValue accountdomain.Provider, err error) bool {
+	return providerValue != accountdomain.ProviderBuild || !neterrorpkg.IsResponseHeaderTimeout(err)
+}
+
 func isSSOCredentialRejected(err error, credential accountdomain.Credential) bool {
 	if credential.AuthType != accountdomain.AuthTypeSSO || err == nil {
 		return false
@@ -1180,7 +1213,12 @@ func (s *Service) forwardOwnedResponse(ctx context.Context, input ResourceInput,
 	if !ok {
 		return nil, ErrResponseAccountUnavailable
 	}
-	lease, err := s.selector.AcquirePinned(ctx, ownership.Provider, ownership.AccountID, "", "", false)
+	operation := "response_get"
+	if method == http.MethodDelete {
+		operation = "response_delete"
+	}
+	physicalCallCtx := infraegress.WithPhysicalCallTrace(ctx, string(ownership.Provider), operation)
+	lease, err := s.selector.AcquirePinned(ctx, ownership.Provider, ownership.AccountID, 0, "", "", false)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrResponseAccountUnavailable, err)
 	}
@@ -1193,7 +1231,7 @@ func (s *Service) forwardOwnedResponse(ctx context.Context, input ResourceInput,
 	if input.RawQuery != "" {
 		path += "?" + input.RawQuery
 	}
-	response, err := adapter.ForwardResponse(ctx, provider.ResponseResourceRequest{Credential: credential, Method: method, Path: path})
+	response, err := adapter.ForwardResponse(physicalCallCtx, provider.ResponseResourceRequest{Credential: credential, Method: method, Path: path})
 	if err != nil {
 		if isSSOCredentialRejected(err, credential) {
 			s.markSSOCredentialRejected(ctx, credential, fmt.Sprintf("%s SSO credential rejected", credential.Provider))
@@ -1220,7 +1258,7 @@ func (s *Service) forwardOwnedResponse(ctx context.Context, input ResourceInput,
 			lease.Release()
 			return nil, refreshErr
 		}
-		response, err = adapter.ForwardResponse(ctx, provider.ResponseResourceRequest{Credential: refreshed, Method: method, Path: path})
+		response, err = adapter.ForwardResponse(physicalCallCtx, provider.ResponseResourceRequest{Credential: refreshed, Method: method, Path: path})
 		credential = refreshed
 		if err != nil {
 			lease.Release()

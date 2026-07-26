@@ -37,7 +37,7 @@ type accountModel struct {
 	AuthStatus     string `gorm:"size:32;not null;check:chk_accounts_auth_status,auth_status IN ('active','reauthRequired')"`
 	State          string `gorm:"size:32;not null;default:ready;check:chk_accounts_state,state IN ('ready','degraded','cooldown','quota_exhausted','reauth_required','disabled')"`
 	StateChangedAt *time.Time
-	// ReauthMarkedAt ?? reauthRequired ????active ?? NULL?
+	// ReauthMarkedAt records when the account entered reauth_required; it is nil after recovery.
 	ReauthMarkedAt *time.Time
 
 	Priority         int     `gorm:"not null;default:1"`
@@ -192,8 +192,8 @@ func (quotaRecoveryModel) TableName() string { return "account_quota_recovery" }
 type modelRouteModel struct {
 	ID            uint64    `gorm:"primaryKey;autoIncrement"`
 	PublicID      string    `gorm:"size:255;uniqueIndex;not null;check:chk_model_routes_public_id,length(trim(public_id)) BETWEEN 1 AND 255"`
-	Provider      string    `gorm:"size:32;uniqueIndex:uidx_provider_upstream;not null;check:chk_model_routes_provider,provider IN ('grok_build','grok_web','grok_console')"`
-	UpstreamModel string    `gorm:"size:255;uniqueIndex:uidx_provider_upstream;not null;check:chk_model_routes_upstream_model,length(trim(upstream_model)) BETWEEN 1 AND 255"`
+	Provider      string    `gorm:"size:32;index:idx_model_routes_provider_upstream;not null;check:chk_model_routes_provider,provider IN ('grok_build','grok_web','grok_console')"`
+	UpstreamModel string    `gorm:"size:255;index:idx_model_routes_provider_upstream;not null;check:chk_model_routes_upstream_model,length(trim(upstream_model)) BETWEEN 1 AND 255"`
 	Capability    string    `gorm:"size:32;not null;check:chk_model_routes_capability,capability IN ('responses','chat','image','image_edit','video')"`
 	Origin        string    `gorm:"size:32;not null;default:discovered;check:chk_model_routes_origin,origin IN ('catalog','discovered','manual')"`
 	Enabled       bool      `gorm:"not null"`

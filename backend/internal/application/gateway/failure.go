@@ -10,10 +10,11 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/chenyme/grok2api/backend/internal/infra/provider"
 	neterrorpkg "github.com/chenyme/grok2api/backend/internal/pkg/neterror"
 )
 
-// FailureCategory ?? Provider ???????????????????????
+// FailureCategory 描述 Provider 失败的稳定分类。
 type FailureCategory string
 
 const (
@@ -38,7 +39,7 @@ const (
 	ImpactReauth   FailureImpact = "reauth_required"
 )
 
-// UpstreamFailure ????????????????????????????????
+// UpstreamFailure 保存可安全暴露给下游和审计的上游失败分类，不包含响应正文或凭据。
 type UpstreamFailure struct {
 	Category               FailureCategory
 	Stage                  string
@@ -185,13 +186,13 @@ func newHTTPUpstreamFailure(status int, body []byte, accountID uint64, accountNa
 }
 
 func newTransportUpstreamFailure(err error, accountID uint64, accountName string) *UpstreamFailure {
-	status, code, message := http.StatusBadGateway, "upstream_network_error", "????????"
+	status, code, message := http.StatusBadGateway, "upstream_network_error", "连接上游服务失败"
 	category := FailureNetwork
 	if neterrorpkg.IsResponseHeaderTimeout(err) {
-		status, code, message = http.StatusGatewayTimeout, "upstream_header_timeout", "?????????"
+		status, code, message = http.StatusGatewayTimeout, "upstream_header_timeout", "等待上游响应头超时"
 		category = FailureTimeout
 	} else if errors.Is(err, context.DeadlineExceeded) {
-		code, message = "upstream_timeout", "????????"
+		code, message = "upstream_timeout", "连接上游服务失败"
 		category = FailureTimeout
 	}
 	return &UpstreamFailure{
@@ -235,7 +236,7 @@ func (e *UpstreamFailure) StateReason() string {
 	return truncateFailureCode(strings.Join(parts, " "))
 }
 
-// Normalized ???????????????????
+// Normalized 返回可记录且不包含敏感信息的结构化失败。
 func (e *UpstreamFailure) Normalized() map[string]any {
 	if e == nil {
 		return map[string]any{"category": string(FailureInternal), "code": "unknown"}
@@ -282,7 +283,7 @@ func isPermanentAccountDenial(text string) bool {
 }
 
 func isDefinitiveAccountBlock(text string) bool {
-	return containsAny(text, "blocked-user", "user is blocked")
+	return provider.IsDefinitiveAccountBlockText(text)
 }
 
 func isPaidQuotaExhaustion(text string) bool {
