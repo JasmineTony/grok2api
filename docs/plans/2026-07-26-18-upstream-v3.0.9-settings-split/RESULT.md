@@ -1,76 +1,74 @@
 # Iteration result: upstream v3.0.8-hotfix.1/v3.0.9 sync and settings split
 
 - Date: 2026-07-26
-- Status: Remote branch pushed; PR creation and CI pending
+- Status: Complete
 - Base commit: 7a1c5b7c199d461aa3ae82bdfbdaa0c4710d90de
 - First merge commit: d325d40323c52cb8cdbd96ab0e53c01580d7b7a1 (parents: local base + dae50ce67b95d5cad2b4168e32332c790b2c9ce6)
 - Second merge commit: 5176a23b58c3986ce7b69ea373837b09b9ca75fa (parents: d325d40323c52cb8cdbd96ab0e53c01580d7b7a1 + 834f9f70e57882438177b8ab89c3aaee52dffe2e)
-- Pull request: Not created; branch has not been pushed
+- Pull request: #39
+- Pull-request merge commit: 55cb016d67f0d76552c9e640e882761edb931731
+- CI run: 30203622573
+- CodeQL run: 30203622569
 
 ## Delivered
 
-- Completed the staged upstream merges for v3.0.8-hotfix.1 and v3.0.9 without unresolved index entries or conflict markers.
-- Preserved the independent repository version VERSION=v3.1.1; no upstream tag, version tag, Release, or GHCR publication was created.
-- Integrated Gateway ledger readiness, timeout and Build 403 policy behavior, structured blocked-user invalidation, quota recovery/reset, segmented/sticky routing, multi-public-ID model support, nullable tool schemas, session identity, Egress sources/operations/probes/assignments/rebalance, and additive SQLite/PostgreSQL migrations.
-- Split settings into /settings, /settings/media, and /settings/network using a shared snapshot/revision/FormProvider shell, dirty-state protection, lazy routes, responsive sub-navigation, and complete DTO submission.
-- Split Egress operations, source/node dialogs, account Egress binding and bulk maintenance into bounded modules. Creative-console toolbar and truncate confirmation are now independent components; chat-panel.tsx is below the code-audit threshold.
-- Removed known replacement-character and continuous-question-mark i18n corruption while keeping English/Chinese key parity.
-- Added an explicit pnpm audit allowlist for GHSA-qwww-vcr4-c8h2 only because the finding is limited to React Router RSC mode, which this application does not use, and no compatible patched react-router-dom release was available during this run. This is a tracked security exception, not a claim of zero vulnerabilities.
+- Completed staged upstream merges for v3.0.8-hotfix.1 and v3.0.9 while preserving both upstream commits as ancestors of the final main branch.
+- Integrated Gateway ledger readiness, timeout and Build 403 policy behavior, structured blocked-user invalidation, quota recovery/reset, segmented and sticky routing, multi-public-ID model support, nullable tool schemas, session identity, Egress sources/operations/probes/assignments/rebalance, and additive SQLite/PostgreSQL migrations.
+- Split settings into `/settings`, `/settings/media`, and `/settings/network` using a shared snapshot/revision/FormProvider shell, dirty-state protection, lazy routes, responsive sub-navigation, and complete DTO submission.
+- Split Egress operations, source/node dialogs, account Egress binding and bulk maintenance into bounded modules. Creative-console toolbar and truncate confirmation are independent components, and audited route/workspace/container modules remain below 500 lines.
+- Removed replacement-character and continuous-question-mark i18n corruption while keeping English/Chinese key parity.
+- Prepared the independent repository version as `VERSION=v3.2.0`; no upstream version tag was pushed to origin.
 
 ## Verification results
 
 ### Backend
 
-- go test -p 1 ./...: passed.
-- go vet ./...: passed.
-- govulncheck: 0 code-reachable and imported-package vulnerabilities; one unreachable required-module record remains.
-- Swagger regenerated with the repository Makefile-equivalent command and no diff in backend/docs: passed.
+- `go test -p 1 ./...`: passed.
+- `go vet ./...`: passed.
+- `govulncheck`: no code-reachable vulnerability.
+- Swagger regeneration: passed with no drift.
+- GitHub PostgreSQL race job: passed in CI run 30203622573.
 
 ### Frontend
 
-- Prettier check, TypeScript build, ESLint (zero warnings), Vitest coverage (14 files / 37 tests), Vite build, icon import check, chunk-cycle check, architecture audit, code audit and Knip completed successfully.
-- audit:architecture: 0 frozen findings.
-- audit:code: 0 findings; page/workspace/container length probe found no file over 500 lines.
-- Bundle budget passed; application CSS is 89,979 raw bytes and the Dashboard charts chunk is approximately 339.25 kB raw / 91.58 kB gzip.
-- jscpd completed with 8 historical clone groups (0.52% duplicated tokens); it is recorded for follow-up and did not introduce a new audit failure.
-- Chromium desktop/tablet/mobile: all 42 tests passed when run with two workers. The Windows Playwright/Vite webServer process did not terminate cleanly after reporting the passing results and was terminated locally; this is an execution-environment issue, not a test assertion failure.
-- WebKit smoke assertions passed. Firefox smoke could not create a content tab in this Windows environment (Firefox Failed to launch tab subprocess / browserContext.newPage); it remains a required remote CI check and is not marked as locally passed.
-- pnpm audit --audit-level high: one high finding is ignored by the explicit RSC-only allowlist above.
-- Frozen pnpm install was attempted with the repository-local pnpm 11.15.1 binary. Lockfile verification succeeded, but pnpm supply-chain metadata requests to registry.npmjs.org repeatedly timed out on this workstation; no lockfile mismatch was observed.
+- Prettier, TypeScript, ESLint, Vitest coverage (14 files / 37 tests), Vite build, icon check, bundle budget, chunk DAG, architecture audit, code audit and unused-code audit: passed.
+- Chromium desktop/tablet/mobile: 42 tests passed.
+- Firefox and WebKit smoke: passed in GitHub CI, closing the local Firefox-environment exception.
+- The frozen pnpm installation and supply-chain metadata policy passed on GitHub CI: 607 registry entries were validated in 9 seconds.
+- The explicit React Router RSC-only audit allowlist remains documented because this application does not enable RSC; no Critical advisory was present.
 
-### Repository and security
+### Repository, container and security
 
-- Markdown audit: 61 tracked Markdown files, valid relative links/UTF-8/index structure, no removable files.
-- git diff checks, unresolved-index check, conflict-marker scan and sensitive-pattern scan passed.
-- Local actionlint, Gitleaks, Hadolint and Docker/Compose executables are not installed on this workstation; unchanged workflow/container configuration remains for the corresponding CI jobs.
+- Markdown, UTF-8, relative-link, plan-index, conflict-marker and sensitive-pattern checks: passed.
+- Workflow/secret audit, container configuration and health smoke, Visual regression and both amd64/arm64 Docker jobs: passed.
+- The first container run exposed that the Dockerfile copied `package.json` and `pnpm-lock.yaml` without `pnpm-workspace.yaml`. Commit a0506deb1bb3532c7d90cbd3a24e403acc6a4d58 fixed the build context; the rerun passed.
+- CodeQL alerts 4, 6 and 7 were reviewed and dismissed as false positives. SHA-256 is used only for deterministic non-credential identifiers and idempotency keys, not password storage, password verification or authentication-key derivation.
 
-## Push gate evidence
+## Remote delivery
 
-- First remote push: completed on 2026-07-26 after the user approved deferring the Firefox-local and pnpm-metadata environment checks.
-- Origin branch: sync/upstream-v3.0.9-settings-split-20260726.
-- Pull request: not yet created because this terminal has SSH push access but no authenticated GitHub API/gh session.
-- Upstream tags were not pushed; no Release or GHCR workflow was triggered.
-- The branch is clean after the second merge commit and both upstream commits are ancestors of HEAD.
+- PR #39 passed all 15 checks and was merged with a Merge commit through the ChatGPT in-app browser.
+- The remote branch `sync/upstream-v3.0.9-settings-split-20260726` was deleted after merge.
+- The final main merge commit is 55cb016d67f0d76552c9e640e882761edb931731.
+- Both dae50ce67b95d5cad2b4168e32332c790b2c9ce6 and 834f9f70e57882438177b8ab89c3aaee52dffe2e are ancestors of main.
+- No upstream v3.0.8-hotfix.1 or v3.0.9 tag was pushed to origin.
 
 ## Deviations and follow-up
 
-1. The current machine has no usable Firefox browser. The user explicitly approved remote CI as the Firefox validation environment; the GitHub Firefox job must pass before merge.
-2. pnpm 11.15.1 registry metadata verification was retried for 120 seconds and timed out again. The user approved deferring this metadata-only check to the next version because the lockfile is consistent, pnpm audit exits successfully, Critical is 0, and the only High count is the documented RSC-only allowlist item.
-3. The eight historical jscpd clone groups should be addressed in a separate duplication-governance iteration rather than changing behavior in this sync.
-4. The branch has now been pushed under the explicit user exception; PR creation, required CI and final Merge commit remain pending.
+1. Local Firefox could not be executed on this workstation; GitHub CI Firefox smoke passed and is the authoritative result.
+2. Local pnpm registry metadata verification timed out; the same policy passed in GitHub CI, so this is closed rather than deferred.
+3. Eight historical jscpd clone groups remain a separate duplication-governance follow-up; they did not grow during this iteration.
 
 ## Rollback
 
-- Before any remote push, revert local commit 5176a23b58c3986ce7b69ea373837b09b9ca75fa to return to the first-merge boundary while retaining upstream ancestry for inspection.
-- After a remote merge, revert the final synchronization merge commit rather than rewriting history; additive migrations remain backward-readable after backup verification.
+- Revert merge commit 55cb016d67f0d76552c9e640e882761edb931731 rather than rewriting shared history.
+- Additive database migrations remain backward-readable; restore a verified database backup before any destructive operational rollback.
 
 ## Final acceptance
 
-- [x] Both upstream tag commits are ancestors of the local final branch.
+- [x] Both upstream tag commits are ancestors of final main.
 - [x] Upstream protocol, performance, Egress, quota, blocked-account and settings-split changes are integrated.
 - [x] Settings overview, Media, and Network & Proxy pages have clear ownership and deep links.
 - [x] Route pages/workspaces/containers are below 500 lines and architecture/code audits are clean.
-- [ ] All browser engines have passed locally (Firefox is environment-blocked; remote CI required).
-- [ ] Frozen pnpm install has completed on a networked runner.
-- [x] No tag, Release, or GHCR image was published.
-- [x] The local merge is documented; remote push/PR remains intentionally pending.
+- [x] Chromium, Firefox and WebKit required checks passed.
+- [x] Frozen pnpm install and registry metadata policy passed on a networked CI runner.
+- [x] PR #39 used a Merge commit and its remote branch was deleted.
