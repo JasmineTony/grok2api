@@ -1,7 +1,7 @@
 # Iteration result: upstream v3.0.8-hotfix.1/v3.0.9 sync and settings split
 
 - Date: 2026-07-26
-- Status: Local implementation complete; remote push and PR CI pending
+- Status: Remote branch pushed; PR creation and CI pending
 - Base commit: 7a1c5b7c199d461aa3ae82bdfbdaa0c4710d90de
 - First merge commit: d325d40323c52cb8cdbd96ab0e53c01580d7b7a1 (parents: local base + dae50ce67b95d5cad2b4168e32332c790b2c9ce6)
 - Second merge commit: 5176a23b58c3986ce7b69ea373837b09b9ca75fa (parents: d325d40323c52cb8cdbd96ab0e53c01580d7b7a1 + 834f9f70e57882438177b8ab89c3aaee52dffe2e)
@@ -46,17 +46,18 @@
 
 ## Push gate evidence
 
-- First remote push: not performed.
-- Origin branch and PR: not created.
+- First remote push: completed on 2026-07-26 after the user approved deferring the Firefox-local and pnpm-metadata environment checks.
+- Origin branch: sync/upstream-v3.0.9-settings-split-20260726.
+- Pull request: not yet created because this terminal has SSH push access but no authenticated GitHub API/gh session.
 - Upstream tags were not pushed; no Release or GHCR workflow was triggered.
 - The branch is clean after the second merge commit and both upstream commits are ancestors of HEAD.
 
 ## Deviations and follow-up
 
-1. Firefox smoke is blocked by the local Playwright Firefox runtime; run the unchanged Firefox project in GitHub CI before pushing/merging.
-2. Full frozen pnpm installation is blocked by registry metadata timeouts; rerun from a networked CI runner or workstation before the first push.
+1. The current machine has no usable Firefox browser. The user explicitly approved remote CI as the Firefox validation environment; the GitHub Firefox job must pass before merge.
+2. pnpm 11.15.1 registry metadata verification was retried for 120 seconds and timed out again. The user approved deferring this metadata-only check to the next version because the lockfile is consistent, pnpm audit exits successfully, Critical is 0, and the only High count is the documented RSC-only allowlist item.
 3. The eight historical jscpd clone groups should be addressed in a separate duplication-governance iteration rather than changing behavior in this sync.
-4. Because the delivery gate forbids an intermediate push, the remote PR and final Merge commit are intentionally pending these environment checks.
+4. The branch has now been pushed under the explicit user exception; PR creation, required CI and final Merge commit remain pending.
 
 ## Rollback
 
