@@ -58,6 +58,7 @@ export function useClientKeysPageController() {
       maxConcurrent: z.number().int().min(1, t("errors.positive")).max(1_024),
       billingUnlimited: z.boolean(),
       billingLimitUsd: z.number().min(0.01, t("errors.positive")),
+      allowModelAliases: z.boolean(),
       allowedModelIds: z.array(z.string()),
     })
     .superRefine((value, context) => {
@@ -79,6 +80,7 @@ export function useClientKeysPageController() {
       maxConcurrent: 8,
       billingUnlimited: true,
       billingLimitUsd: 10,
+      allowModelAliases: false,
       allowedModelIds: [],
     },
   });
@@ -129,6 +131,7 @@ export function useClientKeysPageController() {
         rpmLimit: values.rpmUnlimited ? 0 : values.rpmLimit,
         maxConcurrent: values.concurrencyUnlimited ? 0 : values.maxConcurrent,
         billingLimitUsdTicks: values.billingUnlimited ? 0 : usdToTicks(values.billingLimitUsd),
+        allowModelAliases: values.allowModelAliases,
         allowedModelIds: values.allowedModelIds,
         expiresAt: values.expiryUnlimited ? "" : new Date(values.expiresAt).toISOString(),
       };
@@ -207,6 +210,7 @@ export function useClientKeysPageController() {
       maxConcurrent: 8,
       billingUnlimited: true,
       billingLimitUsd: 10,
+      allowModelAliases: false,
       allowedModelIds: [],
     });
   }
@@ -226,6 +230,7 @@ export function useClientKeysPageController() {
       maxConcurrent: key.maxConcurrent > 0 ? key.maxConcurrent : 8,
       billingUnlimited: key.billingLimitUsdTicks === 0,
       billingLimitUsd: key.billingLimitUsdTicks > 0 ? ticksToUSD(key.billingLimitUsdTicks) : 10,
+      allowModelAliases: key.allowModelAliases,
       allowedModelIds: key.allowedModelIds,
     });
   }

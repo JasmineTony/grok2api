@@ -13,6 +13,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { DurationInput, SettingsField, SettingsSection } from "@/features/settings/settings-layout";
 import type { SettingsForm } from "@/features/settings/settings-model";
 
@@ -27,6 +28,7 @@ export function SettingsAccountMaintenancePanel({
 }) {
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
   const enabled = form.watch("accounts.autoCleanReauthEnabled") === true;
+  const buildForbiddenReauthEnabled = form.watch("accounts.markBuildForbiddenReauth") === true;
 
   function confirm(): void {
     if (confirmation === "includeDisabled") {
@@ -47,6 +49,49 @@ export function SettingsAccountMaintenancePanel({
 
   return (
     <div className="space-y-8">
+      <SettingsSection title={t("settingsBuildForbidden.title")}>
+        <div className="space-y-0">
+          <SettingsField
+            controlId="accounts-mark-build-forbidden-reauth"
+            label={t("settingsBuildForbidden.markInvalid")}
+            description={t("settingsBuildForbidden.markInvalidHelp")}
+          >
+            <Controller
+              control={form.control}
+              name="accounts.markBuildForbiddenReauth"
+              render={({ field }) => (
+                <div className="flex h-9 items-center">
+                  <Switch
+                    id="accounts-mark-build-forbidden-reauth"
+                    checked={Boolean(field.value)}
+                    onCheckedChange={field.onChange}
+                  />
+                </div>
+              )}
+            />
+          </SettingsField>
+          <SettingsField
+            controlId="accounts-build-forbidden-reauth-codes"
+            className="sm:col-span-2"
+            label={t("settingsBuildForbidden.codes")}
+            description={t("settingsBuildForbidden.codesHelp")}
+            error={
+              form.formState.errors.accounts?.buildForbiddenReauthCodes
+                ? t("settingsBuildForbidden.codesInvalid")
+                : undefined
+            }
+          >
+            <Textarea
+              id="accounts-build-forbidden-reauth-codes"
+              className="min-h-24 font-mono"
+              disabled={!buildForbiddenReauthEnabled}
+              placeholder={t("settingsBuildForbidden.codesPlaceholder")}
+              {...form.register("accounts.buildForbiddenReauthCodes")}
+            />
+          </SettingsField>
+        </div>
+      </SettingsSection>
+
       <SettingsSection title={t("settings.accounts.title")}>
         <div className="space-y-0">
           <SettingsField

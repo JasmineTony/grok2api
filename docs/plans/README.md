@@ -67,3 +67,5 @@ Templates are available in [`templates/`](./templates/).
 3. Finish `PLAN.md` before implementation starts.
 4. Add the directory to the table above.
 5. Keep `RESULT.md` current as verification and delivery are completed.
+
+| 2026-07-27 20 - Exact upstream v3.0.10 sync | [Plan](./2026-07-27-20-upstream-v3.0.10-sync/PLAN.md) | [Result](./2026-07-27-20-upstream-v3.0.10-sync/RESULT.md) | In progress |

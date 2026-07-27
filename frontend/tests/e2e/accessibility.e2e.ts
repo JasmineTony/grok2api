@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { test as anonymousTest } from "@playwright/test";
 
-import { expect, installAnonymousApiMocks, test } from "./fixtures";
+import { expect, expectMainReady, installAnonymousApiMocks, test } from "./fixtures";
 
 function seriousViolations(results: Awaited<ReturnType<AxeBuilder["analyze"]>>) {
   return results.violations.filter(
@@ -12,7 +12,7 @@ function seriousViolations(results: Awaited<ReturnType<AxeBuilder["analyze"]>>) 
 anonymousTest("login has no serious accessibility violations @cross-browser", async ({ page }) => {
   await installAnonymousApiMocks(page);
   await page.goto("/login");
-  await expect(page.locator("main")).toBeVisible();
+  await expectMainReady(page);
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
     .analyze();
@@ -23,7 +23,7 @@ test("authenticated shell has no serious accessibility violations @cross-browser
   authenticatedPage: page,
 }) => {
   await page.goto("/accounts");
-  await expect(page.locator("main")).toBeVisible();
+  await expectMainReady(page);
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
     .analyze();

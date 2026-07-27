@@ -14,6 +14,7 @@ import { useApiClient } from "@/shared/api/use-api-client";
 export function useAccountBulkMaintenance({
   provider,
   selected,
+  linkedDeleteTargets,
   onClearSelection,
   onBatchDeleteClose,
   onRefresh,
@@ -21,6 +22,7 @@ export function useAccountBulkMaintenance({
 }: {
   provider: AccountProvider;
   selected: Set<string>;
+  linkedDeleteTargets: AccountProvider[];
   onClearSelection: () => void;
   onBatchDeleteClose: () => void;
   onRefresh: () => void;
@@ -53,7 +55,7 @@ export function useAccountBulkMaintenance({
     onError,
   });
   const batchDeleteMutation = useMutation({
-    mutationFn: () => deleteAccounts(apiClient, selectedIDs(), provider),
+    mutationFn: () => deleteAccounts(apiClient, selectedIDs(), provider, linkedDeleteTargets),
     onSuccess: () => {
       onClearSelection();
       onBatchDeleteClose();

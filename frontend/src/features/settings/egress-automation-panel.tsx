@@ -118,6 +118,26 @@ export function EgressAutomationPanel({
       ) : (
         <div className="space-y-0">
           <AutomationRow
+            controlId="egress-probe-provider"
+            label={t("egressProbeProvider.label")}
+            description={t("egressProbeProvider.help")}
+          >
+            <Select
+              value={form.probeProvider}
+              onValueChange={(probeProvider: "ipinfo" | "cloudflare") =>
+                onChange({ ...form, probeProvider })
+              }
+            >
+              <SelectTrigger id="egress-probe-provider" className="h-8 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="cloudflare">Cloudflare</SelectItem>
+                <SelectItem value="ipinfo">IPinfo</SelectItem>
+              </SelectContent>
+            </Select>
+          </AutomationRow>
+          <AutomationRow
             controlId="egress-probe-interval"
             label={t("settings.egress.probeInterval")}
             description={t("settings.egress.probeIntervalHelp")}

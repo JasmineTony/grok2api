@@ -29,9 +29,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatAccountState } from "@/features/accounts/account-state";
 import type {
   AccountCleanupStatus,
+  AccountDeletionPreviewDTO,
   AccountDTO,
   AccountProvider,
   AccountStateEventDTO,
+  CleanupPreviewDTO,
   DeviceSessionDTO,
 } from "@/features/accounts/accounts-api";
 import { CopyButton } from "@/shared/components/copy-button";
@@ -289,10 +291,91 @@ export function AccountStateHistoryDialog({
   );
 }
 
+function LinkedDeleteOptions({
+  provider,
+  targets,
+  preview,
+  pending,
+  error,
+  disabled,
+  onChange,
+}: {
+  provider: AccountProvider;
+  targets: AccountProvider[];
+  preview: AccountDeletionPreviewDTO | CleanupPreviewDTO | undefined;
+  pending: boolean;
+  error: boolean;
+  disabled?: boolean;
+  onChange: (targets: AccountProvider[]) => void;
+}) {
+  const { t } = useTranslation();
+  const options = (["grok_web", "grok_build", "grok_console"] as AccountProvider[]).filter(
+    (target) => target !== provider,
+  );
+  const label = (target: AccountProvider) =>
+    target === "grok_build"
+      ? "Grok Build"
+      : target === "grok_console"
+        ? "Grok Console"
+        : "Grok Web";
+  return (
+    <div className="space-y-2 border-t pt-3">
+      <p className="text-sm font-medium">{t("accountLinkedDelete.title")}</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {options.map((target) => {
+          const checked = targets.includes(target);
+          return (
+            <label
+              key={target}
+              className="flex min-h-9 items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm"
+            >
+              <span className="flex items-center gap-2">
+                <Checkbox
+                  checked={checked}
+                  disabled={disabled}
+                  onCheckedChange={(value) =>
+                    onChange(
+                      value === true
+                        ? [...targets, target]
+                        : targets.filter((item) => item !== target),
+                    )
+                  }
+                />
+                {label(target)}
+              </span>
+              <span
+                className="text-right text-xs tabular-nums text-muted-foreground"
+                style={{ width: "2.5rem" }}
+              >
+                {checked && pending ? (
+                  <Spinner className="ml-auto size-3.5" />
+                ) : checked && !error ? (
+                  `+${preview?.linkedByProvider?.[target] ?? 0}`
+                ) : (
+                  ""
+                )}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+      <p className={error ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
+        {error ? t("accountLinkedDelete.previewFailed") : t("accountLinkedDelete.hint")}
+      </p>
+    </div>
+  );
+}
+
 export function AccountDeleteDialogs({
   deleting,
   batchOpen,
   selectedCount,
+  provider,
+  linkedTargets,
+  preview,
+  previewPending,
+  previewError,
+  onLinkedTargetsChange,
   onDeletingChange,
   onBatchOpenChange,
   onDelete,
@@ -301,6 +384,12 @@ export function AccountDeleteDialogs({
   deleting: AccountDTO | null;
   batchOpen: boolean;
   selectedCount: number;
+  provider: AccountProvider;
+  linkedTargets: AccountProvider[];
+  preview: AccountDeletionPreviewDTO | undefined;
+  previewPending: boolean;
+  previewError: boolean;
+  onLinkedTargetsChange: (targets: AccountProvider[]) => void;
   onDeletingChange: (account: AccountDTO | null) => void;
   onBatchOpenChange: (open: boolean) => void;
   onDelete: (id: string) => void;
@@ -318,10 +407,19 @@ export function AccountDeleteDialogs({
             <AlertDialogTitle>{t("accounts.deleteTitle")}</AlertDialogTitle>
             <AlertDialogDescription>{t("accounts.deleteDescription")}</AlertDialogDescription>
           </AlertDialogHeader>
+          <LinkedDeleteOptions
+            provider={provider}
+            targets={linkedTargets}
+            preview={preview}
+            pending={previewPending}
+            error={previewError}
+            onChange={onLinkedTargetsChange}
+          />
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-white hover:bg-destructive/90"
+              disabled={previewPending || previewError}
               onClick={() => deleting && onDelete(deleting.id)}
             >
               {t("accounts.cleanupStart")}
@@ -337,10 +435,19 @@ export function AccountDeleteDialogs({
             </AlertDialogTitle>
             <AlertDialogDescription>{t("accounts.deleteDescription")}</AlertDialogDescription>
           </AlertDialogHeader>
+          <LinkedDeleteOptions
+            provider={provider}
+            targets={linkedTargets}
+            preview={preview}
+            pending={previewPending}
+            error={previewError}
+            onChange={onLinkedTargetsChange}
+          />
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-white hover:bg-destructive/90"
+              disabled={previewPending || previewError}
               onClick={onBatchDelete}
             >
               {t("accounts.cleanupStart")}
@@ -357,6 +464,11 @@ export function AccountCleanupDialog({
   provider,
   statuses,
   pending,
+  linkedTargets,
+  preview,
+  previewPending,
+  previewError,
+  onLinkedTargetsChange,
   onOpenChange,
   onStatusesChange,
   onSubmit,
@@ -365,6 +477,11 @@ export function AccountCleanupDialog({
   provider: AccountProvider;
   statuses: Set<AccountCleanupStatus>;
   pending: boolean;
+  linkedTargets: AccountProvider[];
+  preview: CleanupPreviewDTO | undefined;
+  previewPending: boolean;
+  previewError: boolean;
+  onLinkedTargetsChange: (targets: AccountProvider[]) => void;
   onOpenChange: (open: boolean) => void;
   onStatusesChange: (statuses: Set<AccountCleanupStatus>) => void;
   onSubmit: () => void;
@@ -408,6 +525,20 @@ export function AccountCleanupDialog({
             </label>
           ))}
         </div>
+        <LinkedDeleteOptions
+          provider={provider}
+          targets={linkedTargets}
+          preview={preview}
+          pending={previewPending}
+          error={previewError}
+          disabled={pending}
+          onChange={onLinkedTargetsChange}
+        />
+        <p className="text-xs text-muted-foreground">
+          {preview && !previewPending && !previewError
+            ? t("accountLinkedDelete.total", { count: preview.total })
+            : null}
+        </p>
         <DialogFooter>
           <Button
             type="button"
@@ -422,7 +553,7 @@ export function AccountCleanupDialog({
             type="button"
             variant="destructive"
             size="sm"
-            disabled={pending || statuses.size === 0}
+            disabled={pending || statuses.size === 0 || previewPending || previewError}
             onClick={onSubmit}
           >
             {pending ? <Spinner /> : null}

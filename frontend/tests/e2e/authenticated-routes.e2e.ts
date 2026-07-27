@@ -1,4 +1,4 @@
-﻿import { expect, test } from "./fixtures";
+﻿import { expect, expectMainReady, test } from "./fixtures";
 
 const routes = [
   ["/dashboard", "dashboard"],
@@ -20,7 +20,7 @@ test.describe("authenticated route boundaries @cross-browser", () => {
       const uncaught: string[] = [];
       page.on("pageerror", (error) => uncaught.push(error.message));
       await page.goto(path);
-      await expect(page.locator("main")).toBeVisible();
+      await expectMainReady(page);
       await expect(page.locator("main")).toContainText(/.*/, {
         timeout: 10_000,
       });
