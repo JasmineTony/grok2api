@@ -1,10 +1,10 @@
 # Iteration result: Immersive UI and settings parity
 
-- Date completed: 2026-07-27 (local acceptance)
-- Status: Local acceptance complete; remote delivery pending
+- Date completed: 2026-07-27 (local acceptance; remote validation in progress)
+- Status: Local acceptance complete; PR #42 validation in progress
 - Base commit: `16d328df1a487afc00b3965d82c9fdc9296629e0`
 - Final commit: Pending
-- Pull request: Pending first remote push
+- Pull request: [#42](https://github.com/JasmineTony/grok2api/pull/42)
 
 ## Delivered
 
@@ -32,7 +32,7 @@
 | Backend tests | Passed | `go test -p 1 ./...` passed. |
 | Backend static and vulnerability analysis | Passed | `go vet ./...`; govulncheck v1.6.0 found zero reachable vulnerabilities. |
 | Swagger | Passed | Regenerated with swag v1.16.6; generated Go/JSON/YAML files have no drift. |
-| Chromium and WebKit browser acceptance | Passed | 70 tests passed across 1440x900, 768x1024, 375x812, and WebKit smoke; includes axe, five settings deep links, network overflow, read-only release content, and model Dialog. |
+| Chromium and WebKit browser acceptance | Passed after baseline refresh | 70 local tests passed across 1440x900, 768x1024, 375x812, and WebKit smoke. PR #42 then exposed four intentionally changed tablet/mobile Login baselines on `windows-latest`; the uploaded actual images were reviewed, promoted as the new baselines, and the six Login screenshot cases passed again locally. |
 | Firefox local smoke | Environment-limited | The Playwright Firefox context fails before page creation with `browserContext.newPage` reading `_page`; the user confirmed no functional local Firefox installation. GitHub Firefox smoke remains a required merge blocker. |
 | Chrome DevTools MCP | Passed with expected anonymous-auth diagnostic | Local login trace: LCP 871 ms, TTFB 8 ms, CLS 0.00, 60 resources, heap snapshot total 38.9 MB. The sole Console network error is the expected anonymous refresh `401`; no application exception or confirmed leak was observed. Raw trace and heap data remain in `.cache`. |
 | Release side effects | Passed locally | `VERSION` remains `v3.2.0`; no tag, Release, GHCR push, or upstream tag operation was performed. |
@@ -55,8 +55,8 @@
 
 ## Remote delivery gate
 
-- The branch remains local until this result, repository audits, and final diff checks are complete.
-- The first push will create one PR for the entire iteration.
+- The branch was pushed after the local acceptance gate, and PR #42 contains the entire iteration.
+- A follow-up commit updates only the four reviewed Login visual baselines discovered by the first remote Visual run.
 - Required checks: Backend, PostgreSQL race, Frontend, repository governance, Visual, Firefox/WebKit, container health, CodeQL, amd64 Docker, and arm64 Docker.
 - The PR must use Squash merge and delete the remote feature branch.
 
