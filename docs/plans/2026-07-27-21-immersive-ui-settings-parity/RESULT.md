@@ -1,9 +1,9 @@
 # Iteration result: Immersive UI and settings parity
 
-- Date completed: 2026-07-27 (local acceptance; remote validation in progress)
-- Status: Local acceptance complete; PR #42 validation in progress
+- Date completed: 2026-07-27
+- Status: Complete
 - Base commit: `16d328df1a487afc00b3965d82c9fdc9296629e0`
-- Final commit: Pending
+- Final commit: `048fd7c8efafb4ac1ee027ac064ab1eddfb82f41`
 - Pull request: [#42](https://github.com/JasmineTony/grok2api/pull/42)
 
 ## Delivered
@@ -33,8 +33,10 @@
 | Backend static and vulnerability analysis | Passed | `go vet ./...`; govulncheck v1.6.0 found zero reachable vulnerabilities. |
 | Swagger | Passed | Regenerated with swag v1.16.6; generated Go/JSON/YAML files have no drift. |
 | Chromium and WebKit browser acceptance | Passed after baseline refresh | 70 local tests passed across 1440x900, 768x1024, 375x812, and WebKit smoke. PR #42 then exposed four intentionally changed tablet/mobile Login baselines on `windows-latest`; the uploaded actual images were reviewed, promoted as the new baselines, and the six Login screenshot cases passed again locally. |
-| Firefox local smoke | Environment-limited | The Playwright Firefox context fails before page creation with `browserContext.newPage` reading `_page`; the user confirmed no functional local Firefox installation. GitHub Firefox smoke remains a required merge blocker. |
+| Firefox local smoke | Environment-limited, CI passed | The Windows host could not create a local Firefox page context, but the required GitHub Linux Firefox/WebKit job passed in PR run `30293147171`. |
 | Chrome DevTools MCP | Passed with expected anonymous-auth diagnostic | Local login trace: LCP 871 ms, TTFB 8 ms, CLS 0.00, 60 resources, heap snapshot total 38.9 MB. The sole Console network error is the expected anonymous refresh `401`; no application exception or confirmed leak was observed. Raw trace and heap data remain in `.cache`. |
+| Remote PR and merge | Passed | PR #42 passed all 15 checks and was squash-merged as `048fd7c8efafb4ac1ee027ac064ab1eddfb82f41`; PR run 30293147171. |
+| Post-merge main | Passed | CI run 30294101864 and CodeQL run 30294102345 passed; remote and local feature branches were removed and local main was fast-forwarded. |
 | Release side effects | Passed locally | `VERSION` remains `v3.2.0`; no tag, Release, GHCR push, or upstream tag operation was performed. |
 
 ## Compatibility and security review
@@ -55,18 +57,17 @@
 
 ## Remote delivery gate
 
-- The branch was pushed after the local acceptance gate, and PR #42 contains the entire iteration.
-- A follow-up commit updates only the four reviewed Login visual baselines discovered by the first remote Visual run.
-- Required checks: Backend, PostgreSQL race, Frontend, repository governance, Visual, Firefox/WebKit, container health, CodeQL, amd64 Docker, and arm64 Docker.
-- The PR must use Squash merge and delete the remote feature branch.
+- PR #42 passed Backend, PostgreSQL race, Frontend, repository governance, Visual, Firefox/WebKit, container health, CodeQL, amd64 Docker, and arm64 Docker checks.
+- The PR used Squash merge and the remote feature branch was deleted.
+- Local main was fast-forwarded to the squash commit and the local feature branch was deleted after verifying the merged content.
 
 ## Follow-up
 
-- A separate release iteration will update `VERSION` and publish `v3.3.0` only after this iteration is merged and final `main` is green.
+- Iteration 22 advances `VERSION` and publishes `v3.3.0` from the verified post-merge main baseline.
 
 ## Rollback
 
-Before delivery, preserve the local commits and delete the branch only if the iteration is intentionally abandoned. After delivery, revert the single Squash merge with a normal commit; never move a published tag or rewrite `main`.
+After delivery, revert squash commit `048fd7c8efafb4ac1ee027ac064ab1eddfb82f41` with a normal commit if rollback is required; never rewrite `main`.
 
 ## Final acceptance
 
@@ -76,5 +77,5 @@ Before delivery, preserve the local commits and delete the branch only if the it
 - [x] Runtime icons use Lucide and `check:ui-symbols` passes.
 - [x] The 58-field settings contract and public compatibility boundaries are preserved.
 - [x] Local backend, frontend, security, documentation, build, browser, and performance checks are complete except the documented Firefox host limitation.
-- [ ] Required GitHub checks and Squash delivery are complete.
-- [ ] Remote branch cleanup and final `origin/main` synchronization are complete.
+- [x] Required GitHub checks and Squash delivery are complete.
+- [x] Remote branch cleanup and final `origin/main` synchronization are complete.
