@@ -1,4 +1,6 @@
-﻿const loadAccountsPage = () => import("@/features/accounts/accounts-page");
+const loadAboutSettingsPage = () => import("@/features/settings/about-settings-page");
+const loadChangelogSettingsPage = () => import("@/features/settings/changelog-settings-page");
+const loadAccountsPage = () => import("@/features/accounts/accounts-page");
 const loadRequestAuditsPage = () => import("@/features/audits/request-audits-page");
 const loadClientKeysPage = () => import("@/features/client-keys/client-keys-page");
 const loadCreativeConsolePage = () => import("@/features/creative-console/creative-console-page");
@@ -27,6 +29,8 @@ const routeLoaders: ReadonlyArray<{
   { matches: (pathname) => pathname === "/settings", load: loadSettingsPage },
   { matches: (pathname) => pathname === "/settings/media", load: loadMediaSettingsPage },
   { matches: (pathname) => pathname === "/settings/network", load: loadNetworkSettingsPage },
+  { matches: (pathname) => pathname === "/settings/about", load: loadAboutSettingsPage },
+  { matches: (pathname) => pathname === "/settings/changelog", load: loadChangelogSettingsPage },
   { matches: (pathname) => pathname.startsWith("/docs/"), load: loadApiDocsPage },
 ];
 
@@ -42,8 +46,10 @@ export function prefetchPrimaryDeferredPages(): void {
   for (const loader of primaryLoaders) prefetch(loader);
 }
 export {
+  loadAboutSettingsPage,
   loadAccountsPage,
   loadApiDocsPage,
+  loadChangelogSettingsPage,
   loadClientKeysPage,
   loadCreativeConsolePage,
   loadDashboardPage,

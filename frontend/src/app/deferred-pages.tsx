@@ -1,8 +1,10 @@
-﻿import { type ComponentType, lazy, type LazyExoticComponent, Suspense } from "react";
+import { type ComponentType, lazy, type LazyExoticComponent, Suspense } from "react";
 
 import {
+  loadAboutSettingsPage,
   loadAccountsPage,
   loadApiDocsPage,
+  loadChangelogSettingsPage,
   loadClientKeysPage,
   loadCreativeConsolePage,
   loadDashboardPage,
@@ -17,6 +19,8 @@ import {
 } from "@/app/deferred-page-prefetch";
 import { loadAdminShell } from "@/app/deferred-shell-prefetch";
 
+const AboutSettingsPage = lazyNamed(loadAboutSettingsPage, "AboutSettingsPage");
+const ChangelogSettingsPage = lazyNamed(loadChangelogSettingsPage, "ChangelogSettingsPage");
 const AccountsPage = lazyNamed(loadAccountsPage, "AccountsPage");
 const AdminShell = lazyNamed(loadAdminShell, "AdminShell");
 const RequestAuditsPage = lazyNamed(loadRequestAuditsPage, "RequestAuditsPage");
@@ -47,6 +51,12 @@ function DeferredPage({ page: Page }: { page: ComponentType }) {
   );
 }
 
+export function DeferredAboutSettingsPage() {
+  return <DeferredPage page={AboutSettingsPage} />;
+}
+export function DeferredChangelogSettingsPage() {
+  return <DeferredPage page={ChangelogSettingsPage} />;
+}
 export function DeferredAccountsPage() {
   return <DeferredPage page={AccountsPage} />;
 }

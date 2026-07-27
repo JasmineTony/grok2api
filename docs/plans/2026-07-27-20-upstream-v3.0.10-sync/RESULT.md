@@ -1,11 +1,12 @@
 # Iteration result: Exact upstream v3.0.10 synchronization
 
-- Date completed: 2026-07-27 (local acceptance)
-- Status: Local acceptance complete; remote delivery pending
+- Date completed: 2026-07-27
+- Status: Complete
 - Base commit: `47088eb8743f03d580af5b07d94581eb2e5e2c5c`
 - Upstream parent: `c27f0545197b3edf41d5deedcc2c3c3597887766`
 - Local merge commit: `014126b42b709d39e6dcbe6d2eea8367e275fd66`
-- Pull request: Pending first remote push
+- Pull request: [#41](https://github.com/JasmineTony/grok2api/pull/41)
+- Final merge commit: `16d328df1a487afc00b3965d82c9fdc9296629e0`
 
 ## Delivered
 
@@ -31,7 +32,7 @@
 | Browser acceptance | Passed | 66 tests passed with two workers: Chromium desktop/tablet/mobile plus Firefox and WebKit smoke, including axe, settings deep links, model Dialog, and authenticated routes. Playwright-provided Firefox was used because no system Firefox is installed. |
 | Markdown and repository checks | Passed | 65 tracked Markdown files; UTF-8, relative links, plan structure, conflict markers, and `git diff --check` passed. |
 | Workflow and secret audit | Passed | actionlint v1.7.7 passed; Gitleaks v8.30.1 found no leaks in an isolated snapshot of all tracked worktree files. |
-| Container checks | Pending CI | Docker/Hadolint/Compose are not installed on this Windows host. The PR must not merge until the required container configuration, health smoke, and amd64/arm64 Docker jobs pass. |
+| Container checks | Passed in GitHub CI | Container configuration and health smoke plus amd64/arm64 image builds completed successfully. |
 
 ## Assumptions and defaults verification
 
@@ -40,14 +41,16 @@
 | Exact upstream target only | Passed locally | `MERGE_HEAD` is exactly `c27f0545197b3edf41d5deedcc2c3c3597887766`; no later upstream main commit or upstream tag is staged for push. |
 | `VERSION=v3.2.0` | Passed | The worktree and staged merge retain `v3.2.0`; the published tag is not moved. |
 | Compatibility-first conflict resolution | Passed | Backend and frontend focused tests cover credential invalidation, selectors, aliases, linked deletion, Egress, settings, reasoning, compaction, and protocol behavior. |
-| No release side effects | Passed locally | No tag, Release workflow, GHCR operation, or release configuration change was created. Remote verification remains a pre-merge requirement. |
+| No release side effects | Passed | The merge added no tag or Release and did not trigger the release-only GHCR publication workflow. |
 
-## Push gate evidence
+## Remote delivery evidence
 
-- The branch remains local while this result is written.
-- The first remote push is allowed only after the two-parent merge commit is created, the final diff/index checks pass, and `origin/main` is revalidated.
-- The PR must use Merge commit, not Squash, so the upstream tag commit remains an ancestor.
-- Required GitHub checks: Backend, PostgreSQL race, Frontend, Visual, Firefox/WebKit, workflow/secret, container health, CodeQL, amd64 Docker, and arm64 Docker.
+- PR #41 was merged with a two-parent Merge commit: `16d328df1a487afc00b3965d82c9fdc9296629e0`.
+- PR CI run `30282877002` and CodeQL run `30282876893` passed before merge.
+- Post-merge main CI run `30284369192` and CodeQL run `30284368047` passed, including Backend race, Verify, Visual, Firefox/WebKit, workflow/secret, container health, and amd64/arm64 image-build validation.
+- `git merge-base --is-ancestor c27f0545197b3edf41d5deedcc2c3c3597887766 origin/main` succeeds.
+- Local and remote `sync/upstream-v3.0.10-20260727` branches were deleted.
+- No upstream tag was pushed to origin, and no Release or GHCR publication was created by this synchronization.
 
 ## Deviations from plan
 
@@ -70,5 +73,5 @@ Before remote delivery, preserve the local merge commit and delete the branch on
 - [x] Backend, frontend, security, documentation, and browser checks are complete.
 - [x] The exact upstream commit is ready to be preserved as the merge's second parent.
 - [x] The branch has not been pushed before local acceptance.
-- [ ] Required GitHub checks and Merge-commit delivery are complete.
-- [ ] Remote branch cleanup and final `origin/main` ancestry verification are complete.
+- [x] Required GitHub checks and Merge-commit delivery are complete.
+- [x] Remote branch cleanup and final `origin/main` ancestry verification are complete.

@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import type { SettingsConfigDTO } from "@/features/settings/settings-api";
 import { settingsSchema, toSettingsDTO, toSettingsForm } from "@/features/settings/settings-model";
-import { shouldBlockSettingsNavigation } from "@/features/settings/settings-route-navigation";
+import {
+  isReadOnlySettingsPath,
+  shouldBlockSettingsNavigation,
+} from "@/features/settings/settings-route-navigation";
 
 const settingsConfigFixture = (): SettingsConfigDTO => ({
   server: { maxConcurrentRequests: 100 },
@@ -147,6 +150,10 @@ describe("settings route shell boundaries", () => {
     expect(shouldBlockSettingsNavigation(true, "/settings/media", "/settings/network")).toBe(false);
     expect(shouldBlockSettingsNavigation(true, "/settings/network", "/dashboard")).toBe(true);
     expect(shouldBlockSettingsNavigation(false, "/settings/network", "/dashboard")).toBe(false);
+    expect(shouldBlockSettingsNavigation(true, "/settings/network", "/settings/about")).toBe(false);
+    expect(isReadOnlySettingsPath("/settings/about")).toBe(true);
+    expect(isReadOnlySettingsPath("/settings/changelog")).toBe(true);
+    expect(isReadOnlySettingsPath("/settings/network")).toBe(false);
   });
 
   it("submits a full settings DTO so media edits do not erase network settings", () => {

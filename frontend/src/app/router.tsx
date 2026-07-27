@@ -1,10 +1,12 @@
-﻿import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter, Navigate } from "react-router-dom";
 
 import { AnonymousBoundary, AuthBoundary } from "@/app/auth-boundary";
 import {
+  DeferredAboutSettingsPage,
   DeferredAccountsPage,
   DeferredApiDocsPage,
   DeferredAppShell,
+  DeferredChangelogSettingsPage,
   DeferredClientKeysPage,
   DeferredCreativeConsolePage,
   DeferredDashboardPage,
@@ -51,6 +53,8 @@ export const router = createBrowserRouter([
               { index: true, element: <DeferredSettingsPage /> },
               { path: "media", element: <DeferredMediaSettingsPage /> },
               { path: "network", element: <DeferredNetworkSettingsPage /> },
+              { path: "about", element: <DeferredAboutSettingsPage /> },
+              { path: "changelog", element: <DeferredChangelogSettingsPage /> },
             ],
           },
         ],
