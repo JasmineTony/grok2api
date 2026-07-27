@@ -15,7 +15,7 @@
 
 Grok2API 以 Go 服务端和 React 管理端组成统一网关，把 Grok Build OAuth、Grok Web SSO 与 Grok Console SSO 管理为彼此隔离的账号池，并向客户端提供 OpenAI 与 Anthropic 风格接口。项目支持多账号调度、模型路由、客户端密钥、媒体任务、请求审计以及代理出口管理。
 
-当前源码版本为 **v3.2.0**，已依次合并上游 `v3.0.8-hotfix.1` 与 `v3.0.9`，并保留独立仓库的可靠性治理、Egress、设置页面组件化和兼容性约束。公开 API、配置语义、数据库兼容性和 Go module 路径保持不变。
+当前源码版本为 **v3.3.0**，已精确同步上游 `v3.0.10`，并保留独立仓库的可靠性治理、Egress、完整设置契约、五路由设置架构、Lucide 图标规范和兼容性约束。公开 API、配置语义、数据库兼容性和 Go module 路径保持不变。
 
 > [!IMPORTANT]
 > 本项目仅用于技术研究与学习交流。使用者应遵守上游服务条款及所在地法律法规，并自行承担账号、数据与部署风险。
@@ -146,7 +146,7 @@ curl http://127.0.0.1:8000/v1/responses \
 
 ### 为什么找不到 GHCR 镜像？
 
-稳定镜像位于 `ghcr.io/jasminetony/grok2api`。v3.2.0 发布完成后可使用 `v3.2.0`、`3.2.0`、`3.2`、`3` 或 `latest` 标签；发布完成前请继续固定到已经验证的 v3.1.1 digest。若部署环境无法访问 GHCR，仍可使用 `docker compose up -d --build` 从当前源码构建。
+稳定镜像位于 `ghcr.io/jasminetony/grok2api`。v3.3.0 发布完成后可使用 `v3.3.0`、`3.3.0`、`3.3`、`3` 或 `latest` 标签；发布完成前请继续固定到已经验证的 v3.2.0 digest。若部署环境无法访问 GHCR，仍可使用 `docker compose up -d --build` 从当前源码构建。
 
 普通分支、`main` 推送或单独推送标签都不会发布镜像。只有发布符合版本要求的 GitHub Release，并通过受保护的 `release` environment 审批后，才会写入 GHCR。
 
