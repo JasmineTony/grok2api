@@ -1,6 +1,7 @@
-﻿import {
+import {
   Box,
   ChevronDown,
+  Code2,
   Eye,
   Image,
   KeyRound,
@@ -44,10 +45,9 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { CurrentVersionLabel } from "@/entities/system/version-update";
 import { NotificationCenter } from "@/features/system/notification-center";
-import { CurrentVersionLabel } from "@/features/system/version-update";
 import { useAuthActions, useAuthState } from "@/shared/auth/use-auth";
-import { GitHubMark } from "@/shared/components/github-mark";
 import { PageScaffold } from "@/shared/components/page-scaffold";
 import { SiteFooter } from "@/shared/components/site-footer";
 import { cn } from "@/shared/lib/cn";
@@ -325,7 +325,7 @@ export function AppShell() {
                 rel="noreferrer"
                 aria-label="GitHub"
               >
-                <GitHubMark />
+                <Code2 className="size-4" />
               </a>
             </Button>
           </div>
@@ -377,7 +377,7 @@ export function AppShell() {
                 rel="noreferrer"
                 aria-label="GitHub"
               >
-                <GitHubMark />
+                <Code2 className="size-4" />
               </a>
             </Button>
           </div>

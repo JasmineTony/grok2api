@@ -1,4 +1,4 @@
-﻿import { expect, expectMainReady, test } from "./fixtures";
+import { expect, expectMainReady, test } from "./fixtures";
 
 const routes = [
   ["/dashboard", "dashboard"],
@@ -9,6 +9,8 @@ const routes = [
   ["/settings", "settings"],
   ["/settings/media", "settings-media"],
   ["/settings/network", "settings-network"],
+  ["/settings/about", "settings-about"],
+  ["/settings/changelog", "settings-changelog"],
   ["/creative-console", "creative-console"],
 ] as const;
 
@@ -29,6 +31,30 @@ test.describe("authenticated route boundaries @cross-browser", () => {
     });
   }
 
+  test("network settings contains horizontal scrolling to local panels", async ({
+    authenticatedPage: page,
+  }) => {
+    await page.goto("/settings/network");
+    await expectMainReady(page);
+    const overflow = await page.evaluate(
+      () =>
+        Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) >
+        window.innerWidth + 1,
+    );
+    expect(overflow).toBe(false);
+    await expect(page.getByRole("tab", { name: /Grok Build/ })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Egress proxies|出口代理/ })).toBeVisible();
+  });
+
+  test("read-only settings routes expose rendered release information", async ({
+    authenticatedPage: page,
+  }) => {
+    await page.goto("/settings/about");
+    await expect(page.locator("main").getByText("v3.2.0").first()).toBeVisible();
+    await page.goto("/settings/changelog");
+    await expect(page.getByRole("heading", { name: /Release notes|更新说明/ })).toBeVisible();
+    await expect(page.getByText("Security and routing refinements")).toBeVisible();
+  });
   test("model dialog mounts and unmounts without an application crash @cross-browser", async ({
     authenticatedPage: page,
   }) => {

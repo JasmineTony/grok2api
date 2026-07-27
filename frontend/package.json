@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b \u0026\u0026 vite build",
     "lint": "eslint . --max-warnings 0",
     "preview": "vite preview",
     "typecheck": "tsc -b",
@@ -21,12 +21,13 @@
     "test:coverage": "vitest run --coverage",
     "audit:unused": "node scripts/run-knip.mjs",
     "audit:code": "node scripts/audit-codebase.mjs",
-    "verify": "pnpm format:check && pnpm typecheck && pnpm lint && pnpm test:coverage && pnpm build && pnpm profile:summary && pnpm check:icons && pnpm check:bundle && pnpm check:chunks && pnpm audit:unused && pnpm audit:code && pnpm audit:architecture && pnpm audit:duplicates",
+    "verify": "pnpm format:check \u0026\u0026 pnpm typecheck \u0026\u0026 pnpm lint \u0026\u0026 pnpm test:coverage \u0026\u0026 pnpm build \u0026\u0026 pnpm profile:summary \u0026\u0026 pnpm check:icons \u0026\u0026 pnpm check:ui-symbols \u0026\u0026 pnpm check:bundle \u0026\u0026 pnpm check:chunks \u0026\u0026 pnpm audit:unused \u0026\u0026 pnpm audit:code \u0026\u0026 pnpm audit:architecture \u0026\u0026 pnpm audit:duplicates",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "audit:architecture": "node scripts/audit-architecture.mjs",
     "audit:duplicates": "jscpd src --config .jscpd.json",
-    "profile:summary": "node scripts/write-performance-summary.mjs"
+    "profile:summary": "node scripts/write-performance-summary.mjs",
+    "check:ui-symbols": "node scripts/check-ui-symbols.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
@@ -95,7 +96,7 @@
     "vitest": "4.1.10"
   },
   "engines": {
-    "node": ">=24.0.0 <25",
-    "pnpm": ">=11.15.0 <12"
+    "node": "\u003e=24.0.0 \u003c25",
+    "pnpm": "\u003e=11.15.0 \u003c12"
   }
 }

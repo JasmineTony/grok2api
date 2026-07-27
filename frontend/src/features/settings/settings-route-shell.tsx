@@ -1,8 +1,8 @@
-﻿import { RotateCcw } from "lucide-react";
+import { AlertTriangle, ArrowLeft, RotateCcw, Save } from "lucide-react";
 import { useEffect } from "react";
 import { FormProvider } from "react-hook-form";
 import { useTranslation } from "react-i18next";
-import { NavLink, Outlet, useBlocker } from "react-router-dom";
+import { Link, NavLink, Outlet, useBlocker, useLocation } from "react-router-dom";
 
 import {
   AlertDialog,
@@ -19,6 +19,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { SettingsRouteContext } from "@/features/settings/settings-route-context";
 import {
+  isReadOnlySettingsPath,
   settingsRoutes,
   shouldBlockSettingsNavigation,
 } from "@/features/settings/settings-route-navigation";
@@ -28,7 +29,9 @@ import { cn } from "@/shared/lib/cn";
 
 export function SettingsRouteShell() {
   const { t } = useTranslation();
+  const location = useLocation();
   const { form, settingsQuery, updateMutation, reset } = useSettings();
+  const readOnlyRoute = isReadOnlySettingsPath(location.pathname);
   const blocker = useBlocker(({ currentLocation, nextLocation }) =>
     shouldBlockSettingsNavigation(
       form.formState.isDirty,
@@ -81,32 +84,34 @@ export function SettingsRouteShell() {
             <h1 className="text-xl font-medium">{t("settings.title")}</h1>
             <p className="sr-only">{t("settings.description")}</p>
           </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-8"
-                  aria-label={t("common.reset")}
-                  disabled={loading || updateMutation.isPending || !form.formState.isDirty}
-                  onClick={reset}
-                >
-                  <RotateCcw />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{t("common.reset")}</TooltipContent>
-            </Tooltip>
-            <Button
-              type="submit"
-              size="sm"
-              disabled={loading || updateMutation.isPending || !form.formState.isDirty}
-            >
-              {updateMutation.isPending ? <Spinner /> : null}
-              {t("common.save")}
-            </Button>
-          </div>
+          {!readOnlyRoute ? (
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8"
+                    aria-label={t("common.reset")}
+                    disabled={loading || updateMutation.isPending || !form.formState.isDirty}
+                    onClick={reset}
+                  >
+                    <RotateCcw />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t("common.reset")}</TooltipContent>
+              </Tooltip>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={loading || updateMutation.isPending || !form.formState.isDirty}
+              >
+                {updateMutation.isPending ? <Spinner /> : <Save />}
+                {t("common.save")}
+              </Button>
+            </div>
+          ) : null}
         </header>
 
         <nav aria-label={t("settings.navigation.label")} className="overflow-x-auto border-b">
@@ -131,6 +136,29 @@ export function SettingsRouteShell() {
           </div>
         </nav>
 
+        {readOnlyRoute && form.formState.isDirty ? (
+          <div
+            role="status"
+            className="flex flex-col gap-3 rounded-lg bg-amber-500/10 px-4 py-3 text-xs sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div className="flex min-w-0 items-start gap-2">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-300" />
+              <div>
+                <p className="font-medium text-foreground">{t("settings.readOnlyDirty.title")}</p>
+                <p className="mt-1 leading-5 text-muted-foreground">
+                  {t("settings.readOnlyDirty.description")}
+                </p>
+              </div>
+            </div>
+            <Button type="button" variant="secondary" size="sm" className="shrink-0" asChild>
+              <Link to="/settings">
+                <ArrowLeft />
+                {t("settings.readOnlyDirty.back")}
+              </Link>
+            </Button>
+          </div>
+        ) : null}
+
         {loading ? <SettingsRouteSkeleton /> : null}
         {snapshot ? (
           <SettingsRouteContext.Provider
@@ -142,7 +170,9 @@ export function SettingsRouteShell() {
               syncRecommendedBuild,
             }}
           >
-            <Outlet />
+            <div className="min-w-0">
+              <Outlet />
+            </div>
           </SettingsRouteContext.Provider>
         ) : null}
       </form>
@@ -178,10 +208,10 @@ export function SettingsRouteShell() {
 export function SettingsRouteSkeleton() {
   return (
     <div className="grid gap-4" aria-hidden="true">
-      <div className="hidden h-44 animate-pulse rounded-lg bg-muted/30 lg:block" />
+      <div className="hidden h-44 animate-pulse rounded-xl bg-muted/30 lg:block" />
       <div className="space-y-3">
-        <div className="h-10 animate-pulse rounded-lg bg-muted/45" />
-        <div className="h-72 animate-pulse rounded-lg bg-muted/30" />
+        <div className="h-10 animate-pulse rounded-xl bg-muted/45" />
+        <div className="h-72 animate-pulse rounded-xl bg-muted/30" />
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import {
+  AtSign,
   BrainCircuit,
   CheckCircle2,
   Globe,
@@ -156,11 +157,7 @@ export function CompactIconSelect({
 }
 
 export function XSocialIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-    </svg>
-  );
+  return <AtSign className={className} aria-hidden="true" />;
 }
 
 export function ChatMessageItem({
@@ -337,7 +334,7 @@ export function ToolActivityItem({ tool }: { tool: ChatToolActivity }) {
         {isWebSearch ? (
           <Globe className="size-3.5" />
         ) : isXSearch ? (
-          <XSocialIcon className="size-3.5" />
+          <AtSign className="size-3.5" />
         ) : (
           <Wrench className="size-3.5" />
         )}

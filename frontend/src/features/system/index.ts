@@ -1,1 +1,1 @@
-export { VersionUpdateBanner, VersionUpdateSection } from "@/features/system/version-update";
+export { VersionUpdateBanner } from "@/entities/system/version-update";

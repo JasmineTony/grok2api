@@ -1,4 +1,5 @@
-﻿import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Code2 } from "lucide-react";
 import { type FieldErrors, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
@@ -9,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuthActions } from "@/shared/auth/use-auth";
-import { GitHubMark } from "@/shared/components/github-mark";
 import { SiteFooter } from "@/shared/components/site-footer";
 
 export function LoginPage() {
@@ -64,7 +64,7 @@ export function LoginPage() {
             rel="noreferrer"
             aria-label="GitHub"
           >
-            <GitHubMark />
+            <Code2 className="size-4" />
           </a>
         </Button>
       </header>

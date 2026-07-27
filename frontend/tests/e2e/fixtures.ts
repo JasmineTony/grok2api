@@ -91,6 +91,23 @@ function createSettingsSnapshotFixture() {
   };
 }
 
+function createVersionFixture() {
+  return {
+    currentVersion: "v3.2.0",
+    latestVersion: "v3.2.0",
+    updateAvailable: false,
+    status: "up_to_date",
+    checkedAt: "2099-01-01T00:00:00Z",
+    releaseUrl: "https://github.com/JasmineTony/grok2api/releases/tag/v3.2.0",
+    releaseNotes: "## Security and routing refinements\n\n- Stable settings and egress behavior.",
+    error: "",
+    repository: "JasmineTony/grok2api",
+    upstreamRepository: "chenyme/grok2api",
+    upstreamLatestVersion: "v3.0.10",
+    upstreamReleaseUrl: "https://github.com/chenyme/grok2api/releases/tag/v3.0.10",
+    upstreamError: "",
+  };
+}
 function createEgressNodesFixture() {
   return {
     items: [],
@@ -143,6 +160,10 @@ export async function installAuthenticatedApiMocks(page: Page): Promise<void> {
     }
     if (url.pathname.endsWith("/me")) {
       await route.fulfill(ok(admin));
+      return;
+    }
+    if (url.pathname.endsWith("/system/version") || url.pathname.endsWith("/system/update/check")) {
+      await route.fulfill(ok(createVersionFixture()));
       return;
     }
     if (url.pathname.endsWith("/settings")) {
