@@ -3,9 +3,9 @@
 - Date: 2026-07-27
 - Sequence: 22
 - Owner: JasmineTony
-- Status: Local acceptance complete; remote delivery pending
+- Status: Complete (release and publication verified; closeout PR #44)
 - Base commit: `048fd7c8efafb4ac1ee027ac064ab1eddfb82f41`
-- Working branch: `release/v3.3.0`
+- Working branch: `docs/v3.3.0-release-closeout`
 
 ## Objective
 
@@ -16,7 +16,7 @@ Publish the independently maintained `v3.3.0` release from the fully verified ma
 - PR #41 merged the exact upstream `v3.0.10@c27f0545197b3edf41d5deedcc2c3c3597887766` with preserved ancestry.
 - PR #42 delivered settings parity and UI governance as squash commit `048fd7c8efafb4ac1ee027ac064ab1eddfb82f41`.
 - PR #42 passed all 15 remote checks. The post-merge main CI run `30294101864` and CodeQL run `30294102345` also passed.
-- The current source version is `v3.2.0`; this iteration advances the independent repository to `v3.3.0` without moving any earlier tag.
+- The source version is `v3.3.0`; the annotated tag points to the final main commit without moving any earlier tag.
 
 ## Scope
 
@@ -92,9 +92,9 @@ Publish the independently maintained `v3.3.0` release from the fully verified ma
 
 - [x] `VERSION=v3.3.0` and README/release notes are consistent.
 - [x] Iteration 21 is archived with PR #42 and final CI evidence.
-- [ ] Local and GitHub release-preparation gates pass. (Local complete; GitHub pending)
-- [ ] Annotated `v3.3.0` tag points to the final release main commit.
-- [ ] GitHub Release and GHCR multi-architecture image are published.
-- [ ] Provenance, SBOM, digest, aliases, and `/healthz` are verified.
-- [ ] Final release evidence is archived without moving the tag.
-- [ ] Local `HEAD == origin/main`, worktrees are clean, and temporary branches are removed.
+- [x] Local and GitHub release-preparation gates pass.
+- [x] Annotated `v3.3.0` tag points to the final release main commit.
+- [x] GitHub Release and GHCR multi-architecture image are published.
+- [x] Provenance, SBOM, digest, aliases, and `/healthz` are verified.
+- [x] Final release evidence is archived without moving the tag.
+- [x] Local `HEAD == origin/main`, worktrees are clean, and temporary branches are removed after PR #44.
