@@ -72,4 +72,4 @@ Templates are available in [`templates/`](./templates/).
 
 | 2026-07-27 21 - Immersive UI and settings parity | [Plan](./2026-07-27-21-immersive-ui-settings-parity/PLAN.md) | [Result](./2026-07-27-21-immersive-ui-settings-parity/RESULT.md) | Complete |
 
-| 2026-07-27 22 - v3.3.0 release and delivery closeout | [Plan](./2026-07-27-22-v3.3.0-release/PLAN.md) | [Result](./2026-07-27-22-v3.3.0-release/RESULT.md) | In progress |
+| 2026-07-27 22 - v3.3.0 release and delivery closeout | [Plan](./2026-07-27-22-v3.3.0-release/PLAN.md) | [Result](./2026-07-27-22-v3.3.0-release/RESULT.md) | Complete |
