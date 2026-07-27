@@ -4,7 +4,7 @@
 - Status: Local acceptance complete; remote delivery pending
 - Base commit: `47088eb8743f03d580af5b07d94581eb2e5e2c5c`
 - Upstream parent: `c27f0545197b3edf41d5deedcc2c3c3597887766`
-- Local merge commit: Pending creation after this result is staged
+- Local merge commit: `014126b42b709d39e6dcbe6d2eea8367e275fd66`
 - Pull request: Pending first remote push
 
 ## Delivered
