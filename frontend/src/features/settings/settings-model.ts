@@ -7,6 +7,9 @@ export type DurationValue = { value: number; unit: DurationUnit };
 export type ByteSizeUnit = "MiB" | "GiB";
 export type ByteSizeValue = { value: number; unit: ByteSizeUnit };
 
+export const MAX_ROUTING_ATTEMPTS = 200;
+export const UNLIMITED_ROUTING_ATTEMPTS = -1;
+
 const durationSchema = z.object({
   value: z.number().positive(),
   unit: z.enum(["s", "m", "h", "d"]),
@@ -159,7 +162,13 @@ export const settingsSchema = z.object({
       cooldownBase: routingCooldownDuration,
       cooldownMax: routingCooldownDuration,
       capacityWait: routingCapacityWaitDuration,
-      maxAttempts: positiveInteger.max(10),
+      maxAttempts: z
+        .number()
+        .int()
+        .refine(
+          (value) =>
+            value === UNLIMITED_ROUTING_ATTEMPTS || (value >= 1 && value <= MAX_ROUTING_ATTEMPTS),
+        ),
       preferFreeBuild: z.boolean(),
       segmentedSelector: z.object({
         enabled: z.boolean(),

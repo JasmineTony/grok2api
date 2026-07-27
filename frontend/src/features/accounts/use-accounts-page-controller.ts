@@ -30,9 +30,7 @@ import {
   type AccountUpdateInput,
   type BuildConversionInput,
   type BuildConversionStrategy,
-  cleanupAccounts,
   convertWebAccountsToBuild,
-  deleteAccount,
   type DeviceSessionDTO,
   enableWebAccountNSFW,
   exportAccounts,
@@ -61,6 +59,7 @@ import {
 } from "@/features/accounts/accounts-api";
 import { useAccountBulkMaintenance } from "@/features/accounts/use-account-bulk-maintenance";
 import { useAccountEgressBinding } from "@/features/accounts/use-account-egress-binding";
+import { useAccountLinkedDeletion } from "@/features/accounts/use-account-linked-deletion";
 import {
   type DeviceAuthorizationStatus,
   useDeviceAuthorization,
@@ -70,7 +69,6 @@ import type { WebAccountConfirmationTarget } from "@/features/accounts/web-accou
 import { useApiClient } from "@/shared/api/use-api-client";
 import { useDebouncedValue } from "@/shared/hooks/use-debounced-value";
 import { nextTableSort, type SortOrder, type TableSort } from "@/shared/lib/table-sort";
-
 export function useAccountsPageController() {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
@@ -122,7 +120,6 @@ export function useAccountsPageController() {
   const [renewAllOpen, setRenewAllOpen] = useState(false);
   const [renewalProgress, setRenewalProgress] = useState<AccountTaskProgressDTO | null>(null);
   const [editing, setEditing] = useState<AccountDTO | null>(null);
-  const [deleting, setDeleting] = useState<AccountDTO | null>(null);
   const [stateHistoryAccount, setStateHistoryAccount] = useState<AccountDTO | null>(null);
   const [egressPolicyAccount, setEgressPolicyAccount] = useState<AccountDTO | null>(null);
   const [deviceOpen, setDeviceOpen] = useState(false);
@@ -220,15 +217,39 @@ export function useAccountsPageController() {
   const pageIDs = result?.items.map((account) => account.id) ?? [];
   const { selected, selectedOnPage, allPageSelected, resetSelection, togglePage, toggleAccount } =
     useAccountSelection(provider, pageIDs);
-
   function clearSelection(): void {
     resetSelection();
   }
-
   const invalidateAccountData = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["accounts"] });
     void queryClient.invalidateQueries({ queryKey: ["accounts", "summary"] });
   }, [queryClient]);
+  const linkedDeletion = useAccountLinkedDeletion({
+    apiClient,
+    provider,
+    selected,
+    batchDeleteOpen,
+    cleanupOpen,
+    cleanupStatuses,
+    setCleanupOpen,
+    setCleanupStatuses,
+    invalidateAccountData,
+    onError: showError,
+    t,
+  });
+  const {
+    deleting,
+    setDeleting,
+    linkedDeleteTargets,
+    setLinkedDeleteTargets,
+    cleanupLinkedTargets,
+    setCleanupLinkedTargets,
+    deletionPreviewQuery,
+    cleanupPreviewQuery,
+    deleteMutation,
+    cleanupMutation,
+    resetLinkedDeletion,
+  } = linkedDeletion;
   const egressBinding = useAccountEgressBinding({
     provider,
     selected,
@@ -267,15 +288,6 @@ export function useAccountsPageController() {
       setEditing(null);
       if (account.modelSyncFailed) toast.warning(t("accounts.updatedWithModelSyncFailure"));
       else toast.success(t("accounts.updated"));
-    },
-    onError: showError,
-  });
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteAccount(apiClient, id),
-    onSuccess: () => {
-      invalidateAccountData();
-      setDeleting(null);
-      toast.success(t("accounts.deleted"));
     },
     onError: showError,
   });
@@ -532,22 +544,12 @@ export function useAccountsPageController() {
   const bulkMaintenance = useAccountBulkMaintenance({
     provider,
     selected,
+    linkedDeleteTargets,
     onClearSelection: clearSelection,
     onBatchDeleteClose: () => setBatchDeleteOpen(false),
     onRefresh: invalidateAccountData,
     onError: showError,
   });
-  const cleanupMutation = useMutation({
-    mutationFn: () => cleanupAccounts(apiClient, provider, [...cleanupStatuses]),
-    onSuccess: (result) => {
-      setCleanupOpen(false);
-      setCleanupStatuses(new Set());
-      invalidateAccountData();
-      toast.success(t("accounts.cleanupCompleted", result));
-    },
-    onError: showError,
-  });
-
   useDeviceAuthorization({
     open: deviceOpen,
     session: deviceSession,
@@ -558,14 +560,12 @@ export function useAccountsPageController() {
     invalidateAccountData,
     t,
   });
-
   const startDeviceLogin = useStartDeviceLogin({
     setOpen: setDeviceOpen,
     setSession: setDeviceSession,
     setStatus: setDeviceStatus,
     onError: showError,
   });
-
   function changeProvider(value: AccountProvider) {
     setProvider(value);
     setPage(1);
@@ -577,15 +577,14 @@ export function useAccountsPageController() {
     setAssociationFilter("");
     setRenewalFilter("");
     setRiskFilter("");
+    resetLinkedDeletion();
     setQuickImportOpen(false);
     setQuickImportTokens("");
   }
-
   function submitQuickImport(): void {
     const file = createQuickImportFile(quickImportTokens, provider);
     if (file) importMutation.mutate([file]);
   }
-
   async function loadQuickImportFile(file: File | undefined): Promise<void> {
     if (!file) return;
     try {
@@ -598,19 +597,16 @@ export function useAccountsPageController() {
       );
     }
   }
-
   function openWebConversion(targets: string[] | "all"): void {
     setWebConversionTarget("build");
     setWebConversionStrategy("missing");
     setWebConversionTargets(targets);
   }
-
   function closeWebConversion(): void {
     conversionAbortRef.current?.abort();
     webConsoleSyncAbortRef.current?.abort();
     setWebConversionTargets(null);
   }
-
   function runWebConversion(): void {
     if (webConversionTargets === null) return;
     if (webConversionTarget === "build") {
@@ -621,7 +617,6 @@ export function useAccountsPageController() {
       createConversionInput(webConversionTargets, webConversionStrategy),
     );
   }
-
   function runSelectedWebAccountScripts(actions: WebAccountScriptActions): void {
     if (webAccountScriptsTargets === "all") {
       webAccountScriptsMutation.mutate({ all: true, actions });
@@ -632,23 +627,18 @@ export function useAccountsPageController() {
       });
     }
   }
-
   function beginEdit(account: AccountDTO): void {
     setEditing(account);
     resetAccountForm(form, account);
   }
-
   const webConversionPending = conversionMutation.isPending || webConsoleSyncMutation.isPending;
-
   function showError(error: unknown): void {
     showAccountError(error, t);
   }
-
   function changeSort(field: string, initialOrder: SortOrder): void {
     setSort((current) => nextTableSort(current, field, initialOrder));
     setPage(1);
   }
-
   const overview = deriveAccountOverview(summaryQuery.data, provider, result?.total ?? 0);
   const bulkTaskPending =
     quotaSyncMutation.isPending ||
@@ -666,7 +656,6 @@ export function useAccountsPageController() {
     cleanupMutation.isPending ||
     webConfirmationMutation.isPending ||
     webAccountScriptsMutation.isPending;
-
   return {
     t,
     i18n,
@@ -785,11 +774,17 @@ export function useAccountsPageController() {
     stateHistoryAccount,
     stateEventsQuery,
     deleting,
+    linkedDeleteTargets,
+    setLinkedDeleteTargets,
+    deletionPreviewQuery,
     batchDeleteOpen,
     deleteMutation,
     batchDeleteMutation: bulkMaintenance.batchDeleteMutation,
     cleanupOpen,
     cleanupStatuses,
+    cleanupLinkedTargets,
+    setCleanupLinkedTargets,
+    cleanupPreviewQuery,
     cleanupMutation,
   };
 }

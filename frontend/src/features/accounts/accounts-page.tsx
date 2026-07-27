@@ -122,11 +122,17 @@ export function AccountsPage() {
     stateHistoryAccount,
     stateEventsQuery,
     deleting,
+    linkedDeleteTargets,
+    setLinkedDeleteTargets,
+    deletionPreviewQuery,
     batchDeleteOpen,
     deleteMutation,
     batchDeleteMutation,
     cleanupOpen,
     cleanupStatuses,
+    cleanupLinkedTargets,
+    setCleanupLinkedTargets,
+    cleanupPreviewQuery,
     cleanupMutation,
   } = useAccountsPageController();
 
@@ -332,8 +338,17 @@ export function AccountsPage() {
           deleting,
           batchOpen: batchDeleteOpen,
           selectedCount: selected.size,
+          provider,
+          linkedTargets: linkedDeleteTargets,
+          preview: deletionPreviewQuery.data,
+          previewPending: deletionPreviewQuery.isPending && linkedDeleteTargets.length > 0,
+          previewError: deletionPreviewQuery.isError,
+          onLinkedTargetsChange: setLinkedDeleteTargets,
           onDeletingChange: setDeleting,
-          onBatchOpenChange: setBatchDeleteOpen,
+          onBatchOpenChange: (open) => {
+            setBatchDeleteOpen(open);
+            if (!open) setLinkedDeleteTargets([]);
+          },
           onDelete: (id) => deleteMutation.mutate(id),
           onBatchDelete: () => batchDeleteMutation.mutate(),
         }}
@@ -341,10 +356,18 @@ export function AccountsPage() {
           open: cleanupOpen,
           provider,
           statuses: cleanupStatuses,
+          linkedTargets: cleanupLinkedTargets,
+          preview: cleanupPreviewQuery.data,
+          previewPending: cleanupPreviewQuery.isPending && cleanupStatuses.size > 0,
+          previewError: cleanupPreviewQuery.isError,
+          onLinkedTargetsChange: setCleanupLinkedTargets,
           pending: cleanupMutation.isPending,
           onOpenChange: (open) => {
             setCleanupOpen(open);
-            if (!open) setCleanupStatuses(new Set());
+            if (!open) {
+              setCleanupStatuses(new Set());
+              setCleanupLinkedTargets([]);
+            }
           },
           onStatusesChange: setCleanupStatuses,
           onSubmit: () => cleanupMutation.mutate(),

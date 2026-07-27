@@ -23,6 +23,7 @@ export type ClientKeyDTO = {
   maxConcurrent: number;
   billingLimitUsdTicks: number;
   billedUsageUsdTicks: number;
+  allowModelAliases: boolean;
   allowedModelIds: string[];
   lastUsedAt?: string;
 };
@@ -34,6 +35,7 @@ export type ClientKeyInput = {
   rpmLimit: number;
   maxConcurrent: number;
   billingLimitUsdTicks: number;
+  allowModelAliases: boolean;
   allowedModelIds: string[];
 };
 
@@ -49,6 +51,7 @@ const clientKeyValidator = hasShape({
   maxConcurrent: isNumber,
   billingLimitUsdTicks: isNumber,
   billedUsageUsdTicks: isNumber,
+  allowModelAliases: isBoolean,
   allowedModelIds: isArrayOf(isString),
   lastUsedAt: isOptional(isString),
 });
@@ -62,6 +65,7 @@ const decodeClientKey = createObjectDecoder<ClientKeyDTO>("client key", {
   maxConcurrent: isNumber,
   billingLimitUsdTicks: isNumber,
   billedUsageUsdTicks: isNumber,
+  allowModelAliases: isBoolean,
   allowedModelIds: isArrayOf(isString),
   lastUsedAt: isOptional(isString),
 });

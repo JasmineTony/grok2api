@@ -98,6 +98,9 @@ export type EgressNodeDTO = {
   probeLatencyMs: number;
   exitIp?: string;
   probeError?: string;
+  probeProvider?: "ipinfo" | "cloudflare";
+  ipv4Probe?: EgressIPProbeDTO;
+  ipv6Probe?: EgressIPProbeDTO;
   health: number;
   failureCount: number;
   cooldownUntil?: string;
@@ -143,6 +146,7 @@ export type EgressSourceInput = {
   defaultAccountCapacity: number;
 };
 export type EgressOperationsConfigDTO = {
+  probeProvider: "ipinfo" | "cloudflare";
   probeIntervalSeconds: number;
   autoAssignEnabled: boolean;
   autoBalanceEnabled: boolean;
@@ -151,6 +155,23 @@ export type EgressOperationsConfigDTO = {
   updatedAt: string;
 };
 export type EgressImportResultDTO = { imported: number; skipped: number };
+export type EgressIPProbeDTO = {
+  status: "unknown" | "healthy" | "unhealthy";
+  testedAt?: string;
+  latencyMs: number;
+  exitIp?: string;
+  error?: string;
+};
+export type EgressProbeResultDTO = {
+  status: "unknown" | "healthy" | "unhealthy";
+  testedAt: string;
+  latencyMs: number;
+  exitIp?: string;
+  error?: string;
+  probeProvider?: "ipinfo" | "cloudflare";
+  ipv4: EgressIPProbeDTO;
+  ipv6: EgressIPProbeDTO;
+};
 export type EgressProbeBatchResultDTO = { requested: number; healthy: number; unhealthy: number };
 export type EgressRebalanceResultDTO = { assigned: number; rebalanced: number; unplaced: number };
 export type EgressHealthCheckDTO = {
@@ -296,6 +317,25 @@ const egressNodeValidator = hasShape({
   probeLatencyMs: isNumber,
   exitIp: isOptional(isString),
   probeError: isOptional(isString),
+  probeProvider: isOptional(isOneOf("ipinfo", "cloudflare")),
+  ipv4Probe: isOptional(
+    hasShape({
+      status: isOneOf("unknown", "healthy", "unhealthy"),
+      testedAt: isOptional(isString),
+      latencyMs: isNumber,
+      exitIp: isOptional(isString),
+      error: isOptional(isString),
+    }),
+  ),
+  ipv6Probe: isOptional(
+    hasShape({
+      status: isOneOf("unknown", "healthy", "unhealthy"),
+      testedAt: isOptional(isString),
+      latencyMs: isNumber,
+      exitIp: isOptional(isString),
+      error: isOptional(isString),
+    }),
+  ),
   health: isNumber,
   failureCount: isNumber,
   cooldownUntil: isOptional(isString),
@@ -319,6 +359,25 @@ const decodeEgressNode = createObjectDecoder<EgressNodeDTO>("egress node", {
   probeLatencyMs: isNumber,
   exitIp: isOptional(isString),
   probeError: isOptional(isString),
+  probeProvider: isOptional(isOneOf("ipinfo", "cloudflare")),
+  ipv4Probe: isOptional(
+    hasShape({
+      status: isOneOf("unknown", "healthy", "unhealthy"),
+      testedAt: isOptional(isString),
+      latencyMs: isNumber,
+      exitIp: isOptional(isString),
+      error: isOptional(isString),
+    }),
+  ),
+  ipv6Probe: isOptional(
+    hasShape({
+      status: isOneOf("unknown", "healthy", "unhealthy"),
+      testedAt: isOptional(isString),
+      latencyMs: isNumber,
+      exitIp: isOptional(isString),
+      error: isOptional(isString),
+    }),
+  ),
   health: isNumber,
   failureCount: isNumber,
   cooldownUntil: isOptional(isString),
@@ -388,6 +447,28 @@ const decodeEgressImportResult = createObjectDecoder<EgressImportResultDTO>(
   "egress import result",
   { imported: isNumber, skipped: isNumber },
 );
+const decodeEgressProbeResult = createObjectDecoder<EgressProbeResultDTO>("egress probe", {
+  status: isOneOf("unknown", "healthy", "unhealthy"),
+  testedAt: isString,
+  latencyMs: isNumber,
+  exitIp: isOptional(isString),
+  error: isOptional(isString),
+  probeProvider: isOptional(isOneOf("ipinfo", "cloudflare")),
+  ipv4: hasShape({
+    status: isOneOf("unknown", "healthy", "unhealthy"),
+    testedAt: isOptional(isString),
+    latencyMs: isNumber,
+    exitIp: isOptional(isString),
+    error: isOptional(isString),
+  }),
+  ipv6: hasShape({
+    status: isOneOf("unknown", "healthy", "unhealthy"),
+    testedAt: isOptional(isString),
+    latencyMs: isNumber,
+    exitIp: isOptional(isString),
+    error: isOptional(isString),
+  }),
+});
 const decodeEgressProbeBatchResult = createObjectDecoder<EgressProbeBatchResultDTO>(
   "egress probe result",
   { requested: isNumber, healthy: isNumber, unhealthy: isNumber },
@@ -403,6 +484,7 @@ const egressFallbackConfigValidator = hasShape({
 const decodeEgressOperationsConfig = createObjectDecoder<EgressOperationsConfigDTO>(
   "egress operations config",
   {
+    probeProvider: isOneOf("ipinfo", "cloudflare"),
     probeIntervalSeconds: isNumber,
     autoAssignEnabled: isBoolean,
     autoBalanceEnabled: isBoolean,
@@ -472,6 +554,14 @@ export function deleteEgressNode(client: ApiClient, id: string): Promise<{ delet
   );
 }
 
+export function deleteEgressNodes(client: ApiClient, ids: string[]): Promise<{ deleted: number }> {
+  return client.request(
+    "/api/admin/v1/egress-nodes",
+    { method: "DELETE", body: { ids } },
+    createObjectDecoder<{ deleted: number }>("egress node batch delete", { deleted: isNumber }),
+  );
+}
+
 export function refreshEgressClearance(
   client: ApiClient,
   id: string,
@@ -500,6 +590,14 @@ export function listEgressHealthChecks(
     `/api/admin/v1/egress-nodes/${id}/health-checks?limit=${Math.min(Math.max(limit, 1), 100)}`,
     {},
     decodeEgressHealthCheckList,
+  );
+}
+
+export function testEgressNode(client: ApiClient, id: string): Promise<EgressProbeResultDTO> {
+  return client.request(
+    `/api/admin/v1/egress-nodes/${id}/test`,
+    { method: "POST" },
+    decodeEgressProbeResult,
   );
 }
 

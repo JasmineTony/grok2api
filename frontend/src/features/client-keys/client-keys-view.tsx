@@ -1,4 +1,4 @@
-﻿import { CircleHelp, Copy, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { CircleHelp, Copy, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { Controller } from "react-hook-form";
 
 import { Badge } from "@/components/ui/badge";
@@ -588,6 +588,25 @@ export function ClientKeysView({ controller }: { controller: ClientKeysPageContr
                   ) : null}
                 </div>
               </div>
+              <div className="flex items-start justify-between gap-4 rounded-md border bg-muted/25 px-3 py-3">
+                <div className="min-w-0 space-y-1">
+                  <Label htmlFor="key-allow-model-aliases">{t("clientKeyAliases.label")}</Label>
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    {t("clientKeyAliases.help")}
+                  </p>
+                </div>
+                <Controller
+                  control={form.control}
+                  name="allowModelAliases"
+                  render={({ field }) => (
+                    <Switch
+                      id="key-allow-model-aliases"
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  )}
+                />
+              </div>{" "}
               <fieldset className="min-w-0 space-y-2">
                 <div className="flex items-center justify-between gap-3">
                   <legend className="text-xs font-medium">{t("keys.models")}</legend>

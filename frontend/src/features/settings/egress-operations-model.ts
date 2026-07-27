@@ -54,6 +54,7 @@ export function defaultFallbacks(): Record<EgressScope, EgressFallbackConfigDTO>
 }
 
 export const defaultOperationsForm: Omit<EgressOperationsConfigDTO, "updatedAt"> = {
+  probeProvider: "cloudflare",
   probeIntervalSeconds: 900,
   autoAssignEnabled: false,
   autoBalanceEnabled: false,
@@ -67,6 +68,7 @@ export function operationsFormFrom(
   if (!value) return { ...defaultOperationsForm, fallbacks: defaultFallbacks() };
   const defaults = defaultFallbacks();
   return {
+    probeProvider: value.probeProvider,
     probeIntervalSeconds: value.probeIntervalSeconds,
     autoAssignEnabled: value.autoAssignEnabled,
     autoBalanceEnabled: value.autoBalanceEnabled,

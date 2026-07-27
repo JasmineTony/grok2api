@@ -142,6 +142,24 @@ export function SettingsProviderPanels({
             >
               <Input id="provider-user-agent" {...form.register("providerBuild.userAgent")} />
             </SettingsField>
+            <SettingsField
+              controlId="provider-response-header-timeout"
+              label={t("settingsProviderResponseHeader.label")}
+              description={t("settingsProviderResponseHeader.help")}
+              error={form.formState.errors.providerBuild?.responseHeaderTimeout?.message}
+            >
+              <Controller
+                control={form.control}
+                name="providerBuild.responseHeaderTimeout"
+                render={({ field }) => (
+                  <DurationInput
+                    id="provider-response-header-timeout"
+                    value={field.value}
+                    onChange={field.onChange}
+                  />
+                )}
+              />
+            </SettingsField>
           </div>
         </SettingsSection>
       </SettingsPane>

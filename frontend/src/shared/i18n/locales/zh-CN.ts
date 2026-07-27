@@ -1,5 +1,56 @@
 export const zhCN = {
       appName: "Grok2API",
+  egressProbeProvider: {
+    label: "探测服务",
+    help: "选择用于核验代理连通性与出口地址的外部探测服务。",
+  },
+  auditNoUpstreamAttempt: "该请求在发起任何上游尝试之前已被拒绝。",
+  clientKeyAliases: {
+    label: "允许模型别名",
+    help: "允许此客户端密钥使用受支持的公开模型别名；关闭后必须请求规范模型 ID。",
+  },
+  accountLinkedDelete: {
+    title: "同时删除关联账号",
+    hint: "删除前会核验关联账号数量；存在活动媒体任务的账号仍受保护。",
+    previewFailed: "无法核验关联删除范围，请重试后再确认。",
+    total: "已确认清理范围共 {{count}} 个账号",
+  },
+  settingsProviderResponseHeader: {
+    label: "响应头超时",
+    help: "请求体发送完成后，等待 Grok Build 返回首个响应头的最长时间。",
+  },
+  settingsAuditCommitDelay: {
+    label: "提交聚合等待（毫秒）",
+    help: "需要确认提交的请求进入原子批次前允许等待的最长时间。",
+  },
+  settingsBuildForbidden: {
+    title: "自动拦截判定",
+    markInvalid: "按错误码标记失效",
+    markInvalidHelp:
+      "启用后，Grok Build 返回 403 且错误码命中下方规则时，将账号标记为失效并移出调度。",
+    codes: "失效错误码",
+    codesHelp:
+      "每行填写一个错误码，完整匹配 JSON 响应中的 code 或 error.code（忽略大小写），最多 32 个。",
+    codesInvalid: "请填写 1–32 个有效错误码，仅支持字母、数字、点、下划线、冒号和连字符。",
+    codesPlaceholder: "permission-denied",
+  },
+  settingsRoutingSegmented: {
+    enabled: "启用分段选号",
+    enabledHelp: "仅对达到阈值且没有会话粘性的账号池生效；连续四个窗口满载后自动回退完整池选号。",
+    minCandidates: "启用账号数阈值",
+    minCandidatesHelp: "可用候选账号达到该数量后启用分段选号。",
+    windowSize: "选号窗口大小",
+    windowSizeHelp: "每个分段窗口检查的候选账号数量。",
+  },
+  settingsRoutingAttempts: {
+    help: "有限模式范围为 1–200；无限制模式会在账号级可切换失败时遍历当前可用账号。",
+    unlimited: "无限制",
+    restoreLimited: "恢复有限次数",
+    unlimitedTitle: "启用无限尝试？",
+    unlimitedDescription:
+      "单次请求可能依次访问账号池中的全部可用账号，显著增加请求时长和上游压力。请求取消、超时以及重复的请求级或网络故障仍会提前停止。",
+    unlimitedConfirm: "启用无限制",
+  },
       webAccountSettings: {
         menu: "账号设置",
         acceptTerms: "接受服务协议",
@@ -791,7 +842,7 @@ export const zhCN = {
         console: { baseURLHelp: "Grok Console 请求与账号操作使用的基础端点。", chatTimeoutHelp: "Grok Console 聊天请求完成前允许等待的最长时间。" },
         batch: { title: "批量任务", importConcurrency: "导入同步并发", importConcurrencyHelp: "批量导入后并行执行账号初始化与信息同步的任务数。", conversionConcurrency: "账号转换并发", conversionConcurrencyHelp: "跨 Provider 转换账号时允许同时处理的任务数。", syncConcurrency: "数据同步并发", syncConcurrencyHelp: "批量同步账号额度、状态与能力时允许同时处理的任务数。", refreshConcurrency: "凭据刷新并发", refreshConcurrencyHelp: "批量刷新账号凭据时允许同时处理的任务数。", randomDelay: "随机延迟上限（ms）", randomDelayHelp: "批量任务启动前增加的随机延迟上限，用于平滑上游请求峰值。" },
         media: { title: "媒体存储", executionTitle: "媒体执行", maxImageSize: "单张图片上限", maxImageSizeHelp: "单个图片文件允许写入本地媒体存储的最大大小。", maxTotalSize: "媒体存储上限", maxTotalSizeHelp: "本地图片与视频文件允许占用的总存储空间。", cleanupThresholdPercent: "自动清理阈值", cleanupThresholdPercentHelp: "存储使用率达到该比例后，系统按时间清理较早的媒体文件。", cleanupInterval: "容量检查间隔", cleanupIntervalHelp: "后台检查媒体存储使用量并触发清理的时间间隔。", sizeUnit: "存储单位", publicApiBaseURL: "公共 API 地址", publicApiBaseURLHelp: "用于生成图片公开 URL 与文档示例地址。留空时回退到服务启动值，默认为 http://127.0.0.1:8000。" },
-        egress: { title: "出口代理", description: "节点按 Grok Build、Grok Web、Grok Console 或 Web 资源独立管理代理和健康状态。Build 沿用 Provider 的 User-Agent；Web 与 Console 节点单独管理浏览器 User-Agent 与 Cookie。代理地址和 Cloudflare Cookie 仅写入。", add: "添加节点", saved: "代理节点已保存", deleted: "代理节点已删除", name: "名称", scope: "作用域", proxy: "代理", clearance: "Clearance", health: "健康度", check: "立即检查", history: "检查记录", healthy: "健康", unhealthy: "不可用", healthCheckFailed: "出口健康检查失败", noHistory: "暂无健康检查记录", directFallback: "未配置节点时使用直连", scopeBuild: "Grok Build", scopeWeb: "Grok Web", scopeWebAsset: "Grok Web（仅资源）", configured: "已配置", direct: "直连", none: "无", editTitle: "编辑代理节点", addTitle: "添加代理节点", dialogDescription: "Build 节点只配置代理并沿用 Provider 的 User-Agent；Web 与 Console 节点使用各自的浏览器 User-Agent 和 Cloudflare Cookie。", enabled: "启用", proxyURL: "代理地址", proxyProtocols: "支持 HTTP、HTTPS、SOCKS4、SOCKS4A、SOCKS5、SOCKS5H\nResin 可在用户名中使用 {account} 绑定账号租约。", userAgent: "User-Agent", cloudflareCookie: "Cloudflare Cookie", keepConfigured: "已配置，留空保持不变", operationFailed: "操作失败" , proxyPool: "代理池模式", proxyPoolHelp: "共享代理池的单次连接失败不会使整个出口节点进入冷却；包含 {account} 的代理会自动启用此策略。", refreshClearance: "刷新 Clearance", clearanceRefreshed: "Clearance 已刷新" },
+        egress: { title: "出口代理", description: "节点按 Grok Build、Grok Web、Grok Console 或 Web 资源独立管理代理和健康状态。Build 沿用 Provider 的 User-Agent；Web 与 Console 节点单独管理浏览器 User-Agent 与 Cookie。代理地址和 Cloudflare Cookie 仅写入。", add: "添加节点", saved: "代理节点已保存", deleted: "代理节点已删除", name: "名称", scope: "作用域", proxy: "代理", clearance: "Clearance", health: "健康度", check: "立即检查", history: "检查记录", healthy: "健康", unhealthy: "不可用", healthCheckFailed: "出口健康检查失败", noHistory: "暂无健康检查记录", directFallback: "未配置节点时使用直连", scopeBuild: "Grok Build", scopeWeb: "Grok Web", scopeWebAsset: "Grok Web（仅资源）", configured: "已配置", direct: "直连", none: "无", editTitle: "编辑代理节点", addTitle: "添加代理节点", dialogDescription: "Build 节点只配置代理并沿用 Provider 的 User-Agent；Web 与 Console 节点使用各自的浏览器 User-Agent 和 Cloudflare Cookie。", enabled: "启用", proxyURL: "代理地址", proxyProtocols: "支持 HTTP、HTTPS、SOCKS4、SOCKS4A、SOCKS5、SOCKS5H\nResin 可在用户名中使用 {account} 绑定账号租约。", userAgent: "User-Agent", cloudflareCookie: "Cloudflare Cookie", keepConfigured: "已配置，留空保持不变", operationFailed: "操作失败" , proxyPool: "代理池模式", proxyPoolHelp: "共享代理池的单次连接失败不会使整个出口节点进入冷却；包含 {account} 的代理会自动启用此策略。", refreshClearance: "刷新 Clearance", clearanceRefreshed: "Clearance 已刷新" , test: "测试代理", testedOne: "代理探测已完成", selectVisible: "选择全部代理节点", batchDeleted: "已删除 {{count}} 个代理节点", batchDeleteTitle: "删除所选 {{count}} 个代理节点？", batchDeleteDescription: "所选节点将被删除，并先释放 {{accounts}} 个账号绑定，再重新计算路由。", batchDeleteSourceHint: "所选节点中有 {{count}} 个由来源管理，可能在下次来源同步时重新创建。",},
         routing: { title: "路由策略", stickyTTL: "会话粘性时长", stickyTTLHelp: "同一会话优先复用已选账号的有效时长；到期后重新参与调度。", cooldownBase: "基础冷却时间", cooldownBaseHelp: "账号发生可恢复故障后首次进入冷却的时长。", cooldownMax: "最大冷却时间", cooldownMaxHelp: "连续故障触发指数退避时允许达到的最长冷却时间。", capacityWait: "账号满载等待", capacityWaitHelp: "全部候选账号并发已满时，切换或失败前等待容量释放的时间。", maxAttempts: "最大尝试次数", maxAttemptsHelp: "单次请求在可用账号之间切换并重试的最大次数。", preferFreeBuild: "Grok Build Free 账号优先", preferFreeBuildHelp: "启用后优先选择已确认可用的 Free 账号，其他路由条件保持不变。" },
         audit: { title: "请求审计", bufferSize: "队列容量", bufferSizeHelp: "审计记录进入持久化前可在内存队列中等待的最大数量。", batchSize: "批量写入数", batchSizeHelp: "每次数据库事务最多写入的审计记录数量。", flushInterval: "刷新间隔", flushIntervalHelp: "队列未达到批量写入数时，强制提交待处理审计记录的间隔。" },
         clientKeys: { title: "密钥默认限制", rpmLimit: "默认 RPM", rpmLimitHelp: "新建客户端密钥默认允许的每分钟请求数。", maxConcurrent: "默认并发数", maxConcurrentHelp: "新建客户端密钥默认允许同时执行的请求数。" },

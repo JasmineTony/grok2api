@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { SettingsConfigDTO } from "@/features/settings/settings-api";
-import { toSettingsDTO, toSettingsForm } from "@/features/settings/settings-model";
+import { settingsSchema, toSettingsDTO, toSettingsForm } from "@/features/settings/settings-model";
 import { shouldBlockSettingsNavigation } from "@/features/settings/settings-route-navigation";
 
 const settingsConfigFixture = (): SettingsConfigDTO => ({
@@ -71,6 +71,76 @@ const settingsConfigFixture = (): SettingsConfigDTO => ({
   },
 });
 
+const UPSTREAM_V3010_SETTINGS_CONTRACT = [
+  "server.maxConcurrentRequests",
+  "providerBuild.baseURL",
+  "providerBuild.fallbackBaseURL",
+  "providerBuild.clientVersion",
+  "providerBuild.clientIdentifier",
+  "providerBuild.tokenAuth",
+  "providerBuild.tokenAuthConfigured",
+  "providerBuild.userAgent",
+  "providerBuild.responseHeaderTimeout",
+  "providerWeb.baseURL",
+  "providerWeb.quotaTimeout",
+  "providerWeb.chatTimeout",
+  "providerWeb.imageTimeout",
+  "providerWeb.videoTimeout",
+  "providerWeb.statsigMode",
+  "providerWeb.statsigManualValue",
+  "providerWeb.statsigSignerURL",
+  "providerWeb.clearanceMode",
+  "providerWeb.flareSolverrURL",
+  "providerWeb.clearanceTimeout",
+  "providerWeb.clearanceRefresh",
+  "providerWeb.mediaConcurrency",
+  "providerWeb.allowNSFW",
+  "providerWeb.recoveryBackoffBase",
+  "providerWeb.recoveryBackoffMax",
+  "providerConsole.baseURL",
+  "providerConsole.chatTimeout",
+  "batch.importConcurrency",
+  "batch.conversionConcurrency",
+  "batch.syncConcurrency",
+  "batch.refreshConcurrency",
+  "batch.randomDelay",
+  "media.maxImageSize",
+  "media.maxTotalSize",
+  "media.cleanupThresholdPercent",
+  "media.cleanupInterval",
+  "frontend.publicApiBaseURL",
+  "routing.stickyTTL",
+  "routing.cooldownBase",
+  "routing.cooldownMax",
+  "routing.capacityWait",
+  "routing.maxAttempts",
+  "routing.preferFreeBuild",
+  "routing.segmentedSelector.enabled",
+  "routing.segmentedSelector.minCandidates",
+  "routing.segmentedSelector.windowSize",
+  "audit.bufferSize",
+  "audit.batchSize",
+  "audit.flushInterval",
+  "audit.commitDelayMS",
+  "clientKeyDefaults.rpmLimit",
+  "clientKeyDefaults.maxConcurrent",
+  "accounts.markBuildForbiddenReauth",
+  "accounts.buildForbiddenReauthCodes",
+  "accounts.autoCleanReauthEnabled",
+  "accounts.autoCleanReauthInterval",
+  "accounts.autoCleanReauthMinAge",
+  "accounts.autoCleanIncludeDisabled",
+] as const;
+
+function hasPath(value: unknown, path: string): boolean {
+  let current: unknown = value;
+  for (const key of path.split(".")) {
+    if (typeof current !== "object" || current === null || !(key in current)) return false;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return true;
+}
+
 describe("settings route shell boundaries", () => {
   it("keeps dirty form state when moving between settings child routes", () => {
     expect(shouldBlockSettingsNavigation(true, "/settings", "/settings/media")).toBe(false);
@@ -90,5 +160,34 @@ describe("settings route shell boundaries", () => {
     expect(dto.providerWeb.baseURL).toBe(config.providerWeb.baseURL);
     expect(dto.providerWeb.clearanceMode).toBe(config.providerWeb.clearanceMode);
     expect(dto.providerConsole).toEqual(config.providerConsole);
+  });
+
+  it("covers the 58-field upstream v3.0.10 settings contract without duplicates", () => {
+    expect(UPSTREAM_V3010_SETTINGS_CONTRACT).toHaveLength(58);
+    expect(new Set(UPSTREAM_V3010_SETTINGS_CONTRACT).size).toBe(58);
+    const form = toSettingsForm(settingsConfigFixture());
+    const contractView = {
+      ...form,
+      providerBuild: { ...form.providerBuild, tokenAuthConfigured: true },
+    };
+    expect(UPSTREAM_V3010_SETTINGS_CONTRACT.filter((path) => !hasPath(contractView, path))).toEqual(
+      [],
+    );
+  });
+
+  it("accepts finite attempts up to 200 and the explicit unlimited sentinel", () => {
+    const form = toSettingsForm(settingsConfigFixture());
+    expect(
+      settingsSchema.safeParse({ ...form, routing: { ...form.routing, maxAttempts: -1 } }).success,
+    ).toBe(true);
+    expect(
+      settingsSchema.safeParse({ ...form, routing: { ...form.routing, maxAttempts: 200 } }).success,
+    ).toBe(true);
+    expect(
+      settingsSchema.safeParse({ ...form, routing: { ...form.routing, maxAttempts: 0 } }).success,
+    ).toBe(false);
+    expect(
+      settingsSchema.safeParse({ ...form, routing: { ...form.routing, maxAttempts: 201 } }).success,
+    ).toBe(false);
   });
 });

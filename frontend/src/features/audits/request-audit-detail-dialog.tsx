@@ -23,6 +23,14 @@ import { ErrorState, LoadingState } from "@/shared/components/data-state";
 import { cn } from "@/shared/lib/cn";
 import { formatDateTime, formatNumber } from "@/shared/lib/format";
 
+const PRE_UPSTREAM_ERROR_CODES = new Set([
+  "model_not_allowed",
+  "upstream_cooling",
+  "upstream_model_cooling",
+  "upstream_model_unavailable",
+  "request_policy_rejected",
+]);
+
 export function RequestAuditDetailDialog({
   audit,
   open,
@@ -88,7 +96,14 @@ export function RequestAuditDetailDialog({
           ) : (
             <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground">
               <TriangleAlert className="size-7 stroke-1" />
-              <p>{t("audits.noFailureAttempts")}</p>
+              <p>
+                {t(
+                  detailQuery.data.audit.errorCode &&
+                    PRE_UPSTREAM_ERROR_CODES.has(detailQuery.data.audit.errorCode)
+                    ? "auditNoUpstreamAttempt"
+                    : "audits.noFailureAttempts",
+                )}
+              </p>
               {detailQuery.data.audit.errorCode ? (
                 <span className="max-w-full break-words">{detailQuery.data.audit.errorCode}</span>
               ) : null}

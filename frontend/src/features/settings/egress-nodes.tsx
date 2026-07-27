@@ -1,11 +1,31 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, History, MoreHorizontal, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import {
+  Activity,
+  History,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,6 +39,7 @@ import {
   TableActionHead,
   TableBody,
   TableCell,
+  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
@@ -30,11 +51,13 @@ import {
   checkEgressNode,
   createEgressNode,
   deleteEgressNode,
+  deleteEgressNodes,
   type EgressNodeDTO,
   type EgressNodeInput,
   type EgressScope,
   listEgressNodes,
   refreshEgressClearance,
+  testEgressNode,
   updateEgressNode,
 } from "@/features/settings/settings-api";
 import { useApiClient } from "@/shared/api/use-api-client";
@@ -64,6 +87,8 @@ export function EgressNodes({
   const [form, setForm] = useState<EgressNodeInput>(EMPTY_EGRESS_NODE_INPUT);
   const [sort, setSort] = useState<TableSort>({ field: "", order: "asc" });
   const [historyNode, setHistoryNode] = useState<EgressNodeDTO | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
   const query = useQuery({
     queryKey: ["egress-nodes", sort.field, sort.order],
     queryFn: () =>
@@ -86,9 +111,24 @@ export function EgressNodes({
   });
   const remove = useMutation({
     mutationFn: (id: string) => deleteEgressNode(apiClient, id),
-    onSuccess: () => {
+    onSuccess: (_, id) => {
+      setSelected((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
       void invalidateNodes();
       toast.success(t("settings.egress.deleted"));
+    },
+    onError: (error) => showError(error, t("settings.egress.operationFailed")),
+  });
+  const removeMany = useMutation({
+    mutationFn: () => deleteEgressNodes(apiClient, [...selected]),
+    onSuccess: (result) => {
+      setSelected(new Set());
+      setBatchDeleteOpen(false);
+      void invalidateNodes();
+      toast.success(t("settings.egress.batchDeleted", { count: result.deleted }));
     },
     onError: (error) => showError(error, t("settings.egress.operationFailed")),
   });
@@ -102,6 +142,18 @@ export function EgressNodes({
       );
     },
     onError: (error) => showError(error, t("settings.egress.healthCheckFailed")),
+  });
+  const probe = useMutation({
+    mutationFn: (id: string) => testEgressNode(apiClient, id),
+    onSuccess: (result) => {
+      void invalidateNodes();
+      toast[result.status === "healthy" ? "success" : "error"](
+        result.status === "healthy"
+          ? t("settings.egress.testedOne")
+          : result.error || t("settings.egress.operationFailed"),
+      );
+    },
+    onError: (error) => showError(error, t("settings.egress.operationFailed")),
   });
   const refreshClearance = useMutation({
     mutationFn: (id: string) => refreshEgressClearance(apiClient, id),
@@ -158,14 +210,42 @@ export function EgressNodes({
     setSort((current) => nextTableSort(current, field, initialOrder));
 
   const nodes = query.data?.items ?? [];
+  const toggleAll = (checked: boolean) =>
+    setSelected(checked ? new Set(nodes.map((node) => node.id)) : new Set());
+  const toggleNode = (id: string, checked: boolean) =>
+    setSelected((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  const allSelected = nodes.length > 0 && nodes.every((node) => selected.has(node.id));
+  const selectedAssignedAccounts = nodes
+    .filter((node) => selected.has(node.id))
+    .reduce((total, node) => total + node.assignedAccountCount, 0);
+  const selectedSourceNodes = nodes.filter((node) => selected.has(node.id) && node.sourceId).length;
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">{t("console.egressDescription")}</p>
-        <Button type="button" size="sm" variant="secondary" onClick={openCreate}>
-          <Plus />
-          {t("settings.egress.add")}
-        </Button>
+        <div className="flex items-center gap-2">
+          {selected.size > 0 ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="text-destructive"
+              onClick={() => setBatchDeleteOpen(true)}
+            >
+              <Trash2 />
+              {t("common.delete")} ({selected.size})
+            </Button>
+          ) : null}
+          <Button type="button" size="sm" variant="secondary" onClick={openCreate}>
+            <Plus />
+            {t("settings.egress.add")}
+          </Button>
+        </div>
       </div>
       {query.isError ? (
         <ErrorState message={query.error.message} onRetry={() => void query.refetch()} />
@@ -174,6 +254,14 @@ export function EgressNodes({
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-10 px-2">
+                  <Checkbox
+                    checked={allSelected ? true : selected.size > 0 ? "indeterminate" : false}
+                    disabled={nodes.length === 0}
+                    aria-label={t("settings.egress.selectVisible")}
+                    onCheckedChange={(checked) => toggleAll(checked === true)}
+                  />
+                </TableHead>
                 <SortableTableHead
                   field="name"
                   sortBy={sort.field}
@@ -225,7 +313,7 @@ export function EgressNodes({
             <TableBody>
               {nodes.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-20 text-center text-xs text-muted-foreground">
+                  <TableCell colSpan={7} className="h-20 text-center text-xs text-muted-foreground">
                     {t("settings.egress.directFallback")}
                   </TableCell>
                 </TableRow>
@@ -236,10 +324,14 @@ export function EgressNodes({
                     node={node}
                     scopeLabel={scopeLabel(node.scope)}
                     clearanceMode={clearanceMode}
+                    selected={selected.has(node.id)}
                     checking={check.isPending}
+                    probing={probe.isPending}
                     refreshingClearance={refreshClearance.isPending}
+                    onSelect={(checked) => toggleNode(node.id, checked)}
                     onEdit={() => openEdit(node)}
                     onCheck={() => check.mutate(node.id)}
+                    onProbe={() => probe.mutate(node.id)}
                     onRefreshClearance={() => refreshClearance.mutate(node.id)}
                     onHistory={() => setHistoryNode(node)}
                     onDelete={() => remove.mutate(node.id)}
@@ -252,6 +344,43 @@ export function EgressNodes({
       )}
 
       <EgressNodeHistoryDialog node={historyNode} onClose={() => setHistoryNode(null)} />
+      <AlertDialog open={batchDeleteOpen} onOpenChange={setBatchDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("settings.egress.batchDeleteTitle", { count: selected.size })}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-1">
+              <span className="block">
+                {t("settings.egress.batchDeleteDescription", {
+                  count: selected.size,
+                  accounts: selectedAssignedAccounts,
+                })}
+              </span>
+              {selectedSourceNodes > 0 ? (
+                <span className="block">
+                  {t("settings.egress.batchDeleteSourceHint", { count: selectedSourceNodes })}
+                </span>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removeMany.isPending}>
+              {t("common.cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              disabled={removeMany.isPending || selected.size === 0}
+              onClick={(event) => {
+                event.preventDefault();
+                removeMany.mutate();
+              }}
+            >
+              {t("common.delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <EgressNodeEditorDialog
         editing={editing}
         form={form}
@@ -269,10 +398,14 @@ type EgressNodeRowProps = {
   node: EgressNodeDTO;
   scopeLabel: string;
   clearanceMode: "manual" | "flaresolverr";
+  selected: boolean;
   checking: boolean;
+  probing: boolean;
   refreshingClearance: boolean;
+  onSelect: (checked: boolean) => void;
   onEdit: () => void;
   onCheck: () => void;
+  onProbe: () => void;
   onRefreshClearance: () => void;
   onHistory: () => void;
   onDelete: () => void;
@@ -282,17 +415,28 @@ function EgressNodeRow({
   node,
   scopeLabel,
   clearanceMode,
+  selected,
   checking,
+  probing,
   refreshingClearance,
+  onSelect,
   onEdit,
   onCheck,
+  onProbe,
   onRefreshClearance,
   onHistory,
   onDelete,
 }: EgressNodeRowProps) {
   const { t } = useTranslation();
   return (
-    <TableRow className="group">
+    <TableRow className="group" data-state={selected ? "selected" : undefined}>
+      <TableCell className="px-2">
+        <Checkbox
+          checked={selected}
+          aria-label={t("common.selectItem", { name: node.name })}
+          onCheckedChange={(checked) => onSelect(checked === true)}
+        />
+      </TableCell>
       <TableCell>
         <div className="text-xs font-medium">{node.name}</div>
         {node.lastError ? (
@@ -336,6 +480,10 @@ function EgressNodeRow({
             <DropdownMenuItem disabled={checking} onClick={onCheck}>
               <Activity />
               {t("settings.egress.check")}
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={probing || !node.proxyConfigured} onClick={onProbe}>
+              <Search />
+              {t("settings.egress.test")}
             </DropdownMenuItem>
             {clearanceMode === "flaresolverr" && node.scope === "grok_web" ? (
               <DropdownMenuItem disabled={refreshingClearance} onClick={onRefreshClearance}>

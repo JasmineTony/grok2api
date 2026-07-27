@@ -1,4 +1,4 @@
-import { type Page, test as base } from "@playwright/test";
+import { expect, type Page, test as base } from "@playwright/test";
 
 export type AuthenticatedApiFixtures = {
   authenticatedPage: Page;
@@ -105,6 +105,7 @@ function createEgressNodesFixture() {
 
 function createEgressOperationsFixture() {
   return {
+    probeProvider: "cloudflare",
     probeIntervalSeconds: 300,
     autoAssignEnabled: false,
     autoBalanceEnabled: false,
@@ -125,6 +126,10 @@ function ok(data: unknown) {
     contentType: "application/json",
     body: JSON.stringify({ data }),
   };
+}
+
+export async function expectMainReady(page: Page): Promise<void> {
+  await expect(page.locator("main")).toBeVisible({ timeout: 15_000 });
 }
 
 export async function installAuthenticatedApiMocks(page: Page): Promise<void> {
@@ -185,4 +190,4 @@ export const test = base.extend<AuthenticatedApiFixtures>({
   },
 });
 
-export { expect } from "@playwright/test";
+export { expect };

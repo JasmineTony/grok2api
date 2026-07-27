@@ -13,7 +13,7 @@ Merge the exact upstream release `v3.0.10@c27f0545197b3edf41d5deedcc2c3c35978877
 
 ## Background
 
-The independent repository is currently based on upstream v3.0.9 plus local reliability, security, Egress, component architecture, and release hardening. A merge simulation identified 20 textual conflicts. Upstream v3.0.10 also restores seven settings fields and the `routing.maxAttempts=0` unlimited-attempt semantic that must be integrated without replacing the current componentized frontend.
+The independent repository is currently based on upstream v3.0.9 plus local reliability, security, Egress, component architecture, and release hardening. A merge simulation identified 20 textual conflicts. Upstream v3.0.10 also restores seven settings fields and the `routing.maxAttempts=-1` unlimited-attempt semantic that must be integrated without replacing the current componentized frontend.
 
 ## Scope
 
@@ -22,7 +22,7 @@ The independent repository is currently based on upstream v3.0.9 plus local reli
 - Resolve gateway, config, repository, database, Egress, account, client-key, audit, settings, and i18n conflicts semantically.
 - Preserve the stable `Failure` model, account state machine, request policy, metrics, notifications, replay gates, and protection against unknown 403/timeout/proxy/DNS/5xx credential invalidation.
 - Integrate upstream rate-limit parsing, reasoning, model aliases, linked-account behavior, selector fixes, protocol fixes, Egress ordering/routing, and compatible schema additions.
-- Restore the seven v3.0.10 settings fields and unlimited retry semantics in the existing frontend architecture.
+- Restore the seven v3.0.10 settings fields and the upstream `-1` unlimited retry semantics in the existing frontend architecture.
 - Add or update focused tests and complete repository validation.
 
 ## Out of scope

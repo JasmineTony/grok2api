@@ -91,7 +91,7 @@ func (r *AccountRepository) List(ctx context.Context, input repository.AccountLi
 		query = query.Where("provider_accounts.egress_node_id IS NULL")
 	}
 	query = applyWebAgreementFilter(query, input.Filter.Agreement)
-	query = applyWebAssociationFilter(query, input.Filter.Association)
+	query = applyAssociationFilter(query, input.Filter.Provider, input.Filter.Association)
 	if input.Filter.RestrictIDs {
 		if len(input.Filter.AccountIDs) == 0 {
 			query = query.Where("1 = 0")
@@ -616,6 +616,9 @@ func (r *AccountRepository) LinkWebToBuild(ctx context.Context, webAccountID, bu
 		return repository.ErrConflict
 	}
 	err := r.db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockAccountLinkMutation(tx); err != nil {
+			return err
+		}
 		var webAccount, buildAccount accountModel
 		if err := tx.Select("id", "provider").First(&webAccount, webAccountID).Error; err != nil {
 			return err
@@ -1237,7 +1240,10 @@ func (r *AccountRepository) listEgressBindingProviders(query *gorm.DB) ([]accoun
 }
 
 func (r *AccountRepository) Delete(ctx context.Context, id uint64) error {
-	return r.db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := r.db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockAccountLinkMutation(tx); err != nil {
+			return err
+		}
 		var lockedID uint64
 		if err := tx.Model(&accountModel{}).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).Pluck("id", &lockedID).Error; err != nil {
 			return err
@@ -1250,6 +1256,10 @@ func (r *AccountRepository) Delete(ctx context.Context, id uint64) error {
 		}
 		return mapError(tx.Delete(&accountModel{}, id).Error)
 	})
+	if err == nil {
+		r.notifyInvalidation(ctx, repository.InvalidationEvent{Kind: repository.InvalidationAccountStateChanged})
+	}
+	return err
 }
 
 func (r *AccountRepository) DeleteMany(ctx context.Context, ids []uint64) (int64, error) {
@@ -1258,6 +1268,9 @@ func (r *AccountRepository) DeleteMany(ctx context.Context, ids []uint64) (int64
 	}
 	var deleted int64
 	err := r.db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockAccountLinkMutation(tx); err != nil {
+			return err
+		}
 		var lockedIDs []uint64
 		if err := tx.Model(&accountModel{}).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id IN ?", ids).Pluck("id", &lockedIDs).Error; err != nil {
 			return err
@@ -1269,6 +1282,9 @@ func (r *AccountRepository) DeleteMany(ctx context.Context, ids []uint64) (int64
 		deleted = result.RowsAffected
 		return result.Error
 	})
+	if err == nil && deleted > 0 {
+		r.notifyInvalidation(ctx, repository.InvalidationEvent{Kind: repository.InvalidationAccountStateChanged})
+	}
 	return deleted, err
 }
 
@@ -1297,6 +1313,9 @@ func (r *AccountRepository) DeleteAutoCleanReauthCandidates(ctx context.Context,
 	}
 	deletedIDs := make([]uint64, 0, len(candidateIDs))
 	err := r.db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockAccountLinkMutation(tx); err != nil {
+			return err
+		}
 		deletable, err := excludeAccountsWithActiveMediaJobs(tx, candidateIDs)
 		if err != nil {
 			return err
@@ -1383,12 +1402,17 @@ func excludeAccountsWithActiveMediaJobs(db *gorm.DB, ids []uint64) ([]uint64, er
 	return out, nil
 }
 
+// activeMediaJobStatuses lists video states that still require the account and block deletion.
+func activeMediaJobStatuses() []string {
+	return []string{string(media.StatusQueued), string(media.StatusInProgress)}
+}
+
 // rejectAccountsWithMediaJobs 仅保护仍需账号继续执行的活动视频任务。
 // completed/failed 已保存账号名称等快照，删除账号后由外键 SET NULL 保留历史。
 func rejectAccountsWithMediaJobs(db *gorm.DB, ids []uint64) error {
 	var count int64
 	if err := db.Model(&mediaJobModel{}).
-		Where("account_id IN ? AND status IN ?", ids, []string{string(media.StatusQueued), string(media.StatusInProgress)}).
+		Where("account_id IN ? AND status IN ?", ids, activeMediaJobStatuses()).
 		Count(&count).Error; err != nil {
 		return err
 	}
@@ -1457,6 +1481,69 @@ func applyAccountStatusFilter(query *gorm.DB, status string, now time.Time) *gor
 		return query.Where("enabled = ? AND auth_status = ? AND (EXISTS (SELECT 1 FROM account_quota_recovery recovery WHERE recovery.account_id = provider_accounts.id AND recovery.status = 'exhausted') OR "+providerQuotaExhaustedPredicate+")", true, account.AuthStatusActive)
 	case "probing":
 		return query.Where("enabled = ? AND auth_status = ? AND EXISTS (SELECT 1 FROM account_quota_recovery recovery WHERE recovery.account_id = provider_accounts.id AND recovery.status = 'probing')", true, account.AuthStatusActive)
+	default:
+		return query
+	}
+}
+
+// Web agreement predicates match the effective state exposed by the admin API.
+// Terms are current only when the recorded version reaches CurrentWebTermsVersion.
+const (
+	webNSFWEnabledPredicate   = "EXISTS (SELECT 1 FROM web_account_profiles profile WHERE profile.account_id = provider_accounts.id AND profile.nsfw_enabled_at IS NOT NULL)"
+	webTermsAcceptedPredicate = "EXISTS (SELECT 1 FROM web_account_profiles profile WHERE profile.account_id = provider_accounts.id AND profile.terms_accepted_at IS NOT NULL AND profile.terms_accepted_version >= ?)"
+	webBuildLinkedPredicate   = "EXISTS (SELECT 1 FROM account_provider_links link WHERE link.web_account_id = provider_accounts.id)"
+	webConsoleLinkedPredicate = "EXISTS (SELECT 1 FROM web_console_account_links link WHERE link.web_account_id = provider_accounts.id)"
+	// Build and Console filter by whether a Web link exists.
+	buildWebLinkedPredicate   = "EXISTS (SELECT 1 FROM account_provider_links link WHERE link.build_account_id = provider_accounts.id)"
+	consoleWebLinkedPredicate = "EXISTS (SELECT 1 FROM web_console_account_links link WHERE link.console_account_id = provider_accounts.id)"
+)
+
+func applyWebAgreementFilter(query *gorm.DB, agreement string) *gorm.DB {
+	switch agreement {
+	case "nsfwEnabled":
+		return query.Where(webNSFWEnabledPredicate)
+	case "nsfwDisabled":
+		return query.Where("NOT " + webNSFWEnabledPredicate)
+	case "termsAccepted":
+		return query.Where(webTermsAcceptedPredicate, account.CurrentWebTermsVersion)
+	case "termsNotAccepted":
+		return query.Where("NOT "+webTermsAcceptedPredicate, account.CurrentWebTermsVersion)
+	case "allAccepted":
+		return query.Where(webNSFWEnabledPredicate).Where(webTermsAcceptedPredicate, account.CurrentWebTermsVersion)
+	case "allNotAccepted":
+		return query.Where("NOT "+webNSFWEnabledPredicate).Where("NOT "+webTermsAcceptedPredicate, account.CurrentWebTermsVersion)
+	default:
+		return query
+	}
+}
+
+// applyAssociationFilter applies provider-specific association predicates.
+// Web supports Build, Console, and combined filters; Build and Console use
+// provider-specific foreign keys for webLinked and webUnlinked.
+func applyAssociationFilter(query *gorm.DB, providerValue, association string) *gorm.DB {
+	switch association {
+	case "buildLinked":
+		return query.Where(webBuildLinkedPredicate)
+	case "buildUnlinked":
+		return query.Where("NOT " + webBuildLinkedPredicate)
+	case "consoleLinked":
+		return query.Where(webConsoleLinkedPredicate)
+	case "consoleUnlinked":
+		return query.Where("NOT " + webConsoleLinkedPredicate)
+	case "allLinked":
+		return query.Where(webBuildLinkedPredicate).Where(webConsoleLinkedPredicate)
+	case "allUnlinked":
+		return query.Where("NOT " + webBuildLinkedPredicate).Where("NOT " + webConsoleLinkedPredicate)
+	case "webLinked":
+		if providerValue == string(account.ProviderConsole) {
+			return query.Where(consoleWebLinkedPredicate)
+		}
+		return query.Where(buildWebLinkedPredicate)
+	case "webUnlinked":
+		if providerValue == string(account.ProviderConsole) {
+			return query.Where("NOT " + consoleWebLinkedPredicate)
+		}
+		return query.Where("NOT " + buildWebLinkedPredicate)
 	default:
 		return query
 	}
@@ -1631,7 +1718,7 @@ func (r *AccountRepository) TransitionHealth(ctx context.Context, transition rep
 	if when.IsZero() {
 		when = time.Now().UTC()
 	}
-	return r.db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := r.db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var row accountModel
 		if err := tx.Select("id", "enabled", "auth_status", "state", "reauth_marked_at").Where("id = ?", transition.AccountID).Take(&row).Error; err != nil {
 			return mapError(err)
@@ -1688,6 +1775,10 @@ func (r *AccountRepository) TransitionHealth(ctx context.Context, transition rep
 			Event: string(transition.Event), Reason: truncate(transition.Reason, 512), CreatedAt: when,
 		}).Error
 	})
+	if err == nil {
+		r.notifyInvalidation(ctx, repository.InvalidationEvent{Kind: repository.InvalidationAccountStateChanged})
+	}
+	return err
 }
 
 func (r *AccountRepository) CountStates(ctx context.Context) (map[account.State]uint64, error) {
@@ -1768,6 +1859,9 @@ func (r *AccountRepository) PruneExpiredModelQuotaBlocks(ctx context.Context, no
 		}
 		return nil
 	})
+	if err == nil && deleted > 0 {
+		r.notifyInvalidation(ctx, repository.InvalidationEvent{Kind: repository.InvalidationAccountStateChanged})
+	}
 	return deleted, err
 }
 
@@ -1930,7 +2024,7 @@ func (r *AccountRepository) ReplaceQuotaWindows(ctx context.Context, accountID u
 }
 
 func (r *AccountRepository) saveQuotaWindows(ctx context.Context, accountID uint64, tier account.WebTier, syncedAt time.Time, values []account.QuotaWindow, replace bool) error {
-	return r.db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := r.db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if tier != "" {
 			profile := webAccountProfileModel{AccountID: accountID, Tier: string(tier), SyncedAt: &syncedAt}
 			if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "account_id"}}, DoUpdates: clause.AssignmentColumns([]string{"tier", "synced_at"})}).Create(&profile).Error; err != nil {
@@ -1968,6 +2062,10 @@ func (r *AccountRepository) saveQuotaWindows(ctx context.Context, accountID uint
 		}
 		return nil
 	})
+	if err == nil {
+		r.notifyInvalidation(ctx, repository.InvalidationEvent{Kind: repository.InvalidationAccountStateChanged})
+	}
+	return err
 }
 
 func (r *AccountRepository) DecrementQuotaWindow(ctx context.Context, accountID uint64, mode string, now time.Time) (bool, error) {
@@ -2055,50 +2153,5 @@ func toQuotaWindowDomain(row quotaWindowModel) account.QuotaWindow {
 		AccountID: row.AccountID, Mode: row.Mode, Remaining: row.Remaining, Total: row.Total,
 		UsagePercent: row.UsagePercent, Breakdown: breakdown, WindowSeconds: row.WindowSeconds,
 		ResetAt: row.ResetAt, SyncedAt: row.SyncedAt, Source: account.QuotaSource(row.Source), UpdatedAt: row.UpdatedAt,
-	}
-}
-
-const (
-	webNSFWEnabledPredicate   = "EXISTS (SELECT 1 FROM web_account_profiles profile WHERE profile.account_id = provider_accounts.id AND profile.nsfw_enabled_at IS NOT NULL)"
-	webTermsAcceptedPredicate = "EXISTS (SELECT 1 FROM web_account_profiles profile WHERE profile.account_id = provider_accounts.id AND profile.terms_accepted_at IS NOT NULL AND profile.terms_accepted_version >= ?)"
-	webBuildLinkedPredicate   = "EXISTS (SELECT 1 FROM account_provider_links link WHERE link.web_account_id = provider_accounts.id)"
-	webConsoleLinkedPredicate = "EXISTS (SELECT 1 FROM web_console_account_links link WHERE link.web_account_id = provider_accounts.id)"
-)
-
-func applyWebAgreementFilter(query *gorm.DB, agreement string) *gorm.DB {
-	switch agreement {
-	case "nsfwEnabled":
-		return query.Where(webNSFWEnabledPredicate)
-	case "nsfwDisabled":
-		return query.Where("NOT " + webNSFWEnabledPredicate)
-	case "termsAccepted":
-		return query.Where(webTermsAcceptedPredicate, account.CurrentWebTermsVersion)
-	case "termsNotAccepted":
-		return query.Where("NOT "+webTermsAcceptedPredicate, account.CurrentWebTermsVersion)
-	case "allAccepted":
-		return query.Where(webNSFWEnabledPredicate).Where(webTermsAcceptedPredicate, account.CurrentWebTermsVersion)
-	case "allNotAccepted":
-		return query.Where("NOT "+webNSFWEnabledPredicate).Where("NOT "+webTermsAcceptedPredicate, account.CurrentWebTermsVersion)
-	default:
-		return query
-	}
-}
-
-func applyWebAssociationFilter(query *gorm.DB, association string) *gorm.DB {
-	switch association {
-	case "buildLinked":
-		return query.Where(webBuildLinkedPredicate)
-	case "buildUnlinked":
-		return query.Where("NOT " + webBuildLinkedPredicate)
-	case "consoleLinked":
-		return query.Where(webConsoleLinkedPredicate)
-	case "consoleUnlinked":
-		return query.Where("NOT " + webConsoleLinkedPredicate)
-	case "allLinked":
-		return query.Where(webBuildLinkedPredicate).Where(webConsoleLinkedPredicate)
-	case "allUnlinked":
-		return query.Where("NOT " + webBuildLinkedPredicate).Where("NOT " + webConsoleLinkedPredicate)
-	default:
-		return query
 	}
 }
