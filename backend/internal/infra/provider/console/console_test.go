@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -130,7 +131,9 @@ func TestNormalizeRequestAppliesConsoleContract(t *testing.T) {
 		t.Fatalf("max_output_tokens = %#v", payload["max_output_tokens"])
 	}
 	reasoning, _ := payload["reasoning"].(map[string]any)
-	if reasoning["effort"] != "xhigh" {
+	// grok-4.3 tops out at "high"; forwarding the requested "xhigh" makes the upstream
+	// reject the request with "does not support parameter reasoningEffort".
+	if reasoning["effort"] != "high" {
 		t.Fatalf("reasoning = %#v", reasoning)
 	}
 	include, _ := payload["include"].([]any)
@@ -259,6 +262,65 @@ func TestNormalizeRequestPreservesGrok420ReasoningEffort(t *testing.T) {
 	}
 	if payload["reasoning"] != nil {
 		t.Fatalf("base model request should retain the upstream default: %#v", payload)
+	}
+}
+
+// grok-4.20-0309-reasoning rejects xhigh with "does not support parameter reasoningEffort",
+// so an unsupported level must be clamped to a supported one before the request goes out
+// instead of being forwarded verbatim.
+func TestNormalizeReasoningClampsUnsupportedEffort(t *testing.T) {
+	spec, ok := Resolve("grok-4.20-0309-reasoning")
+	if !ok {
+		t.Fatal("grok-4.20-0309-reasoning missing")
+	}
+	supported := modeldomain.SupportedReasoningEfforts("grok-4.20-0309-reasoning")
+	for _, unsupported := range []string{"xhigh", "max", "none"} {
+		body, err := normalizeRequest([]byte(`{
+			"model":"grok-4.20-0309-reasoning",
+			"input":"hello",
+			"reasoning":{"effort":"`+unsupported+`"}
+		}`), spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatal(err)
+		}
+		reasoning, _ := payload["reasoning"].(map[string]any)
+		effort, _ := reasoning["effort"].(string)
+		if effort == "" {
+			continue
+		}
+		if !slices.Contains(supported, effort) {
+			t.Fatalf("effort %q forwarded for input %q, want one of %v", effort, unsupported, supported)
+		}
+	}
+}
+
+// A level the model does support must survive untouched.
+func TestNormalizeReasoningKeepsSupportedEffort(t *testing.T) {
+	spec, ok := Resolve("grok-4.20-0309-reasoning")
+	if !ok {
+		t.Fatal("grok-4.20-0309-reasoning missing")
+	}
+	for _, level := range []string{"low", "medium", "high"} {
+		body, err := normalizeRequest([]byte(`{
+			"model":"grok-4.20-0309-reasoning",
+			"input":"hello",
+			"reasoning":{"effort":"`+level+`"}
+		}`), spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatal(err)
+		}
+		reasoning, _ := payload["reasoning"].(map[string]any)
+		if reasoning["effort"] != level {
+			t.Fatalf("effort = %#v, want %q", reasoning["effort"], level)
+		}
 	}
 }
 
