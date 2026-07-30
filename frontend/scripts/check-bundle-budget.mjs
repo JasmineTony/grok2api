@@ -30,7 +30,9 @@ const budgets = [
     maxGzip: 35_000,
     label: "Lucide shared chunk",
   },
-  { pattern: /^index-.*\.css$/, maxRaw: 90_000, maxGzip: 20_000, label: "application CSS" },
+  // Raw grew past 90 KB with the upstream v3.0.11 egress/audit UI. Gzip is the number that
+  // reaches users and still has ~20% headroom, so only the raw ceiling was raised.
+  { pattern: /^index-.*\.css$/, maxRaw: 95_000, maxGzip: 20_000, label: "application CSS" },
 ];
 
 const files = readdirSync(assetsDir).map((name) => {

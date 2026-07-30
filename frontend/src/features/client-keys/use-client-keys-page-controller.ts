@@ -59,6 +59,8 @@ export function useClientKeysPageController() {
       billingUnlimited: z.boolean(),
       billingLimitUsd: z.number().min(0.01, t("errors.positive")),
       allowModelAliases: z.boolean(),
+      providerScope: z.array(z.enum(["all", "grok_build", "grok_web", "grok_console"])),
+      tierScope: z.array(z.enum(["all", "free", "super"])),
       allowedModelIds: z.array(z.string()),
     })
     .superRefine((value, context) => {
@@ -81,6 +83,8 @@ export function useClientKeysPageController() {
       billingUnlimited: true,
       billingLimitUsd: 10,
       allowModelAliases: false,
+      providerScope: ["all"],
+      tierScope: ["all"],
       allowedModelIds: [],
     },
   });
@@ -132,6 +136,8 @@ export function useClientKeysPageController() {
         maxConcurrent: values.concurrencyUnlimited ? 0 : values.maxConcurrent,
         billingLimitUsdTicks: values.billingUnlimited ? 0 : usdToTicks(values.billingLimitUsd),
         allowModelAliases: values.allowModelAliases,
+        providerScope: values.providerScope,
+        tierScope: values.tierScope,
         allowedModelIds: values.allowedModelIds,
         expiresAt: values.expiryUnlimited ? "" : new Date(values.expiresAt).toISOString(),
       };
@@ -211,6 +217,8 @@ export function useClientKeysPageController() {
       billingUnlimited: true,
       billingLimitUsd: 10,
       allowModelAliases: false,
+      providerScope: ["all"],
+      tierScope: ["all"],
       allowedModelIds: [],
     });
   }
@@ -231,6 +239,8 @@ export function useClientKeysPageController() {
       billingUnlimited: key.billingLimitUsdTicks === 0,
       billingLimitUsd: key.billingLimitUsdTicks > 0 ? ticksToUSD(key.billingLimitUsdTicks) : 10,
       allowModelAliases: key.allowModelAliases,
+      providerScope: key.providerScope ?? ["all"],
+      tierScope: key.tierScope ?? ["all"],
       allowedModelIds: key.allowedModelIds,
     });
   }

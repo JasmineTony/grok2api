@@ -25,6 +25,8 @@ export type ClientKeyDTO = {
   billedUsageUsdTicks: number;
   allowModelAliases: boolean;
   allowedModelIds: string[];
+  providerScope?: ProviderScopeValue[];
+  tierScope?: TierScopeValue[];
   lastUsedAt?: string;
 };
 
@@ -37,7 +39,12 @@ export type ClientKeyInput = {
   billingLimitUsdTicks: number;
   allowModelAliases: boolean;
   allowedModelIds: string[];
+  providerScope: ProviderScopeValue[];
+  tierScope: TierScopeValue[];
 };
+
+export type ProviderScopeValue = "all" | "grok_build" | "grok_web" | "grok_console";
+export type TierScopeValue = "all" | "free" | "super";
 
 export type CreateKeyResponseDTO = { key: ClientKeyDTO; secret: string };
 

@@ -40,6 +40,11 @@ type dashboardMetricRow struct {
 	BilledCostUSDTicks           int64
 	RequestCacheEligibleRequests int64
 	RequestCacheHits             int64
+	FirstTokenSamples            int64
+	FirstTokenTotalMS            int64
+	ThroughputSamples            int64
+	ThroughputTokens             int64
+	GenerationTotalMS            int64
 }
 
 type dashboardQueryRange struct {
@@ -363,9 +368,9 @@ func (r *DashboardRepository) queryDashboardMetrics(tx *gorm.DB, queryRange dash
 
 func dashboardMetricSelect(useRollup bool) string {
 	if useRollup {
-		return "COALESCE(SUM(requests), 0) AS requests, COALESCE(SUM(successful_requests), 0) AS successful_requests, COALESCE(SUM(failed_requests), 0) AS failed_requests, COALESCE(SUM(input_tokens), 0) AS input_tokens, COALESCE(SUM(cached_input_tokens), 0) AS cached_input_tokens, COALESCE(SUM(output_tokens), 0) AS output_tokens, COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens, COALESCE(SUM(total_tokens), 0) AS tokens, COALESCE(SUM(actual_cost_usd_ticks), 0) AS actual_cost_usd_ticks, COALESCE(SUM(estimated_cost_usd_ticks), 0) AS estimated_cost_usd_ticks, COALESCE(SUM(billed_cost_usd_ticks), 0) AS billed_cost_usd_ticks, COALESCE(SUM(request_cache_eligible), 0) AS request_cache_eligible_requests, COALESCE(SUM(request_cache_hits), 0) AS request_cache_hits"
+		return "COALESCE(SUM(requests), 0) AS requests, COALESCE(SUM(successful_requests), 0) AS successful_requests, COALESCE(SUM(failed_requests), 0) AS failed_requests, COALESCE(SUM(input_tokens), 0) AS input_tokens, COALESCE(SUM(cached_input_tokens), 0) AS cached_input_tokens, COALESCE(SUM(output_tokens), 0) AS output_tokens, COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens, COALESCE(SUM(total_tokens), 0) AS tokens, COALESCE(SUM(actual_cost_usd_ticks), 0) AS actual_cost_usd_ticks, COALESCE(SUM(estimated_cost_usd_ticks), 0) AS estimated_cost_usd_ticks, COALESCE(SUM(billed_cost_usd_ticks), 0) AS billed_cost_usd_ticks, COALESCE(SUM(request_cache_eligible), 0) AS request_cache_eligible_requests, COALESCE(SUM(request_cache_hits), 0) AS request_cache_hits, COALESCE(SUM(first_token_samples), 0) AS first_token_samples, COALESCE(SUM(first_token_total_ms), 0) AS first_token_total_ms, COALESCE(SUM(throughput_samples), 0) AS throughput_samples, COALESCE(SUM(throughput_tokens), 0) AS throughput_tokens, COALESCE(SUM(generation_total_ms), 0) AS generation_total_ms"
 	}
-	return "COUNT(*) AS requests, COALESCE(SUM(CASE WHEN status_code >= 200 AND status_code < 300 THEN 1 ELSE 0 END), 0) AS successful_requests, COALESCE(SUM(CASE WHEN status_code < 200 OR status_code >= 300 THEN 1 ELSE 0 END), 0) AS failed_requests, COALESCE(SUM(input_tokens), 0) AS input_tokens, COALESCE(SUM(cached_input_tokens), 0) AS cached_input_tokens, COALESCE(SUM(output_tokens), 0) AS output_tokens, COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens, COALESCE(SUM(total_tokens), 0) AS tokens, COALESCE(SUM(cost_in_usd_ticks), 0) AS actual_cost_usd_ticks, COALESCE(SUM(estimated_cost_in_usd_ticks), 0) AS estimated_cost_usd_ticks, COALESCE(SUM(CASE WHEN cost_in_usd_ticks > 0 THEN cost_in_usd_ticks ELSE estimated_cost_in_usd_ticks END), 0) AS billed_cost_usd_ticks, COALESCE(SUM(CASE WHEN request_cache_eligible THEN 1 ELSE 0 END), 0) AS request_cache_eligible_requests, COALESCE(SUM(CASE WHEN request_cache_hit THEN 1 ELSE 0 END), 0) AS request_cache_hits"
+	return "COUNT(*) AS requests, COALESCE(SUM(CASE WHEN status_code >= 200 AND status_code < 300 THEN 1 ELSE 0 END), 0) AS successful_requests, COALESCE(SUM(CASE WHEN status_code < 200 OR status_code >= 300 THEN 1 ELSE 0 END), 0) AS failed_requests, COALESCE(SUM(input_tokens), 0) AS input_tokens, COALESCE(SUM(cached_input_tokens), 0) AS cached_input_tokens, COALESCE(SUM(output_tokens), 0) AS output_tokens, COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens, COALESCE(SUM(total_tokens), 0) AS tokens, COALESCE(SUM(cost_in_usd_ticks), 0) AS actual_cost_usd_ticks, COALESCE(SUM(estimated_cost_in_usd_ticks), 0) AS estimated_cost_usd_ticks, COALESCE(SUM(CASE WHEN cost_in_usd_ticks > 0 THEN cost_in_usd_ticks ELSE estimated_cost_in_usd_ticks END), 0) AS billed_cost_usd_ticks, COALESCE(SUM(CASE WHEN request_cache_eligible THEN 1 ELSE 0 END), 0) AS request_cache_eligible_requests, COALESCE(SUM(CASE WHEN request_cache_hit THEN 1 ELSE 0 END), 0) AS request_cache_hits, COUNT(first_token_ms) AS first_token_samples, COALESCE(SUM(first_token_ms), 0) AS first_token_total_ms, COALESCE(SUM(CASE WHEN first_token_ms IS NOT NULL AND output_tokens > 0 AND duration_ms > first_token_ms THEN 1 ELSE 0 END), 0) AS throughput_samples, COALESCE(SUM(CASE WHEN first_token_ms IS NOT NULL AND output_tokens > 0 AND duration_ms > first_token_ms THEN output_tokens ELSE 0 END), 0) AS throughput_tokens, COALESCE(SUM(CASE WHEN first_token_ms IS NOT NULL AND output_tokens > 0 AND duration_ms > first_token_ms THEN duration_ms - first_token_ms ELSE 0 END), 0) AS generation_total_ms"
 }
 
 func addMetricRow(target *dashboardMetricRow, value dashboardMetricRow) {
@@ -382,10 +387,15 @@ func addMetricRow(target *dashboardMetricRow, value dashboardMetricRow) {
 	target.BilledCostUSDTicks += value.BilledCostUSDTicks
 	target.RequestCacheEligibleRequests += value.RequestCacheEligibleRequests
 	target.RequestCacheHits += value.RequestCacheHits
+	target.FirstTokenSamples += value.FirstTokenSamples
+	target.FirstTokenTotalMS += value.FirstTokenTotalMS
+	target.ThroughputSamples += value.ThroughputSamples
+	target.ThroughputTokens += value.ThroughputTokens
+	target.GenerationTotalMS += value.GenerationTotalMS
 }
 
 func usageFromMetric(row dashboardMetricRow) dashboarddomain.Usage {
-	return dashboarddomain.Usage{Requests: row.Requests, SuccessfulRequests: row.SuccessfulRequests, FailedRequests: row.FailedRequests, InputTokens: row.InputTokens, CachedInputTokens: row.CachedInputTokens, OutputTokens: row.OutputTokens, ReasoningTokens: row.ReasoningTokens, Tokens: row.Tokens, ActualCostUSDTicks: row.ActualCostUSDTicks, EstimatedCostUSDTicks: row.EstimatedCostUSDTicks, BilledCostUSDTicks: row.BilledCostUSDTicks, RequestCacheEligibleRequests: row.RequestCacheEligibleRequests, RequestCacheHits: row.RequestCacheHits}
+	return dashboarddomain.Usage{Requests: row.Requests, SuccessfulRequests: row.SuccessfulRequests, FailedRequests: row.FailedRequests, InputTokens: row.InputTokens, CachedInputTokens: row.CachedInputTokens, OutputTokens: row.OutputTokens, ReasoningTokens: row.ReasoningTokens, Tokens: row.Tokens, ActualCostUSDTicks: row.ActualCostUSDTicks, EstimatedCostUSDTicks: row.EstimatedCostUSDTicks, BilledCostUSDTicks: row.BilledCostUSDTicks, RequestCacheEligibleRequests: row.RequestCacheEligibleRequests, RequestCacheHits: row.RequestCacheHits, FirstTokenSamples: row.FirstTokenSamples, FirstTokenTotalMS: row.FirstTokenTotalMS, ThroughputSamples: row.ThroughputSamples, ThroughputTokens: row.ThroughputTokens, GenerationTotalMS: row.GenerationTotalMS}
 }
 
 func bucketFromMetric(index int, row dashboardMetricRow) dashboarddomain.Bucket {

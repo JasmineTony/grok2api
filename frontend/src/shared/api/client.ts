@@ -21,6 +21,7 @@ export class ApiError extends Error {
 export type RefreshResult = "refreshed" | "invalid" | "unavailable";
 export type ApiStreamEvent<T> = { event: string; data: T };
 export type PaginatedDTO<T> = { items: T[]; page: number; pageSize: number; total: number };
+export type ApiDownloadResult = { blob: Blob; headers: Headers };
 
 type SessionInvalidatedListener = () => void;
 type RequestOptions = Omit<RequestInit, "body" | "signal"> & {
@@ -83,6 +84,10 @@ export class ApiClient {
   }
 
   async download(path: string, retryAuth = true): Promise<Blob> {
+    return (await this.downloadResponse(path, retryAuth)).blob;
+  }
+
+  async downloadResponse(path: string, retryAuth = true): Promise<ApiDownloadResult> {
     const headers = new Headers();
     if (this.accessToken) headers.set("Authorization", `Bearer ${this.accessToken}`);
     const response = await this.fetchImpl(resolveUrl(this.baseUrl, path), {
@@ -91,11 +96,11 @@ export class ApiClient {
     });
     if (response.status === 401 && retryAuth) {
       const refreshResult = await this.refreshAccessToken();
-      if (refreshResult === "refreshed") return this.download(path, false);
+      if (refreshResult === "refreshed") return this.downloadResponse(path, false);
       if (refreshResult === "unavailable") throw sessionRefreshUnavailable();
     }
     if (!response.ok) await parseResponse(response, decodeNever);
-    return response.blob();
+    return { blob: await response.blob(), headers: response.headers };
   }
 
   async eventStream<T>(

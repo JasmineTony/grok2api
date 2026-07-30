@@ -38,6 +38,11 @@ type usageRollupAggregateRow struct {
 	EstimatedCostUSDTicks int64
 	RequestCacheEligible  int64
 	RequestCacheHits      int64
+	FirstTokenSamples     int64
+	FirstTokenTotalMS     int64
+	ThroughputSamples     int64
+	ThroughputTokens      int64
+	GenerationTotalMS     int64
 	DurationMS            int64
 }
 
@@ -175,7 +180,12 @@ func usageRollupAggregateSelect(table string) string {
 			"COALESCE(SUM(CASE WHEN cost_in_usd_ticks > 0 THEN cost_in_usd_ticks ELSE estimated_cost_in_usd_ticks END), 0) AS billed_cost_usd_ticks, " +
 			"COALESCE(SUM(estimated_cost_in_usd_ticks), 0) AS estimated_cost_usd_ticks, " +
 			"COALESCE(SUM(CASE WHEN request_cache_eligible THEN 1 ELSE 0 END), 0) AS request_cache_eligible, " +
-			"COALESCE(SUM(CASE WHEN request_cache_hit THEN 1 ELSE 0 END), 0) AS request_cache_hits, COALESCE(SUM(duration_ms), 0) AS duration_ms"
+			"COALESCE(SUM(CASE WHEN request_cache_hit THEN 1 ELSE 0 END), 0) AS request_cache_hits, " +
+			"COUNT(first_token_ms) AS first_token_samples, COALESCE(SUM(first_token_ms), 0) AS first_token_total_ms, " +
+			"COALESCE(SUM(CASE WHEN first_token_ms IS NOT NULL AND output_tokens > 0 AND duration_ms > first_token_ms THEN 1 ELSE 0 END), 0) AS throughput_samples, " +
+			"COALESCE(SUM(CASE WHEN first_token_ms IS NOT NULL AND output_tokens > 0 AND duration_ms > first_token_ms THEN output_tokens ELSE 0 END), 0) AS throughput_tokens, " +
+			"COALESCE(SUM(CASE WHEN first_token_ms IS NOT NULL AND output_tokens > 0 AND duration_ms > first_token_ms THEN duration_ms - first_token_ms ELSE 0 END), 0) AS generation_total_ms, " +
+			"COALESCE(SUM(duration_ms), 0) AS duration_ms"
 	}
 	return "COALESCE(SUM(requests), 0) AS requests, COALESCE(SUM(successful_requests), 0) AS successful_requests, " +
 		"COALESCE(SUM(failed_requests), 0) AS failed_requests, COALESCE(SUM(input_tokens), 0) AS input_tokens, " +
@@ -184,6 +194,9 @@ func usageRollupAggregateSelect(table string) string {
 		"COALESCE(SUM(actual_cost_usd_ticks), 0) AS actual_cost_usd_ticks, COALESCE(SUM(billed_cost_usd_ticks), 0) AS billed_cost_usd_ticks, " +
 		"COALESCE(SUM(estimated_cost_usd_ticks), 0) AS estimated_cost_usd_ticks, " +
 		"COALESCE(SUM(request_cache_eligible), 0) AS request_cache_eligible, COALESCE(SUM(request_cache_hits), 0) AS request_cache_hits, " +
+		"COALESCE(SUM(first_token_samples), 0) AS first_token_samples, COALESCE(SUM(first_token_total_ms), 0) AS first_token_total_ms, " +
+		"COALESCE(SUM(throughput_samples), 0) AS throughput_samples, COALESCE(SUM(throughput_tokens), 0) AS throughput_tokens, " +
+		"COALESCE(SUM(generation_total_ms), 0) AS generation_total_ms, " +
 		"COALESCE(SUM(duration_ms), 0) AS duration_ms"
 }
 
@@ -205,7 +218,10 @@ func makeUsageRollupModels(rows []usageRollupAggregateRow, kind string, width ti
 			FailedRequests: row.FailedRequests, InputTokens: row.InputTokens, CachedInputTokens: row.CachedInputTokens,
 			OutputTokens: row.OutputTokens, ReasoningTokens: row.ReasoningTokens, TotalTokens: row.TotalTokens,
 			ActualCostUSDTicks: row.ActualCostUSDTicks, BilledCostUSDTicks: row.BilledCostUSDTicks, EstimatedCostUSDTicks: row.EstimatedCostUSDTicks,
-			RequestCacheEligible: row.RequestCacheEligible, RequestCacheHits: row.RequestCacheHits, DurationMS: row.DurationMS,
+			RequestCacheEligible: row.RequestCacheEligible, RequestCacheHits: row.RequestCacheHits,
+			FirstTokenSamples: row.FirstTokenSamples, FirstTokenTotalMS: row.FirstTokenTotalMS,
+			ThroughputSamples: row.ThroughputSamples, ThroughputTokens: row.ThroughputTokens,
+			GenerationTotalMS: row.GenerationTotalMS, DurationMS: row.DurationMS,
 			CreatedAt: now, UpdatedAt: now,
 		})
 	}

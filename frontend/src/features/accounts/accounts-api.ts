@@ -111,7 +111,10 @@ export type AccountDTO = {
   refreshDueAt?: string;
   lastRefreshAt?: string;
   refreshFailureCount: number;
+  lastRefreshErrorStatus?: number;
   lastRefreshErrorCode?: string;
+  lastRefreshErrorMessage?: string;
+  lastRefreshErrorResponse?: string;
   priority: number;
   maxConcurrent: number;
   minimumRemaining: number;

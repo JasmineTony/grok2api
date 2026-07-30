@@ -1,4 +1,11 @@
-import { Activity, CircleDollarSign, type LucideIcon, UsersRound, WholeWord } from "lucide-react";
+import {
+  Activity,
+  CircleDollarSign,
+  Gauge,
+  type LucideIcon,
+  UsersRound,
+  WholeWord,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Spinner } from "@/components/ui/spinner";
@@ -6,7 +13,7 @@ import type { DashboardDTO } from "@/features/dashboard/dashboard-api";
 import { formatUSD, formatUSDValue, usdTicksToValue } from "@/features/dashboard/dashboard-format";
 import { DashboardPanel } from "@/features/dashboard/dashboard-panel";
 import { cn } from "@/shared/lib/cn";
-import { formatNumber } from "@/shared/lib/format";
+import { formatDuration, formatNumber } from "@/shared/lib/format";
 
 type DashboardDataProps = {
   dashboard?: DashboardDTO | undefined;
@@ -25,10 +32,18 @@ export function DashboardOverview({ dashboard, locale, loading }: DashboardDataP
     (usage?.requests ?? 0) > 0
       ? usdTicksToValue(usage?.billedCostUsdTicks ?? 0) / (usage?.requests ?? 1)
       : 0;
+  const hasFirstTokenSamples = (usage?.firstTokenSamples ?? 0) > 0;
+  const hasThroughputSamples = (usage?.throughputSamples ?? 0) > 0;
+  const performanceDetail = hasThroughputSamples
+    ? t("audits.averageOutputSpeed", {
+        speed: formatNumber(usage?.outputTokensPerSecond ?? 0, locale, 1),
+        count: formatNumber(usage?.throughputSamples ?? 0, locale),
+      })
+    : t(hasFirstTokenSamples ? "audits.throughputPending" : "audits.performancePending");
 
   return (
     <section aria-label={t("dashboard.usage")}>
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
         <DashboardMetric
           icon={UsersRound}
           label={t("dashboard.accountCount")}
@@ -74,6 +89,13 @@ export function DashboardOverview({ dashboard, locale, loading }: DashboardDataP
             estimated: formatUSD(usage?.estimatedCostUsdTicks ?? 0, locale),
             average: formatUSDValue(averageRequestCost, locale),
           })}
+          loading={loading}
+        />
+        <DashboardMetric
+          icon={Gauge}
+          label={t("audits.averageFirstToken")}
+          value={hasFirstTokenSamples ? formatDuration(usage?.averageFirstTokenMs ?? 0) : "—"}
+          detail={performanceDetail}
           loading={loading}
         />
       </div>

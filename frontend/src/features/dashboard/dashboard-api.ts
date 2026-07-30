@@ -5,6 +5,7 @@ import {
   isArrayOf,
   isNumber,
   isOneOf,
+  isOptional,
   isString,
 } from "@/shared/api/decoder";
 import type { PeriodValue } from "@/shared/lib/period";
@@ -28,6 +29,10 @@ export type DashboardUsageDTO = {
   successRate: number;
   tokenCacheHitRate: number;
   requestCacheHitRate: number;
+  averageFirstTokenMs?: number;
+  outputTokensPerSecond?: number;
+  firstTokenSamples?: number;
+  throughputSamples?: number;
 };
 
 export type DashboardDimensionUsageDTO = {
@@ -148,6 +153,10 @@ const dashboardUsage = hasShape({
   successRate: isNumber,
   tokenCacheHitRate: isNumber,
   requestCacheHitRate: isNumber,
+  averageFirstTokenMs: isOptional(isNumber),
+  outputTokensPerSecond: isOptional(isNumber),
+  firstTokenSamples: isOptional(isNumber),
+  throughputSamples: isOptional(isNumber),
 });
 const dashboardModelItem = hasShape({
   model: isString,
