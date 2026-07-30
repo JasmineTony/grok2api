@@ -1127,6 +1127,7 @@ func (h *Handler) writeProtocolResult(c *gin.Context, result *gateway.Result, st
 type responseMetadata struct {
 	Usage                    gateway.Usage
 	cacheCreationInputTokens int64
+	thinkingCharacters       int
 	ResponseID               string
 	Model                    string
 	StreamFailure            *gateway.StreamFailureDiagnostic
@@ -1234,6 +1235,7 @@ func (i *responseInspector) Inspect(chunk []byte) {
 			value := bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
 			i.observeFirstToken(value)
 			i.observeTerminal(value)
+			i.observeThinkingDelta(value)
 			if !bytes.Equal(value, []byte("[DONE]")) {
 				metadata := extractMetadata(value)
 				if hasUsageSignal(metadata.Usage) {
@@ -1254,6 +1256,27 @@ func (i *responseInspector) Inspect(chunk []byte) {
 				}
 			}
 		}
+	}
+}
+
+// observeThinkingDelta accumulates streamed Anthropic thinking text so a streaming
+// Messages request reports the same reasoning estimate as a non-streaming one.
+func (i *responseInspector) observeThinkingDelta(data []byte) {
+	if i.protocol != streamProtocolAnthropic || len(data) == 0 {
+		return
+	}
+	var event struct {
+		Type  string `json:"type"`
+		Delta struct {
+			Type     string `json:"type"`
+			Thinking string `json:"thinking"`
+		} `json:"delta"`
+	}
+	if json.Unmarshal(data, &event) != nil || event.Type != "content_block_delta" {
+		return
+	}
+	if event.Delta.Type == "thinking_delta" {
+		i.metadata.thinkingCharacters += utf8.RuneCountInString(event.Delta.Thinking)
 	}
 }
 
@@ -1357,6 +1380,15 @@ func normalizeMetadataUsage(metadata responseMetadata, protocol streamProtocol) 
 	inputTokens := saturatingUsageSum(metadata.Usage.InputTokens, metadata.Usage.CachedInputTokens, metadata.cacheCreationInputTokens)
 	metadata.Usage.InputTokens = inputTokens
 	metadata.Usage.TotalTokens = saturatingUsageSum(inputTokens, metadata.Usage.OutputTokens)
+	// Anthropic counts thinking inside output_tokens and reports no reasoning field, so
+	// estimate from the thinking text when the upstream did not report a count itself.
+	if metadata.Usage.ReasoningTokens == 0 && metadata.thinkingCharacters > 0 {
+		estimated := int64((metadata.thinkingCharacters + 3) / 4)
+		if metadata.Usage.OutputTokens > 0 {
+			estimated = min(estimated, metadata.Usage.OutputTokens)
+		}
+		metadata.Usage.ReasoningTokens = estimated
+	}
 	return metadata
 }
 
@@ -1561,12 +1593,33 @@ func extractMetadata(data []byte) responseMetadata {
 	}
 	metadata.Usage = usage.toGatewayUsage(metadata.Model)
 	metadata.cacheCreationInputTokens = usage.CacheCreationInputTokens
+	metadata.thinkingCharacters = countThinkingCharacters(root)
 	return metadata
 }
 
+// countThinkingCharacters sums the thinking text Anthropic Messages returns in content
+// blocks. Anthropic bills thinking inside output_tokens and sends no reasoning count, so
+// this is the only signal available for the audit's reasoning column.
+func countThinkingCharacters(root responsePayloadDTO) int {
+	total := 0
+	for _, block := range root.Content {
+		if block.Type == "thinking" {
+			total += utf8.RuneCountInString(block.Thinking)
+		}
+	}
+	if root.Response != nil {
+		total += countThinkingCharacters(*root.Response)
+	}
+	return total
+}
+
 type responsePayloadDTO struct {
-	ID       string              `json:"id"`
-	Model    string              `json:"model"`
+	ID      string `json:"id"`
+	Model   string `json:"model"`
+	Content []struct {
+		Type     string `json:"type"`
+		Thinking string `json:"thinking"`
+	} `json:"content"`
 	Usage    *responseUsageDTO   `json:"usage"`
 	Response *responsePayloadDTO `json:"response"`
 }

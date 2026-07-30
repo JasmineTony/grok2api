@@ -38,7 +38,11 @@ type quotaBreakdownJSON struct {
 }
 
 const (
-	accountUpdateBatchSize      = 500
+	accountUpdateBatchSize = 500
+	// accountIDQueryBatchSize bounds how many IDs go into a single IN (...) clause.
+	// SQLite allows roughly 32766 bound parameters per statement, so a large account
+	// pool would otherwise fail the whole query instead of paging through it.
+	accountIDQueryBatchSize     = 500
 	accountPaidPlanSignal       = `(LOWER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(billing.plan_code), ' ', ''), '_', ''), '-', ''), '+', 'plus')) IN ('super', 'supergrok', 'supergrokpro', 'supergrokheavy', 'supergroklite', 'grokpro', 'xpremium', 'xpremiumplus', 'apikey') OR LOWER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(billing.plan_name), ' ', ''), '_', ''), '-', ''), '+', 'plus')) IN ('super', 'supergrok', 'supergrokpro', 'supergrokheavy', 'supergroklite', 'grokpro', 'xpremium', 'xpremiumplus', 'apikey'))`
 	accountFreePlanSignal       = `(LOWER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(billing.plan_code), ' ', ''), '_', ''), '-', ''), '+', 'plus')) IN ('free', 'grokfree', 'freetier', 'basic', 'grokbasic', 'xbasic') OR LOWER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(billing.plan_name), ' ', ''), '_', ''), '-', ''), '+', 'plus')) IN ('free', 'grokfree', 'freetier', 'basic', 'grokbasic', 'xbasic'))`
 	accountPaidBillingSignals   = `(` + accountPaidPlanSignal + ` OR billing.monthly_limit > 0 OR billing.on_demand_cap > 0 OR billing.on_demand_used > 0 OR billing.prepaid_balance > 0)`
@@ -165,11 +169,18 @@ func (r *AccountRepository) CountProviderAccountsByIDs(ctx context.Context, prov
 	if len(ids) == 0 {
 		return 0, nil
 	}
-	var count int64
-	err := r.db.db.WithContext(ctx).Model(&accountModel{}).
-		Where("provider = ? AND id IN ?", providerValue, ids).
-		Count(&count).Error
-	return count, err
+	var total int64
+	err := forEachAccountIDBatch(ids, func(batch []uint64) error {
+		var count int64
+		if err := r.db.db.WithContext(ctx).Model(&accountModel{}).
+			Where("provider = ? AND id IN ?", providerValue, batch).
+			Count(&count).Error; err != nil {
+			return err
+		}
+		total += count
+		return nil
+	})
+	return total, err
 }
 
 func (r *AccountRepository) Summarize(ctx context.Context, now time.Time) ([]repository.AccountSummary, error) {
@@ -240,26 +251,32 @@ func (r *AccountRepository) ListRoutingCandidates(ctx context.Context, provider 
 	supported := make(map[uint64]bool, len(ids))
 	modelQuotaBlocks := make(map[uint64]account.ModelQuotaBlock, len(ids))
 	if strings.TrimSpace(upstreamModel) != "" && len(ids) > 0 {
-		var states []accountModelSyncStateModel
-		if err := r.db.db.WithContext(ctx).Where("account_id IN ? AND last_success_at IS NOT NULL", ids).Find(&states).Error; err != nil {
+		err := forEachAccountIDBatch(ids, func(batch []uint64) error {
+			var states []accountModelSyncStateModel
+			if err := r.db.db.WithContext(ctx).Where("account_id IN ? AND last_success_at IS NOT NULL", batch).Find(&states).Error; err != nil {
+				return err
+			}
+			for _, state := range states {
+				known[state.AccountID] = true
+			}
+			var capabilities []accountModelCapabilityModel
+			if err := r.db.db.WithContext(ctx).Where("account_id IN ? AND upstream_model = ?", batch, upstreamModel).Find(&capabilities).Error; err != nil {
+				return err
+			}
+			for _, capability := range capabilities {
+				supported[capability.AccountID] = true
+			}
+			var blockRows []accountModelQuotaBlockModel
+			if err := r.db.db.WithContext(ctx).Where("account_id IN ? AND upstream_model = ? AND cooldown_until > ?", batch, upstreamModel, time.Now().UTC()).Find(&blockRows).Error; err != nil {
+				return err
+			}
+			for _, row := range blockRows {
+				modelQuotaBlocks[row.AccountID] = account.ModelQuotaBlock{AccountID: row.AccountID, UpstreamModel: row.UpstreamModel, Reason: row.Reason, CooldownUntil: row.CooldownUntil.UTC(), UpdatedAt: row.UpdatedAt.UTC()}
+			}
+			return nil
+		})
+		if err != nil {
 			return nil, err
-		}
-		for _, state := range states {
-			known[state.AccountID] = true
-		}
-		var capabilities []accountModelCapabilityModel
-		if err := r.db.db.WithContext(ctx).Where("account_id IN ? AND upstream_model = ?", ids, upstreamModel).Find(&capabilities).Error; err != nil {
-			return nil, err
-		}
-		for _, capability := range capabilities {
-			supported[capability.AccountID] = true
-		}
-		var blockRows []accountModelQuotaBlockModel
-		if err := r.db.db.WithContext(ctx).Where("account_id IN ? AND upstream_model = ? AND cooldown_until > ?", ids, upstreamModel, time.Now().UTC()).Find(&blockRows).Error; err != nil {
-			return nil, err
-		}
-		for _, row := range blockRows {
-			modelQuotaBlocks[row.AccountID] = account.ModelQuotaBlock{AccountID: row.AccountID, UpstreamModel: row.UpstreamModel, Reason: row.Reason, CooldownUntil: row.CooldownUntil.UTC(), UpdatedAt: row.UpdatedAt.UTC()}
 		}
 	}
 	sharedSuperBuildModel := false
@@ -388,17 +405,35 @@ var routingBillingColumns = []string{
 	"usage_period_start", "usage_period_end", "billing_period_start", "billing_period_end", "synced_at",
 }
 
+// forEachAccountIDBatch runs visit over accountIDQueryBatchSize-sized slices of ids so
+// a single statement never exceeds the driver's bound-parameter limit.
+func forEachAccountIDBatch(ids []uint64, visit func([]uint64) error) error {
+	for start := 0; start < len(ids); start += accountIDQueryBatchSize {
+		end := min(start+accountIDQueryBatchSize, len(ids))
+		if err := visit(ids[start:end]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *AccountRepository) getRoutingBillings(ctx context.Context, accountIDs []uint64) (map[uint64]account.Billing, error) {
 	result := make(map[uint64]account.Billing, len(accountIDs))
 	if len(accountIDs) == 0 {
 		return result, nil
 	}
-	var rows []billingModel
-	if err := r.db.db.WithContext(ctx).Select(routingBillingColumns).Where("account_id IN ?", accountIDs).Find(&rows).Error; err != nil {
+	err := forEachAccountIDBatch(accountIDs, func(batch []uint64) error {
+		var rows []billingModel
+		if err := r.db.db.WithContext(ctx).Select(routingBillingColumns).Where("account_id IN ?", batch).Find(&rows).Error; err != nil {
+			return err
+		}
+		for _, row := range rows {
+			result[row.AccountID] = toRoutingBillingDomain(row)
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
-	}
-	for _, row := range rows {
-		result[row.AccountID] = toRoutingBillingDomain(row)
 	}
 	return result, nil
 }
@@ -419,18 +454,24 @@ func (r *AccountRepository) getRoutingQuotaWindows(ctx context.Context, accountI
 	if quotaMode != "" {
 		modes = append(modes, quotaMode)
 	}
-	var rows []quotaWindowModel
-	if err := r.db.db.WithContext(ctx).
-		Select(routingQuotaWindowColumns).
-		Where("account_id IN ? AND mode IN ?", accountIDs, modes).
-		Order("CASE WHEN mode = 'weekly' THEN 0 ELSE 1 END").
-		Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	for _, row := range rows {
-		if _, exists := result[row.AccountID]; !exists {
-			result[row.AccountID] = toRoutingQuotaWindowDomain(row)
+	err := forEachAccountIDBatch(accountIDs, func(batch []uint64) error {
+		var rows []quotaWindowModel
+		if err := r.db.db.WithContext(ctx).
+			Select(routingQuotaWindowColumns).
+			Where("account_id IN ? AND mode IN ?", batch, modes).
+			Order("CASE WHEN mode = 'weekly' THEN 0 ELSE 1 END").
+			Find(&rows).Error; err != nil {
+			return err
 		}
+		for _, row := range rows {
+			if _, exists := result[row.AccountID]; !exists {
+				result[row.AccountID] = toRoutingQuotaWindowDomain(row)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return result, nil
 }

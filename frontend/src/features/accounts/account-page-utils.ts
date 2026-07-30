@@ -3,12 +3,14 @@ import type { UseFormReturn } from "react-hook-form";
 import { toast } from "sonner";
 
 import type { AccountFormValues } from "@/features/accounts/account-form";
-import type {
-  AccountDTO,
-  AccountProvider,
-  AccountSummaryDTO,
-  BuildConversionStrategy,
+import {
+  exportAccountBatch,
+  type AccountDTO,
+  type AccountProvider,
+  type AccountSummaryDTO,
+  type BuildConversionStrategy,
 } from "@/features/accounts/accounts-api";
+import type { ApiClient } from "@/shared/api/client";
 
 const MAX_IMPORT_FILE_BYTES = 30 * 1024 * 1024;
 
@@ -87,6 +89,58 @@ export function deriveAccountOverview(
     abnormal: recovering + disabled + invalid,
     hasProviderAccounts: providerTotal > 0 || resultTotal > 0,
   };
+}
+
+const exportBatchSize = 2000;
+// Guards against a server that keeps reporting more pages: 10k accounts per page would
+// already exceed any real pool long before this many round trips.
+const maxExportBatches = 500;
+
+type ExportDocument = { provider?: string; accounts?: unknown[] };
+
+function parseExportDocument(text: string): ExportDocument {
+  const parsed: unknown = JSON.parse(text);
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("account export payload is not an object");
+  }
+  return parsed as ExportDocument;
+}
+
+/**
+ * Exports an entire provider pool by walking the cursor endpoint and merging each page's
+ * `accounts` array into a single document. The unpaginated endpoint refuses pools above
+ * 10000 accounts, so paging is the only way to export a large pool at all.
+ */
+export async function exportAllAccountsAsBlob(
+  client: ApiClient,
+  provider: AccountProvider,
+): Promise<Blob> {
+  const accounts: unknown[] = [];
+  let documentProvider: string | undefined;
+  let afterId = "0";
+  let snapshotMaxId = "0";
+
+  for (let batch = 0; batch < maxExportBatches; batch += 1) {
+    const page = await exportAccountBatch(
+      client,
+      provider,
+      exportBatchSize,
+      afterId,
+      snapshotMaxId,
+    );
+    const document = parseExportDocument(await page.blob.text());
+    documentProvider ??= document.provider;
+    if (Array.isArray(document.accounts)) accounts.push(...document.accounts);
+    if (!page.hasMore) {
+      const merged = documentProvider === undefined ? { accounts } : { provider: documentProvider, accounts };
+      return new Blob([JSON.stringify(merged, null, 2) + "\n"], {
+        type: "application/json; charset=utf-8",
+      });
+    }
+    afterId = page.nextId;
+    snapshotMaxId = page.snapshotMaxId;
+  }
+  throw new Error("account export did not finish within the allowed number of batches");
 }
 
 export function downloadAccountExport(blob: Blob, provider: AccountProvider): void {

@@ -1,5 +1,6 @@
 import type { AccountTokenRefreshResultDTO } from "@/features/accounts/account-tasks-api";
-import { type ApiClient, type PaginatedDTO } from "@/shared/api/client";
+import { ApiError, type ApiClient, type PaginatedDTO } from "@/shared/api/client";
+import { i18n } from "@/shared/i18n";
 import {
   createObjectDecoder,
   createPaginatedDecoder,
@@ -575,6 +576,68 @@ export function refreshAccountQuota(client: ApiClient, id: string): Promise<Acco
 
 export function exportAccounts(client: ApiClient, provider: AccountProvider): Promise<Blob> {
   return client.download(`/api/admin/v1/accounts/export?provider=${encodeURIComponent(provider)}`);
+}
+
+export type AccountExportBatch = {
+  blob: Blob;
+  count: number;
+  nextId: string;
+  snapshotMaxId: string;
+  hasMore: boolean;
+};
+
+function requiredExportHeader(headers: Headers, name: string): string {
+  const value = headers.get(name);
+  if (value === null) {
+    throw new ApiError(502, "invalidResponse", i18n.t("apiErrors.invalidResponse"));
+  }
+  return value;
+}
+
+// Cursor export keeps a large account pool off the server's heap: each call returns one
+// page plus the cursor for the next, instead of serialising every credential at once.
+export async function exportAccountBatch(
+  client: ApiClient,
+  provider: AccountProvider,
+  limit: number,
+  afterId: string,
+  snapshotMaxId: string,
+): Promise<AccountExportBatch> {
+  const query = new URLSearchParams({ provider, limit: String(limit), afterId, snapshotMaxId });
+  const result = await client.downloadResponse(`/api/admin/v1/accounts/export?${query}`);
+  const count = Number(requiredExportHeader(result.headers, "X-Exported-Accounts"));
+  const nextId = requiredExportHeader(result.headers, "X-Export-Next-ID");
+  const nextSnapshotMaxId = requiredExportHeader(result.headers, "X-Export-Snapshot-Max-ID");
+  const hasMoreText = requiredExportHeader(result.headers, "X-Export-Has-More");
+  const validCursor = /^\d+$/.test(nextId) && /^\d+$/.test(nextSnapshotMaxId);
+  if (
+    !Number.isSafeInteger(count) ||
+    count < 0 ||
+    !validCursor ||
+    (hasMoreText !== "true" && hasMoreText !== "false")
+  ) {
+    throw new ApiError(502, "invalidResponse", i18n.t("apiErrors.invalidResponse"));
+  }
+  const hasMore = hasMoreText === "true";
+  // A page that claims more work but does not advance the cursor would loop forever.
+  if (
+    hasMore &&
+    (count === 0 || BigInt(nextId) <= BigInt(afterId) || BigInt(nextId) > BigInt(nextSnapshotMaxId))
+  ) {
+    throw new ApiError(502, "invalidResponse", i18n.t("apiErrors.invalidResponse"));
+  }
+  return { blob: result.blob, count, nextId, snapshotMaxId: nextSnapshotMaxId, hasMore };
+}
+
+export function exportSelectedAccounts(
+  client: ApiClient,
+  provider: AccountProvider,
+  ids: string[],
+): Promise<Blob> {
+  return client.downloadRequest("/api/admin/v1/accounts/export", {
+    method: "POST",
+    body: { provider, ids },
+  });
 }
 
 export function updateAccountsEnabled(
