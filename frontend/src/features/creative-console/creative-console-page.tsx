@@ -61,7 +61,12 @@ export function CreativeConsolePage() {
   );
   const modelTierScope = (selectedKey?.tierScope ?? ["all"]).filter((value) => value !== "all");
   const modelsQuery = useQuery({
-    queryKey: ["creative-console", "models", modelProviderScope.join(","), modelTierScope.join(",")],
+    queryKey: [
+      "creative-console",
+      "models",
+      modelProviderScope.join(","),
+      modelTierScope.join(","),
+    ],
     queryFn: () =>
       listAllPaginatedItems((page, pageSize) =>
         listModels(apiClient, {

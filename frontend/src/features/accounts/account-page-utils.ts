@@ -4,11 +4,11 @@ import { toast } from "sonner";
 
 import type { AccountFormValues } from "@/features/accounts/account-form";
 import {
-  exportAccountBatch,
   type AccountDTO,
   type AccountProvider,
   type AccountSummaryDTO,
   type BuildConversionStrategy,
+  exportAccountBatch,
 } from "@/features/accounts/accounts-api";
 import type { ApiClient } from "@/shared/api/client";
 
@@ -103,7 +103,7 @@ function parseExportDocument(text: string): ExportDocument {
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("account export payload is not an object");
   }
-  return parsed as ExportDocument;
+  return parsed;
 }
 
 /**
@@ -132,7 +132,8 @@ export async function exportAllAccountsAsBlob(
     documentProvider ??= document.provider;
     if (Array.isArray(document.accounts)) accounts.push(...document.accounts);
     if (!page.hasMore) {
-      const merged = documentProvider === undefined ? { accounts } : { provider: documentProvider, accounts };
+      const merged =
+        documentProvider === undefined ? { accounts } : { provider: documentProvider, accounts };
       return new Blob([JSON.stringify(merged, null, 2) + "\n"], {
         type: "application/json; charset=utf-8",
       });

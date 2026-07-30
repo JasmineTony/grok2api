@@ -13,6 +13,9 @@ const loadSettingsRouteShell = () => import("@/features/settings/settings-route-
 const loadSettingsPage = () => import("@/features/settings/settings-page");
 const loadMediaSettingsPage = () => import("@/features/settings/media-settings-page");
 const loadNetworkSettingsPage = () => import("@/features/settings/network-settings-page");
+const loadBuildSettingsPage = () => import("@/features/settings/build-settings-page");
+const loadWebSettingsPage = () => import("@/features/settings/web-settings-page");
+const loadConsoleSettingsPage = () => import("@/features/settings/console-settings-page");
 
 const routeLoaders: ReadonlyArray<{
   matches: (pathname: string) => boolean;
@@ -29,6 +32,9 @@ const routeLoaders: ReadonlyArray<{
   { matches: (pathname) => pathname === "/settings", load: loadSettingsPage },
   { matches: (pathname) => pathname === "/settings/media", load: loadMediaSettingsPage },
   { matches: (pathname) => pathname === "/settings/network", load: loadNetworkSettingsPage },
+  { matches: (pathname) => pathname === "/settings/build", load: loadBuildSettingsPage },
+  { matches: (pathname) => pathname === "/settings/web", load: loadWebSettingsPage },
+  { matches: (pathname) => pathname === "/settings/console", load: loadConsoleSettingsPage },
   { matches: (pathname) => pathname === "/settings/about", load: loadAboutSettingsPage },
   { matches: (pathname) => pathname === "/settings/changelog", load: loadChangelogSettingsPage },
   { matches: (pathname) => pathname.startsWith("/docs/"), load: loadApiDocsPage },
@@ -49,8 +55,10 @@ export {
   loadAboutSettingsPage,
   loadAccountsPage,
   loadApiDocsPage,
+  loadBuildSettingsPage,
   loadChangelogSettingsPage,
   loadClientKeysPage,
+  loadConsoleSettingsPage,
   loadCreativeConsolePage,
   loadDashboardPage,
   loadGalleryPage,
@@ -61,4 +69,5 @@ export {
   loadSettingsPage,
   loadSettingsRouteShell,
   loadVideoGalleryPage,
+  loadWebSettingsPage,
 };

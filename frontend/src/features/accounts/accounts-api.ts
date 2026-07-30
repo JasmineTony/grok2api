@@ -1,6 +1,5 @@
 import type { AccountTokenRefreshResultDTO } from "@/features/accounts/account-tasks-api";
-import { ApiError, type ApiClient, type PaginatedDTO } from "@/shared/api/client";
-import { i18n } from "@/shared/i18n";
+import { type ApiClient, ApiError, type PaginatedDTO } from "@/shared/api/client";
 import {
   createObjectDecoder,
   createPaginatedDecoder,
@@ -16,6 +15,7 @@ import {
   isRecordOf,
   isString,
 } from "@/shared/api/decoder";
+import { i18n } from "@/shared/i18n";
 import type { SortOrder } from "@/shared/lib/table-sort";
 
 export type AccountProvider = "grok_build" | "grok_web" | "grok_console";
@@ -574,10 +574,6 @@ export function refreshAccountQuota(client: ApiClient, id: string): Promise<Acco
   );
 }
 
-export function exportAccounts(client: ApiClient, provider: AccountProvider): Promise<Blob> {
-  return client.download(`/api/admin/v1/accounts/export?provider=${encodeURIComponent(provider)}`);
-}
-
 export type AccountExportBatch = {
   blob: Blob;
   count: number;
@@ -627,17 +623,6 @@ export async function exportAccountBatch(
     throw new ApiError(502, "invalidResponse", i18n.t("apiErrors.invalidResponse"));
   }
   return { blob: result.blob, count, nextId, snapshotMaxId: nextSnapshotMaxId, hasMore };
-}
-
-export function exportSelectedAccounts(
-  client: ApiClient,
-  provider: AccountProvider,
-  ids: string[],
-): Promise<Blob> {
-  return client.downloadRequest("/api/admin/v1/accounts/export", {
-    method: "POST",
-    body: { provider, ids },
-  });
 }
 
 export function updateAccountsEnabled(

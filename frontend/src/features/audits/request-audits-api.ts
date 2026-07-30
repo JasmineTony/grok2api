@@ -16,7 +16,8 @@ import type { SortOrder } from "@/shared/lib/table-sort";
 export type AuditPeriod = PeriodValue;
 
 export type AuditBillingComponentDTO = {
-  kind: "uncached_input" | "cached_input" | "output" | "input_image" | "output_image" | "output_second";
+  kind:
+    "uncached_input" | "cached_input" | "output" | "input_image" | "output_image" | "output_second";
   unit: "token" | "image" | "second";
   quantity: number;
   unitPriceInUsdTicks: number;
@@ -147,13 +148,27 @@ export type AuditSummaryDTO = {
 };
 
 const auditBillingComponentValidator = hasShape({
-  kind: isOneOf("uncached_input", "cached_input", "output", "input_image", "output_image", "output_second"),
-  unit: isOneOf("token", "image", "second"), quantity: isNumber, unitPriceInUsdTicks: isNumber, subtotalInUsdTicks: isNumber,
+  kind: isOneOf(
+    "uncached_input",
+    "cached_input",
+    "output",
+    "input_image",
+    "output_image",
+    "output_second",
+  ),
+  unit: isOneOf("token", "image", "second"),
+  quantity: isNumber,
+  unitPriceInUsdTicks: isNumber,
+  subtotalInUsdTicks: isNumber,
 });
 const auditBillingValidator = hasShape({
-  source: isOneOf("upstream", "official"), method: isOneOf("upstream_reported", "official_rates", "stored_estimate"),
-  model: isOptional(isString), version: isOptional(isString), tier: isOptional(isOneOf("standard", "long_context", "media")),
-  components: isArrayOf(auditBillingComponentValidator), totalInUsdTicks: isNumber,
+  source: isOneOf("upstream", "official"),
+  method: isOneOf("upstream_reported", "official_rates", "stored_estimate"),
+  model: isOptional(isString),
+  version: isOptional(isString),
+  tier: isOptional(isOneOf("standard", "long_context", "media")),
+  components: isArrayOf(auditBillingComponentValidator),
+  totalInUsdTicks: isNumber,
 });
 const auditValidator = hasShape({
   id: isString,

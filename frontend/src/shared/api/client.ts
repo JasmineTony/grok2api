@@ -87,21 +87,6 @@ export class ApiClient {
     return (await this.downloadResponse(path, retryAuth)).blob;
   }
 
-  // downloadRequest carries a method and body, which the GET-only download path cannot,
-  // so selective exports can POST the chosen ids and still receive a file back.
-  async downloadRequest(path: string, options: RequestOptions): Promise<Blob> {
-    const { authenticated = true, retryAuth = true } = options;
-    const response = await this.sendAdminRequest(path, options);
-    if (response.status === 401 && authenticated && retryAuth) {
-      const refreshResult = await this.refreshAccessToken();
-      if (refreshResult === "refreshed")
-        return this.downloadRequest(path, { ...options, retryAuth: false });
-      if (refreshResult === "unavailable") throw sessionRefreshUnavailable();
-    }
-    if (!response.ok) await parseResponse(response, decodeNever);
-    return response.blob();
-  }
-
   async downloadResponse(path: string, retryAuth = true): Promise<ApiDownloadResult> {
     const headers = new Headers();
     if (this.accessToken) headers.set("Authorization", `Bearer ${this.accessToken}`);
