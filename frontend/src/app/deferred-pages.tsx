@@ -4,8 +4,10 @@ import {
   loadAboutSettingsPage,
   loadAccountsPage,
   loadApiDocsPage,
+  loadBuildSettingsPage,
   loadChangelogSettingsPage,
   loadClientKeysPage,
+  loadConsoleSettingsPage,
   loadCreativeConsolePage,
   loadDashboardPage,
   loadGalleryPage,
@@ -16,6 +18,7 @@ import {
   loadSettingsPage,
   loadSettingsRouteShell,
   loadVideoGalleryPage,
+  loadWebSettingsPage,
 } from "@/app/deferred-page-prefetch";
 import { loadAdminShell } from "@/app/deferred-shell-prefetch";
 
@@ -35,6 +38,9 @@ const SettingsRouteShell = lazyNamed(loadSettingsRouteShell, "SettingsRouteShell
 const SettingsPage = lazyNamed(loadSettingsPage, "SettingsPage");
 const MediaSettingsPage = lazyNamed(loadMediaSettingsPage, "MediaSettingsPage");
 const NetworkSettingsPage = lazyNamed(loadNetworkSettingsPage, "NetworkSettingsPage");
+const BuildSettingsPage = lazyNamed(loadBuildSettingsPage, "BuildSettingsPage");
+const WebSettingsPage = lazyNamed(loadWebSettingsPage, "WebSettingsPage");
+const ConsoleSettingsPage = lazyNamed(loadConsoleSettingsPage, "ConsoleSettingsPage");
 
 function lazyNamed<T extends Record<K, ComponentType>, K extends keyof T>(
   loader: () => Promise<T>,
@@ -99,6 +105,15 @@ export function DeferredSettingsPage() {
 }
 export function DeferredMediaSettingsPage() {
   return <DeferredPage page={MediaSettingsPage} />;
+}
+export function DeferredBuildSettingsPage() {
+  return <DeferredPage page={BuildSettingsPage} />;
+}
+export function DeferredWebSettingsPage() {
+  return <DeferredPage page={WebSettingsPage} />;
+}
+export function DeferredConsoleSettingsPage() {
+  return <DeferredPage page={ConsoleSettingsPage} />;
 }
 export function DeferredNetworkSettingsPage() {
   return <DeferredPage page={NetworkSettingsPage} />;

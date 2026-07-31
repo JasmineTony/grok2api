@@ -73,3 +73,5 @@ Templates are available in [`templates/`](./templates/).
 | 2026-07-27 21 - Immersive UI and settings parity | [Plan](./2026-07-27-21-immersive-ui-settings-parity/PLAN.md) | [Result](./2026-07-27-21-immersive-ui-settings-parity/RESULT.md) | Complete |
 
 | 2026-07-27 22 - v3.3.0 release and delivery closeout | [Plan](./2026-07-27-22-v3.3.0-release/PLAN.md) | [Result](./2026-07-27-22-v3.3.0-release/RESULT.md) | Complete |
+
+| 2026-07-29 23 - Upstream v3.0.11 sync, defect fixes, settings split, v3.4.0 | [Plan](./2026-07-29-23-upstream-v3.0.11-sync-v3.4.0/PLAN.md) | [Result](./2026-07-29-23-upstream-v3.0.11-sync-v3.4.0/RESULT.md) | Complete |

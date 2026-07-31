@@ -6,8 +6,10 @@ import {
   DeferredAccountsPage,
   DeferredApiDocsPage,
   DeferredAppShell,
+  DeferredBuildSettingsPage,
   DeferredChangelogSettingsPage,
   DeferredClientKeysPage,
+  DeferredConsoleSettingsPage,
   DeferredCreativeConsolePage,
   DeferredDashboardPage,
   DeferredGalleryPage,
@@ -18,6 +20,7 @@ import {
   DeferredSettingsPage,
   DeferredSettingsRouteShell,
   DeferredVideoGalleryPage,
+  DeferredWebSettingsPage,
 } from "@/app/deferred-pages";
 import { RouteErrorBoundary } from "@/app/route-error-boundary";
 import { LoginPage } from "@/features/auth/login-page";
@@ -51,6 +54,9 @@ export const router = createBrowserRouter([
             element: <DeferredSettingsRouteShell />,
             children: [
               { index: true, element: <DeferredSettingsPage /> },
+              { path: "build", element: <DeferredBuildSettingsPage /> },
+              { path: "web", element: <DeferredWebSettingsPage /> },
+              { path: "console", element: <DeferredConsoleSettingsPage /> },
               { path: "media", element: <DeferredMediaSettingsPage /> },
               { path: "network", element: <DeferredNetworkSettingsPage /> },
               { path: "about", element: <DeferredAboutSettingsPage /> },

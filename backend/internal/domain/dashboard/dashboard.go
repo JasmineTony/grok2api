@@ -28,6 +28,11 @@ type Usage struct {
 	BilledCostUSDTicks           int64
 	RequestCacheEligibleRequests int64
 	RequestCacheHits             int64
+	FirstTokenSamples            int64
+	FirstTokenTotalMS            int64
+	ThroughputSamples            int64
+	ThroughputTokens             int64
+	GenerationTotalMS            int64
 }
 
 // Bucket 表示一个固定时间桶内的请求和 token 数量。

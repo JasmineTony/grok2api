@@ -1,52 +1,32 @@
+import { lazy, Suspense } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { SettingsProviderPanels } from "@/features/settings/settings-provider-panels";
+import { EgressNodes } from "@/features/settings/egress-nodes";
+import { SettingsSection } from "@/features/settings/settings-layout";
 import { useSettingsRoute } from "@/features/settings/settings-route-context";
+
+const EgressOperations = lazy(async () => ({
+  default: (await import("@/features/settings/egress-operations")).EgressOperations,
+}));
 
 export function NetworkSettingsPage() {
   const { t } = useTranslation();
-  const { form, snapshot, loading, updatePending, syncRecommendedBuild } = useSettingsRoute();
-  const recommendedBuild = snapshot.recommendedProviderBuild;
-  const recommendedBuildApplied =
-    recommendedBuild != null &&
-    form.watch("providerBuild.clientVersion") === recommendedBuild.clientVersion &&
-    form.watch("providerBuild.userAgent") === recommendedBuild.userAgent;
+  const { form } = useSettingsRoute();
 
   return (
-    <Tabs defaultValue="build" className="network-settings-layout grid min-w-0 gap-6">
-      <div className="network-settings-tabs sticky top-6 min-w-0 overflow-x-auto">
-        <TabsList className="flex h-auto w-full shrink-0 justify-start gap-1 overflow-x-auto bg-transparent p-0 lg:flex-col">
-          <NetworkTab value="build" label={t("models.providerGrokBuild")} />
-          <NetworkTab value="web" label={t("settings.web.title")} />
-          <NetworkTab value="console" label={t("console.name")} />
-          <NetworkTab value="egress" label={t("settings.egress.title")} />
-        </TabsList>
-      </div>
-      <div className="w-full min-w-0 overflow-hidden">
-        <SettingsProviderPanels
-          t={t}
-          form={form}
-          recommendedBuild={recommendedBuild}
-          recommendedBuildApplied={recommendedBuildApplied}
-          loading={loading}
-          updatePending={updatePending}
-          syncRecommendedBuild={syncRecommendedBuild}
-          statsigMode={form.watch("providerWeb.statsigMode")}
-          statsigManualConfigured={form.watch("providerWeb.statsigManualConfigured")}
-        />
-      </div>
-    </Tabs>
-  );
-}
-
-function NetworkTab({ value, label }: { value: string; label: string }) {
-  return (
-    <TabsTrigger
-      className="h-9 shrink-0 justify-start rounded-lg px-3 text-xs data-[state=active]:font-medium lg:w-full"
-      value={value}
-    >
-      {label}
-    </TabsTrigger>
+    <div className="space-y-8">
+      <SettingsSection title={t("settings.egress.title")}>
+        <Suspense fallback={<div className="h-32 animate-pulse rounded-lg bg-muted/30" />}>
+          <EgressOperations
+            scopeLabel={(scope) =>
+              t(
+                `settings.egress.scope${scope === "grok_build" ? "Build" : scope === "grok_web" ? "Web" : scope === "grok_console" ? "Console" : "WebAsset"}`,
+              )
+            }
+          />
+        </Suspense>
+        <EgressNodes clearanceMode={form.watch("providerWeb.clearanceMode")} />
+      </SettingsSection>
+    </div>
   );
 }

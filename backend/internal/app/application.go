@@ -23,6 +23,7 @@ import (
 	dashboardapp "github.com/chenyme/grok2api/backend/internal/application/dashboard"
 	egressapp "github.com/chenyme/grok2api/backend/internal/application/egress"
 	"github.com/chenyme/grok2api/backend/internal/application/gateway"
+	invalidationapp "github.com/chenyme/grok2api/backend/internal/application/invalidation"
 	mediaapp "github.com/chenyme/grok2api/backend/internal/application/media"
 	modelapp "github.com/chenyme/grok2api/backend/internal/application/model"
 	notificationapp "github.com/chenyme/grok2api/backend/internal/application/notification"
@@ -78,6 +79,7 @@ type Application struct {
 	cleanupLock     repository.DistributedLock
 	runtime         io.Closer
 	settingsBus     repository.SettingsChangeBus
+	invalidationBus repository.InvalidationBus
 	settings        *settingsapp.Service
 	gateway         *gateway.Service
 	media           *mediaapp.Service
@@ -86,6 +88,7 @@ type Application struct {
 	models          *modelapp.Service
 	clientKeys      *clientkeyapp.Service
 	updates         *updatecheckapp.Service
+	invalidations   *invalidationapp.Service
 	egress          *egressapp.Service
 	egressManager   *infraegress.Manager
 	usageRollups    repository.UsageRollupRepository
@@ -186,6 +189,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	var deviceSessions repository.DeviceSessionRepository
 	var refreshLock repository.DistributedLock
 	var settingsBus repository.SettingsChangeBus
+	var invalidationBus repository.InvalidationBus
 	var quotaQueue repository.QuotaRecoveryQueue
 	var runtimeStore io.Closer
 	runtimeHealth := func(context.Context) error { return nil }
@@ -202,6 +206,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 			return nil, openErr
 		}
 		runtimeStore = redisStore
+		invalidationBus = redisStore
 		runtimeHealth = redisStore.Ping
 		rateLimiter = redisStore
 		concurrency = redisruntime.NewConcurrencyLimiter(redisStore)
@@ -346,6 +351,13 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	selector.UpdatePreferFreeBuild(cfg.Routing.PreferFreeBuild)
 	selector.UpdateSegmentedSelector(cfg.Routing.SegmentedSelectorEnabled, cfg.Routing.SegmentedMinCandidates, cfg.Routing.SegmentedWindowSize)
 	selector.SetNotifications(notificationService)
+	invalidationService := invalidationapp.NewService(invalidationBus, invalidationSourceInstance(cfg), func(event repository.InvalidationEvent) {
+		selector.ApplyInvalidation(event)
+		clientKeyService.ApplyInvalidation(event)
+	}, logger)
+	accountRepo.SetInvalidationObserver(invalidationService.Notify)
+	modelRepo.SetInvalidationObserver(invalidationService.Notify)
+	clientKeyRepo.SetInvalidationObserver(invalidationService.Notify)
 	gatewayService := gateway.NewService(modelService, auditService, accountService, clientKeyService, providers, selector, responseRepo, cfg.Routing.MaxAttempts)
 	gatewayService.SetLogger(logger)
 	gatewayService.UpdateBuildForbiddenReauthPolicy(cfg.Accounts.MarkBuildForbiddenReauth, cfg.Accounts.BuildForbiddenReauthCodes)
@@ -473,9 +485,16 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 		logger: logger, database: database, server: server,
 		metrics: metrics, metricsConfig: metricsobs.PrometheusConfig{Enabled: cfg.Observability.Prometheus.Enabled, Listen: cfg.Observability.Prometheus.Listen},
 		audits: auditService, responses: responseRepo, cleanupLock: refreshLock, runtime: runtimeStore,
-		settingsBus: settingsBus, settings: settingsService, gateway: gatewayService, media: mediaService, quotaRecovery: quotaRecoveryService, accounts: accountService, models: modelService, clientKeys: clientKeyService, updates: updateService, egress: egressService, egressManager: egressManager,
+		settingsBus: settingsBus, invalidationBus: invalidationBus, settings: settingsService, gateway: gatewayService, media: mediaService, quotaRecovery: quotaRecoveryService, accounts: accountService, models: modelService, clientKeys: clientKeyService, updates: updateService, invalidations: invalidationService, egress: egressService, egressManager: egressManager,
 		accountRepo: accountRepo, modelRepo: modelRepo, providers: providers, web: webAdapter, usageRollups: usageRollupRepo, backup: backupService, notifications: notificationService, requestPolicies: requestPolicyService, startup: startup,
 	}, nil
+}
+
+func invalidationSourceInstance(cfg config.Config) string {
+	if value := strings.TrimSpace(cfg.Deployment.InstanceID); value != "" {
+		return value
+	}
+	return fmt.Sprintf("process-%d", time.Now().UnixNano())
 }
 
 func maxBatchConcurrency(value config.BatchConfig) int {
@@ -700,6 +719,10 @@ func (a *Application) Run(ctx context.Context) error {
 		})
 		return nil
 	})
+	if a.invalidationBus != nil {
+		startBackground("invalidation_publisher", a.invalidations.RunPublisher)
+		startBackground("invalidation_subscriber", a.invalidations.RunSubscriber)
+	}
 	if a.settingsBus != nil {
 		startBackground("settings_change_listener", func(taskCtx context.Context) error {
 			return a.settingsBus.ListenSettingsChanges(taskCtx, func(eventCtx context.Context) error {
@@ -743,7 +766,7 @@ func (a *Application) refreshOperationalMetrics(ctx context.Context) {
 	if a.egress == nil {
 		return
 	}
-	nodes, err := a.egress.List(ctx, "", repository.SortQuery{})
+	nodes, err := a.egress.ListAll(ctx, "", repository.SortQuery{})
 	if err != nil {
 		a.logger.Warn("egress_metrics_failed", "error", err)
 		return

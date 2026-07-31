@@ -7,6 +7,9 @@ const routes = [
   ["/client-keys", "keys"],
   ["/request-audits", "audits"],
   ["/settings", "settings"],
+  ["/settings/build", "settings-build"],
+  ["/settings/web", "settings-web"],
+  ["/settings/console", "settings-console"],
   ["/settings/media", "settings-media"],
   ["/settings/network", "settings-network"],
   ["/settings/about", "settings-about"],
@@ -42,8 +45,23 @@ test.describe("authenticated route boundaries @cross-browser", () => {
         window.innerWidth + 1,
     );
     expect(overflow).toBe(false);
-    await expect(page.getByRole("tab", { name: /Grok Build/ })).toBeVisible();
-    await expect(page.getByRole("tab", { name: /Egress proxies|出口代理/ })).toBeVisible();
+    // The provider sections are their own routes now, so this page holds only egress.
+    await expect(page.getByRole("heading", { name: /Egress proxies|出口代理/ })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Grok Build/ })).toBeVisible();
+  });
+
+  test("each provider settings route renders its own section", async ({
+    authenticatedPage: page,
+  }) => {
+    for (const [path, heading] of [
+      ["/settings/build", /Grok Build/],
+      ["/settings/web", /Grok Web/],
+      ["/settings/console", /Grok Console/],
+    ] as const) {
+      await page.goto(path);
+      await expectMainReady(page);
+      await expect(page.locator("main").getByRole("heading", { name: heading })).toBeVisible();
+    }
   });
 
   test("read-only settings routes expose rendered release information", async ({

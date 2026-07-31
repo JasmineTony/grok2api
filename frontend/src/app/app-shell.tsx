@@ -335,7 +335,7 @@ export function AppShell() {
       </aside>
 
       <div className="flex min-h-screen flex-col lg:pl-[240px] xl:pl-[288px]">
-        <header className="flex h-12 items-center justify-between border-b px-4 lg:hidden">
+        <header className="sticky top-0 z-40 flex h-12 items-center justify-between border-b bg-background px-4 lg:hidden">
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
               <Button
@@ -349,7 +349,7 @@ export function AppShell() {
             </SheetTrigger>
             <SheetContent
               side="left"
-              className="flex w-72 flex-col gap-0 bg-sidebar px-3 py-4 [&>button]:right-2 [&>button]:top-3.5 [&>button]:flex [&>button]:size-7 [&>button]:items-center [&>button]:justify-center [&>nav]:mt-5 [&>nav]:pr-1"
+              className="flex h-dvh max-h-dvh w-72 flex-col gap-0 overflow-hidden bg-sidebar px-3 py-4 [&>button]:right-2 [&>button]:top-3.5 [&>button]:flex [&>button]:size-7 [&>button]:items-center [&>button]:justify-center [&>nav]:mt-5 [&>nav]:min-h-0 [&>nav]:flex-1 [&>nav]:overflow-y-auto [&>nav]:overscroll-contain [&>nav]:pr-1 [&>nav]:pb-2"
             >
               <SheetHeader className="h-7 shrink-0 px-2.5 text-left">
                 <SheetTitle className="flex h-7 items-center text-base">{t("appName")}</SheetTitle>

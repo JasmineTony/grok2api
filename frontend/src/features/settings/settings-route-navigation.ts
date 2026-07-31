@@ -1,13 +1,37 @@
 import {
   loadAboutSettingsPage,
+  loadBuildSettingsPage,
   loadChangelogSettingsPage,
+  loadConsoleSettingsPage,
   loadMediaSettingsPage,
   loadNetworkSettingsPage,
   loadSettingsPage,
+  loadWebSettingsPage,
 } from "@/app/deferred-page-prefetch";
 
 export const settingsRoutes = [
   { to: "/settings", key: "general", preload: loadSettingsPage, end: true, readOnly: false },
+  {
+    to: "/settings/build",
+    key: "build",
+    preload: loadBuildSettingsPage,
+    end: false,
+    readOnly: false,
+  },
+  {
+    to: "/settings/web",
+    key: "web",
+    preload: loadWebSettingsPage,
+    end: false,
+    readOnly: false,
+  },
+  {
+    to: "/settings/console",
+    key: "console",
+    preload: loadConsoleSettingsPage,
+    end: false,
+    readOnly: false,
+  },
   {
     to: "/settings/media",
     key: "media",

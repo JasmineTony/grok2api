@@ -187,16 +187,29 @@ type modelListItem struct {
 }
 
 func (h *Handler) listModels(c *gin.Context) {
-	values, err := h.models.ListEnabled(c.Request.Context())
+	allowAliases := false
+	var clientKey clientkeydomain.Key
+	hasClientKey := false
+	if clientValue, exists := c.Get(middleware.ClientKey); exists {
+		if value, ok := clientValue.(clientkeydomain.Key); ok {
+			clientKey = value
+			hasClientKey = true
+			allowAliases = clientKey.AllowModelAliases
+		}
+	}
+	var values []modeldomain.Route
+	var err error
+	if hasClientKey {
+		values, err = h.models.ListEnabledForClientKey(c.Request.Context(), clientKey)
+	} else {
+		values, err = h.models.ListEnabled(c.Request.Context())
+	}
 	if err != nil {
 		writeOpenAIError(c, http.StatusInternalServerError, "model_list_failed", "读取模型列表失败")
 		return
 	}
-	allowAliases := false
-	if clientValue, exists := c.Get(middleware.ClientKey); exists {
-		if clientKey, ok := clientValue.(clientkeydomain.Key); ok {
-			allowAliases = clientKey.AllowModelAliases
-		}
+	if hasClientKey {
+		values = filterModelRoutesForClientKey(values, clientKey)
 	}
 	items := newModelListItems(values)
 	if allowAliases {
@@ -207,6 +220,17 @@ func (h *Handler) listModels(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"object": "list", "data": items})
+}
+
+func filterModelRoutesForClientKey(values []modeldomain.Route, key clientkeydomain.Key) []modeldomain.Route {
+	filtered := make([]modeldomain.Route, 0, len(values))
+	scope := key.AccountScope()
+	for _, value := range values {
+		if scope.AllowsProvider(value.Provider) && key.AllowsModel(value.ID) {
+			filtered = append(filtered, value)
+		}
+	}
+	return filtered
 }
 
 // newModelListItems deduplicates by downstream public name and hides Provider prefixes used only for internal routing.
@@ -1075,7 +1099,7 @@ func (h *Handler) writeProtocolResult(c *gin.Context, result *gateway.Result, st
 	}
 	var err error
 	if stream {
-		metadata, copyErr := copyStream(c.Writer, result.Body, protocol)
+		metadata, copyErr := copyStream(c.Writer, result.Body, protocol, result.MarkFirstToken)
 		usage, responseID, err = metadata.Usage, metadata.ResponseID, copyErr
 		if metadata.StreamFailure != nil && result.RecordStreamFailure != nil {
 			result.RecordStreamFailure(*metadata.StreamFailure)
@@ -1103,13 +1127,14 @@ func (h *Handler) writeProtocolResult(c *gin.Context, result *gateway.Result, st
 type responseMetadata struct {
 	Usage                    gateway.Usage
 	cacheCreationInputTokens int64
+	thinkingCharacters       int
 	ResponseID               string
 	Model                    string
 	StreamFailure            *gateway.StreamFailureDiagnostic
 }
 
-func copyStream(writer gin.ResponseWriter, source io.Reader, protocol streamProtocol) (responseMetadata, error) {
-	inspector := &responseInspector{protocol: protocol}
+func copyStream(writer gin.ResponseWriter, source io.Reader, protocol streamProtocol, onFirstToken func()) (responseMetadata, error) {
+	inspector := &responseInspector{protocol: protocol, onFirstToken: onFirstToken}
 	buffer := make([]byte, responseCopyBufferBytes)
 	transferred := 0
 	for {
@@ -1127,6 +1152,7 @@ func copyStream(writer gin.ResponseWriter, source io.Reader, protocol streamProt
 				return inspector.Metadata(), err
 			}
 			writer.Flush()
+			inspector.markFirstTokenForwarded()
 			transferred += n
 		}
 		if readErr != nil {
@@ -1186,6 +1212,9 @@ type responseInspector struct {
 	protocol        streamProtocol
 	pending         []byte
 	metadata        responseMetadata
+	onFirstToken    func()
+	firstTokenSeen  bool
+	firstTokenReady bool
 	terminalSuccess bool
 	terminalFailure bool
 }
@@ -1204,7 +1233,9 @@ func (i *responseInspector) Inspect(chunk []byte) {
 		i.pending = i.pending[index+1:]
 		if bytes.HasPrefix(line, []byte("data:")) {
 			value := bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
+			i.observeFirstToken(value)
 			i.observeTerminal(value)
+			i.observeThinkingDelta(value)
 			if !bytes.Equal(value, []byte("[DONE]")) {
 				metadata := extractMetadata(value)
 				if hasUsageSignal(metadata.Usage) {
@@ -1228,6 +1259,116 @@ func (i *responseInspector) Inspect(chunk []byte) {
 	}
 }
 
+// observeThinkingDelta accumulates streamed Anthropic thinking text so a streaming
+// Messages request reports the same reasoning estimate as a non-streaming one.
+func (i *responseInspector) observeThinkingDelta(data []byte) {
+	if i.protocol != streamProtocolAnthropic || len(data) == 0 {
+		return
+	}
+	var event struct {
+		Type  string `json:"type"`
+		Delta struct {
+			Type     string `json:"type"`
+			Thinking string `json:"thinking"`
+		} `json:"delta"`
+	}
+	if json.Unmarshal(data, &event) != nil || event.Type != "content_block_delta" {
+		return
+	}
+	if event.Delta.Type == "thinking_delta" {
+		i.metadata.thinkingCharacters += utf8.RuneCountInString(event.Delta.Thinking)
+	}
+}
+
+func (i *responseInspector) observeFirstToken(data []byte) {
+	if i.firstTokenSeen || i.firstTokenReady || i.onFirstToken == nil || len(data) == 0 || bytes.Equal(data, []byte("[DONE]")) {
+		return
+	}
+	if !containsGeneratedDelta(data, i.protocol) {
+		return
+	}
+	i.firstTokenReady = true
+}
+
+func (i *responseInspector) markFirstTokenForwarded() {
+	if i.firstTokenSeen || !i.firstTokenReady || i.onFirstToken == nil {
+		return
+	}
+	i.firstTokenReady = false
+	i.firstTokenSeen = true
+	i.onFirstToken()
+	i.onFirstToken = nil
+}
+
+func containsGeneratedDelta(data []byte, protocol streamProtocol) bool {
+	switch protocol {
+	case streamProtocolResponses:
+		var event struct {
+			Type  string `json:"type"`
+			Delta string `json:"delta"`
+		}
+		if json.Unmarshal(data, &event) != nil || event.Delta == "" {
+			return false
+		}
+		switch event.Type {
+		case "response.output_text.delta", "response.reasoning_summary_text.delta", "response.reasoning_text.delta", "response.refusal.delta", "response.function_call_arguments.delta", "response.custom_tool_call_input.delta":
+			return true
+		}
+	case streamProtocolChat:
+		var event struct {
+			Choices []struct {
+				Delta struct {
+					Content          string `json:"content"`
+					Reasoning        string `json:"reasoning"`
+					ReasoningContent string `json:"reasoning_content"`
+					Refusal          string `json:"refusal"`
+					ToolCalls        []struct {
+						Function struct {
+							Arguments string `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
+				} `json:"delta"`
+			} `json:"choices"`
+		}
+		if json.Unmarshal(data, &event) != nil {
+			return false
+		}
+		for _, choice := range event.Choices {
+			delta := choice.Delta
+			if delta.Content != "" || delta.Reasoning != "" || delta.ReasoningContent != "" || delta.Refusal != "" {
+				return true
+			}
+			for _, call := range delta.ToolCalls {
+				if call.Function.Arguments != "" {
+					return true
+				}
+			}
+		}
+	case streamProtocolAnthropic:
+		var event struct {
+			Type  string `json:"type"`
+			Delta struct {
+				Type        string `json:"type"`
+				Text        string `json:"text"`
+				Thinking    string `json:"thinking"`
+				PartialJSON string `json:"partial_json"`
+			} `json:"delta"`
+		}
+		if json.Unmarshal(data, &event) != nil || event.Type != "content_block_delta" {
+			return false
+		}
+		switch event.Delta.Type {
+		case "text_delta":
+			return event.Delta.Text != ""
+		case "thinking_delta":
+			return event.Delta.Thinking != ""
+		case "input_json_delta":
+			return event.Delta.PartialJSON != ""
+		}
+	}
+	return false
+}
+
 func (i *responseInspector) Metadata() responseMetadata {
 	return normalizeMetadataUsage(i.metadata, i.protocol)
 }
@@ -1239,6 +1380,15 @@ func normalizeMetadataUsage(metadata responseMetadata, protocol streamProtocol) 
 	inputTokens := saturatingUsageSum(metadata.Usage.InputTokens, metadata.Usage.CachedInputTokens, metadata.cacheCreationInputTokens)
 	metadata.Usage.InputTokens = inputTokens
 	metadata.Usage.TotalTokens = saturatingUsageSum(inputTokens, metadata.Usage.OutputTokens)
+	// Anthropic counts thinking inside output_tokens and reports no reasoning field, so
+	// estimate from the thinking text when the upstream did not report a count itself.
+	if metadata.Usage.ReasoningTokens == 0 && metadata.thinkingCharacters > 0 {
+		estimated := int64((metadata.thinkingCharacters + 3) / 4)
+		if metadata.Usage.OutputTokens > 0 {
+			estimated = min(estimated, metadata.Usage.OutputTokens)
+		}
+		metadata.Usage.ReasoningTokens = estimated
+	}
 	return metadata
 }
 
@@ -1443,12 +1593,33 @@ func extractMetadata(data []byte) responseMetadata {
 	}
 	metadata.Usage = usage.toGatewayUsage(metadata.Model)
 	metadata.cacheCreationInputTokens = usage.CacheCreationInputTokens
+	metadata.thinkingCharacters = countThinkingCharacters(root)
 	return metadata
 }
 
+// countThinkingCharacters sums the thinking text Anthropic Messages returns in content
+// blocks. Anthropic bills thinking inside output_tokens and sends no reasoning count, so
+// this is the only signal available for the audit's reasoning column.
+func countThinkingCharacters(root responsePayloadDTO) int {
+	total := 0
+	for _, block := range root.Content {
+		if block.Type == "thinking" {
+			total += utf8.RuneCountInString(block.Thinking)
+		}
+	}
+	if root.Response != nil {
+		total += countThinkingCharacters(*root.Response)
+	}
+	return total
+}
+
 type responsePayloadDTO struct {
-	ID       string              `json:"id"`
-	Model    string              `json:"model"`
+	ID      string `json:"id"`
+	Model   string `json:"model"`
+	Content []struct {
+		Type     string `json:"type"`
+		Thinking string `json:"thinking"`
+	} `json:"content"`
 	Usage    *responseUsageDTO   `json:"usage"`
 	Response *responsePayloadDTO `json:"response"`
 }
@@ -1640,6 +1811,9 @@ func writeGatewayError(c *gin.Context, err error) {
 	case errors.Is(err, clientkeyapp.ErrBillingLimit):
 		status, code = http.StatusTooManyRequests, "billing_limit_exceeded"
 		message = clientkeyapp.ErrBillingLimit.Error()
+	case errors.Is(err, clientkeyapp.ErrModelNotAllowed):
+		status, code = http.StatusForbidden, "model_not_allowed"
+		message = clientkeyapp.ErrModelNotAllowed.Error()
 	case errors.Is(err, gateway.ErrModelNotFound):
 		status, code = http.StatusNotFound, "model_not_found"
 		message = "模型不存在"
@@ -1688,6 +1862,9 @@ func writeGatewayAnthropicError(c *gin.Context, err error) {
 	case errors.Is(err, clientkeyapp.ErrBillingLimit):
 		status, errorType = http.StatusTooManyRequests, "rate_limit_error"
 		message = clientkeyapp.ErrBillingLimit.Error()
+	case errors.Is(err, clientkeyapp.ErrModelNotAllowed):
+		status, errorType, clientCode = http.StatusForbidden, "permission_error", "model_not_allowed"
+		message = clientkeyapp.ErrModelNotAllowed.Error()
 	case errors.Is(err, gateway.ErrModelNotFound):
 		status, errorType = http.StatusNotFound, "not_found_error"
 		message = "模型不存在"
@@ -1714,7 +1891,7 @@ func writeGatewayAnthropicError(c *gin.Context, err error) {
 			errorType = "rate_limit_error"
 		}
 	case errors.As(err, &selectionFailure):
-		status, _, message = selectionErrorResponse(c, selectionFailure)
+		status, clientCode, message = selectionErrorResponse(c, selectionFailure)
 		if status == http.StatusTooManyRequests {
 			errorType = "rate_limit_error"
 		} else {
@@ -1742,17 +1919,21 @@ func selectionErrorResponse(c *gin.Context, failure *gateway.SelectionUnavailabl
 		return status, code, message
 	}
 	status, code = failure.HTTPStatus(), failure.Code()
-	switch failure.Reason {
-	case gateway.SelectionCooling:
-		message = "上游账号正在冷却"
-	case gateway.SelectionModelCooling:
-		message = "上游账号的目标模型正在冷却"
-	case gateway.SelectionQuotaExhausted:
-		message = "上游账号额度等待恢复"
-	case gateway.SelectionSaturated:
-		message = "上游账号当前均达到并发上限"
-	case gateway.SelectionUnsupportedModel:
-		message = "当前账号池不支持该模型"
+	if failure.Scope.IsRestricted() {
+		message = failure.Error()
+	} else {
+		switch failure.Reason {
+		case gateway.SelectionCooling:
+			message = "上游账号正在冷却"
+		case gateway.SelectionModelCooling:
+			message = "上游账号的目标模型正在冷却"
+		case gateway.SelectionQuotaExhausted:
+			message = "上游账号额度等待恢复"
+		case gateway.SelectionSaturated:
+			message = "上游账号当前均达到并发上限"
+		case gateway.SelectionUnsupportedModel:
+			message = "当前账号池不支持该模型"
+		}
 	}
 	if failure.RetryAfter > 0 {
 		seconds := max(int64(1), int64((failure.RetryAfter+time.Second-1)/time.Second))

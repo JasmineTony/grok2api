@@ -4,6 +4,7 @@ import type { SettingsConfigDTO } from "@/features/settings/settings-api";
 import { settingsSchema, toSettingsDTO, toSettingsForm } from "@/features/settings/settings-model";
 import {
   isReadOnlySettingsPath,
+  settingsRoutes,
   shouldBlockSettingsNavigation,
 } from "@/features/settings/settings-route-navigation";
 
@@ -154,6 +155,35 @@ describe("settings route shell boundaries", () => {
     expect(isReadOnlySettingsPath("/settings/about")).toBe(true);
     expect(isReadOnlySettingsPath("/settings/changelog")).toBe(true);
     expect(isReadOnlySettingsPath("/settings/network")).toBe(false);
+  });
+
+  it("gives Grok Build, Web, and Console their own routes outside the network section", () => {
+    const paths = settingsRoutes.map((route) => route.to);
+    expect(paths).toEqual([
+      "/settings",
+      "/settings/build",
+      "/settings/web",
+      "/settings/console",
+      "/settings/media",
+      "/settings/network",
+      "/settings/about",
+      "/settings/changelog",
+    ]);
+    // The provider sections are editable; only about and changelog stay read-only.
+    const readOnly = settingsRoutes.filter((route) => route.readOnly).map((route) => route.to);
+    expect(readOnly).toEqual(["/settings/about", "/settings/changelog"]);
+  });
+
+  it("keeps the shared form alive when moving between the split provider routes", () => {
+    expect(shouldBlockSettingsNavigation(true, "/settings/build", "/settings/web")).toBe(false);
+    expect(shouldBlockSettingsNavigation(true, "/settings/web", "/settings/console")).toBe(false);
+    expect(shouldBlockSettingsNavigation(true, "/settings/console", "/settings/network")).toBe(
+      false,
+    );
+    expect(shouldBlockSettingsNavigation(true, "/settings/build", "/dashboard")).toBe(true);
+    expect(isReadOnlySettingsPath("/settings/build")).toBe(false);
+    expect(isReadOnlySettingsPath("/settings/web")).toBe(false);
+    expect(isReadOnlySettingsPath("/settings/console")).toBe(false);
   });
 
   it("submits a full settings DTO so media edits do not erase network settings", () => {

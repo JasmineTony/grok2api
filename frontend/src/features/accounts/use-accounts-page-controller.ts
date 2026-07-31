@@ -15,6 +15,7 @@ import {
   createQuickImportFile,
   deriveAccountOverview,
   downloadAccountExport,
+  exportAllAccountsAsBlob,
   isAbortError,
   readQuickImportFile,
   resetAccountForm,
@@ -33,7 +34,6 @@ import {
   convertWebAccountsToBuild,
   type DeviceSessionDTO,
   enableWebAccountNSFW,
-  exportAccounts,
   getAccountSummary,
   importAccounts,
   importConsoleAccounts,
@@ -514,7 +514,7 @@ export function useAccountsPageController() {
     },
   });
   const exportMutation = useMutation({
-    mutationFn: () => exportAccounts(apiClient, provider),
+    mutationFn: () => exportAllAccountsAsBlob(apiClient, provider),
     onSuccess: (blob) => {
       downloadAccountExport(blob, provider);
       setExportOpen(false);

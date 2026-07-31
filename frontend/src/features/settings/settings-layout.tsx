@@ -11,7 +11,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { TabsContent } from "@/components/ui/tabs";
 import {
   type ByteSizeValue,
   type DurationValue,
@@ -119,14 +118,6 @@ export function DurationInput({
         </SelectContent>
       </Select>
     </div>
-  );
-}
-
-export function SettingsPane({ value, children }: { value: string; children: ReactNode }) {
-  return (
-    <TabsContent value={value} forceMount className="m-0 space-y-8 data-[state=inactive]:hidden">
-      {children}
-    </TabsContent>
   );
 }
 

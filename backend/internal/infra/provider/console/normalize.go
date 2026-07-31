@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	modeldomain "github.com/chenyme/grok2api/backend/internal/domain/model"
 	"github.com/chenyme/grok2api/backend/internal/infra/provider"
 )
 
@@ -152,10 +154,58 @@ func normalizeReasoning(payload map[string]any, spec ModelSpec) {
 	if effort == "" {
 		effort = spec.DefaultReasoningEffort
 	}
+	effort = clampEffortToModel(spec.PublicID, effort)
 	if effort != "" {
 		reasoning["effort"] = effort
+	} else {
+		delete(reasoning, "effort")
+	}
+	if len(reasoning) == 0 {
+		delete(payload, "reasoning")
+		return
 	}
 	payload["reasoning"] = reasoning
+}
+
+// clampEffortToModel keeps an effort level only when the model accepts it. Sending an
+// unsupported level makes the upstream reject the whole request with
+// "does not support parameter reasoningEffort", so an out-of-range level is mapped to the
+// nearest supported one and an unsupported "none" drops the field entirely.
+func clampEffortToModel(publicModel, effort string) string {
+	if effort == "" {
+		return ""
+	}
+	supported := modeldomain.SupportedReasoningEfforts(publicModel)
+	if len(supported) == 0 || slices.Contains(supported, effort) {
+		return effort
+	}
+	// Ranked weakest to strongest so a too-strong request lands on the strongest level the
+	// model does accept, and a too-weak one lands on the weakest.
+	ladder := []string{
+		modeldomain.ReasoningEffortNone, modeldomain.ReasoningEffortLow,
+		modeldomain.ReasoningEffortMedium, modeldomain.ReasoningEffortHigh,
+		modeldomain.ReasoningEffortXHigh, modeldomain.ReasoningEffortMax,
+	}
+	requested := slices.Index(ladder, effort)
+	if requested < 0 {
+		return ""
+	}
+	best := ""
+	bestDistance := len(ladder) + 1
+	for _, candidate := range supported {
+		index := slices.Index(ladder, candidate)
+		if index < 0 {
+			continue
+		}
+		distance := index - requested
+		if distance < 0 {
+			distance = -distance
+		}
+		if distance < bestDistance {
+			best, bestDistance = candidate, distance
+		}
+	}
+	return best
 }
 
 func normalizeEffort(value string) string {

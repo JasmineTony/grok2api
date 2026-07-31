@@ -38,6 +38,11 @@ type quotaBreakdownJSON struct {
 }
 
 const (
+	accountUpdateBatchSize = 500
+	// accountIDQueryBatchSize bounds how many IDs go into a single IN (...) clause.
+	// SQLite allows roughly 32766 bound parameters per statement, so a large account
+	// pool would otherwise fail the whole query instead of paging through it.
+	accountIDQueryBatchSize     = 500
 	accountPaidPlanSignal       = `(LOWER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(billing.plan_code), ' ', ''), '_', ''), '-', ''), '+', 'plus')) IN ('super', 'supergrok', 'supergrokpro', 'supergrokheavy', 'supergroklite', 'grokpro', 'xpremium', 'xpremiumplus', 'apikey') OR LOWER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(billing.plan_name), ' ', ''), '_', ''), '-', ''), '+', 'plus')) IN ('super', 'supergrok', 'supergrokpro', 'supergrokheavy', 'supergroklite', 'grokpro', 'xpremium', 'xpremiumplus', 'apikey'))`
 	accountFreePlanSignal       = `(LOWER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(billing.plan_code), ' ', ''), '_', ''), '-', ''), '+', 'plus')) IN ('free', 'grokfree', 'freetier', 'basic', 'grokbasic', 'xbasic') OR LOWER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(billing.plan_name), ' ', ''), '_', ''), '-', ''), '+', 'plus')) IN ('free', 'grokfree', 'freetier', 'basic', 'grokbasic', 'xbasic'))`
 	accountPaidBillingSignals   = `(` + accountPaidPlanSignal + ` OR billing.monthly_limit > 0 OR billing.on_demand_cap > 0 OR billing.on_demand_used > 0 OR billing.prepaid_balance > 0)`
@@ -102,11 +107,18 @@ func (r *AccountRepository) List(ctx context.Context, input repository.AccountLi
 	if len(input.Filter.ExcludeIDs) > 0 {
 		query = query.Where("provider_accounts.id NOT IN ?", input.Filter.ExcludeIDs)
 	}
+	if input.Filter.AfterID > 0 {
+		query = query.Where("provider_accounts.id > ?", input.Filter.AfterID)
+	}
+	if input.Filter.ThroughID > 0 {
+		query = query.Where("provider_accounts.id <= ?", input.Filter.ThroughID)
+	}
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	var rows []accountModel
 	query = applyStableSort(query, input.Page.Sort, map[string]sortSpec{
+		"id":        {expression: "provider_accounts.id"},
 		"name":      {expression: "LOWER(provider_accounts.name)"},
 		"type":      {expression: accountTypeSortExpression},
 		"status":    {expression: accountStatusSortExpression},
@@ -157,11 +169,18 @@ func (r *AccountRepository) CountProviderAccountsByIDs(ctx context.Context, prov
 	if len(ids) == 0 {
 		return 0, nil
 	}
-	var count int64
-	err := r.db.db.WithContext(ctx).Model(&accountModel{}).
-		Where("provider = ? AND id IN ?", providerValue, ids).
-		Count(&count).Error
-	return count, err
+	var total int64
+	err := forEachAccountIDBatch(ids, func(batch []uint64) error {
+		var count int64
+		if err := r.db.db.WithContext(ctx).Model(&accountModel{}).
+			Where("provider = ? AND id IN ?", providerValue, batch).
+			Count(&count).Error; err != nil {
+			return err
+		}
+		total += count
+		return nil
+	})
+	return total, err
 }
 
 func (r *AccountRepository) Summarize(ctx context.Context, now time.Time) ([]repository.AccountSummary, error) {
@@ -189,7 +208,7 @@ func (r *AccountRepository) Summarize(ctx context.Context, now time.Time) ([]rep
 
 // ListRoutingCandidates 批量加载账号、额度、恢复状态和目标模型能力，避免推理热路径按账号逐条查询。
 func (r *AccountRepository) ListRoutingCandidates(ctx context.Context, provider account.Provider, modelRouteID uint64, upstreamModel, quotaMode string) ([]account.RoutingCandidate, error) {
-	values, err := r.ListEnabled(ctx, provider)
+	values, err := r.listRoutingCredentials(ctx, provider)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +235,7 @@ func (r *AccountRepository) ListRoutingCandidates(ctx context.Context, provider 
 	for _, value := range values {
 		ids = append(ids, value.ID)
 	}
-	billings, err := r.GetBillings(ctx, ids)
+	billings, err := r.getRoutingBillings(ctx, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -224,49 +243,40 @@ func (r *AccountRepository) ListRoutingCandidates(ctx context.Context, provider 
 	if err != nil {
 		return nil, err
 	}
-	quotaWindows := make(map[uint64]account.QuotaWindow, len(ids))
-	if len(ids) > 0 && (provider == account.ProviderWeb || quotaMode != "") {
-		var rows []quotaWindowModel
-		modes := make([]string, 0, 2)
-		if provider == account.ProviderWeb {
-			modes = append(modes, "weekly")
-		}
-		if quotaMode != "" {
-			modes = append(modes, quotaMode)
-		}
-		if err := r.db.db.WithContext(ctx).Where("account_id IN ? AND mode IN ?", ids, modes).Order("CASE WHEN mode = 'weekly' THEN 0 ELSE 1 END").Find(&rows).Error; err != nil {
-			return nil, err
-		}
-		for _, row := range rows {
-			if _, exists := quotaWindows[row.AccountID]; !exists {
-				quotaWindows[row.AccountID] = toQuotaWindowDomain(row)
-			}
-		}
+	quotaWindows, err := r.getRoutingQuotaWindows(ctx, ids, provider, quotaMode)
+	if err != nil {
+		return nil, err
 	}
 	known := make(map[uint64]bool, len(ids))
 	supported := make(map[uint64]bool, len(ids))
 	modelQuotaBlocks := make(map[uint64]account.ModelQuotaBlock, len(ids))
 	if strings.TrimSpace(upstreamModel) != "" && len(ids) > 0 {
-		var states []accountModelSyncStateModel
-		if err := r.db.db.WithContext(ctx).Where("account_id IN ? AND last_success_at IS NOT NULL", ids).Find(&states).Error; err != nil {
+		err := forEachAccountIDBatch(ids, func(batch []uint64) error {
+			var states []accountModelSyncStateModel
+			if err := r.db.db.WithContext(ctx).Where("account_id IN ? AND last_success_at IS NOT NULL", batch).Find(&states).Error; err != nil {
+				return err
+			}
+			for _, state := range states {
+				known[state.AccountID] = true
+			}
+			var capabilities []accountModelCapabilityModel
+			if err := r.db.db.WithContext(ctx).Where("account_id IN ? AND upstream_model = ?", batch, upstreamModel).Find(&capabilities).Error; err != nil {
+				return err
+			}
+			for _, capability := range capabilities {
+				supported[capability.AccountID] = true
+			}
+			var blockRows []accountModelQuotaBlockModel
+			if err := r.db.db.WithContext(ctx).Where("account_id IN ? AND upstream_model = ? AND cooldown_until > ?", batch, upstreamModel, time.Now().UTC()).Find(&blockRows).Error; err != nil {
+				return err
+			}
+			for _, row := range blockRows {
+				modelQuotaBlocks[row.AccountID] = account.ModelQuotaBlock{AccountID: row.AccountID, UpstreamModel: row.UpstreamModel, Reason: row.Reason, CooldownUntil: row.CooldownUntil.UTC(), UpdatedAt: row.UpdatedAt.UTC()}
+			}
+			return nil
+		})
+		if err != nil {
 			return nil, err
-		}
-		for _, state := range states {
-			known[state.AccountID] = true
-		}
-		var capabilities []accountModelCapabilityModel
-		if err := r.db.db.WithContext(ctx).Where("account_id IN ? AND upstream_model = ?", ids, upstreamModel).Find(&capabilities).Error; err != nil {
-			return nil, err
-		}
-		for _, capability := range capabilities {
-			supported[capability.AccountID] = true
-		}
-		var blockRows []accountModelQuotaBlockModel
-		if err := r.db.db.WithContext(ctx).Where("account_id IN ? AND upstream_model = ? AND cooldown_until > ?", ids, upstreamModel, time.Now().UTC()).Find(&blockRows).Error; err != nil {
-			return nil, err
-		}
-		for _, row := range blockRows {
-			modelQuotaBlocks[row.AccountID] = account.ModelQuotaBlock{AccountID: row.AccountID, UpstreamModel: row.UpstreamModel, Reason: row.Reason, CooldownUntil: row.CooldownUntil.UTC(), UpdatedAt: row.UpdatedAt.UTC()}
 		}
 	}
 	sharedSuperBuildModel := false
@@ -317,6 +327,237 @@ func (r *AccountRepository) ListRoutingCandidates(ctx context.Context, provider 
 	return result, nil
 }
 
+func (r *AccountRepository) ListRoutingAccountBases(ctx context.Context, provider account.Provider, quotaMode string) ([]account.RoutingAccountBase, error) {
+	values, err := r.listRoutingCredentials(ctx, provider)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]uint64, 0, len(values))
+	for _, value := range values {
+		ids = append(ids, value.ID)
+	}
+	billings, err := r.getRoutingBillings(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	recoveries, err := r.GetQuotaRecoveries(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	quotaWindows, err := r.getRoutingQuotaWindows(ctx, ids, provider, quotaMode)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]account.RoutingAccountBase, 0, len(values))
+	for _, value := range values {
+		base := account.RoutingAccountBase{Credential: value}
+		if billing, ok := billings[value.ID]; ok {
+			base.Billing = &billing
+		}
+		if recovery, ok := recoveries[value.ID]; ok {
+			base.QuotaRecovery = &recovery
+		}
+		if window, ok := quotaWindows[value.ID]; ok {
+			base.QuotaWindow = &window
+		}
+		result = append(result, base)
+	}
+	return result, nil
+}
+
+// listRoutingCredentials loads only the account state required to decide which
+// account to use. Provider secrets deliberately stay in account_credentials
+// until a selected account is hydrated for the upstream call.
+func (r *AccountRepository) listRoutingCredentials(ctx context.Context, provider account.Provider) ([]account.Credential, error) {
+	var rows []accountModel
+	err := r.db.db.WithContext(ctx).
+		Preload("Credential", func(query *gorm.DB) *gorm.DB {
+			return query.Select(routingCredentialMetadataColumns)
+		}).
+		Preload("WebProfile").
+		Where("provider = ? AND enabled = ? AND auth_status = ?", provider, true, account.AuthStatusActive).
+		Order("priority DESC, id ASC").
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	values := make([]account.Credential, 0, len(rows))
+	for _, row := range rows {
+		values = append(values, toAccountDomain(row))
+	}
+	if err := r.attachRoutingEgressIdentities(ctx, provider, values); err != nil {
+		return nil, err
+	}
+	return values, nil
+}
+
+// routingCredentialMetadataColumns contains all credential fields used for
+// routing and execution decisions, but deliberately excludes the encrypted
+// access token, refresh token, and Cloudflare cookie.
+var routingCredentialMetadataColumns = []string{
+	"account_id", "auth_type", "client_id", "expires_at", "refresh_due_at", "last_refresh_at",
+	"refresh_failures", "last_refresh_error", "refresh_permanent", "updated_at",
+}
+
+var routingBillingColumns = []string{
+	"account_id", "plan_code", "plan_name", "monthly_limit", "used", "on_demand_cap", "on_demand_used", "prepaid_balance",
+	"credit_usage_percent", "is_unified_billing_user", "on_demand_enabled", "top_up_method", "usage_period_type",
+	"usage_period_start", "usage_period_end", "billing_period_start", "billing_period_end", "synced_at",
+}
+
+// forEachAccountIDBatch runs visit over accountIDQueryBatchSize-sized slices of ids so
+// a single statement never exceeds the driver's bound-parameter limit.
+func forEachAccountIDBatch(ids []uint64, visit func([]uint64) error) error {
+	for start := 0; start < len(ids); start += accountIDQueryBatchSize {
+		end := min(start+accountIDQueryBatchSize, len(ids))
+		if err := visit(ids[start:end]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *AccountRepository) getRoutingBillings(ctx context.Context, accountIDs []uint64) (map[uint64]account.Billing, error) {
+	result := make(map[uint64]account.Billing, len(accountIDs))
+	if len(accountIDs) == 0 {
+		return result, nil
+	}
+	err := forEachAccountIDBatch(accountIDs, func(batch []uint64) error {
+		var rows []billingModel
+		if err := r.db.db.WithContext(ctx).Select(routingBillingColumns).Where("account_id IN ?", batch).Find(&rows).Error; err != nil {
+			return err
+		}
+		for _, row := range rows {
+			result[row.AccountID] = toRoutingBillingDomain(row)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+var routingQuotaWindowColumns = []string{
+	"account_id", "mode", "remaining", "total", "usage_percent", "window_seconds", "reset_at", "synced_at", "source", "updated_at",
+}
+
+func (r *AccountRepository) getRoutingQuotaWindows(ctx context.Context, accountIDs []uint64, provider account.Provider, quotaMode string) (map[uint64]account.QuotaWindow, error) {
+	result := make(map[uint64]account.QuotaWindow, len(accountIDs))
+	if len(accountIDs) == 0 || (provider != account.ProviderWeb && quotaMode == "") {
+		return result, nil
+	}
+	modes := make([]string, 0, 2)
+	if provider == account.ProviderWeb {
+		modes = append(modes, "weekly")
+	}
+	if quotaMode != "" {
+		modes = append(modes, quotaMode)
+	}
+	err := forEachAccountIDBatch(accountIDs, func(batch []uint64) error {
+		var rows []quotaWindowModel
+		if err := r.db.db.WithContext(ctx).
+			Select(routingQuotaWindowColumns).
+			Where("account_id IN ? AND mode IN ?", batch, modes).
+			Order("CASE WHEN mode = 'weekly' THEN 0 ELSE 1 END").
+			Find(&rows).Error; err != nil {
+			return err
+		}
+		for _, row := range rows {
+			if _, exists := result[row.AccountID]; !exists {
+				result[row.AccountID] = toRoutingQuotaWindowDomain(row)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (r *AccountRepository) ListRoutingAccountOverlays(ctx context.Context, provider account.Provider, modelRouteID uint64, upstreamModel string) (account.RoutingOverlaySnapshot, error) {
+	upstreamModel = strings.TrimSpace(upstreamModel)
+	if upstreamModel == "" {
+		return account.RoutingOverlaySnapshot{}, nil
+	}
+	boundIDs, err := r.listRoutingBoundAccountIDs(ctx, provider, modelRouteID, upstreamModel)
+	if err != nil {
+		return account.RoutingOverlaySnapshot{}, err
+	}
+	values := make(map[uint64]account.RoutingAccountOverlay)
+	for _, id := range boundIDs {
+		values[id] = account.RoutingAccountOverlay{AccountID: id, Bound: true, ModelCapabilityKnown: true, SupportsModel: true}
+	}
+	var states []accountModelSyncStateModel
+	if err := r.db.db.WithContext(ctx).
+		Table("account_model_sync_states AS state").
+		Select("state.*").
+		Joins("JOIN provider_accounts AS account ON account.id = state.account_id").
+		Where("account.provider = ? AND account.enabled = TRUE AND state.last_success_at IS NOT NULL", provider).
+		Find(&states).Error; err != nil {
+		return account.RoutingOverlaySnapshot{}, err
+	}
+	for _, state := range states {
+		overlay := values[state.AccountID]
+		overlay.AccountID = state.AccountID
+		overlay.ModelCapabilityKnown = true
+		values[state.AccountID] = overlay
+	}
+	var capabilities []accountModelCapabilityModel
+	if err := r.db.db.WithContext(ctx).
+		Table("account_model_capabilities AS capability").
+		Select("capability.*").
+		Joins("JOIN provider_accounts AS account ON account.id = capability.account_id").
+		Where("account.provider = ? AND account.enabled = TRUE AND capability.upstream_model = ?", provider, upstreamModel).
+		Find(&capabilities).Error; err != nil {
+		return account.RoutingOverlaySnapshot{}, err
+	}
+	for _, capability := range capabilities {
+		overlay := values[capability.AccountID]
+		overlay.AccountID = capability.AccountID
+		overlay.SupportsModel = true
+		values[capability.AccountID] = overlay
+	}
+	var blockRows []accountModelQuotaBlockModel
+	if err := r.db.db.WithContext(ctx).
+		Table("account_model_quota_blocks AS block").
+		Select("block.*").
+		Joins("JOIN provider_accounts AS account ON account.id = block.account_id").
+		Where("account.provider = ? AND account.enabled = TRUE AND block.upstream_model = ? AND block.cooldown_until > ?", provider, upstreamModel, time.Now().UTC()).
+		Find(&blockRows).Error; err != nil {
+		return account.RoutingOverlaySnapshot{}, err
+	}
+	for _, row := range blockRows {
+		overlay := values[row.AccountID]
+		overlay.AccountID = row.AccountID
+		overlay.ModelQuotaBlock = &account.ModelQuotaBlock{AccountID: row.AccountID, UpstreamModel: row.UpstreamModel, Reason: row.Reason, CooldownUntil: row.CooldownUntil.UTC(), UpdatedAt: row.UpdatedAt.UTC()}
+		values[row.AccountID] = overlay
+	}
+	result := account.RoutingOverlaySnapshot{HasBindings: len(boundIDs) > 0, Values: make([]account.RoutingAccountOverlay, 0, len(values))}
+	for _, value := range values {
+		result.Values = append(result.Values, value)
+	}
+	return result, nil
+}
+
+func (r *AccountRepository) listRoutingBoundAccountIDs(ctx context.Context, provider account.Provider, modelRouteID uint64, upstreamModel string) ([]uint64, error) {
+	query := r.db.db.WithContext(ctx).
+		Table("model_route_accounts AS binding").
+		Select("binding.account_id").
+		Joins("JOIN model_routes AS route ON route.id = binding.model_route_id")
+	if modelRouteID > 0 {
+		query = query.Where("route.id = ? AND route.provider = ? AND route.upstream_model = ?", modelRouteID, provider, upstreamModel)
+	} else {
+		query = query.Where("route.provider = ? AND route.upstream_model = ?", provider, upstreamModel)
+	}
+	var accountIDs []uint64
+	if err := query.Scan(&accountIDs).Error; err != nil {
+		return nil, err
+	}
+	return accountIDs, nil
+}
+
 func (r *AccountRepository) ListEnabled(ctx context.Context, provider account.Provider) ([]account.Credential, error) {
 	var rows []accountModel
 	err := r.db.db.WithContext(ctx).Preload("Credential").Preload("WebProfile").Where("provider = ? AND enabled = ? AND auth_status = ?", provider, true, account.AuthStatusActive).Order("priority DESC, id ASC").Find(&rows).Error
@@ -345,6 +586,21 @@ func (r *AccountRepository) ListEnabledAccountIDs(ctx context.Context, provider 
 	}
 	var ids []uint64
 	err := query.Order("account.priority DESC, account.id ASC").Scan(&ids).Error
+	return ids, err
+}
+
+func (r *AccountRepository) ListEnabledCredentialRefreshAccountIDs(ctx context.Context, provider account.Provider, refreshableOnly bool) ([]uint64, error) {
+	query := r.db.db.WithContext(ctx).
+		Table("provider_accounts AS account").
+		Select("account.id").
+		Where("account.provider = ? AND account.enabled = ? AND account.auth_status IN ?", provider, true, []account.AuthStatus{account.AuthStatusActive, account.AuthStatusReauthRequired})
+	if refreshableOnly {
+		query = query.
+			Joins("JOIN account_credentials AS credential ON credential.account_id = account.id").
+			Where("credential.encrypted_refresh <> ''")
+	}
+	var ids []uint64
+	err := query.Order("account.id ASC").Scan(&ids).Error
 	return ids, err
 }
 
@@ -464,140 +720,6 @@ func (r *AccountRepository) HasActive(ctx context.Context, provider account.Prov
 	return row.ID > 0, err
 }
 
-func (r *AccountRepository) ListRoutingAccountBases(ctx context.Context, provider account.Provider, quotaMode string) ([]account.RoutingAccountBase, error) {
-	values, err := r.ListEnabled(ctx, provider)
-	if err != nil {
-		return nil, err
-	}
-	ids := make([]uint64, 0, len(values))
-	for _, value := range values {
-		ids = append(ids, value.ID)
-	}
-	billings, err := r.GetBillings(ctx, ids)
-	if err != nil {
-		return nil, err
-	}
-	recoveries, err := r.GetQuotaRecoveries(ctx, ids)
-	if err != nil {
-		return nil, err
-	}
-	quotaWindows := make(map[uint64]account.QuotaWindow, len(ids))
-	if len(ids) > 0 && (provider == account.ProviderWeb || quotaMode != "") {
-		modes := make([]string, 0, 2)
-		if provider == account.ProviderWeb {
-			modes = append(modes, "weekly")
-		}
-		if quotaMode != "" {
-			modes = append(modes, quotaMode)
-		}
-		var rows []quotaWindowModel
-		if err := r.db.db.WithContext(ctx).Where("account_id IN ? AND mode IN ?", ids, modes).Order("CASE WHEN mode = 'weekly' THEN 0 ELSE 1 END").Find(&rows).Error; err != nil {
-			return nil, err
-		}
-		for _, row := range rows {
-			if _, exists := quotaWindows[row.AccountID]; !exists {
-				quotaWindows[row.AccountID] = toQuotaWindowDomain(row)
-			}
-		}
-	}
-	result := make([]account.RoutingAccountBase, 0, len(values))
-	for _, value := range values {
-		base := account.RoutingAccountBase{Credential: value}
-		if billing, ok := billings[value.ID]; ok {
-			base.Billing = &billing
-		}
-		if recovery, ok := recoveries[value.ID]; ok {
-			base.QuotaRecovery = &recovery
-		}
-		if window, ok := quotaWindows[value.ID]; ok {
-			base.QuotaWindow = &window
-		}
-		result = append(result, base)
-	}
-	return result, nil
-}
-
-func (r *AccountRepository) ListRoutingAccountOverlays(ctx context.Context, provider account.Provider, modelRouteID uint64, upstreamModel string) (account.RoutingOverlaySnapshot, error) {
-	upstreamModel = strings.TrimSpace(upstreamModel)
-	if upstreamModel == "" {
-		return account.RoutingOverlaySnapshot{}, nil
-	}
-	boundIDs, err := r.listRoutingBoundAccountIDs(ctx, provider, modelRouteID, upstreamModel)
-	if err != nil {
-		return account.RoutingOverlaySnapshot{}, err
-	}
-	values := make(map[uint64]account.RoutingAccountOverlay)
-	for _, id := range boundIDs {
-		values[id] = account.RoutingAccountOverlay{AccountID: id, Bound: true, ModelCapabilityKnown: true, SupportsModel: true}
-	}
-	var states []accountModelSyncStateModel
-	if err := r.db.db.WithContext(ctx).
-		Table("account_model_sync_states AS state").
-		Select("state.*").
-		Joins("JOIN provider_accounts AS account ON account.id = state.account_id").
-		Where("account.provider = ? AND account.enabled = TRUE AND state.last_success_at IS NOT NULL", provider).
-		Find(&states).Error; err != nil {
-		return account.RoutingOverlaySnapshot{}, err
-	}
-	for _, state := range states {
-		overlay := values[state.AccountID]
-		overlay.AccountID = state.AccountID
-		overlay.ModelCapabilityKnown = true
-		values[state.AccountID] = overlay
-	}
-	var capabilities []accountModelCapabilityModel
-	if err := r.db.db.WithContext(ctx).
-		Table("account_model_capabilities AS capability").
-		Select("capability.*").
-		Joins("JOIN provider_accounts AS account ON account.id = capability.account_id").
-		Where("account.provider = ? AND account.enabled = TRUE AND capability.upstream_model = ?", provider, upstreamModel).
-		Find(&capabilities).Error; err != nil {
-		return account.RoutingOverlaySnapshot{}, err
-	}
-	for _, capability := range capabilities {
-		overlay := values[capability.AccountID]
-		overlay.AccountID = capability.AccountID
-		overlay.SupportsModel = true
-		values[capability.AccountID] = overlay
-	}
-	var blockRows []accountModelQuotaBlockModel
-	if err := r.db.db.WithContext(ctx).
-		Table("account_model_quota_blocks AS block").
-		Select("block.*").
-		Joins("JOIN provider_accounts AS account ON account.id = block.account_id").
-		Where("account.provider = ? AND account.enabled = TRUE AND block.upstream_model = ? AND block.cooldown_until > ?", provider, upstreamModel, time.Now().UTC()).
-		Find(&blockRows).Error; err != nil {
-		return account.RoutingOverlaySnapshot{}, err
-	}
-	for _, row := range blockRows {
-		overlay := values[row.AccountID]
-		overlay.AccountID = row.AccountID
-		overlay.ModelQuotaBlock = &account.ModelQuotaBlock{AccountID: row.AccountID, UpstreamModel: row.UpstreamModel, Reason: row.Reason, CooldownUntil: row.CooldownUntil.UTC(), UpdatedAt: row.UpdatedAt.UTC()}
-		values[row.AccountID] = overlay
-	}
-	result := account.RoutingOverlaySnapshot{HasBindings: len(boundIDs) > 0, Values: make([]account.RoutingAccountOverlay, 0, len(values))}
-	for _, value := range values {
-		result.Values = append(result.Values, value)
-	}
-	return result, nil
-}
-
-func (r *AccountRepository) listRoutingBoundAccountIDs(ctx context.Context, provider account.Provider, modelRouteID uint64, upstreamModel string) ([]uint64, error) {
-	query := r.db.db.WithContext(ctx).
-		Table("model_route_accounts AS binding").
-		Select("binding.account_id").
-		Joins("JOIN model_routes AS route ON route.id = binding.model_route_id")
-	if modelRouteID > 0 {
-		query = query.Where("route.id = ? AND route.provider = ? AND route.upstream_model = ?", modelRouteID, provider, upstreamModel)
-	} else {
-		query = query.Where("route.provider = ? AND route.upstream_model = ?", provider, upstreamModel)
-	}
-	var accountIDs []uint64
-	if err := query.Scan(&accountIDs).Error; err != nil {
-		return nil, err
-	}
-	return accountIDs, nil
-}
 func (r *AccountRepository) Get(ctx context.Context, id uint64) (account.Credential, error) {
 	var row accountModel
 	if err := r.db.db.WithContext(ctx).Preload("Credential").Preload("WebProfile").First(&row, id).Error; err != nil {
@@ -609,6 +731,22 @@ func (r *AccountRepository) Get(ctx context.Context, id uint64) (account.Credent
 		return account.Credential{}, err
 	}
 	return values[0], nil
+}
+
+// GetCredentialMaterial hydrates the encrypted provider data for one account
+// after routing has selected it. Routing candidate queries intentionally never
+// load these encrypted columns.
+func (r *AccountRepository) GetCredentialMaterial(ctx context.Context, accountID uint64, provider account.Provider) (account.CredentialMaterial, error) {
+	var row accountCredentialModel
+	if err := r.db.db.WithContext(ctx).
+		Table("account_credentials AS credential").
+		Select("credential.*").
+		Joins("JOIN provider_accounts AS account ON account.id = credential.account_id").
+		Where("credential.account_id = ? AND account.provider = ? AND account.enabled = TRUE AND account.auth_status = ?", accountID, provider, account.AuthStatusActive).
+		Take(&row).Error; err != nil {
+		return account.CredentialMaterial{}, mapError(err)
+	}
+	return toCredentialMaterialDomain(row, provider), nil
 }
 
 func (r *AccountRepository) LinkWebToBuild(ctx context.Context, webAccountID, buildAccountID uint64) error {
@@ -1150,7 +1288,7 @@ func (r *AccountRepository) markWebProfileTimestamp(ctx context.Context, id uint
 	}))
 }
 
-func (r *AccountRepository) UpdateMany(ctx context.Context, ids []uint64, updates repository.AccountUpdates) (int64, error) {
+func (r *AccountRepository) UpdateMany(ctx context.Context, providerValue account.Provider, ids []uint64, updates repository.AccountUpdates) (int64, error) {
 	if len(ids) == 0 {
 		return 0, nil
 	}
@@ -1170,8 +1308,40 @@ func (r *AccountRepository) UpdateMany(ctx context.Context, ids []uint64, update
 	if len(values) == 0 {
 		return 0, nil
 	}
-	result := r.db.db.WithContext(ctx).Model(&accountModel{}).Where("id IN ?", ids).Updates(values)
-	return result.RowsAffected, result.Error
+	var updated int64
+	err := r.db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for start := 0; start < len(ids); start += accountUpdateBatchSize {
+			end := min(start+accountUpdateBatchSize, len(ids))
+			var rows []accountModel
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "provider").Where("id IN ?", ids[start:end]).Order("id ASC").Find(&rows).Error; err != nil {
+				return err
+			}
+			if len(rows) != end-start {
+				return repository.ErrAccountPoolMismatch
+			}
+			for _, row := range rows {
+				if account.Provider(row.Provider) != providerValue {
+					return repository.ErrAccountPoolMismatch
+				}
+			}
+		}
+		for start := 0; start < len(ids); start += accountUpdateBatchSize {
+			end := min(start+accountUpdateBatchSize, len(ids))
+			result := tx.Model(&accountModel{}).Where("provider = ? AND id IN ?", providerValue, ids[start:end]).Updates(values)
+			if result.Error != nil {
+				return result.Error
+			}
+			updated += result.RowsAffected
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	if updated > 0 {
+		r.notifyInvalidation(ctx, repository.InvalidationEvent{Kind: repository.InvalidationAccountStateChanged})
+	}
+	return updated, nil
 }
 
 func (r *AccountRepository) UpdateEgressBindings(ctx context.Context, providerValue account.Provider, ids []uint64, nodeID *uint64, mode account.EgressAssignmentMode, assignedAt time.Time) (int64, error) {
@@ -1554,7 +1724,7 @@ func (r *AccountRepository) UpdateTokens(ctx context.Context, id uint64, accessT
 	refreshDueAt := account.CredentialRefreshDueAt(id, expiresAt)
 	updates := map[string]any{
 		"encrypted_primary": accessToken, "expires_at": expiresAt, "refresh_due_at": refreshDueAt,
-		"last_refresh_at": now, "refresh_failures": 0, "last_refresh_error": "", "refresh_permanent": false, "updated_at": now,
+		"last_refresh_at": now, "refresh_failures": 0, "last_refresh_error_status": 0, "last_refresh_error": "", "last_refresh_error_message": "", "last_refresh_error_response": "", "refresh_permanent": false, "updated_at": now,
 	}
 	if refreshToken != "" {
 		updates["encrypted_refresh"] = refreshToken
@@ -1656,11 +1826,17 @@ func (r *AccountRepository) NextCredentialRefreshDueAt(ctx context.Context) (*ti
 	return &value, nil
 }
 
-func (r *AccountRepository) UpdateCredentialRefreshFailure(ctx context.Context, id uint64, failureCount int, retryAt time.Time, errorCode string, permanent bool) error {
-	return r.db.db.WithContext(ctx).Model(&accountCredentialModel{}).Where("account_id = ?", id).Updates(map[string]any{
-		"refresh_due_at": retryAt.UTC(), "refresh_failures": max(0, failureCount),
-		"last_refresh_error": truncate(errorCode, 100), "refresh_permanent": permanent, "updated_at": time.Now().UTC(),
+func (r *AccountRepository) UpdateCredentialRefreshFailure(ctx context.Context, id uint64, failure repository.CredentialRefreshFailure) error {
+	err := r.db.db.WithContext(ctx).Model(&accountCredentialModel{}).Where("account_id = ?", id).Updates(map[string]any{
+		"refresh_due_at": failure.RetryAt.UTC(), "refresh_failures": max(0, failure.Count),
+		"last_refresh_error_status": max(0, failure.Status), "last_refresh_error": truncate(failure.Code, 100),
+		"last_refresh_error_message": truncate(failure.Message, 512), "last_refresh_error_response": truncate(failure.Response, 4096),
+		"refresh_permanent": failure.Permanent, "updated_at": time.Now().UTC(),
 	}).Error
+	if err == nil && failure.Permanent {
+		r.notifyInvalidation(ctx, repository.InvalidationEvent{Kind: repository.InvalidationAccountCredentialChanged, AccountID: id})
+	}
+	return err
 }
 
 func (r *AccountRepository) UpdateObservedModel(ctx context.Context, id uint64, model string, observedAt time.Time) error {
@@ -2145,13 +2321,19 @@ func (r *AccountRepository) ListStaleWebQuotaAccountIDs(ctx context.Context, bef
 func toQuotaWindowDomain(row quotaWindowModel) account.QuotaWindow {
 	var serializedBreakdown []quotaBreakdownJSON
 	_ = json.Unmarshal([]byte(row.BreakdownJSON), &serializedBreakdown)
+	result := toRoutingQuotaWindowDomain(row)
 	breakdown := make([]account.QuotaBreakdown, 0, len(serializedBreakdown))
 	for _, item := range serializedBreakdown {
 		breakdown = append(breakdown, account.QuotaBreakdown{ProductCode: item.ProductCode, UsagePercent: item.UsagePercent})
 	}
+	result.Breakdown = breakdown
+	return result
+}
+
+func toRoutingQuotaWindowDomain(row quotaWindowModel) account.QuotaWindow {
 	return account.QuotaWindow{
 		AccountID: row.AccountID, Mode: row.Mode, Remaining: row.Remaining, Total: row.Total,
-		UsagePercent: row.UsagePercent, Breakdown: breakdown, WindowSeconds: row.WindowSeconds,
+		UsagePercent: row.UsagePercent, WindowSeconds: row.WindowSeconds,
 		ResetAt: row.ResetAt, SyncedAt: row.SyncedAt, Source: account.QuotaSource(row.Source), UpdatedAt: row.UpdatedAt,
 	}
 }
