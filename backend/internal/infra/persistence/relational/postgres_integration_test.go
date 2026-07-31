@@ -1025,8 +1025,13 @@ func TestPostgresRoutingProjectionAndCredentialHydration(t *testing.T) {
 	if _, err := accounts.GetCredentialMaterial(ctx, created.ID, account.ProviderBuild); !errors.Is(err, repository.ErrNotFound) {
 		t.Fatalf("cross-provider credential error = %v, want ErrNotFound", err)
 	}
+	// UpdateMany is scoped to one provider pool, so a Build-scoped update must not touch
+	// this Web account.
 	disabled := false
-	if _, err := accounts.UpdateMany(ctx, account.ProviderBuild, []uint64{created.ID}, repository.AccountUpdates{Enabled: &disabled}); err != nil {
+	if _, err := accounts.UpdateMany(ctx, account.ProviderBuild, []uint64{created.ID}, repository.AccountUpdates{Enabled: &disabled}); !errors.Is(err, repository.ErrAccountPoolMismatch) {
+		t.Fatalf("cross-pool update error = %v, want ErrAccountPoolMismatch", err)
+	}
+	if _, err := accounts.UpdateMany(ctx, account.ProviderWeb, []uint64{created.ID}, repository.AccountUpdates{Enabled: &disabled}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := accounts.GetCredentialMaterial(ctx, created.ID, account.ProviderWeb); !errors.Is(err, repository.ErrNotFound) {
