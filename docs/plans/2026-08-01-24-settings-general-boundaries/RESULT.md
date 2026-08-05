@@ -1,4 +1,4 @@
-﻿# Iteration result: Settings general boundaries and v3.4.1 release
+# Iteration result: Settings general boundaries and v3.4.1 release
 
 - Date completed: 2026-08-05 (local acceptance; remote publication pending credentials)
 - Status: Locally accepted; remote delivery blocked
@@ -22,6 +22,7 @@
 | Focused settings test | Passed | 1 file, 7 tests |
 | Frontend unit/coverage suite | Passed | 14 files, 42 tests |
 | Frontend build and static audits | Passed | Prettier, ESLint, build, icon/UI-symbol, bundle/chunk, Knip, code, architecture, and duplication audits |
+| Dependency audit | Passed | CI initially found newly disclosed advisories; overrides now pin `brace-expansion=5.0.9`, `undici=7.29.0`, and `postcss=8.5.23`; `pnpm audit --audit-level high` exits 0 |
 | Backend tests | Passed | `go test -p 1 ./...` |
 | Backend vet | Passed | `go vet ./...` |
 | Swagger no-drift | Passed | regenerated docs and `git diff --exit-code` |
