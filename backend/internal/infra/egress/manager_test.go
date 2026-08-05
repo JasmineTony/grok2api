@@ -1068,6 +1068,34 @@ func TestAcquireCredentialUsesConfiguredFixedFallbackWhenBoundNodeIsUnavailable(
 	}
 }
 
+func TestQualityProbeDoesNotFallbackWhenForcedNodeIsUnavailable(t *testing.T) {
+	cipher, err := security.NewCipher("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fallbackURL, err := cipher.Encrypt("http://fixed-fallback.example:8080")
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := domain.DefaultOperationsConfig()
+	config.Fallbacks[domain.ScopeBuild] = domain.FallbackConfig{Mode: domain.FallbackModeFixed, NodeID: 2}
+	manager := NewManager(fallbackEgressRepository{
+		egressRepositoryTestStub: egressRepositoryTestStub{nodes: []domain.Node{
+			{ID: 1, Name: "forced-without-proxy", Scope: domain.ScopeBuild, Enabled: true, Health: 1},
+			{ID: 2, Name: "fixed-fallback", Scope: domain.ScopeBuild, Enabled: true, Health: 1, EncryptedProxyURL: fallbackURL},
+		}},
+		config: config,
+	}, cipher)
+	ctx := WithQualityProbe(WithEgressNode(context.Background(), 1))
+	lease, configured, err := manager.AcquireIfConfigured(ctx, domain.ScopeBuild, "quality-probe")
+	if err == nil {
+		t.Fatal("quality probe unexpectedly used the configured fallback")
+	}
+	if lease != nil || !configured {
+		t.Fatalf("quality probe fallback lease=%#v configured=%v", lease, configured)
+	}
+}
+
 func TestFlareSolverrModeIgnoresCredentialCookie(t *testing.T) {
 	cipher, err := security.NewCipher("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
 	if err != nil {

@@ -159,6 +159,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - name: Test Quality Guard sidecar
+        run: python3 -m unittest -v tools/egress-quality-guard/quality_guard_test.py tools/egress-quality-guard/session_rotator_test.py
       - name: Lint Dockerfile
         run: docker run --rm -i -v "$PWD/.hadolint.yaml:/.hadolint.yaml:ro" hadolint/hadolint:v2.14.0-debian hadolint --config /.hadolint.yaml - < Dockerfile
       - name: Prepare ephemeral smoke configuration

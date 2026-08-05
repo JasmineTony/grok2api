@@ -92,7 +92,7 @@ test.describe("authenticated route boundaries @cross-browser", () => {
     authenticatedPage: page,
   }) => {
     await page.goto("/settings/about");
-    await expect(page.locator("main").getByText("v3.4.1").first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator("main").getByText("v3.5.0").first()).toBeVisible({ timeout: 15_000 });
     await page.goto("/settings/changelog");
     await expect(
       page.getByRole("heading", { name: /Release notes|\u66f4\u65b0\u8bf4\u660e/ }),

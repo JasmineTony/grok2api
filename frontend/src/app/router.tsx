@@ -17,6 +17,7 @@ import {
   DeferredMediaSettingsPage,
   DeferredModelsPage,
   DeferredNetworkSettingsPage,
+  DeferredQualityGuardPage,
   DeferredRequestAuditsPage,
   DeferredRuntimePoliciesSettingsPage,
   DeferredSettingsPage,
@@ -49,6 +50,7 @@ export const router = createBrowserRouter([
           { path: "/gallery", element: <DeferredGalleryPage /> },
           { path: "/video-gallery", element: <DeferredVideoGalleryPage /> },
           { path: "/request-audits", element: <DeferredRequestAuditsPage /> },
+          { path: "/quality-guard", element: <DeferredQualityGuardPage /> },
           { path: "/docs", element: <Navigate to="/docs/chat/completions" replace /> },
           { path: "/docs/:category/:endpoint", element: <DeferredApiDocsPage /> },
           {

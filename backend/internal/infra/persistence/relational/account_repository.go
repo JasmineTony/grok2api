@@ -92,6 +92,12 @@ func (r *AccountRepository) List(ctx context.Context, input repository.AccountLi
 	switch input.Filter.Egress {
 	case "bound":
 		query = query.Where("provider_accounts.egress_node_id IS NOT NULL")
+		if input.Filter.EgressNodeID > 0 {
+			query = query.Where("provider_accounts.egress_node_id = ?", input.Filter.EgressNodeID)
+		}
+		if input.Filter.EgressSourceID > 0 {
+			query = query.Where("EXISTS (SELECT 1 FROM egress_nodes node WHERE node.id = provider_accounts.egress_node_id AND node.source_id = ?)", input.Filter.EgressSourceID)
+		}
 	case "unbound":
 		query = query.Where("provider_accounts.egress_node_id IS NULL")
 	}
@@ -369,15 +375,7 @@ func (r *AccountRepository) ListRoutingAccountBases(ctx context.Context, provide
 // account to use. Provider secrets deliberately stay in account_credentials
 // until a selected account is hydrated for the upstream call.
 func (r *AccountRepository) listRoutingCredentials(ctx context.Context, provider account.Provider) ([]account.Credential, error) {
-	var rows []accountModel
-	err := r.db.db.WithContext(ctx).
-		Preload("Credential", func(query *gorm.DB) *gorm.DB {
-			return query.Select(routingCredentialMetadataColumns)
-		}).
-		Preload("WebProfile").
-		Where("provider = ? AND enabled = ? AND auth_status = ?", provider, true, account.AuthStatusActive).
-		Order("priority DESC, id ASC").
-		Find(&rows).Error
+	rows, err := r.listActiveProviderAccountRows(ctx, provider, routingCredentialMetadataColumns)
 	if err != nil {
 		return nil, err
 	}
@@ -389,6 +387,72 @@ func (r *AccountRepository) listRoutingCredentials(ctx context.Context, provider
 		return nil, err
 	}
 	return values, nil
+}
+
+// listActiveProviderAccountRows avoids GORM association preloads for complete
+// provider pools. Preload expands every parent key into an IN list and exceeds
+// SQLite's variable limit for large pools. The fixed-shape JOIN queries below
+// remain valid for both SQLite and PostgreSQL regardless of pool size.
+func (r *AccountRepository) listActiveProviderAccountRows(ctx context.Context, provider account.Provider, credentialColumns []string) ([]accountModel, error) {
+	var rows []accountModel
+	if err := r.db.db.WithContext(ctx).
+		Where("provider = ? AND enabled = ? AND auth_status = ?", provider, true, account.AuthStatusActive).
+		Order("priority DESC, id ASC").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return rows, nil
+	}
+	positions := make(map[uint64]int, len(rows))
+	for index := range rows {
+		positions[rows[index].ID] = index
+	}
+
+	credentialSelect := "credential.*"
+	if len(credentialColumns) > 0 {
+		credentialSelect = qualifiedColumnList("credential", credentialColumns)
+	}
+	var credentials []accountCredentialModel
+	if err := r.db.db.WithContext(ctx).
+		Table("account_credentials AS credential").
+		Select(credentialSelect).
+		Joins("JOIN provider_accounts AS account ON account.id = credential.account_id").
+		Where("account.provider = ? AND account.enabled = ? AND account.auth_status = ?", provider, true, account.AuthStatusActive).
+		Find(&credentials).Error; err != nil {
+		return nil, err
+	}
+	for index := range credentials {
+		if position, ok := positions[credentials[index].AccountID]; ok {
+			rows[position].Credential = &credentials[index]
+		}
+	}
+
+	if provider == account.ProviderWeb {
+		var profiles []webAccountProfileModel
+		if err := r.db.db.WithContext(ctx).
+			Table("web_account_profiles AS profile").
+			Select("profile.*").
+			Joins("JOIN provider_accounts AS account ON account.id = profile.account_id").
+			Where("account.provider = ? AND account.enabled = ? AND account.auth_status = ?", provider, true, account.AuthStatusActive).
+			Find(&profiles).Error; err != nil {
+			return nil, err
+		}
+		for index := range profiles {
+			if position, ok := positions[profiles[index].AccountID]; ok {
+				rows[position].WebProfile = &profiles[index]
+			}
+		}
+	}
+	return rows, nil
+}
+
+func qualifiedColumnList(alias string, columns []string) string {
+	qualified := make([]string, 0, len(columns))
+	for _, column := range columns {
+		qualified = append(qualified, alias+"."+column)
+	}
+	return strings.Join(qualified, ", ")
 }
 
 // routingCredentialMetadataColumns contains all credential fields used for
@@ -559,8 +623,7 @@ func (r *AccountRepository) listRoutingBoundAccountIDs(ctx context.Context, prov
 }
 
 func (r *AccountRepository) ListEnabled(ctx context.Context, provider account.Provider) ([]account.Credential, error) {
-	var rows []accountModel
-	err := r.db.db.WithContext(ctx).Preload("Credential").Preload("WebProfile").Where("provider = ? AND enabled = ? AND auth_status = ?", provider, true, account.AuthStatusActive).Order("priority DESC, id ASC").Find(&rows).Error
+	rows, err := r.listActiveProviderAccountRows(ctx, provider, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -903,10 +966,8 @@ func (r *AccountRepository) attachRoutingEgressIdentities(ctx context.Context, p
 	if len(values) == 0 || provider == account.ProviderWeb {
 		return nil
 	}
-	ids := make([]uint64, 0, len(values))
 	positions := make(map[uint64]int, len(values))
 	for index := range values {
-		ids = append(ids, values[index].ID)
 		positions[values[index].ID] = index
 	}
 	type identityRow struct {
@@ -920,15 +981,17 @@ func (r *AccountRepository) attachRoutingEgressIdentities(ctx context.Context, p
 	case account.ProviderBuild:
 		query = query.Table("account_provider_links AS link").
 			Select("link.build_account_id AS account_id, web.source_key AS web_source_key, profile.egress_identity").
+			Joins("JOIN provider_accounts AS target ON target.id = link.build_account_id").
 			Joins("JOIN provider_accounts AS web ON web.id = link.web_account_id").
 			Joins("LEFT JOIN web_account_profiles AS profile ON profile.account_id = web.id").
-			Where("link.build_account_id IN ?", ids)
+			Where("target.provider = ? AND target.enabled = ? AND target.auth_status = ?", provider, true, account.AuthStatusActive)
 	case account.ProviderConsole:
 		query = query.Table("web_console_account_links AS link").
 			Select("link.console_account_id AS account_id, web.source_key AS web_source_key, profile.egress_identity").
+			Joins("JOIN provider_accounts AS target ON target.id = link.console_account_id").
 			Joins("JOIN provider_accounts AS web ON web.id = link.web_account_id").
 			Joins("LEFT JOIN web_account_profiles AS profile ON profile.account_id = web.id").
-			Where("link.console_account_id IN ?", ids)
+			Where("target.provider = ? AND target.enabled = ? AND target.auth_status = ?", provider, true, account.AuthStatusActive)
 	default:
 		return nil
 	}
@@ -2091,19 +2154,17 @@ func (r *AccountRepository) GetQuotaRecovery(ctx context.Context, accountID uint
 
 func (r *AccountRepository) GetQuotaRecoveries(ctx context.Context, accountIDs []uint64) (map[uint64]account.QuotaRecovery, error) {
 	result := make(map[uint64]account.QuotaRecovery, len(accountIDs))
-	if len(accountIDs) == 0 {
-		return result, nil
-	}
-	var rows []quotaRecoveryModel
-	if err := r.db.db.WithContext(ctx).Where("account_id IN ?", accountIDs).Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	for _, row := range rows {
-		result[row.AccountID] = account.QuotaRecovery{
-			AccountID: row.AccountID, Kind: account.QuotaRecoveryKind(row.Kind), Status: account.QuotaRecoveryStatus(row.Status), ConfirmedUsed: row.ConfirmedUsed,
-			ConfirmedLimit: row.ConfirmedLimit, ExhaustedAt: row.ExhaustedAt, NextProbeAt: row.NextProbeAt,
-			LastConfirmedAt: row.LastConfirmedAt, UpdatedAt: row.UpdatedAt,
+	if err := forEachAccountIDBatch(accountIDs, func(batch []uint64) error {
+		var rows []quotaRecoveryModel
+		if err := r.db.db.WithContext(ctx).Where("account_id IN ?", batch).Find(&rows).Error; err != nil {
+			return err
 		}
+		for _, row := range rows {
+			result[row.AccountID] = account.QuotaRecovery{AccountID: row.AccountID, Kind: account.QuotaRecoveryKind(row.Kind), Status: account.QuotaRecoveryStatus(row.Status), ConfirmedUsed: row.ConfirmedUsed, ConfirmedLimit: row.ConfirmedLimit, ExhaustedAt: row.ExhaustedAt, NextProbeAt: row.NextProbeAt, LastConfirmedAt: row.LastConfirmedAt, UpdatedAt: row.UpdatedAt}
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	return result, nil
 }

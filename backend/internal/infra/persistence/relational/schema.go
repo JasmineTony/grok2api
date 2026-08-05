@@ -72,7 +72,8 @@ var schemaIndexes = []string{
 	"CREATE INDEX IF NOT EXISTS idx_accounts_auto_clean_reauth_cursor ON provider_accounts(auth_status, enabled, id, reauth_marked_at)",
 	"CREATE INDEX IF NOT EXISTS idx_account_credentials_refresh_due ON account_credentials(refresh_due_at, account_id)",
 	"CREATE INDEX IF NOT EXISTS idx_quota_windows_due ON account_quota_windows(remaining, reset_at, account_id)",
-	"CREATE UNIQUE INDEX IF NOT EXISTS idx_model_routes_public_id ON model_routes(public_id)",
+	"CREATE INDEX IF NOT EXISTS idx_model_routes_public_id_lookup ON model_routes(public_id)",
+	"CREATE UNIQUE INDEX IF NOT EXISTS uidx_model_routes_managed_public_id ON model_routes(public_id) WHERE origin IN ('catalog', 'discovered')",
 	"CREATE INDEX IF NOT EXISTS idx_model_routes_provider_upstream ON model_routes(provider, upstream_model)",
 	"CREATE INDEX IF NOT EXISTS idx_model_routes_created_id ON model_routes(created_at DESC, id DESC)",
 	"CREATE INDEX IF NOT EXISTS idx_model_routes_enabled ON model_routes(enabled, public_id, id)",
@@ -204,6 +205,10 @@ func (d *Database) initializeSchema(ctx context.Context) error {
 	if err := d.dropProviderUpstreamUniqueIndex(ctx); err != nil {
 		return fmt.Errorf("迁移模型路由上游唯一约束: %w", err)
 	}
+	if err := d.dropModelPublicIDUniqueIndex(ctx); err != nil {
+		return fmt.Errorf("migrate model route public ID uniqueness: %w", err)
+	}
+
 	for _, statement := range schemaIndexes {
 		if err := db.Exec(statement).Error; err != nil {
 			return fmt.Errorf("初始化数据库索引: %w", err)
@@ -279,6 +284,14 @@ func (d *Database) dropRedundantResponseExpiryIndexes(ctx context.Context) error
 func (d *Database) dropProviderUpstreamUniqueIndex(ctx context.Context) error {
 	if err := d.db.WithContext(ctx).Exec("DROP INDEX IF EXISTS uidx_provider_upstream").Error; err != nil {
 		return fmt.Errorf("drop index uidx_provider_upstream: %w", err)
+	}
+	return nil
+}
+
+// dropModelPublicIDUniqueIndex migrates the historical global public-id uniqueness constraint.
+func (d *Database) dropModelPublicIDUniqueIndex(ctx context.Context) error {
+	if err := d.db.WithContext(ctx).Exec("DROP INDEX IF EXISTS idx_model_routes_public_id").Error; err != nil {
+		return fmt.Errorf("drop index idx_model_routes_public_id: %w", err)
 	}
 	return nil
 }

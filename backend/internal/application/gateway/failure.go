@@ -58,14 +58,18 @@ type UpstreamFailure struct {
 	PermanentAccountDenial bool
 	// SafetyRejection marks a request-level content safety denial. It must not
 	// refresh OAuth, retry, switch accounts, cool down, or invalidate credentials.
-	SafetyRejection     bool
-	QuotaExhausted      bool
-	FreeQuotaExhausted  bool
-	ModelQuotaExhausted bool
-	CredentialRejected  bool
-	Fingerprint         string
-	RetryAfter          time.Duration
-	Cause               error
+	SafetyRejection bool
+	// RequestScopedForbidden marks deterministic request/policy rejection.
+	RequestScopedForbidden bool
+	QuotaExhausted         bool
+	FreeQuotaExhausted     bool
+	ModelQuotaExhausted    bool
+	// SpendingLimitBlocked marks paid-account spending-limit denial.
+	SpendingLimitBlocked bool
+	CredentialRejected   bool
+	Fingerprint          string
+	RetryAfter           time.Duration
+	Cause                error
 }
 
 func (e *UpstreamFailure) Error() string {
@@ -147,6 +151,7 @@ func newHTTPUpstreamFailure(status int, body []byte, accountID uint64, accountNa
 		failure.AccountScoped = true
 		failure.QuotaExhausted = true
 		failure.FreeQuotaExhausted = isFreeQuotaExhaustion(metadataText)
+		failure.SpendingLimitBlocked = isPaidQuotaExhaustion(metadataText)
 		failure.Category, failure.AccountImpact, failure.Retryable = FailureQuota, ImpactQuota, false
 	case http.StatusForbidden:
 		failure.Code = "upstream_forbidden"
@@ -157,11 +162,16 @@ func newHTTPUpstreamFailure(status int, body []byte, accountID uint64, accountNa
 			failure.SafetyRejection = true
 			break
 		}
+		if isRequestScopedForbidden(upstreamCode, metadataText) {
+			failure.RequestScopedForbidden = true
+			break
+		}
 		failure.AccountBlocked = isDefinitiveAccountBlock(metadataText)
-		failure.PermanentAccountDenial = isPermanentAccountDenial(upstreamMessage)
+		failure.PermanentAccountDenial = isPermanentAccountDenial(upstreamMessage) || strings.Contains(metadataText, "access to the chat endpoint is denied")
 		failure.ModelQuotaExhausted = isModelQuotaExhaustion(metadataText)
 		failure.FreeQuotaExhausted = failure.ModelQuotaExhausted || isFreeQuotaExhaustion(metadataText)
-		failure.QuotaExhausted = failure.FreeQuotaExhausted || isPaidQuotaExhaustion(metadataText)
+		failure.QuotaExhausted = failure.FreeQuotaExhausted || isCreditQuotaExhaustion(metadataText)
+		failure.SpendingLimitBlocked = isPaidQuotaExhaustion(metadataText)
 		failure.CredentialRejected = !failure.QuotaExhausted && containsAny(metadataText, "authentication", "unauthorized", "invalid token", "token expired")
 		failure.AccountScoped = failure.AccountBlocked || failure.PermanentAccountDenial || failure.QuotaExhausted || failure.CredentialRejected || isAccountScopedForbidden(metadataText)
 		switch {
@@ -183,6 +193,7 @@ func newHTTPUpstreamFailure(status int, body []byte, accountID uint64, accountNa
 		failure.FreeQuotaExhausted = isFreeQuotaExhaustion(metadataText)
 		failure.ModelQuotaExhausted = isModelQuotaExhaustion(metadataText)
 		failure.QuotaExhausted = failure.FreeQuotaExhausted || isPaidQuotaExhaustion(metadataText)
+		failure.SpendingLimitBlocked = isPaidQuotaExhaustion(metadataText)
 		failure.Category, failure.AccountImpact, failure.Retryable = FailureRateLimit, ImpactCooldown, true
 	default:
 		failure.Code = "upstream_server_error"
@@ -282,10 +293,19 @@ func extractUpstreamErrorMetadata(body []byte) (string, string, string) {
 	return firstStringValue(root, "code", "error_code"), firstStringValue(root, "type", "error_type"), message
 }
 
+// isRequestScopedForbidden recognizes deterministic request-level failures.
+func isRequestScopedForbidden(upstreamCode, text string) bool {
+	switch normalizeFailureCode(upstreamCode) {
+	case "invalid_argument", "invalid_arguments", "invalid_parameter", "invalid_parameters", "invalid_request", "bad_request", "invalid_params":
+		return true
+	}
+	return containsAny(text, "request rejected by policy", "policy rejected request", "content policy", "content moderation", "zero data retention", "zdr-blocked", "zdr blocked", "zdr-gated", "zdr gated", "operation is unavailable under zdr", "operation unavailable under zdr")
+}
+
 func isAccountScopedForbidden(text string) bool {
 	// Do not match bare "permission" / permission-denied alone: those codes are shared by
 	// request-level policy denials. Account scope requires quota/billing/auth wording.
-	return containsAny(text, "quota", "billing", "subscription", "entitlement", "unauthorized", "authentication", "invalid token", "token expired", "usage-exhausted", "insufficient", "spending-limit")
+	return containsAny(text, "quota", "billing", "subscription", "entitlement", "unauthorized", "authentication", "invalid token", "token expired", "usage-exhausted", "insufficient", "spending-limit", "spending limit", "run out of credits", "out of credits", "usage balance exhausted", "usage limit reached")
 }
 
 // isPermanentAccountDenial requires explicit account/model permission text.
@@ -313,6 +333,10 @@ func isDefinitiveAccountBlock(text string) bool {
 
 func isPaidQuotaExhaustion(text string) bool {
 	return strings.Contains(text, "personal-team-blocked:spending-limit")
+}
+
+func isCreditQuotaExhaustion(text string) bool {
+	return isPaidQuotaExhaustion(text) || containsAny(text, "run out of credits", "out of credits", "usage balance exhausted", "usage limit reached")
 }
 
 func isFreeQuotaExhaustion(text string) bool {

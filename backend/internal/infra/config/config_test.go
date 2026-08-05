@@ -79,13 +79,13 @@ bootstrapAdmin:
 
 func TestDefaultGrokBuildClientVersionMatchesLocalBaseline(t *testing.T) {
 	build := defaultConfig().Provider.Build
-	if RecommendedBuildClientVersion != "0.2.111" {
+	if RecommendedBuildClientVersion != "0.2.119" {
 		t.Fatalf("recommended clientVersion = %q", RecommendedBuildClientVersion)
 	}
 	if build.ClientVersion != RecommendedBuildClientVersion {
 		t.Fatalf("clientVersion = %q", build.ClientVersion)
 	}
-	if RecommendedBuildUserAgent != "grok-shell/0.2.111 (linux; x86_64)" {
+	if RecommendedBuildUserAgent != "grok-shell/0.2.119 (linux; x86_64)" {
 		t.Fatalf("recommended userAgent = %q", RecommendedBuildUserAgent)
 	}
 	if build.UserAgent != RecommendedBuildUserAgent {
@@ -158,7 +158,7 @@ func TestValidateMaxAttemptsRange(t *testing.T) {
 		{name: "maximum", value: 200},
 		{name: "zero", value: 0, wantErr: true},
 		{name: "below unlimited", value: -2, wantErr: true},
-		{name: "above maximum", value: 201, wantErr: true},
+		{name: "above maximum", value: 65536, wantErr: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
