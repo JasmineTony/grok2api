@@ -76,3 +76,4 @@ Templates are available in [`templates/`](./templates/).
 
 | 2026-07-29 23 - Upstream v3.0.11 sync, defect fixes, settings split, v3.4.0 | [Plan](./2026-07-29-23-upstream-v3.0.11-sync-v3.4.0/PLAN.md) | [Result](./2026-07-29-23-upstream-v3.0.11-sync-v3.4.0/RESULT.md) | Complete |
 | 2026-08-01 24 - Settings general boundaries and v3.4.1 release | [Plan](./2026-08-01-24-settings-general-boundaries/PLAN.md) | [Result](./2026-08-01-24-settings-general-boundaries/RESULT.md) | Complete |
+| 2026-08-05 25 - Upstream v3.1.0 integration and v3.5.0 release | [Plan](./2026-08-05-25-upstream-v3.1.0-v3.5.0/PLAN.md) | [Result](./2026-08-05-25-upstream-v3.1.0-v3.5.0/RESULT.md) | In progress |
