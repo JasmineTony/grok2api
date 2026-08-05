@@ -3,7 +3,7 @@
 - Date: 2026-08-05
 - Sequence: 25
 - Owner: JasmineTony
-- Status: In progress
+- Status: Local acceptance complete; PR and release pending
 - Base commit: `4a1e97107e07e96c91c6b4482c41ed5527d873cb`
 - Working branch: `sync/upstream-v3.1.0-v3.5.0-20260805`
 
@@ -77,10 +77,10 @@ Merge the exact `chenyme/grok2api` v3.1.0 release into the independent repositor
 
 ## Acceptance criteria
 
-- [ ] Exact upstream v3.1.0 commit is a parent/ancestor of the final integration commit.
-- [ ] All 36 simulated conflicts are resolved without losing independent or upstream-required behavior.
-- [ ] New upstream quality guard, routing, provider, database, configuration, and UI behaviors are covered by tests.
-- [ ] v3.5.0 version and release materials are consistent.
+- [x] Exact upstream v3.1.0 commit is a parent/ancestor of integration merge `23963bc8d0e70fbbd0b7b9ae6d5837ced318ed59`.
+- [x] All 36 simulated conflicts are resolved without losing independent or upstream-required behavior.
+- [x] New upstream quality guard, routing, provider, database, configuration, and UI behaviors are covered by backend, frontend, and Linux-CI sidecar tests.
+- [x] v3.5.0 version and release materials are consistent.
 - [ ] Required local and CI checks pass.
-- [ ] RESULT.md and plan index are complete before first push.
+- [x] RESULT.md and plan index record local acceptance before first push.
 - [ ] Annotated tag, stable Release, GHCR multi-architecture aliases, and published-image smoke are verified.
