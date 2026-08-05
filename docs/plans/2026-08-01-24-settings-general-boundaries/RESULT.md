@@ -7,7 +7,7 @@
 - Pull request: [#46](https://github.com/JasmineTony/grok2api/pull/46)
 - Release commit: `2023755ecdc009d2b7ec43e110264af47c50f240`
 - Release: [v3.4.1](https://github.com/JasmineTony/grok2api/releases/tag/v3.4.1)
-- Closeout pull request: Pending
+- Closeout pull request: [#47](https://github.com/JasmineTony/grok2api/pull/47)
 
 ## Delivered
 
