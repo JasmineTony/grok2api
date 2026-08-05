@@ -3,7 +3,7 @@
 - Date completed: 2026-08-05 (local acceptance; remote publication pending credentials)
 - Status: Locally accepted; remote delivery blocked
 - Base commit: `91c11a75fe164000b82e4c5b25ca51c35e279b55`
-- Final commit: `4b90958` (amended result metadata does not change delivered content)
+- Implementation commit: `c580e75`
 - Pull request: Not created (origin SSH authentication unavailable)
 
 ## Delivered
@@ -57,4 +57,5 @@
 - [x] Required local checks passed, with environmental blocks documented above.
 - [x] Documentation and release materials are updated.
 - [ ] Remote branch, v3.4.1 tag, GitHub Release, GHCR aliases, and published-image smoke (blocked by credentials).
+
 
