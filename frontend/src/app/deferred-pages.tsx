@@ -2,6 +2,7 @@ import { type ComponentType, lazy, type LazyExoticComponent, Suspense } from "re
 
 import {
   loadAboutSettingsPage,
+  loadAccountMaintenanceSettingsPage,
   loadAccountsPage,
   loadApiDocsPage,
   loadBuildSettingsPage,
@@ -15,6 +16,7 @@ import {
   loadModelsPage,
   loadNetworkSettingsPage,
   loadRequestAuditsPage,
+  loadRuntimePoliciesSettingsPage,
   loadSettingsPage,
   loadSettingsRouteShell,
   loadVideoGalleryPage,
@@ -36,6 +38,14 @@ const VideoGalleryPage = lazyNamed(loadVideoGalleryPage, "VideoGalleryPage");
 const ModelsPage = lazyNamed(loadModelsPage, "ModelsPage");
 const SettingsRouteShell = lazyNamed(loadSettingsRouteShell, "SettingsRouteShell");
 const SettingsPage = lazyNamed(loadSettingsPage, "SettingsPage");
+const RuntimePoliciesSettingsPage = lazyNamed(
+  loadRuntimePoliciesSettingsPage,
+  "RuntimePoliciesSettingsPage",
+);
+const AccountMaintenanceSettingsPage = lazyNamed(
+  loadAccountMaintenanceSettingsPage,
+  "AccountMaintenanceSettingsPage",
+);
 const MediaSettingsPage = lazyNamed(loadMediaSettingsPage, "MediaSettingsPage");
 const NetworkSettingsPage = lazyNamed(loadNetworkSettingsPage, "NetworkSettingsPage");
 const BuildSettingsPage = lazyNamed(loadBuildSettingsPage, "BuildSettingsPage");
@@ -102,6 +112,12 @@ export function DeferredSettingsRouteShell() {
 }
 export function DeferredSettingsPage() {
   return <DeferredPage page={SettingsPage} />;
+}
+export function DeferredRuntimePoliciesSettingsPage() {
+  return <DeferredPage page={RuntimePoliciesSettingsPage} />;
+}
+export function DeferredAccountMaintenanceSettingsPage() {
+  return <DeferredPage page={AccountMaintenanceSettingsPage} />;
 }
 export function DeferredMediaSettingsPage() {
   return <DeferredPage page={MediaSettingsPage} />;
