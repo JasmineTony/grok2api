@@ -15,6 +15,7 @@ import {
   loadMediaSettingsPage,
   loadModelsPage,
   loadNetworkSettingsPage,
+  loadQualityGuardPage,
   loadRequestAuditsPage,
   loadRuntimePoliciesSettingsPage,
   loadSettingsPage,
@@ -29,6 +30,7 @@ const ChangelogSettingsPage = lazyNamed(loadChangelogSettingsPage, "ChangelogSet
 const AccountsPage = lazyNamed(loadAccountsPage, "AccountsPage");
 const AdminShell = lazyNamed(loadAdminShell, "AdminShell");
 const RequestAuditsPage = lazyNamed(loadRequestAuditsPage, "RequestAuditsPage");
+const QualityGuardPage = lazyNamed(loadQualityGuardPage, "QualityGuardPage");
 const ClientKeysPage = lazyNamed(loadClientKeysPage, "ClientKeysPage");
 const CreativeConsolePage = lazyNamed(loadCreativeConsolePage, "CreativeConsolePage");
 const DashboardPage = lazyNamed(loadDashboardPage, "DashboardPage");
@@ -97,6 +99,9 @@ export function DeferredCreativeConsolePage() {
 }
 export function DeferredRequestAuditsPage() {
   return <DeferredPage page={RequestAuditsPage} />;
+}
+export function DeferredQualityGuardPage() {
+  return <DeferredPage page={QualityGuardPage} />;
 }
 export function DeferredGalleryPage() {
   return <DeferredPage page={GalleryPage} />;

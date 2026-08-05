@@ -2,6 +2,7 @@ const loadAboutSettingsPage = () => import("@/features/settings/about-settings-p
 const loadChangelogSettingsPage = () => import("@/features/settings/changelog-settings-page");
 const loadAccountsPage = () => import("@/features/accounts/accounts-page");
 const loadRequestAuditsPage = () => import("@/features/audits/request-audits-page");
+const loadQualityGuardPage = () => import("@/features/quality-guard/quality-guard-page");
 const loadClientKeysPage = () => import("@/features/client-keys/client-keys-page");
 const loadCreativeConsolePage = () => import("@/features/creative-console/creative-console-page");
 const loadDashboardPage = () => import("@/features/dashboard/dashboard-page");
@@ -33,6 +34,7 @@ const routeLoaders: ReadonlyArray<{
   { matches: (pathname) => pathname === "/gallery", load: loadGalleryPage },
   { matches: (pathname) => pathname === "/video-gallery", load: loadVideoGalleryPage },
   { matches: (pathname) => pathname === "/request-audits", load: loadRequestAuditsPage },
+  { matches: (pathname) => pathname === "/quality-guard", load: loadQualityGuardPage },
   { matches: (pathname) => pathname === "/settings", load: loadSettingsPage },
   {
     matches: (pathname) => pathname === "/settings/policies",
@@ -78,6 +80,7 @@ export {
   loadMediaSettingsPage,
   loadModelsPage,
   loadNetworkSettingsPage,
+  loadQualityGuardPage,
   loadRequestAuditsPage,
   loadRuntimePoliciesSettingsPage,
   loadSettingsPage,

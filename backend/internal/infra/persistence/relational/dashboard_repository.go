@@ -22,19 +22,19 @@ func NewDashboardRepository(db *Database) *DashboardRepository { return &Dashboa
 const dashboardTopModelsLimit = 10
 
 type dashboardMetricRow struct {
-	BucketIndex                 int
-	Provider                    string
-	Model                       string
-	AccountID                   uint64
-	ClientKeyID                 uint64
-	Requests                    int64
-	SuccessfulRequests          int64
-	FailedRequests              int64
-	InputTokens                 int64
-	CachedInputTokens           int64
-	OutputTokens                int64
+	BucketIndex                  int
+	Provider                     string
+	Model                        string
+	AccountID                    uint64
+	ClientKeyID                  uint64
+	Requests                     int64
+	SuccessfulRequests           int64
+	FailedRequests               int64
+	InputTokens                  int64
+	CachedInputTokens            int64
+	OutputTokens                 int64
 	ReasoningTokens              int64
-	Tokens                      int64
+	Tokens                       int64
 	ActualCostUSDTicks           int64
 	EstimatedCostUSDTicks        int64
 	BilledCostUSDTicks           int64
@@ -84,7 +84,7 @@ func (r *DashboardRepository) Snapshot(ctx context.Context, window repository.Da
 			return err
 		}
 		var clientKeys struct{ Total, Active int64 }
-		if err := tx.Model(&clientKeyModel{}).
+		if err := tx.Model(&clientKeyModel{}).Where("internal_kind IS NULL").
 			Select("COUNT(*) AS total, COALESCE(SUM(CASE WHEN enabled = ? AND (expires_at IS NULL OR expires_at > ?) THEN 1 ELSE 0 END), 0) AS active", true, snapshotAt).
 			Scan(&clientKeys).Error; err != nil {
 			return err
@@ -444,7 +444,9 @@ func (r *DashboardRepository) topAccountUsage(tx *gorm.DB, rows map[uint64]dashb
 		}
 		result = append(result, dashboarddomain.AccountUsage{AccountID: id, AccountName: label.Name, Provider: label.Provider, Usage: dimensionUsageFromMetric(row)})
 	}
-	sort.Slice(result, func(i, j int) bool { return dimensionUsageBefore(result[i].Usage, result[j].Usage, result[i].AccountName, result[j].AccountName) })
+	sort.Slice(result, func(i, j int) bool {
+		return dimensionUsageBefore(result[i].Usage, result[j].Usage, result[i].AccountName, result[j].AccountName)
+	})
 	if len(result) > dashboardTopModelsLimit {
 		result = result[:dashboardTopModelsLimit]
 	}
@@ -478,7 +480,9 @@ func (r *DashboardRepository) topClientKeyUsage(tx *gorm.DB, rows map[uint64]das
 		}
 		result = append(result, dashboarddomain.ClientKeyUsage{ClientKeyID: id, ClientKeyName: name, Usage: dimensionUsageFromMetric(row)})
 	}
-	sort.Slice(result, func(i, j int) bool { return dimensionUsageBefore(result[i].Usage, result[j].Usage, result[i].ClientKeyName, result[j].ClientKeyName) })
+	sort.Slice(result, func(i, j int) bool {
+		return dimensionUsageBefore(result[i].Usage, result[j].Usage, result[i].ClientKeyName, result[j].ClientKeyName)
+	})
 	if len(result) > dashboardTopModelsLimit {
 		result = result[:dashboardTopModelsLimit]
 	}

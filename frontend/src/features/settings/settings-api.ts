@@ -512,15 +512,23 @@ export function updateSettings(
 
 export function listEgressNodes(
   client: ApiClient,
-  input?: { sortBy?: string; sortOrder?: SortOrder },
+  input?: { sortBy?: string; sortOrder?: SortOrder; scope?: EgressScope },
 ): Promise<EgressNodeListDTO> {
   const query = new URLSearchParams();
+  if (input?.scope) query.set("scope", input.scope);
   if (input?.sortBy && input.sortOrder) {
     query.set("sortBy", input.sortBy);
     query.set("sortOrder", input.sortOrder);
   }
   const suffix = query.size > 0 ? `?${query}` : "";
   return client.request(`/api/admin/v1/egress-nodes${suffix}`, {}, decodeEgressNodeList);
+}
+
+export function listAllEgressNodes(
+  client: ApiClient,
+  input?: { sortBy?: string; sortOrder?: SortOrder; scope?: EgressScope },
+): Promise<EgressNodeListDTO> {
+  return listEgressNodes(client, input);
 }
 
 export function createEgressNode(
@@ -559,6 +567,18 @@ export function deleteEgressNodes(client: ApiClient, ids: string[]): Promise<{ d
     "/api/admin/v1/egress-nodes",
     { method: "DELETE", body: { ids } },
     createObjectDecoder<{ deleted: number }>("egress node batch delete", { deleted: isNumber }),
+  );
+}
+
+export function updateEgressNodesEnabled(
+  client: ApiClient,
+  ids: string[],
+  enabled: boolean,
+): Promise<{ updated: number }> {
+  return client.request(
+    "/api/admin/v1/egress-nodes/batch",
+    { method: "PATCH", body: { ids, enabled } },
+    createObjectDecoder<{ updated: number }>("egress node batch update", { updated: isNumber }),
   );
 }
 

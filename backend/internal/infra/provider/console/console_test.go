@@ -227,16 +227,12 @@ func TestNormalizeReasoningPreservesReferenceEfforts(t *testing.T) {
 	}
 }
 
-func TestNormalizeRequestPreservesGrok420ReasoningEffort(t *testing.T) {
+func TestNormalizeRequestStripsUnsupportedGrok420ReasoningEffort(t *testing.T) {
 	spec, ok := Resolve("grok-4.20-0309-reasoning")
 	if !ok {
 		t.Fatal("grok-4.20-0309-reasoning missing")
 	}
-	body, err := normalizeRequest([]byte(`{
-		"model":"grok-4.20-0309-reasoning",
-		"input":"hello",
-		"reasoning":{"effort":"low"}
-	}`), spec)
+	body, err := normalizeRequest([]byte(`{"model":"grok-4.20-0309-reasoning","input":"hello","reasoning":{"effort":"low","summary":"auto"}}`), spec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,23 +241,19 @@ func TestNormalizeRequestPreservesGrok420ReasoningEffort(t *testing.T) {
 		t.Fatal(err)
 	}
 	reasoning, _ := payload["reasoning"].(map[string]any)
-	if reasoning["effort"] != "low" {
+	if reasoning["effort"] != nil || reasoning["summary"] != "auto" {
 		t.Fatalf("reasoning = %#v", reasoning)
 	}
-
-	withoutEffort, err := normalizeRequest([]byte(`{
-		"model":"grok-4.20-0309-reasoning",
-		"input":"hello"
-	}`), spec)
+	body, err = normalizeRequest([]byte(`{"model":"grok-4.20-0309-reasoning","input":"hello","reasoning":{"effort":"low"}}`), spec)
 	if err != nil {
 		t.Fatal(err)
 	}
 	payload = nil
-	if err := json.Unmarshal(withoutEffort, &payload); err != nil {
+	if err := json.Unmarshal(body, &payload); err != nil {
 		t.Fatal(err)
 	}
 	if payload["reasoning"] != nil {
-		t.Fatalf("base model request should retain the upstream default: %#v", payload)
+		t.Fatalf("effort-only reasoning should be removed: %#v", payload)
 	}
 }
 
@@ -298,29 +290,23 @@ func TestNormalizeReasoningClampsUnsupportedEffort(t *testing.T) {
 	}
 }
 
-// A level the model does support must survive untouched.
+// A model that supports explicit effort keeps the value unchanged.
 func TestNormalizeReasoningKeepsSupportedEffort(t *testing.T) {
-	spec, ok := Resolve("grok-4.20-0309-reasoning")
+	spec, ok := Resolve("grok-4.3")
 	if !ok {
-		t.Fatal("grok-4.20-0309-reasoning missing")
+		t.Fatal("grok-4.3 missing")
 	}
-	for _, level := range []string{"low", "medium", "high"} {
-		body, err := normalizeRequest([]byte(`{
-			"model":"grok-4.20-0309-reasoning",
-			"input":"hello",
-			"reasoning":{"effort":"`+level+`"}
-		}`), spec)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var payload map[string]any
-		if err := json.Unmarshal(body, &payload); err != nil {
-			t.Fatal(err)
-		}
-		reasoning, _ := payload["reasoning"].(map[string]any)
-		if reasoning["effort"] != level {
-			t.Fatalf("effort = %#v, want %q", reasoning["effort"], level)
-		}
+	body, err := normalizeRequest([]byte(`{"model":"grok-4.3","input":"hello","reasoning":{"effort":"low"}}`), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	reasoning, _ := payload["reasoning"].(map[string]any)
+	if reasoning["effort"] != "low" {
+		t.Fatalf("effort = %#v, want low", reasoning["effort"])
 	}
 }
 
