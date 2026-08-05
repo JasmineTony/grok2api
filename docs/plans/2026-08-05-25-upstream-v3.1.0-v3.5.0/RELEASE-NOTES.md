@@ -23,4 +23,4 @@ Quality Guard is opt-in. Keep `qualityGuard.enabled` false unless the sidecar pr
 
 ## Verification
 
-The release candidate is validated with focused gateway, persistence, provider, configuration, Quality Guard, frontend typecheck/unit/lint/build, full backend tests/vet, repository audits, CI, protected release jobs, multi-architecture GHCR manifest checks, and `/healthz` smoke. Final commit, PR, tag, workflow, manifest, and smoke evidence are recorded in `RESULT.md` after publication.
+The release was validated with focused gateway, persistence, provider, configuration, Quality Guard, frontend typecheck/unit/lint/build, full backend tests/vet, repository audits, CI, CodeQL, protected release jobs, multi-architecture GHCR manifest checks, and `/healthz` smoke. Final commit, PR, annotated tag, workflow, OCI index, alias, platform, and smoke evidence are recorded in `RESULT.md`.
