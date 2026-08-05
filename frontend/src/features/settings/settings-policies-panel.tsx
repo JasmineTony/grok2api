@@ -22,113 +22,23 @@ import {
   UNLIMITED_ROUTING_ATTEMPTS,
 } from "@/features/settings/settings-model";
 
-type SettingsPoliciesPanelProps = {
+type SettingsRuntimePoliciesPanelProps = {
   t: TFunction;
   form: UseFormReturn<SettingsForm>;
 };
 
-export function SettingsPoliciesPanel({ t, form }: SettingsPoliciesPanelProps) {
+/**
+ * Gateway scheduling, audit persistence, and client-key defaults. Keeping these
+ * controls separate from service capacity makes policy changes easier to review
+ * without changing their underlying form paths or save semantics.
+ */
+export function SettingsRuntimePoliciesPanel({ t, form }: SettingsRuntimePoliciesPanelProps) {
   const [confirmUnlimited, setConfirmUnlimited] = useState(false);
   const limitedAttempts = useRef(3);
   const segmentedSelectorEnabled = form.watch("routing.segmentedSelector.enabled") === true;
 
   return (
     <div className="space-y-8">
-      <SettingsSection title={t("settings.server.title")}>
-        <div className="space-y-0">
-          <SettingsField
-            controlId="server-max-concurrent-requests"
-            label={t("settings.server.maxConcurrentRequests")}
-            description={t("settings.server.maxConcurrentRequestsHelp")}
-            error={form.formState.errors.server?.maxConcurrentRequests?.message}
-          >
-            <Input
-              id="server-max-concurrent-requests"
-              type="number"
-              min={1}
-              max={100_000}
-              {...form.register("server.maxConcurrentRequests", { valueAsNumber: true })}
-            />
-          </SettingsField>
-        </div>
-      </SettingsSection>
-
-      <SettingsSection title={t("settings.batch.title")}>
-        <div className="space-y-0">
-          <SettingsField
-            controlId="batch-import-concurrency"
-            label={t("settings.batch.importConcurrency")}
-            description={t("settings.batch.importConcurrencyHelp")}
-            error={form.formState.errors.batch?.importConcurrency?.message}
-          >
-            <Input
-              id="batch-import-concurrency"
-              type="number"
-              min={1}
-              max={50}
-              {...form.register("batch.importConcurrency", { valueAsNumber: true })}
-            />
-          </SettingsField>
-          <SettingsField
-            controlId="batch-conversion-concurrency"
-            label={t("settings.batch.conversionConcurrency")}
-            description={t("settings.batch.conversionConcurrencyHelp")}
-            error={form.formState.errors.batch?.conversionConcurrency?.message}
-          >
-            <Input
-              id="batch-conversion-concurrency"
-              type="number"
-              min={1}
-              max={50}
-              {...form.register("batch.conversionConcurrency", { valueAsNumber: true })}
-            />
-          </SettingsField>
-          <SettingsField
-            controlId="batch-sync-concurrency"
-            label={t("settings.batch.syncConcurrency")}
-            description={t("settings.batch.syncConcurrencyHelp")}
-            error={form.formState.errors.batch?.syncConcurrency?.message}
-          >
-            <Input
-              id="batch-sync-concurrency"
-              type="number"
-              min={1}
-              max={50}
-              {...form.register("batch.syncConcurrency", { valueAsNumber: true })}
-            />
-          </SettingsField>
-          <SettingsField
-            controlId="batch-refresh-concurrency"
-            label={t("settings.batch.refreshConcurrency")}
-            description={t("settings.batch.refreshConcurrencyHelp")}
-            error={form.formState.errors.batch?.refreshConcurrency?.message}
-          >
-            <Input
-              id="batch-refresh-concurrency"
-              type="number"
-              min={1}
-              max={50}
-              {...form.register("batch.refreshConcurrency", { valueAsNumber: true })}
-            />
-          </SettingsField>
-          <SettingsField
-            controlId="batch-random-delay"
-            label={t("settings.batch.randomDelay")}
-            description={t("settings.batch.randomDelayHelp")}
-            error={form.formState.errors.batch?.randomDelay?.message}
-          >
-            <Input
-              id="batch-random-delay"
-              type="number"
-              min={0}
-              max={5_000}
-              step={10}
-              {...form.register("batch.randomDelay", { valueAsNumber: true })}
-            />
-          </SettingsField>
-        </div>
-      </SettingsSection>
-
       <SettingsSection title={t("settings.routing.title")}>
         <div className="space-y-0">
           <SettingsField

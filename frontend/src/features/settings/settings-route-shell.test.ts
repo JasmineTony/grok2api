@@ -8,6 +8,10 @@ import {
   shouldBlockSettingsNavigation,
 } from "@/features/settings/settings-route-navigation";
 
+import accountMaintenancePanelSource from "./settings-account-maintenance-panel.tsx?raw";
+import settingsGeneralPanelSource from "./settings-general-panel.tsx?raw";
+import settingsRuntimePoliciesPanelSource from "./settings-policies-panel.tsx?raw";
+
 const settingsConfigFixture = (): SettingsConfigDTO => ({
   server: { maxConcurrentRequests: 100 },
   providerBuild: {
@@ -136,6 +140,48 @@ const UPSTREAM_V3010_SETTINGS_CONTRACT = [
   "accounts.autoCleanIncludeDisabled",
 ] as const;
 
+const GENERAL_SETTINGS_ROUTE_FIELDS = [
+  "server.maxConcurrentRequests",
+  "batch.importConcurrency",
+  "batch.conversionConcurrency",
+  "batch.syncConcurrency",
+  "batch.refreshConcurrency",
+  "batch.randomDelay",
+] as const;
+
+const RUNTIME_POLICIES_SETTINGS_ROUTE_FIELDS = [
+  "routing.stickyTTL",
+  "routing.cooldownBase",
+  "routing.cooldownMax",
+  "routing.capacityWait",
+  "routing.maxAttempts",
+  "routing.preferFreeBuild",
+  "routing.segmentedSelector.enabled",
+  "routing.segmentedSelector.minCandidates",
+  "routing.segmentedSelector.windowSize",
+  "audit.bufferSize",
+  "audit.batchSize",
+  "audit.flushInterval",
+  "audit.commitDelayMS",
+  "clientKeyDefaults.rpmLimit",
+  "clientKeyDefaults.maxConcurrent",
+] as const;
+
+const ACCOUNT_MAINTENANCE_SETTINGS_ROUTE_FIELDS = [
+  "accounts.markBuildForbiddenReauth",
+  "accounts.buildForbiddenReauthCodes",
+  "accounts.autoCleanReauthEnabled",
+  "accounts.autoCleanReauthInterval",
+  "accounts.autoCleanReauthMinAge",
+  "accounts.autoCleanIncludeDisabled",
+] as const;
+
+function getSettingsPanelFieldPaths(source: string): string[] {
+  return Array.from(source.matchAll(/(?:form\.register\("([^"\n]+)"|name="([^"\n]+)")/g))
+    .map((match) => match[1] ?? match[2])
+    .filter((path): path is string => path !== undefined);
+}
+
 function hasPath(value: unknown, path: string): boolean {
   let current: unknown = value;
   for (const key of path.split(".")) {
@@ -147,7 +193,13 @@ function hasPath(value: unknown, path: string): boolean {
 
 describe("settings route shell boundaries", () => {
   it("keeps dirty form state when moving between settings child routes", () => {
-    expect(shouldBlockSettingsNavigation(true, "/settings", "/settings/media")).toBe(false);
+    expect(shouldBlockSettingsNavigation(true, "/settings", "/settings/policies")).toBe(false);
+    expect(shouldBlockSettingsNavigation(true, "/settings/policies", "/settings/accounts")).toBe(
+      false,
+    );
+    expect(shouldBlockSettingsNavigation(true, "/settings/accounts", "/settings/media")).toBe(
+      false,
+    );
     expect(shouldBlockSettingsNavigation(true, "/settings/media", "/settings/network")).toBe(false);
     expect(shouldBlockSettingsNavigation(true, "/settings/network", "/dashboard")).toBe(true);
     expect(shouldBlockSettingsNavigation(false, "/settings/network", "/dashboard")).toBe(false);
@@ -161,6 +213,8 @@ describe("settings route shell boundaries", () => {
     const paths = settingsRoutes.map((route) => route.to);
     expect(paths).toEqual([
       "/settings",
+      "/settings/policies",
+      "/settings/accounts",
       "/settings/build",
       "/settings/web",
       "/settings/console",
@@ -176,6 +230,10 @@ describe("settings route shell boundaries", () => {
 
   it("keeps the shared form alive when moving between the split provider routes", () => {
     expect(shouldBlockSettingsNavigation(true, "/settings/build", "/settings/web")).toBe(false);
+    expect(shouldBlockSettingsNavigation(true, "/settings/web", "/settings/policies")).toBe(false);
+    expect(shouldBlockSettingsNavigation(true, "/settings/policies", "/settings/accounts")).toBe(
+      false,
+    );
     expect(shouldBlockSettingsNavigation(true, "/settings/web", "/settings/console")).toBe(false);
     expect(shouldBlockSettingsNavigation(true, "/settings/console", "/settings/network")).toBe(
       false,
@@ -210,6 +268,28 @@ describe("settings route shell boundaries", () => {
     expect(UPSTREAM_V3010_SETTINGS_CONTRACT.filter((path) => !hasPath(contractView, path))).toEqual(
       [],
     );
+  });
+
+  it("partitions the legacy general surface without a field omission or duplicate", () => {
+    const editableGeneralFields = UPSTREAM_V3010_SETTINGS_CONTRACT.filter((path) =>
+      /^(server|batch|routing|audit|clientKeyDefaults|accounts)\./.test(path),
+    );
+    const generalPanelFields = getSettingsPanelFieldPaths(settingsGeneralPanelSource);
+    const runtimePoliciesPanelFields = getSettingsPanelFieldPaths(
+      settingsRuntimePoliciesPanelSource,
+    );
+    const accountMaintenancePanelFields = getSettingsPanelFieldPaths(accountMaintenancePanelSource);
+    const partitionedFields = [
+      ...generalPanelFields,
+      ...runtimePoliciesPanelFields,
+      ...accountMaintenancePanelFields,
+    ];
+
+    expect(generalPanelFields).toEqual(GENERAL_SETTINGS_ROUTE_FIELDS);
+    expect(runtimePoliciesPanelFields).toEqual(RUNTIME_POLICIES_SETTINGS_ROUTE_FIELDS);
+    expect(accountMaintenancePanelFields).toEqual(ACCOUNT_MAINTENANCE_SETTINGS_ROUTE_FIELDS);
+    expect(new Set(partitionedFields).size).toBe(partitionedFields.length);
+    expect(partitionedFields).toEqual(editableGeneralFields);
   });
 
   it("accepts finite attempts up to 200 and the explicit unlimited sentinel", () => {

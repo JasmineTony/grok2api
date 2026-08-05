@@ -11,6 +11,10 @@ const loadVideoGalleryPage = () => import("@/features/media/video-gallery-page")
 const loadModelsPage = () => import("@/features/models/models-page");
 const loadSettingsRouteShell = () => import("@/features/settings/settings-route-shell");
 const loadSettingsPage = () => import("@/features/settings/settings-page");
+const loadRuntimePoliciesSettingsPage = () =>
+  import("@/features/settings/runtime-policies-settings-page");
+const loadAccountMaintenanceSettingsPage = () =>
+  import("@/features/settings/account-maintenance-settings-page");
 const loadMediaSettingsPage = () => import("@/features/settings/media-settings-page");
 const loadNetworkSettingsPage = () => import("@/features/settings/network-settings-page");
 const loadBuildSettingsPage = () => import("@/features/settings/build-settings-page");
@@ -30,6 +34,14 @@ const routeLoaders: ReadonlyArray<{
   { matches: (pathname) => pathname === "/video-gallery", load: loadVideoGalleryPage },
   { matches: (pathname) => pathname === "/request-audits", load: loadRequestAuditsPage },
   { matches: (pathname) => pathname === "/settings", load: loadSettingsPage },
+  {
+    matches: (pathname) => pathname === "/settings/policies",
+    load: loadRuntimePoliciesSettingsPage,
+  },
+  {
+    matches: (pathname) => pathname === "/settings/accounts",
+    load: loadAccountMaintenanceSettingsPage,
+  },
   { matches: (pathname) => pathname === "/settings/media", load: loadMediaSettingsPage },
   { matches: (pathname) => pathname === "/settings/network", load: loadNetworkSettingsPage },
   { matches: (pathname) => pathname === "/settings/build", load: loadBuildSettingsPage },
@@ -53,6 +65,7 @@ export function prefetchPrimaryDeferredPages(): void {
 }
 export {
   loadAboutSettingsPage,
+  loadAccountMaintenanceSettingsPage,
   loadAccountsPage,
   loadApiDocsPage,
   loadBuildSettingsPage,
@@ -66,6 +79,7 @@ export {
   loadModelsPage,
   loadNetworkSettingsPage,
   loadRequestAuditsPage,
+  loadRuntimePoliciesSettingsPage,
   loadSettingsPage,
   loadSettingsRouteShell,
   loadVideoGalleryPage,

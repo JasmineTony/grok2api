@@ -1,16 +1,32 @@
 import {
   loadAboutSettingsPage,
+  loadAccountMaintenanceSettingsPage,
   loadBuildSettingsPage,
   loadChangelogSettingsPage,
   loadConsoleSettingsPage,
   loadMediaSettingsPage,
   loadNetworkSettingsPage,
+  loadRuntimePoliciesSettingsPage,
   loadSettingsPage,
   loadWebSettingsPage,
 } from "@/app/deferred-page-prefetch";
 
 export const settingsRoutes = [
   { to: "/settings", key: "general", preload: loadSettingsPage, end: true, readOnly: false },
+  {
+    to: "/settings/policies",
+    key: "policies",
+    preload: loadRuntimePoliciesSettingsPage,
+    end: false,
+    readOnly: false,
+  },
+  {
+    to: "/settings/accounts",
+    key: "accounts",
+    preload: loadAccountMaintenanceSettingsPage,
+    end: false,
+    readOnly: false,
+  },
   {
     to: "/settings/build",
     key: "build",
