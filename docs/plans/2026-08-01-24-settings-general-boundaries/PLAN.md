@@ -3,7 +3,7 @@
 - Date: 2026-08-01
 - Sequence: 24
 - Owner: JasmineTony
-- Status: Locally accepted; remote publication pending credentials
+- Status: Complete
 - Scope extended: 2026-08-02 (v3.4.1 release requested after page acceptance)
 - Base commit: `91c11a75fe164000b82e4c5b25ca51c35e279b55`
 - Working branch: `feat/settings-general-boundaries`
