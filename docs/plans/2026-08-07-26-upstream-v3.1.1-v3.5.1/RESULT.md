@@ -89,10 +89,8 @@ The selected npm set includes React 19.2.8, React Router DOM 7.18.2, Vite 8.2.0,
 
 ## Unresolved and follow-up work
 
-- Complete final Swagger, Markdown, workflow/secret, Compose/container, and clean-worktree acceptance.
-- Commit the true merge, push once, create and merge the PR after all required checks pass.
-- Publish annotated `v3.5.1`, approve protected release jobs, verify Release flags, GHCR aliases/platforms/digest, and published-image `/healthz`.
-- Replace pending fields with exact remote evidence and close the plan after publication.
+- No release-blocking follow-up remains. The local checkout intentionally retains untracked `.claude/` and `.gomodcache/`; neither was staged or published.
+- Future work should preserve the immutable v3.5.1 tag and use a later corrective release for any post-publication changes.
 
 ## Rollback
 
