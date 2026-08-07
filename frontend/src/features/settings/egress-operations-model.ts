@@ -36,12 +36,14 @@ export const fallbackScopes: EgressScope[] = [
   "grok_web",
   "grok_console",
   "grok_web_asset",
+  "grok_console_asset",
 ];
 export const fallbackDescriptionKeys: Record<EgressScope, string> = {
   grok_build: "settings.egress.fallbackBuildHelp",
   grok_web: "settings.egress.fallbackWebHelp",
   grok_console: "settings.egress.fallbackConsoleHelp",
   grok_web_asset: "settings.egress.fallbackWebAssetHelp",
+  grok_console_asset: "settings.egress.fallbackConsoleAssetHelp",
 };
 
 export function defaultFallbacks(): Record<EgressScope, EgressFallbackConfigDTO> {
@@ -50,6 +52,7 @@ export function defaultFallbacks(): Record<EgressScope, EgressFallbackConfigDTO>
     grok_web: { mode: "none" },
     grok_console: { mode: "none" },
     grok_web_asset: { mode: "none" },
+    grok_console_asset: { mode: "none" },
   };
 }
 
@@ -78,6 +81,7 @@ export function operationsFormFrom(
       grok_web: { ...defaults.grok_web, ...value.fallbacks.grok_web },
       grok_console: { ...defaults.grok_console, ...value.fallbacks.grok_console },
       grok_web_asset: { ...defaults.grok_web_asset, ...value.fallbacks.grok_web_asset },
+      grok_console_asset: { ...defaults.grok_console_asset, ...value.fallbacks.grok_console_asset },
     },
   };
 }

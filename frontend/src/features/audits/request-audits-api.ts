@@ -49,7 +49,8 @@ export type AuditDTO = {
   accountName?: string;
   egressNodeId?: string;
   egressNodeName?: string;
-  egressScope?: "grok_build" | "grok_web" | "grok_console" | "grok_web_asset";
+  egressScope?:
+    "grok_build" | "grok_web" | "grok_console" | "grok_web_asset" | "grok_console_asset";
   egressMode?: "direct" | "proxy";
   statusCode: number;
   streaming: boolean;
@@ -185,7 +186,9 @@ const auditValidator = hasShape({
   accountName: isOptional(isString),
   egressNodeId: isOptional(isString),
   egressNodeName: isOptional(isString),
-  egressScope: isOptional(isOneOf("grok_build", "grok_web", "grok_console", "grok_web_asset")),
+  egressScope: isOptional(
+    isOneOf("grok_build", "grok_web", "grok_console", "grok_web_asset", "grok_console_asset"),
+  ),
   egressMode: isOptional(isOneOf("direct", "proxy")),
   statusCode: isNumber,
   streaming: isBoolean,
