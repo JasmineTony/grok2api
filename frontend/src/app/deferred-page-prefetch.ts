@@ -54,7 +54,11 @@ const routeLoaders: ReadonlyArray<{
   { matches: (pathname) => pathname.startsWith("/docs/"), load: loadApiDocsPage },
 ];
 
-const primaryLoaders = [loadDashboardPage, loadAccountsPage, loadModelsPage] as const;
+const primaryRoutes = [
+  { pathname: "/dashboard", load: loadDashboardPage },
+  { pathname: "/accounts", load: loadAccountsPage },
+  { pathname: "/models", load: loadModelsPage },
+] as const;
 function prefetch(loader: () => Promise<unknown>): void {
   void loader().catch(() => undefined);
 }
@@ -62,8 +66,22 @@ export function prefetchDeferredPage(pathname: string): void {
   const match = routeLoaders.find((route) => route.matches(pathname));
   if (match) prefetch(match.load);
 }
-export function prefetchPrimaryDeferredPages(): void {
-  for (const loader of primaryLoaders) prefetch(loader);
+type NavigatorWithConnection = Navigator & {
+  connection?: { effectiveType?: string; saveData?: boolean };
+};
+
+function allowsBackgroundPrefetch(): boolean {
+  if (typeof navigator === "undefined") return true;
+  const connection = (navigator as NavigatorWithConnection).connection;
+  if (connection?.saveData) return false;
+  return connection?.effectiveType !== "slow-2g" && connection?.effectiveType !== "2g";
+}
+
+export function prefetchPrimaryDeferredPages(currentPathname = ""): void {
+  if (!allowsBackgroundPrefetch()) return;
+  const candidate =
+    primaryRoutes.find((route) => route.pathname !== currentPathname) ?? primaryRoutes[0];
+  if (candidate) prefetch(candidate.load);
 }
 export {
   loadAboutSettingsPage,

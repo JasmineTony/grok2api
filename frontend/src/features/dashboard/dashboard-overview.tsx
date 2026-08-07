@@ -202,17 +202,22 @@ function DashboardMetric({
   loading: boolean;
 }) {
   return (
-    <article className="min-h-28 rounded-lg bg-card p-4" aria-busy={loading}>
+    <article
+      className="min-h-32 rounded-2xl border bg-card/90 p-4 shadow-sm transition-shadow duration-200 hover:shadow-md"
+      aria-busy={loading}
+    >
       <header className="flex min-h-5 items-center justify-between gap-3">
         <span className="text-xs text-muted-foreground">{label}</span>
-        <Icon className="size-4 shrink-0 text-muted-foreground" />
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-background/70 text-primary">
+          <Icon className="size-4" strokeWidth={1.7} />
+        </span>
       </header>
-      <div className="mt-3 flex min-h-8 items-center text-2xl font-medium tracking-tight tabular-nums">
+      <div className="relative z-10 mt-4 flex min-h-8 items-center text-2xl font-semibold tracking-tight tabular-nums">
         {loading ? <Spinner /> : value}
       </div>
       <p
         className={cn(
-          "mt-1.5 min-h-4 truncate text-[11px] text-muted-foreground",
+          "relative z-10 mt-1.5 min-h-4 truncate text-[11px] leading-5 text-muted-foreground",
           loading && "invisible",
         )}
         title={detail}

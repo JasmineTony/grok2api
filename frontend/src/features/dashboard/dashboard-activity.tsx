@@ -32,8 +32,17 @@ export function DashboardActivity({ dashboard, locale, loading }: DashboardActiv
       ),
     [activity],
   );
-  const maxRequests = Math.max(0, ...activity.map((point) => point.requests));
-  const totalRequests = activity.reduce((total, point) => total + point.requests, 0);
+  const { maxRequests, totalRequests } = useMemo(
+    () =>
+      activity.reduce(
+        (summary, point) => ({
+          maxRequests: Math.max(summary.maxRequests, point.requests),
+          totalRequests: summary.totalRequests + point.requests,
+        }),
+        { maxRequests: 0, totalRequests: 0 },
+      ),
+    [activity],
+  );
   const generatedAt = dashboard?.generatedAt
     ? new Date(dashboard.generatedAt).getTime()
     : Number.POSITIVE_INFINITY;

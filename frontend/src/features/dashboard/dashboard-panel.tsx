@@ -23,7 +23,10 @@ export function DashboardPanel({
 }: DashboardPanelProps) {
   return (
     <section
-      className={cn("rounded-lg bg-card p-4 sm:p-5", className)}
+      className={cn(
+        "min-w-0 rounded-2xl border bg-card/90 p-4 shadow-sm backdrop-blur-sm sm:p-5",
+        className,
+      )}
       style={style}
       aria-labelledby={id}
     >

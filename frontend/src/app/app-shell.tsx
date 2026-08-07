@@ -107,7 +107,10 @@ export function AppShell() {
     location.pathname,
   );
 
-  useEffect(() => scheduleIdleTask(prefetchPrimaryDeferredPages), []);
+  useEffect(
+    () => scheduleIdleTask(() => prefetchPrimaryDeferredPages(location.pathname)),
+    [location.pathname],
+  );
 
   function navigationLinks(): ReactNode {
     return navigation.map(({ href, label, icon: Icon }) => (
@@ -119,8 +122,8 @@ export function AppShell() {
         onClick={() => setMobileOpen(false)}
         className={({ isActive }) =>
           cn(
-            "group flex h-8 items-center gap-2 rounded-md px-2.5 text-xs font-normal text-muted-foreground transition-colors hover:bg-secondary/55 hover:text-foreground",
-            isActive && "bg-secondary/60 text-foreground",
+            "group flex h-9 items-center gap-2.5 rounded-xl border border-transparent px-3 text-xs font-medium text-muted-foreground transition-colors hover:border-sidebar-border/70 hover:bg-secondary/55 hover:text-foreground",
+            isActive && "border-primary/20 bg-primary/10 text-foreground shadow-sm",
           )
         }
       >
@@ -148,7 +151,7 @@ export function AppShell() {
         <div key={label}>
           <button
             type="button"
-            className="flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-xs font-normal text-muted-foreground transition-colors hover:bg-secondary/55 hover:text-foreground"
+            className="flex h-9 w-full items-center gap-2.5 rounded-xl border border-transparent px-3 text-xs font-medium text-muted-foreground transition-colors hover:border-sidebar-border/70 hover:bg-secondary/55 hover:text-foreground"
             aria-expanded={open}
             onClick={() => setDocumentationOpen((current) => ({ ...current, [label]: !open }))}
           >
@@ -184,8 +187,8 @@ export function AppShell() {
                     onClick={() => setMobileOpen(false)}
                     className={({ isActive }) =>
                       cn(
-                        "group flex h-7 min-w-0 items-center gap-2 rounded-md pl-[38px] pr-2.5 text-xs text-muted-foreground transition-colors hover:bg-secondary/55 hover:text-foreground",
-                        isActive && "bg-secondary/60 text-foreground",
+                        "group flex h-8 min-w-0 items-center gap-2 rounded-xl border border-transparent pl-10 pr-3 text-xs text-muted-foreground transition-colors hover:border-sidebar-border/60 hover:bg-secondary/55 hover:text-foreground",
+                        isActive && "border-primary/10 bg-primary/10 text-foreground",
                       )
                     }
                   >
@@ -303,15 +306,20 @@ export function AppShell() {
   );
 
   return (
-    <div className="min-h-screen bg-background">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden h-screen w-[240px] flex-col xl:w-[288px] overflow-hidden bg-sidebar px-4 py-6 lg:flex">
+    <div className="app-canvas min-h-screen bg-background/70">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden h-screen w-[240px] flex-col overflow-hidden border-r border-sidebar-border/70 bg-sidebar px-4 py-6 shadow-xl lg:flex xl:w-[288px]">
         <div className="flex h-7 shrink-0 items-center justify-between px-2.5">
           <Link
             to="/dashboard"
-            className="flex h-7 items-baseline gap-2 text-base font-semibold text-foreground"
+            className="group flex h-9 items-center gap-2.5 text-base font-semibold tracking-tight text-foreground"
           >
-            <span>{t("appName")}</span>
-            <CurrentVersionLabel />
+            <span className="flex size-8 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary shadow-sm transition-transform duration-300 group-hover:rotate-6 group-hover:scale-105">
+              <Sparkles className="size-4" strokeWidth={1.8} />
+            </span>
+            <span className="flex items-baseline gap-2">
+              <span>{t("appName")}</span>
+              <CurrentVersionLabel />
+            </span>
           </Link>
           <div className="flex items-center gap-1">
             <NotificationCenter />
@@ -333,11 +341,13 @@ export function AppShell() {
           </div>
         </div>
         {navigationContent}
-        <div className="relative z-10 mt-4 shrink-0 bg-sidebar pt-4">{accountControl}</div>
+        <div className="relative z-10 mt-4 shrink-0 border-t border-sidebar-border/60 bg-sidebar pt-4">
+          {accountControl}
+        </div>
       </aside>
 
       <div className="flex min-h-screen flex-col lg:pl-[240px] xl:pl-[288px]">
-        <header className="sticky top-0 z-40 flex h-12 items-center justify-between border-b bg-background px-4 lg:hidden">
+        <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-border/60 bg-background px-4 lg:hidden">
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
               <Button
@@ -385,7 +395,7 @@ export function AppShell() {
           </div>
         </header>
 
-        <main className="flex min-w-0 flex-1">
+        <main className="relative flex min-w-0 flex-1">
           <PageScaffold className={isMediaWorkspace ? "pb-0" : undefined}>
             <Outlet />
           </PageScaffold>

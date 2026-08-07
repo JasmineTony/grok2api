@@ -36,6 +36,23 @@ test.describe("authenticated route boundaries @cross-browser", () => {
     });
   }
 
+  test("dashboard keeps wide data panels inside the mobile viewport", async ({
+    authenticatedPage: page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto("/dashboard");
+    await expect(page.getByText(/Gateway healthy|网关正常/)).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('[data-slot="table-scroll-container"]')).toBeVisible({
+      timeout: 15_000,
+    });
+    const overflow = await page.evaluate(
+      () =>
+        Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) >
+        window.innerWidth + 1,
+    );
+    expect(overflow).toBe(false);
+  });
+
   test("network settings contains horizontal scrolling to local panels", async ({
     authenticatedPage: page,
   }) => {

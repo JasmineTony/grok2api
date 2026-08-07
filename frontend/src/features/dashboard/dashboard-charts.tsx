@@ -17,9 +17,7 @@ export function DashboardCharts({ dashboard, locale, loading }: DashboardChartsP
         <DashboardTrend dashboard={dashboard} locale={locale} loading={loading} />
         <DashboardProviderDistribution dashboard={dashboard} locale={locale} loading={loading} />
       </div>
-      <div className="grid items-stretch gap-2 xl:grid-cols-[minmax(0,3fr)_minmax(360px,2fr)]">
-        <DashboardTopModels dashboard={dashboard} locale={locale} loading={loading} />
-      </div>
+      <DashboardTopModels dashboard={dashboard} locale={locale} loading={loading} />
       <DashboardUsageGovernance dashboard={dashboard} locale={locale} loading={loading} />
     </>
   );

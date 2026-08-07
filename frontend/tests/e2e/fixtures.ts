@@ -108,6 +108,63 @@ function createVersionFixture() {
     upstreamError: "",
   };
 }
+
+function createDashboardFixture() {
+  const usage = {
+    requests: 18420,
+    successfulRequests: 17810,
+    failedRequests: 610,
+    inputTokens: 9200000,
+    cachedInputTokens: 3800000,
+    outputTokens: 2400000,
+    reasoningTokens: 640000,
+    tokens: 11600000,
+    actualCostUsdTicks: 381000000,
+    estimatedCostUsdTicks: 412000000,
+    billedCostUsdTicks: 397000000,
+    requestCacheEligibleRequests: 15000,
+    requestCacheHits: 9800,
+  };
+  return {
+    period: "30d",
+    generatedAt: "2026-08-07T08:30:00Z",
+    range: { start: "2026-07-09T00:00:00Z", end: "2026-08-08T00:00:00Z" },
+    resources: {
+      activeAccounts: 18,
+      totalAccounts: 24,
+      buildAccounts: 10,
+      webAccounts: 8,
+      consoleAccounts: 6,
+      enabledModels: 14,
+      totalModels: 16,
+      activeClientKeys: 9,
+      totalClientKeys: 12,
+    },
+    usage: {
+      ...usage,
+      successRate: 96.7,
+      tokenCacheHitRate: 41.3,
+      requestCacheHitRate: 65.3,
+      averageFirstTokenMs: 742,
+      outputTokensPerSecond: 54.8,
+      firstTokenSamples: 17600,
+      throughputSamples: 16500,
+    },
+    series: [
+      {
+        start: "2026-08-06T00:00:00Z",
+        end: "2026-08-07T00:00:00Z",
+        ...usage,
+      },
+    ],
+    activity: [{ start: "2026-08-07T08:29:00Z", requests: 42 }],
+    topModels: [{ model: "grok-4", ...usage }],
+    providers: [{ provider: "grok_build", ...usage }],
+    topAccounts: [],
+    topClientKeys: [],
+  };
+}
+
 function createEgressNodesFixture() {
   return {
     items: [],
@@ -160,6 +217,10 @@ export async function installAuthenticatedApiMocks(page: Page): Promise<void> {
     }
     if (url.pathname.endsWith("/me")) {
       await route.fulfill(ok(admin));
+      return;
+    }
+    if (url.pathname.endsWith("/dashboard")) {
+      await route.fulfill(ok(createDashboardFixture()));
       return;
     }
     if (url.pathname.endsWith("/system/version") || url.pathname.endsWith("/system/update/check")) {
