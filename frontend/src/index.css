@@ -227,6 +227,10 @@ body {
   transform: translate(0);
 }
 
+.settings-pane-enter {
+  animation: ui-fade-in 220ms ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

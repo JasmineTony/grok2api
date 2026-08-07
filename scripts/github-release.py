@@ -1,4 +1,4 @@
-"""Create, merge, or release the current settings iteration.
+"""Create, merge, or release the current v3.5.2 settings iteration.
 
 GitHub credentials are read with ``git credential fill`` and remain in memory.
 The release command expects the annotated VERSION tag to already exist remotely.
@@ -14,9 +14,9 @@ import urllib.error
 import urllib.request
 
 REPO = "JasmineTony/grok2api"
-BRANCH = "feat/settings-general-boundaries"
+BRANCH = "release/v3.5.2-runtime-settings-ui"
 ROOT = Path(__file__).resolve().parents[1]
-NOTES = ROOT / "docs/plans/2026-08-01-24-settings-general-boundaries/RELEASE-NOTES.md"
+NOTES = ROOT / "docs/plans/2026-08-07-28-runtime-settings-ui-v3.5.2/RELEASE-NOTES.md"
 VERSION_FILE = ROOT / "VERSION"
 
 
@@ -74,30 +74,40 @@ def main() -> int:
     command = sys.argv[1]
     tag = version()
     if command == "pr":
-        result = api("POST", f"/repos/{REPO}/pulls", {
-            "title": f"feat(settings): split general boundaries ({tag})",
-            "head": BRANCH,
-            "base": "main",
-            "body": notes(),
-        })
+        result = api(
+            "POST",
+            f"/repos/{REPO}/pulls",
+            {
+                "title": f"feat(settings): align runtime layout and release {tag}",
+                "head": BRANCH,
+                "base": "main",
+                "body": notes(),
+            },
+        )
         print(f"PR #{result['number']}: {result['html_url']}")
     elif command == "merge":
         if len(sys.argv) != 3:
             raise SystemExit("usage: github-release.py merge <number>")
         number = sys.argv[2]
-        result = api("PUT", f"/repos/{REPO}/pulls/{number}/merge", {
-            "merge_method": "squash",
-            "commit_title": f"feat(settings): split general boundaries ({tag}) (#{number})",
-        })
+        result = api(
+            "PUT",
+            f"/repos/{REPO}/pulls/{number}/merge",
+            {"merge_method": "merge"},
+        )
         print(f"merged={result.get('merged')} sha={result.get('sha')}")
     elif command == "release":
-        result = api("POST", f"/repos/{REPO}/releases", {
-            "tag_name": tag,
-            "name": f"Grok2API {tag}",
-            "body": notes(),
-            "draft": False,
-            "prerelease": False,
-        })
+        result = api(
+            "POST",
+            f"/repos/{REPO}/releases",
+            {
+                "tag_name": tag,
+                "name": f"Grok2API {tag}",
+                "body": notes(),
+                "draft": False,
+                "prerelease": False,
+                "make_latest": "true",
+            },
+        )
         print(f"release: {result['html_url']}")
     else:
         raise SystemExit(f"unknown command {command}")

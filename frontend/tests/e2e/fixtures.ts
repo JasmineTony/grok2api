@@ -1,4 +1,4 @@
-﻿import { expect, type Page, test as base } from "@playwright/test";
+import { expect, type Page, test as base } from "@playwright/test";
 
 export type AuthenticatedApiFixtures = {
   authenticatedPage: Page;
@@ -93,12 +93,12 @@ function createSettingsSnapshotFixture() {
 
 function createVersionFixture() {
   return {
-    currentVersion: "v3.5.1",
-    latestVersion: "v3.5.1",
+    currentVersion: "v3.5.2",
+    latestVersion: "v3.5.2",
     updateAvailable: false,
     status: "up_to_date",
     checkedAt: "2099-01-01T00:00:00Z",
-    releaseUrl: "https://github.com/JasmineTony/grok2api/releases/tag/v3.5.1",
+    releaseUrl: "https://github.com/JasmineTony/grok2api/releases/tag/v3.5.2",
     releaseNotes: "## Security and routing refinements\n\n- Stable settings and egress behavior.",
     error: "",
     repository: "JasmineTony/grok2api",
