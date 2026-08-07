@@ -6,7 +6,8 @@
 - Implementation commit: `ce6705957f3a5c2164fe16741fef0f776f004a53`
 - Branch reconciliation commits: `b56f56d6dd89196ba978459c952823ec7b66eddc`, `c6fd414`
 - Browser-test stabilization commit: `5def268`
-- Final local commit: Pending documentation commit
+- Accepted source/test tip: `5def268d5d96cf6abae406391d047e87ee8401f6`
+- Local acceptance record commit: `b750990e4e87195d6ac809290d359007ccb5e384`
 - Pull request: Pending first push
 
 ## Delivered
@@ -77,7 +78,7 @@ After reconciliation, every local branch and every `origin/*` delivery branch is
 
 - First remote push occurred only after final local acceptance: Pending; no branch push has occurred yet.
 - Final synchronization base: public HTTPS fetch confirms `origin/main=cfd25a99133537a8b7a10bfad84432938de520b6`.
-- Branch divergence before push: `origin/main...HEAD = 0 behind / 8 ahead` before the final documentation commit.
+- Branch divergence before push: `origin/main...HEAD` is 0 behind; ahead history includes the accepted delivery commits plus the two reconciled historical branch ancestries.
 - Final verification run: frontend complete quality gates; Chromium 81/81; WebKit 25/25; Go test/vet; Swagger, Markdown, workflow, secret, diff, and conflict scans.
 
 ## Deviations from plan
