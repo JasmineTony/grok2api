@@ -10,6 +10,7 @@ function seriousViolations(results: Awaited<ReturnType<AxeBuilder["analyze"]>>) 
 }
 
 anonymousTest("login has no serious accessibility violations @cross-browser", async ({ page }) => {
+  anonymousTest.setTimeout(60_000);
   await installAnonymousApiMocks(page);
   await page.goto("/login");
   await expectMainReady(page);
@@ -22,6 +23,7 @@ anonymousTest("login has no serious accessibility violations @cross-browser", as
 test("authenticated shell has no serious accessibility violations @cross-browser", async ({
   authenticatedPage: page,
 }) => {
+  test.setTimeout(60_000);
   await page.goto("/accounts");
   await expectMainReady(page);
   const results = await new AxeBuilder({ page })

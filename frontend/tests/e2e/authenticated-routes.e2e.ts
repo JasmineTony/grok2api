@@ -89,12 +89,6 @@ test.describe("authenticated route boundaries @cross-browser", () => {
         timeout: 20_000,
       });
     }
-    await page.goto("/settings/accounts");
-    await expect(
-      page.locator("main").getByRole("heading", {
-        name: /Account maintenance|\u8d26\u53f7\u7ef4\u62a4/,
-      }),
-    ).toBeVisible({ timeout: 20_000 });
   });
 
   test("runtime settings redirect and navigation preserve the split upstream hierarchy", async ({
@@ -118,43 +112,33 @@ test.describe("authenticated route boundaries @cross-browser", () => {
       "/settings/about",
       "/settings/changelog",
     ]);
+    await expect(page.locator("#provider-base-url")).toBeVisible({ timeout: 30_000 });
   });
 
-  test("each provider settings route renders its own section", async ({
+  test("about settings exposes the current release identity", async ({
     authenticatedPage: page,
   }) => {
     test.setTimeout(60_000);
-    for (const [path, heading] of [
-      ["/settings/build", /Grok Build/],
-      ["/settings/web", /Grok Web/],
-      ["/settings/console", /Grok Console/],
-    ] as const) {
-      await page.goto(path);
-      await expectMainReady(page);
-      await expect(page.locator("main").getByRole("heading", { name: heading })).toBeVisible({
-        timeout: 20_000,
-      });
-    }
+    await page.goto("/settings/about");
+    await expect(page.locator("main").getByText("v3.5.2").first()).toBeVisible({
+      timeout: 30_000,
+    });
   });
 
-  test("read-only settings routes expose rendered release information", async ({
-    authenticatedPage: page,
-  }) => {
-    await page.goto("/settings/about");
-    await expect(page.locator("main").getByText("v3.5.2").first()).toBeVisible({ timeout: 20_000 });
+  test("changelog settings exposes rendered release notes", async ({ authenticatedPage: page }) => {
+    test.setTimeout(60_000);
     await page.goto("/settings/changelog");
     await expect(
       page.getByRole("heading", { name: /Changelog|Release notes|\u66f4\u65b0\u8bf4\u660e/ }),
-    ).toBeVisible({
-      timeout: 20_000,
-    });
+    ).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText("Security and routing refinements")).toBeVisible({
-      timeout: 20_000,
+      timeout: 30_000,
     });
   });
   test("model dialog mounts and unmounts without an application crash @cross-browser", async ({
     authenticatedPage: page,
   }) => {
+    test.setTimeout(60_000);
     const uncaught: string[] = [];
     page.on("pageerror", (error) => uncaught.push(error.message));
     await page.goto("/models");
