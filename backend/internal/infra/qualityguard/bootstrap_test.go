@@ -32,6 +32,8 @@ func TestPrepareWritesPrivateScopedBootstrap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Windows has no POSIX permission bits: the os.WriteFile mode argument
+	// is ignored and files always report 0666-style permissions.
 	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("mode = %o", info.Mode().Perm())
 	}

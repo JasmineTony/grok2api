@@ -6,8 +6,8 @@ import { useDeferredRender } from "@/shared/hooks/use-deferred-render";
 type ObserverCallback = ConstructorParameters<typeof IntersectionObserver>[0];
 
 const originalIntersectionObserver = globalThis.IntersectionObserver;
-const originalRequestIdleCallback = window.requestIdleCallback;
-const originalCancelIdleCallback = window.cancelIdleCallback;
+const originalRequestIdleCallback = window.requestIdleCallback?.bind(window);
+const originalCancelIdleCallback = window.cancelIdleCallback?.bind(window);
 
 afterEach(() => {
   vi.useRealTimers();

@@ -200,10 +200,42 @@ export function ConsoleQuota({
   locale: string;
 }) {
   const { t } = useTranslation();
-  const window = windows.find((value) => value.mode === "console") ?? windows[0];
-  if (!window)
+  if (windows.length === 0)
     return <span className="text-xs text-muted-foreground">{t("accounts.quotaNotSynced")}</span>;
-  return <WebQuotaMode mode="Console" window={window} locale={locale} />;
+  const windowsByMode = new Map(windows.map((window) => [window.mode, window]));
+  const modes = [
+    { mode: "console", label: t("creativeConsole.modes.chat") },
+    { mode: "console_image", label: t("creativeConsole.modes.image") },
+    { mode: "console_video", label: t("creativeConsole.modes.video") },
+  ] as const;
+  return (
+    <div className="grid w-full min-w-0 grid-cols-3 divide-x divide-border/70">
+      {modes.map(({ mode, label }) => {
+        const window = windowsByMode.get(mode);
+        if (!window) {
+          return (
+            <div key={mode} className="min-w-0 px-2 first:pl-0 last:pr-0">
+              <div className="flex items-center justify-between gap-1 text-[11px]">
+                <span className="truncate text-muted-foreground">{label}</span>
+                <span className="text-muted-foreground">-</span>
+              </div>
+              <div className="mt-1.5 h-1.5 rounded-full bg-muted" />
+            </div>
+          );
+        }
+        return (
+          <WebQuotaMode
+            key={mode}
+            mode={label}
+            window={window}
+            locale={locale}
+            compact
+            recoveryProbe={mode === "console" && window.remaining === 0}
+          />
+        );
+      })}
+    </div>
+  );
 }
 
 export function WebQuota({
@@ -344,11 +376,13 @@ function WebQuotaMode({
   window,
   locale,
   compact = false,
+  recoveryProbe = false,
 }: {
   mode: string;
   window: WebQuotaWindow;
   locale: string;
   compact?: boolean;
+  recoveryProbe?: boolean;
 }) {
   const { t } = useTranslation();
   const used = Math.max(0, window.total - window.remaining);
@@ -380,7 +414,9 @@ function WebQuotaMode({
         </div>
         <div className="text-muted-foreground">
           {window.resetAt
-            ? t("accounts.quotaResetAt", { time: formatDateTime(window.resetAt, locale) })
+            ? recoveryProbe
+              ? t("console.recoveryProbeAt", { time: formatDateTime(window.resetAt, locale) })
+              : t("accounts.quotaResetAt", { time: formatDateTime(window.resetAt, locale) })
             : t("accounts.quotaResetUnknown")}
         </div>
       </TooltipContent>

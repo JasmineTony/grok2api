@@ -120,7 +120,8 @@ export type EgressNodeInput = {
   clearCookies?: boolean;
 };
 
-export type EgressScope = "grok_build" | "grok_web" | "grok_console" | "grok_web_asset";
+export type EgressScope =
+  "grok_build" | "grok_web" | "grok_console" | "grok_web_asset" | "grok_console_asset";
 export type EgressFallbackMode = "none" | "direct" | "fixed";
 export type EgressFallbackConfigDTO = { mode: EgressFallbackMode; nodeId?: string };
 export type EgressSourceDTO = {
@@ -186,7 +187,9 @@ export type EgressHealthCheckListDTO = { items: EgressHealthCheckDTO[] };
 
 export type EgressNodeListDTO = {
   items: EgressNodeDTO[];
-  defaultUserAgents: Record<EgressScope, string>;
+  defaultUserAgents: Omit<Record<EgressScope, string>, "grok_console_asset"> & {
+    grok_console_asset?: string;
+  };
 };
 
 export type SettingsSnapshotDTO = {
@@ -302,7 +305,7 @@ const decodeSettingsSnapshot = (value: unknown): SettingsSnapshotDTO => {
 const egressNodeValidator = hasShape({
   id: isString,
   name: isString,
-  scope: isOneOf("grok_build", "grok_web", "grok_console", "grok_web_asset"),
+  scope: isOneOf("grok_build", "grok_web", "grok_console", "grok_web_asset", "grok_console_asset"),
   enabled: isBoolean,
   proxyConfigured: isBoolean,
   userAgent: isString,
@@ -344,7 +347,7 @@ const egressNodeValidator = hasShape({
 const decodeEgressNode = createObjectDecoder<EgressNodeDTO>("egress node", {
   id: isString,
   name: isString,
-  scope: isOneOf("grok_build", "grok_web", "grok_console", "grok_web_asset"),
+  scope: isOneOf("grok_build", "grok_web", "grok_console", "grok_web_asset", "grok_console_asset"),
   enabled: isBoolean,
   proxyConfigured: isBoolean,
   userAgent: isString,
@@ -416,7 +419,7 @@ const decodeEgressNodeList = createObjectDecoder<EgressNodeListDTO>("egress node
 const egressSourceValidator = hasShape({
   id: isString,
   name: isString,
-  scope: isOneOf("grok_build", "grok_web", "grok_console", "grok_web_asset"),
+  scope: isOneOf("grok_build", "grok_web", "grok_console", "grok_web_asset", "grok_console_asset"),
   enabled: isBoolean,
   urlConfigured: isBoolean,
   refreshIntervalSeconds: isNumber,
@@ -429,7 +432,7 @@ const egressSourceValidator = hasShape({
 const decodeEgressSource = createObjectDecoder<EgressSourceDTO>("egress source", {
   id: isString,
   name: isString,
-  scope: isOneOf("grok_build", "grok_web", "grok_console", "grok_web_asset"),
+  scope: isOneOf("grok_build", "grok_web", "grok_console", "grok_web_asset", "grok_console_asset"),
   enabled: isBoolean,
   urlConfigured: isBoolean,
   refreshIntervalSeconds: isNumber,

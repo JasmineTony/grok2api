@@ -1,4 +1,4 @@
-import type { ModelRouteDTO } from "@/entities/model/types";
+import type { ModelRouteDTO, ModelRouteGroupDTO } from "@/entities/model/types";
 import { type ApiClient, type PaginatedDTO } from "@/shared/api/client";
 import {
   createObjectDecoder,
@@ -15,7 +15,7 @@ import {
 } from "@/shared/api/decoder";
 import type { SortOrder } from "@/shared/lib/table-sort";
 
-type ListModelsInput = {
+export type ListModelsInput = {
   page: number;
   pageSize: number;
   search?: string;
@@ -63,6 +63,15 @@ const decodeModelRoute = createObjectDecoder<ModelRouteDTO>("model route", {
   lastSyncedAt: isOptional(isString),
 });
 const decodeModelPage = createPaginatedDecoder<ModelRouteDTO>(modelRouteValidator);
+const modelRouteGroupValidator = hasShape({
+  key: isString,
+  routes: (value: unknown) =>
+    Array.isArray(value) && value.length > 0 && value.every(modelRouteValidator),
+  endpointCapabilities: isArrayOf(
+    isOneOf("completions", "responses", "messages", "image", "image_edit", "video"),
+  ),
+});
+const decodeModelGroupPage = createPaginatedDecoder<ModelRouteGroupDTO>(modelRouteGroupValidator);
 const modelAccountValidator = hasShape({ id: isString, name: isString });
 const decodeModelAccounts = createObjectDecoder<{ items: ModelAccountOptionDTO[] }>(
   "model accounts",
@@ -85,6 +94,21 @@ export function listModels(
     query.set("sortOrder", input.sortOrder);
   }
   return client.request(`/api/admin/v1/models?${query}`, {}, decodeModelPage);
+}
+
+export function listModelGroups(
+  client: ApiClient,
+  input: ListModelsInput,
+): Promise<PaginatedDTO<ModelRouteGroupDTO>> {
+  const query = new URLSearchParams({ page: String(input.page), pageSize: String(input.pageSize) });
+  if (input.search) query.set("search", input.search);
+  if (input.status) query.set("status", input.status);
+  if (input.provider) query.set("provider", input.provider);
+  if (input.sortBy && input.sortOrder) {
+    query.set("sortBy", input.sortBy);
+    query.set("sortOrder", input.sortOrder);
+  }
+  return client.request(`/api/admin/v1/models/groups?${query}`, {}, decodeModelGroupPage);
 }
 
 export function syncModels(client: ApiClient): Promise<{ synced: number }> {

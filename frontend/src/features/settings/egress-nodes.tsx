@@ -193,7 +193,7 @@ export function EgressNodes({
           : form.userAgent === "" || form.userAgent === previousDefault
             ? nextDefault
             : form.userAgent,
-      ...(scope === "grok_build"
+      ...(scope === "grok_build" || scope === "grok_console_asset"
         ? { cloudflareCookies: "" }
         : form.cloudflareCookies === undefined
           ? {}
@@ -204,6 +204,7 @@ export function EgressNodes({
     if (scope === "grok_build") return t("settings.egress.scopeBuild");
     if (scope === "grok_console") return t("console.name");
     if (scope === "grok_web_asset") return t("settings.egress.scopeWebAsset");
+    if (scope === "grok_console_asset") return t("settings.egress.scopeConsoleAsset");
     return t("settings.egress.scopeWeb");
   };
   const changeSort = (field: string, initialOrder: SortOrder) =>
