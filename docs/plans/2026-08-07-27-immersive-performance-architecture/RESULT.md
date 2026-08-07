@@ -5,8 +5,9 @@
 - Base commit: `1a332e4`
 - Working branch: `codex/immersive-performance-architecture`
 - Implementation commit: `7e771dd`
-- Documentation closeout: this commit
-- Pull request: created after the single final branch publication; the external PR URL is recorded in the delivery response.
+- Documentation closeout commit: `31a06b9`
+- Visual baseline correction commit: `f3da827`
+- Pull request: [#51](https://github.com/JasmineTony/grok2api/pull/51)
 
 ## Baseline and audit evidence
 
@@ -75,6 +76,7 @@ The package-manager shim attempted user-level pnpm tool provisioning and was blo
 - Code audit: 213 source files, 15 unit-test files, 0 findings.
 - Architecture audit: 0 findings.
 - jscpd duplicate threshold: passed; reported only the repository's accepted clone inventory.
+- Final Playwright Chromium desktop/tablet/mobile suite: 78/78 passed after regenerating the six intentionally changed login snapshots with the same Chromium revision used by CI.
 - Final WebKit authenticated/accessibility suite, serialized for host stability: 24/24 passed, including the Dashboard mobile overflow regression and model dialog open/close behavior.
 - Chrome Canary visual verification: desktop, tablet, and mobile Dashboard runs passed after the overflow fix, with no page-level overflow. Earlier Canary authenticated-route checks passed 63/63; the footer contrast failure found by the accessibility run was fixed and the focused rerun produced no retained failures.
 - Host limitation: later attempts to relaunch the installed Canary binary failed before application startup with Chromium ICU descriptor errors; Firefox consistently failed at `browserContext.newPage` in the host browser process. These startup failures were not reproduced in WebKit and did not justify application-code workarounds.
@@ -91,7 +93,7 @@ Using repository-local Go caches after downloading missing modules outside the r
 
 - `git diff --check`: passed; only repository line-ending notices were emitted.
 - `origin/main` was fetched immediately before closeout and remained at the base commit `1a332e4`.
-- `.claude/` and `.gomodcache/` remain untracked and are not part of either delivery commit.
+- `.claude/` and `.gomodcache/` remain untracked and are not part of the delivery commits.
 
 ## Findings and deferred follow-up
 
@@ -106,14 +108,14 @@ Using repository-local Go caches after downloading missing modules outside the r
 
 ## Rollback
 
-- Revert implementation commit `7e771dd` and the documentation closeout commit.
+- Revert implementation commit `7e771dd`, documentation closeout commit `31a06b9`, and visual baseline correction commit `f3da827`.
 - The Dashboard cache change is isolated to `backend/internal/transport/http/dashboard/handler.go` and its tests if a narrower rollback is required.
 - No persistence migration, credential transformation, tag, image, or release mutation is involved.
 
 ## Final acceptance
 
 - [x] Objective is delivered.
-- [x] Required checks pass, with browser-host limitations explicitly recorded and a passing final WebKit gate.
+- [x] Required checks pass, with 78/78 Chromium and 24/24 WebKit browser gates plus recorded Canary/Firefox host limitations.
 - [x] Documentation is updated.
 - [x] Assumptions and defaults are verified.
 - [x] v3.5.1 remains immutable.
