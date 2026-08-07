@@ -3,7 +3,7 @@
 - Date: 2026-08-07
 - Sequence: 28
 - Owner: JasmineTony
-- Status: In progress
+- Status: Local acceptance complete; remote delivery pending
 - Base commit: `cfd25a99133537a8b7a10bfad84432938de520b6`
 - Working branch: `release/v3.5.2-runtime-settings-ui`
 
@@ -92,14 +92,14 @@ The current repository already separates General, Runtime policies, Account main
 
 ## Acceptance criteria
 
-- [ ] Runtime-settings hierarchy and ordering match the supplied upstream reference.
-- [ ] Media, Network proxy, About, and Changelog are independent, conflict-free destinations.
-- [ ] Redundant generic page elements are removed while all existing settings modules remain reachable.
-- [ ] Desktop and mobile screenshots demonstrate the final accepted layout.
-- [ ] Required local and remote checks pass.
-- [ ] All independent origin delivery branches are ancestors of final `main` without stale state regressions.
-- [ ] `VERSION=v3.5.2` and release materials are consistent.
+- [x] Runtime-settings hierarchy and ordering match the supplied upstream reference.
+- [x] Media, Network proxy, About, and Changelog are independent, conflict-free destinations.
+- [x] Redundant generic page elements are removed while all existing settings modules remain reachable.
+- [x] Desktop and mobile screenshots demonstrate the final accepted layout.
+- [ ] Required local checks pass; remote CI remains pending.
+- [x] All independent origin delivery branches are ancestors of the release branch without stale state regressions; final `main` remains pending.
+- [x] `VERSION=v3.5.2` and release materials are consistent.
 - [ ] Stable annotated Release and GHCR publication are completely verified.
-- [ ] Documentation and `RESULT.md` are current.
-- [ ] Assumptions and defaults are verified.
-- [ ] The plan branch has not been pushed before final acceptance.
+- [x] Local-acceptance documentation and `RESULT.md` are current.
+- [x] Assumptions and defaults are verified.
+- [x] The plan branch has not been pushed before final local acceptance.
