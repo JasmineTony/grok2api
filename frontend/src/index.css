@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -152,6 +151,80 @@ body {
 
 :focus-visible {
   outline-color: var(--ring);
+}
+
+@keyframes ui-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes ui-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes ui-popover-in {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+@keyframes ui-popover-out {
+  from {
+    opacity: 1;
+    scale: 1;
+  }
+  to {
+    opacity: 0;
+    scale: 0.97;
+  }
+}
+
+.ui-overlay-motion[data-state="open"] {
+  animation: ui-fade-in 160ms ease-out both;
+}
+.ui-overlay-motion[data-state="closed"] {
+  animation: ui-fade-out 140ms ease-in both;
+}
+.ui-popover-motion[data-state="open"] {
+  animation: ui-popover-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.ui-popover-motion[data-state="closed"] {
+  animation: ui-popover-out 120ms ease-in both;
+}
+.ui-dialog-motion[data-state="open"] {
+  animation: ui-popover-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.ui-dialog-motion[data-state="closed"] {
+  animation: ui-popover-out 140ms ease-in both;
+}
+.ui-sheet-motion {
+  transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ui-sheet-left[data-state="closed"] {
+  transform: translateX(-100%);
+}
+.ui-sheet-right[data-state="closed"] {
+  transform: translateX(100%);
+}
+.ui-sheet-top[data-state="closed"] {
+  transform: translateY(-100%);
+}
+.ui-sheet-bottom[data-state="closed"] {
+  transform: translateY(100%);
+}
+.ui-sheet-motion[data-state="open"] {
+  transform: translate(0);
 }
 
 @media (prefers-reduced-motion: reduce) {

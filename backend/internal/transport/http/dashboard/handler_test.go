@@ -34,6 +34,17 @@ func TestHandlerReturnsDashboardContract(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
+	etag := recorder.Header().Get("ETag")
+	if etag == "" || recorder.Header().Get("Cache-Control") != "private, max-age=15, stale-while-revalidate=30" {
+		t.Fatalf("cache headers = %#v", recorder.Header())
+	}
+	conditional := httptest.NewRecorder()
+	conditionalRequest := httptest.NewRequest(http.MethodGet, "/api/admin/v1/dashboard?period=7d", nil)
+	conditionalRequest.Header.Set("If-None-Match", etag)
+	router.ServeHTTP(conditional, conditionalRequest)
+	if conditional.Code != http.StatusNotModified || conditional.Body.Len() != 0 || conditional.Header().Get("ETag") != etag {
+		t.Fatalf("conditional response = %d, body = %q, headers = %#v", conditional.Code, conditional.Body.String(), conditional.Header())
+	}
 	var envelope struct {
 		Data struct {
 			Period string `json:"period"`
@@ -43,10 +54,10 @@ func TestHandlerReturnsDashboardContract(t *testing.T) {
 				AverageFirstTokenMS   float64 `json:"averageFirstTokenMs"`
 				OutputTokensPerSecond float64 `json:"outputTokensPerSecond"`
 			} `json:"usage"`
-			Series    []seriesDTO        `json:"series"`
-			Activity  []activityDTO      `json:"activity"`
-			Providers     []providerUsageDTO `json:"providers"`
-			TopAccounts   []accountUsageDTO `json:"topAccounts"`
+			Series        []seriesDTO         `json:"series"`
+			Activity      []activityDTO       `json:"activity"`
+			Providers     []providerUsageDTO  `json:"providers"`
+			TopAccounts   []accountUsageDTO   `json:"topAccounts"`
 			TopClientKeys []clientKeyUsageDTO `json:"topClientKeys"`
 		} `json:"data"`
 	}
@@ -55,6 +66,29 @@ func TestHandlerReturnsDashboardContract(t *testing.T) {
 	}
 	if envelope.Data.Period != "7d" || envelope.Data.Usage.Requests != 10 || envelope.Data.Usage.SuccessRate != 90 || envelope.Data.Usage.AverageFirstTokenMS != 250 || envelope.Data.Usage.OutputTokensPerSecond != 50 || len(envelope.Data.Series) != 7 || len(envelope.Data.Activity) != 180 || len(envelope.Data.Providers) != 1 || len(envelope.Data.TopAccounts) != 1 || len(envelope.Data.TopClientKeys) != 1 {
 		t.Fatalf("response = %#v", envelope.Data)
+	}
+}
+
+func TestMatchesETagSupportsListsAndWeakValidators(t *testing.T) {
+	const etag = `"dashboard-7d-current"`
+	for _, headerValue := range []string{etag, `"older", ` + etag, `W/` + etag, "*"} {
+		if !matchesETag(headerValue, etag) {
+			t.Fatalf("expected %q to match %q", headerValue, etag)
+		}
+	}
+	if matchesETag(`"dashboard-7d-stale"`, etag) {
+		t.Fatal("stale validator unexpectedly matched")
+	}
+}
+
+func TestHandlerRefreshDisablesHTTPStorage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	NewHandler(dashboardapp.NewService(&dashboardRepositoryStub{})).Register(router.Group("/api/admin/v1"))
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/admin/v1/dashboard?period=24h&refresh=1", nil))
+	if recorder.Code != http.StatusOK || recorder.Header().Get("Cache-Control") != "private, no-store" || recorder.Header().Get("ETag") != "" {
+		t.Fatalf("refresh response = %d, headers = %#v", recorder.Code, recorder.Header())
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	dashboardapp "github.com/chenyme/grok2api/backend/internal/application/dashboard"
@@ -19,17 +20,17 @@ func NewHandler(service *dashboardapp.Service) *Handler { return &Handler{servic
 func (h *Handler) Register(router *gin.RouterGroup) { router.GET("/dashboard", h.get) }
 
 type responseDTO struct {
-	Period      string             `json:"period"`
-	GeneratedAt time.Time          `json:"generatedAt"`
-	Range       rangeDTO           `json:"range"`
-	Resources   resourcesDTO       `json:"resources"`
-	Usage       usageDTO           `json:"usage"`
-	Series      []seriesDTO        `json:"series"`
-	Activity    []activityDTO      `json:"activity"`
-	TopModels   []modelUsageDTO    `json:"topModels"`
+	Period        string              `json:"period"`
+	GeneratedAt   time.Time           `json:"generatedAt"`
+	Range         rangeDTO            `json:"range"`
+	Resources     resourcesDTO        `json:"resources"`
+	Usage         usageDTO            `json:"usage"`
+	Series        []seriesDTO         `json:"series"`
+	Activity      []activityDTO       `json:"activity"`
+	TopModels     []modelUsageDTO     `json:"topModels"`
 	Providers     []providerUsageDTO  `json:"providers"`
-	TopAccounts   []accountUsageDTO    `json:"topAccounts"`
-	TopClientKeys []clientKeyUsageDTO  `json:"topClientKeys"`
+	TopAccounts   []accountUsageDTO   `json:"topAccounts"`
+	TopClientKeys []clientKeyUsageDTO `json:"topClientKeys"`
 }
 
 type rangeDTO struct {
@@ -106,18 +107,18 @@ type providerUsageDTO struct {
 }
 
 type modelUsageDTO struct {
-	Model                        string    `json:"model"`
-	Requests                     int64     `json:"requests"`
-	InputTokens                  int64     `json:"inputTokens"`
-	CachedInputTokens            int64     `json:"cachedInputTokens"`
-	OutputTokens                 int64     `json:"outputTokens"`
-	ReasoningTokens              int64     `json:"reasoningTokens"`
-	Tokens                       int64     `json:"tokens"`
-	ActualCostUSDTicks           int64     `json:"actualCostUsdTicks"`
-	EstimatedCostUSDTicks        int64     `json:"estimatedCostUsdTicks"`
-	BilledCostUSDTicks           int64     `json:"billedCostUsdTicks"`
-	RequestCacheEligibleRequests int64     `json:"requestCacheEligibleRequests"`
-	RequestCacheHits             int64     `json:"requestCacheHits"`
+	Model                        string `json:"model"`
+	Requests                     int64  `json:"requests"`
+	InputTokens                  int64  `json:"inputTokens"`
+	CachedInputTokens            int64  `json:"cachedInputTokens"`
+	OutputTokens                 int64  `json:"outputTokens"`
+	ReasoningTokens              int64  `json:"reasoningTokens"`
+	Tokens                       int64  `json:"tokens"`
+	ActualCostUSDTicks           int64  `json:"actualCostUsdTicks"`
+	EstimatedCostUSDTicks        int64  `json:"estimatedCostUsdTicks"`
+	BilledCostUSDTicks           int64  `json:"billedCostUsdTicks"`
+	RequestCacheEligibleRequests int64  `json:"requestCacheEligibleRequests"`
+	RequestCacheHits             int64  `json:"requestCacheHits"`
 }
 
 type dimensionUsageDTO struct {
@@ -150,8 +151,9 @@ type clientKeyUsageDTO struct {
 }
 
 func (h *Handler) get(c *gin.Context) {
+	refresh := c.Query("refresh") == "1"
 	load := h.service.Get
-	if c.Query("refresh") == "1" {
+	if refresh {
 		load = h.service.Refresh
 	}
 	result, err := load(c.Request.Context(), c.Query("period"), c.Query("timezone"))
@@ -166,6 +168,17 @@ func (h *Handler) get(c *gin.Context) {
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "dashboardLoadFailed", "读取 Dashboard 失败")
 		return
+	}
+	if refresh {
+		c.Header("Cache-Control", "private, no-store")
+	} else {
+		etag := `"dashboard-` + string(result.Period) + `-` + strconv.FormatInt(result.GeneratedAt.UnixNano(), 36) + `"`
+		c.Header("Cache-Control", "private, max-age=15, stale-while-revalidate=30")
+		c.Header("ETag", etag)
+		if matchesETag(c.GetHeader("If-None-Match"), etag) {
+			c.Status(http.StatusNotModified)
+			return
+		}
 	}
 	series := make([]seriesDTO, 0, len(result.Series))
 	for _, point := range result.Series {
@@ -206,17 +219,29 @@ func (h *Handler) get(c *gin.Context) {
 			ActiveClientKeys: result.Resources.ActiveClientKeys,
 			TotalClientKeys:  result.Resources.TotalClientKeys,
 		},
-		Usage:     toUsageDTO(result.Usage),
-		Series:    series,
-		Activity:  activity,
-		TopModels: topModels,
-		Providers: providers,
-		TopAccounts: accountUsage,
+		Usage:         toUsageDTO(result.Usage),
+		Series:        series,
+		Activity:      activity,
+		TopModels:     topModels,
+		Providers:     providers,
+		TopAccounts:   accountUsage,
 		TopClientKeys: clientKeyUsage,
 	})
 }
 
-func toDimensionUsageDTO(usage dashboarddomain.DimensionUsage) dimensionUsageDTO { return dimensionUsageDTO{Requests: usage.Requests, SuccessfulRequests: usage.SuccessfulRequests, FailedRequests: usage.FailedRequests, InputTokens: usage.InputTokens, CachedInputTokens: usage.CachedInputTokens, OutputTokens: usage.OutputTokens, ReasoningTokens: usage.ReasoningTokens, Tokens: usage.Tokens, ActualCostUSDTicks: usage.ActualCostUSDTicks, EstimatedCostUSDTicks: usage.EstimatedCostUSDTicks, BilledCostUSDTicks: usage.BilledCostUSDTicks, RequestCacheEligibleRequests: usage.RequestCacheEligibleRequests, RequestCacheHits: usage.RequestCacheHits} }
+func matchesETag(headerValue string, etag string) bool {
+	for _, candidate := range strings.Split(headerValue, ",") {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "*" || strings.TrimPrefix(candidate, "W/") == etag {
+			return true
+		}
+	}
+	return false
+}
+
+func toDimensionUsageDTO(usage dashboarddomain.DimensionUsage) dimensionUsageDTO {
+	return dimensionUsageDTO{Requests: usage.Requests, SuccessfulRequests: usage.SuccessfulRequests, FailedRequests: usage.FailedRequests, InputTokens: usage.InputTokens, CachedInputTokens: usage.CachedInputTokens, OutputTokens: usage.OutputTokens, ReasoningTokens: usage.ReasoningTokens, Tokens: usage.Tokens, ActualCostUSDTicks: usage.ActualCostUSDTicks, EstimatedCostUSDTicks: usage.EstimatedCostUSDTicks, BilledCostUSDTicks: usage.BilledCostUSDTicks, RequestCacheEligibleRequests: usage.RequestCacheEligibleRequests, RequestCacheHits: usage.RequestCacheHits}
+}
 
 func toUsageDTO(usage dashboarddomain.Usage) usageDTO {
 	successRate := 0.0
