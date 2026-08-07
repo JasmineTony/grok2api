@@ -11,7 +11,6 @@ const loadGalleryPage = () => import("@/features/media/gallery-page");
 const loadVideoGalleryPage = () => import("@/features/media/video-gallery-page");
 const loadModelsPage = () => import("@/features/models/models-page");
 const loadSettingsRouteShell = () => import("@/features/settings/settings-route-shell");
-const loadSettingsPage = () => import("@/features/settings/settings-page");
 const loadRuntimePoliciesSettingsPage = () =>
   import("@/features/settings/runtime-policies-settings-page");
 const loadAccountMaintenanceSettingsPage = () =>
@@ -35,7 +34,7 @@ const routeLoaders: ReadonlyArray<{
   { matches: (pathname) => pathname === "/video-gallery", load: loadVideoGalleryPage },
   { matches: (pathname) => pathname === "/request-audits", load: loadRequestAuditsPage },
   { matches: (pathname) => pathname === "/quality-guard", load: loadQualityGuardPage },
-  { matches: (pathname) => pathname === "/settings", load: loadSettingsPage },
+  { matches: (pathname) => pathname === "/settings", load: loadBuildSettingsPage },
   {
     matches: (pathname) => pathname === "/settings/policies",
     load: loadRuntimePoliciesSettingsPage,
@@ -101,7 +100,6 @@ export {
   loadQualityGuardPage,
   loadRequestAuditsPage,
   loadRuntimePoliciesSettingsPage,
-  loadSettingsPage,
   loadSettingsRouteShell,
   loadVideoGalleryPage,
   loadWebSettingsPage,

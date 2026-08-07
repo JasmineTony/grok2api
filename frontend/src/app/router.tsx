@@ -20,7 +20,6 @@ import {
   DeferredQualityGuardPage,
   DeferredRequestAuditsPage,
   DeferredRuntimePoliciesSettingsPage,
-  DeferredSettingsPage,
   DeferredSettingsRouteShell,
   DeferredVideoGalleryPage,
   DeferredWebSettingsPage,
@@ -57,7 +56,7 @@ export const router = createBrowserRouter([
             path: "/settings",
             element: <DeferredSettingsRouteShell />,
             children: [
-              { index: true, element: <DeferredSettingsPage /> },
+              { index: true, element: <Navigate to="build" replace /> },
               { path: "policies", element: <DeferredRuntimePoliciesSettingsPage /> },
               { path: "accounts", element: <DeferredAccountMaintenanceSettingsPage /> },
               { path: "build", element: <DeferredBuildSettingsPage /> },

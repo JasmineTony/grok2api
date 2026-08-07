@@ -932,7 +932,7 @@ export const zhCN = {
         invalidValue: "请输入有效值",
         durationUnit: "时长单位",
         navigation: { label: "设置分区", general: "常规", policies: "运行策略", accounts: "账号维护", build: "Grok Build", web: "Grok Web", console: "Grok Console", media: "媒体", network: "网络代理", about: "关于", changelog: "更新说明" },
-        readOnlyDirty: { title: "仍有未保存的设置", description: "当前页面为只读页面。修改仍保留在共享设置表单中，直到保存、重置或离开设置区域。", back: "返回常规设置" },
+        readOnlyDirty: { title: "仍有未保存的设置", description: "当前页面为只读页面。修改仍保留在共享设置表单中，直到保存、重置或离开设置区域。", back: "返回 Grok Build" },
         about: { eyebrow: "系统身份", title: "为审慎、可观测的运维而构建。", description: "在不离开设置工作区的情况下，查看当前版本、维护仓库、上游同步关系与使用声明。", maintainedRepository: "维护仓库", upstreamRepository: "上游仓库" },
         changelog: { eyebrow: "发布情报", title: "清晰阅读每一次变更。", description: "更新说明通过应用的安全 Markdown 边界渲染，便于审阅运维变化，同时阻止可执行标记进入页面。" },
         unsaved: { title: "放弃未保存的设置？", description: "离开设置区域将丢弃尚未保存的修改。", discard: "放弃修改" },

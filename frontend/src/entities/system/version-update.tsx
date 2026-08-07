@@ -82,32 +82,18 @@ export function VersionUpdateBanner() {
 }
 
 export function VersionAboutSection() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const versionQuery = useVersionInfo();
-  const checkMutation = useCheckForUpdates();
   const version = versionQuery.data;
-  const error = getVersionError(version, versionQuery.error, checkMutation.error);
+  const error = getVersionError(version, versionQuery.error, null);
 
   return (
     <section className="w-full space-y-8">
-      <div className="flex min-h-8 items-center justify-between gap-3 px-1">
-        <div className="min-w-0">
-          <h3 className="text-sm font-medium tracking-tight">{t("updates.title")}</h3>
-          <p className="mt-1 max-w-xl text-xs leading-5 text-muted-foreground">
-            {t("updates.noteDescription")}
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          className="shrink-0"
-          disabled={versionQuery.isPending || checkMutation.isPending}
-          onClick={() => checkMutation.mutate()}
-        >
-          {versionQuery.isPending || checkMutation.isPending ? <Spinner /> : <RefreshCw />}
-          {t("updates.checkNow")}
-        </Button>
+      <div className="min-w-0 px-1">
+        <h3 className="text-sm font-medium tracking-tight">{t("settings.navigation.about")}</h3>
+        <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">
+          {t("updates.noteDescription")}
+        </p>
       </div>
 
       <div className="space-y-0">
@@ -116,12 +102,6 @@ export function VersionAboutSection() {
           description={t("updates.currentVersionHelp")}
         >
           <VersionValue>{version?.currentVersion || "-"}</VersionValue>
-        </VersionField>
-        <VersionField
-          label={t("updates.latestVersion")}
-          description={t("updates.latestVersionHelp")}
-        >
-          <VersionValue>{version?.latestVersion || t("updates.notChecked")}</VersionValue>
         </VersionField>
         <VersionField label={t("updates.repository")} description={t("updates.repositoryHelp")}>
           <VersionValue>{version?.repository || "JasmineTony/grok2api"}</VersionValue>
@@ -138,7 +118,7 @@ export function VersionAboutSection() {
             </span>
             {version?.upstreamReleaseUrl ? (
               <a
-                className="shrink-0 text-muted-foreground hover:text-foreground"
+                className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
                 href={version.upstreamReleaseUrl}
                 target="_blank"
                 rel="noreferrer"
@@ -149,28 +129,6 @@ export function VersionAboutSection() {
             ) : null}
           </VersionValue>
         </VersionField>
-        <VersionField label={t("updates.statusLabel")} description={t("updates.statusLabelHelp")}>
-          <VersionValue>
-            {version?.status ? (
-              <span
-                className={cn(
-                  "size-1.5 shrink-0 rounded-full bg-muted-foreground",
-                  version.status === "up_to_date" && "bg-emerald-500",
-                  version.status === "update_available" && "bg-amber-500",
-                  version.status === "check_failed" && "bg-destructive",
-                )}
-              />
-            ) : null}
-            <span>{version ? t(`updates.status.${version.status}`) : t("common.loading")}</span>
-          </VersionValue>
-        </VersionField>
-        <VersionField label={t("updates.checkedAt")} description={t("updates.checkedAtHelp")}>
-          <VersionValue>
-            {version?.checkedAt
-              ? formatDateTime(version.checkedAt, i18n.language)
-              : t("updates.neverChecked")}
-          </VersionValue>
-        </VersionField>
       </div>
       {error ? <InlineVersionError message={error} /> : null}
     </section>
@@ -178,7 +136,7 @@ export function VersionAboutSection() {
 }
 
 export function VersionChangelogSection() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const versionQuery = useVersionInfo();
   const checkMutation = useCheckForUpdates();
   const version = versionQuery.data;
@@ -186,10 +144,12 @@ export function VersionChangelogSection() {
 
   return (
     <section className="w-full space-y-8">
-      <div className="flex min-h-8 items-center justify-between gap-3 px-1">
-        <div>
-          <h3 className="text-sm font-medium tracking-tight">{t("updates.releaseNotes")}</h3>
-          <p className="mt-2 text-xs leading-6 text-muted-foreground">
+      <div className="flex min-h-8 flex-col gap-3 px-1 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h3 className="text-sm font-medium tracking-tight">
+            {t("settings.navigation.changelog")}
+          </h3>
+          <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">
             {t("updates.releaseNotesHelp")}
           </p>
         </div>
@@ -215,7 +175,38 @@ export function VersionChangelogSection() {
         </div>
       </div>
 
-      <div className="min-w-0 rounded-md bg-secondary/35 px-4 py-3">
+      <div className="space-y-0">
+        <VersionField
+          label={t("updates.latestVersion")}
+          description={t("updates.latestVersionHelp")}
+        >
+          <VersionValue>{version?.latestVersion || t("updates.notChecked")}</VersionValue>
+        </VersionField>
+        <VersionField label={t("updates.statusLabel")} description={t("updates.statusLabelHelp")}>
+          <VersionValue>
+            {version?.status ? (
+              <span
+                className={cn(
+                  "size-1.5 shrink-0 rounded-full bg-muted-foreground",
+                  version.status === "up_to_date" && "bg-emerald-500",
+                  version.status === "update_available" && "bg-amber-500",
+                  version.status === "check_failed" && "bg-destructive",
+                )}
+              />
+            ) : null}
+            <span>{version ? t(`updates.status.${version.status}`) : t("common.loading")}</span>
+          </VersionValue>
+        </VersionField>
+        <VersionField label={t("updates.checkedAt")} description={t("updates.checkedAtHelp")}>
+          <VersionValue>
+            {version?.checkedAt
+              ? formatDateTime(version.checkedAt, i18n.language)
+              : t("updates.neverChecked")}
+          </VersionValue>
+        </VersionField>
+      </div>
+
+      <div className="min-w-0 rounded-xl border border-border/60 bg-secondary/30 px-4 py-4">
         {versionQuery.isPending ? (
           <div className="flex min-h-8 items-center justify-center gap-2 text-sm text-muted-foreground">
             <Spinner />

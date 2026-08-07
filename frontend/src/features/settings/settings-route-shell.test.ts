@@ -209,21 +209,31 @@ describe("settings route shell boundaries", () => {
     expect(isReadOnlySettingsPath("/settings/network")).toBe(false);
   });
 
-  it("gives Grok Build, Web, and Console their own routes outside the network section", () => {
+  it("matches the upstream hierarchy while keeping media, network, about, and changelog split", () => {
     const paths = settingsRoutes.map((route) => route.to);
     expect(paths).toEqual([
-      "/settings",
-      "/settings/policies",
-      "/settings/accounts",
       "/settings/build",
       "/settings/web",
       "/settings/console",
       "/settings/media",
       "/settings/network",
+      "/settings/policies",
+      "/settings/accounts",
       "/settings/about",
       "/settings/changelog",
     ]);
-    // The provider sections are editable; only about and changelog stay read-only.
+    expect(settingsRoutes.map((route) => route.group)).toEqual([
+      "providers",
+      "providers",
+      "providers",
+      "delivery",
+      "delivery",
+      "operations",
+      "operations",
+      "system",
+      "system",
+    ]);
+    expect(new Set<string>(paths).has("/settings")).toBe(false);
     const readOnly = settingsRoutes.filter((route) => route.readOnly).map((route) => route.to);
     expect(readOnly).toEqual(["/settings/about", "/settings/changelog"]);
   });

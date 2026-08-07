@@ -18,7 +18,6 @@ import {
   loadQualityGuardPage,
   loadRequestAuditsPage,
   loadRuntimePoliciesSettingsPage,
-  loadSettingsPage,
   loadSettingsRouteShell,
   loadVideoGalleryPage,
   loadWebSettingsPage,
@@ -39,7 +38,6 @@ const GalleryPage = lazyNamed(loadGalleryPage, "GalleryPage");
 const VideoGalleryPage = lazyNamed(loadVideoGalleryPage, "VideoGalleryPage");
 const ModelsPage = lazyNamed(loadModelsPage, "ModelsPage");
 const SettingsRouteShell = lazyNamed(loadSettingsRouteShell, "SettingsRouteShell");
-const SettingsPage = lazyNamed(loadSettingsPage, "SettingsPage");
 const RuntimePoliciesSettingsPage = lazyNamed(
   loadRuntimePoliciesSettingsPage,
   "RuntimePoliciesSettingsPage",
@@ -114,9 +112,6 @@ export function DeferredApiDocsPage() {
 }
 export function DeferredSettingsRouteShell() {
   return <DeferredPage page={SettingsRouteShell} />;
-}
-export function DeferredSettingsPage() {
-  return <DeferredPage page={SettingsPage} />;
 }
 export function DeferredRuntimePoliciesSettingsPage() {
   return <DeferredPage page={RuntimePoliciesSettingsPage} />;
