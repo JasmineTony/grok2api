@@ -3,7 +3,7 @@
 - Date: 2026-08-07
 - Sequence: 26
 - Owner: JasmineTony
-- Status: In progress
+- Status: Complete
 - Base commit: `91cee12048726effa8abdcad54d94879ef3c1eae`
 - Working branch: `sync/upstream-v3.1.1-v3.5.1-20260807`
 - Exact upstream tag: `chenyme/grok2api v3.1.1` at `fee63588d76c36070fafd343cf8a4097249bb96d`
@@ -89,11 +89,11 @@ Merge the exact upstream v3.1.1 release into the independently maintained reposi
 
 ## Acceptance criteria
 
-- [ ] Exact upstream v3.1.1 is preserved as an ancestor through a true merge commit.
-- [ ] Merge conflicts and already-integrated changes are reconciled without losing required independent or upstream behavior.
-- [ ] Every updated dependency is non-prerelease, compatible, and at least 48 hours old at selection time.
-- [ ] Code review findings are triaged; accepted correctness, performance, security, and regression defects are fixed and tested.
-- [ ] `VERSION=v3.5.1` and release materials are consistent.
-- [ ] Required local and remote CI/CodeQL checks pass.
-- [ ] Annotated tag, stable Release, GHCR aliases/platforms/digest, and published-image smoke are verified.
-- [ ] Documentation and `RESULT.md` are complete and the plan branch was not pushed before final local acceptance.
+- [x] Exact upstream v3.1.1 is preserved as an ancestor through a true merge commit.
+- [x] Merge conflicts and already-integrated changes are reconciled without losing required independent or upstream behavior.
+- [x] Every updated dependency is non-prerelease, compatible, and at least 48 hours old at selection time.
+- [x] Code review findings are triaged; accepted correctness, performance, security, and regression defects are fixed and tested.
+- [x] `VERSION=v3.5.1` and release materials are consistent.
+- [x] Required local and remote CI/CodeQL checks pass.
+- [x] Annotated tag, stable Release, GHCR aliases/platforms/digest, and published-image smoke are verified.
+- [x] Documentation and `RESULT.md` are complete; the release branch was not pushed before final local acceptance, and closeout is delivered separately.

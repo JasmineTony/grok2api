@@ -1,13 +1,15 @@
 # Iteration result: upstream v3.1.1 integration, dependency stabilization, review, and v3.5.1 release
 
-- Date completed: Pending remote publication
-- Status: In progress
+- Date completed: 2026-08-07
+- Status: Complete
 - Base commit: `91cee12048726effa8abdcad54d94879ef3c1eae`
 - Exact upstream tag commit: `fee63588d76c36070fafd343cf8a4097249bb96d`
 - Local integration branch: `sync/upstream-v3.1.1-v3.5.1-20260807`
-- Final release commit: Pending
-- Pull request: Pending
-- Release: Pending
+- Release merge commit: `aaba049053722b43054e25d79459332e31535d8c`
+- Pull request: [#50](https://github.com/JasmineTony/grok2api/pull/50)
+- Annotated tag object: `4da386e26555fc3eaea1fd39fc180556aab3cc61`
+- Tag peeled commit: `aaba049053722b43054e25d79459332e31535d8c`
+- Release: [v3.5.1](https://github.com/JasmineTony/grok2api/releases/tag/v3.5.1), published, stable, latest
 
 ## Delivered locally
 
@@ -71,11 +73,14 @@ The selected npm set includes React 19.2.8, React Router DOM 7.18.2, Vite 8.2.0,
 | Independent compatibility layers preserved | Confirmed locally | Frontend and backend complete gates pass after conflict resolution |
 | Version consistency | Confirmed locally | `VERSION=v3.5.1`; README and E2E fixtures updated |
 
-## Push gate evidence
+## Remote publication evidence
 
-- First remote push occurred only after final local acceptance: Not yet
-- Final synchronization base: Pending origin/main recheck
-- Final verification run: Pending after documentation/security gates
+- PR #50 merged with true merge ancestry. Merge commit: `aaba049053722b43054e25d79459332e31535d8c`; parents are `91cee12048726effa8abdcad54d94879ef3c1eae` and `2b2da1ef01d5b3dafceeff77fe3a7e3f00e91d92`.
+- Release workflow run [31156055504](https://github.com/JasmineTony/grok2api/actions/runs/31156055504) completed successfully in 9m 41s. Validate release, amd64/arm64 image builds, final tags, and published-image `/healthz` smoke all passed. Protected `release` deployments were approved in three waves.
+- Annotated tag verification: `refs/tags/v3.5.1` -> object `4da386e26555fc3eaea1fd39fc180556aab3cc61`; `refs/tags/v3.5.1^{}` -> `aaba049053722b43054e25d79459332e31535d8c`.
+- GitHub Release is published, non-draft, non-prerelease, and marked `Latest`: [Grok2API v3.5.1](https://github.com/JasmineTony/grok2api/releases/tag/v3.5.1).
+- GHCR package `ghcr.io/jasminetony/grok2api` published aliases `v3.5.1`, `3.5.1`, `3.5`, `3`, and `latest` on one multi-architecture package version. Package UI reports index digest `sha256:62d2caf0a94e24070e1715571dc28e3812cbef82e1c6376f7c30a753a17b7c04`, with `linux/amd64` digest `sha256:094d800a5b1b892b77b7c508e8cd7ad1f4c26dabbbcdfcada841564ace899894`, `linux/arm64` digest `sha256:49ced0199bd496f78419c0abc2512d2749466961f9b8029aa6c9958c4f16fee4`, and provenance `unknown/unknown` digest `sha256:9b299c2daa332695e45f64f0e2e3ce9bf65c0f30b2d10f9d49dbff86a3361c51`.
+- Published-image `/healthz` smoke passed in the release workflow; no local Docker claim is made.
 
 ## Deviations from plan
 
@@ -96,7 +101,7 @@ Before publication, revert or abandon the local plan branch. After publication, 
 ## Final acceptance
 
 - [x] Implementation matches the accepted local scope.
-- [ ] Checks and security review are complete.
-- [ ] Repository state is clean and documented.
-- [ ] The plan index is updated to Complete.
-- [ ] Remote release evidence is complete.
+- [x] Checks and security review are complete.
+- [x] Repository state is clean and documented; only intentional untracked local helper directories remain.
+- [x] The plan index is updated to Complete.
+- [x] Remote release evidence is complete.
