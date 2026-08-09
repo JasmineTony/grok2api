@@ -3,9 +3,13 @@
 - Date: 2026-08-07
 - Sequence: 28
 - Owner: JasmineTony
-- Status: Local acceptance complete; remote delivery pending
+- Status: Complete
 - Base commit: `cfd25a99133537a8b7a10bfad84432938de520b6`
 - Working branch: `release/v3.5.2-runtime-settings-ui`
+- Pull request: [#52](https://github.com/JasmineTony/grok2api/pull/52)
+- Release merge commit: `3db29d6b5b5bb9b8d55ed3a607c094509106776b`
+- Annotated tag: `v3.5.2` (`b633c645748e79d3e925b04ad953431225305274`, peeled to the release merge commit)
+- Release workflow: [31202835696](https://github.com/JasmineTony/grok2api/actions/runs/31202835696), successful on attempt 2
 
 ## Objective
 
@@ -96,10 +100,10 @@ The current repository already separates General, Runtime policies, Account main
 - [x] Media, Network proxy, About, and Changelog are independent, conflict-free destinations.
 - [x] Redundant generic page elements are removed while all existing settings modules remain reachable.
 - [x] Desktop and mobile screenshots demonstrate the final accepted layout.
-- [ ] Required local checks pass; remote CI remains pending.
-- [x] All independent origin delivery branches are ancestors of the release branch without stale state regressions; final `main` remains pending.
+- [x] Required local checks and all required remote CI/CodeQL checks pass.
+- [x] All independent origin delivery branches are ancestors of the release merge commit without stale state regressions.
 - [x] `VERSION=v3.5.2` and release materials are consistent.
-- [ ] Stable annotated Release and GHCR publication are completely verified.
+- [x] Stable annotated Release, GHCR aliases/platforms/digest, and published-image `/healthz` are completely verified.
 - [x] Local-acceptance documentation and `RESULT.md` are current.
 - [x] Assumptions and defaults are verified.
 - [x] The plan branch has not been pushed before final local acceptance.
