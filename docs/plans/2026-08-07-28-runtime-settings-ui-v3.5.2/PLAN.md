@@ -11,6 +11,7 @@
 - Annotated tag: `v3.5.2` (`b633c645748e79d3e925b04ad953431225305274`, peeled to the release merge commit)
 - Release workflow: [31202835696](https://github.com/JasmineTony/grok2api/actions/runs/31202835696), successful on attempt 2
 - Documentation closeout: [#53](https://github.com/JasmineTony/grok2api/pull/53)
+- Closeout audit hardening: `4619e0305dd1967a0a725aff03a5f6e476366bc2` pins `nanoid` to patched `3.3.17` (published 2026-08-03)
 
 ## Objective
 

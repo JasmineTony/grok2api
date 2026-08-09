@@ -15,6 +15,7 @@
 - GitHub Release: [Grok2API v3.5.2](https://github.com/JasmineTony/grok2api/releases/tag/v3.5.2) (`366910304`)
 - Release workflow: [31202835696](https://github.com/JasmineTony/grok2api/actions/runs/31202835696), attempt 2 successful
 - Documentation closeout: [#53](https://github.com/JasmineTony/grok2api/pull/53)
+- Closeout audit hardening: `4619e0305dd1967a0a725aff03a5f6e476366bc2` pins transitive `nanoid` to patched `3.3.17` (published 2026-08-03), removing `GHSA-2v37-7h3g-55p8` from the high-severity audit result
 
 ## Delivered
 
