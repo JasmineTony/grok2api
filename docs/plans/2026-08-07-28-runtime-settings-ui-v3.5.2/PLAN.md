@@ -10,6 +10,7 @@
 - Release merge commit: `3db29d6b5b5bb9b8d55ed3a607c094509106776b`
 - Annotated tag: `v3.5.2` (`b633c645748e79d3e925b04ad953431225305274`, peeled to the release merge commit)
 - Release workflow: [31202835696](https://github.com/JasmineTony/grok2api/actions/runs/31202835696), successful on attempt 2
+- Documentation closeout: [#53](https://github.com/JasmineTony/grok2api/pull/53)
 
 ## Objective
 
