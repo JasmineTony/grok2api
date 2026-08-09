@@ -80,4 +80,4 @@ Templates are available in [`templates/`](./templates/).
 | 2026-08-07 26 - Upstream v3.1.1 integration, dependency stabilization, review, and v3.5.1 release | [Plan](./2026-08-07-26-upstream-v3.1.1-v3.5.1/PLAN.md) | [Result](./2026-08-07-26-upstream-v3.1.1-v3.5.1/RESULT.md) | Complete |
 | 2026-08-07 27 - Immersive UI, Lucide governance, and full-stack performance architecture audit | [Plan](./2026-08-07-27-immersive-performance-architecture/PLAN.md) | [Result](./2026-08-07-27-immersive-performance-architecture/RESULT.md) | Complete |
 
-| 2026-08-07 28 - Upstream-aligned runtime settings UI and v3.5.2 release | [Plan](./2026-08-07-28-runtime-settings-ui-v3.5.2/PLAN.md) | [Result](./2026-08-07-28-runtime-settings-ui-v3.5.2/RESULT.md) | In progress |
+| 2026-08-07 28 - Upstream-aligned runtime settings UI and v3.5.2 release | [Plan](./2026-08-07-28-runtime-settings-ui-v3.5.2/PLAN.md) | [Result](./2026-08-07-28-runtime-settings-ui-v3.5.2/RESULT.md) | Complete |
