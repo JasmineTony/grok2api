@@ -23,6 +23,7 @@
 - Increased digest artifact retention from one day to 14 days and added explicit two-architecture SHA-256 digest validation.
 - Updated `VERSION`, README, E2E release fixtures, release notes, plan index, and release automation for `v3.5.5`.
 - Removed the release helper's dependency on the configured `origin` transport after publication exposed an SSH rewrite/host-key failure; tag and `main` verification now use the repository-derived HTTPS URL and permit later closeout commits on `main`.
+- Replaced fixed-sleep lease-return signals in segmented-selector retry tests with batch-observed repeated notifications, removing a race-instrumentation timing flake without changing production selection behavior.
 
 ## Verification results
 
@@ -46,6 +47,7 @@
 | Firefox/WebKit and backend race | Passed in GitHub | All platform-specific required checks passed |
 | Delivery PR checks | Passed | All 15 required checks passed before merge |
 | Post-release helper regression | Passed | Ten Python tests, release-version audit, and `python scripts/github-release.py check-tag` passed without an origin URL override |
+| Segmented selector race regression | Passed after remediation | The first closeout run exposed a fixed-sleep test signal that could fire before the selector subscribed under `-race`; the test now waits through observable batch progress and reliably drives the full-planner retry |
 
 ## Publication evidence
 
@@ -83,6 +85,7 @@
 - The local Windows Playwright process required interruption after all 81 Chromium cases reported success because its preview-server teardown did not return control.
 - Local Docker, Compose, Hadolint, container health, Firefox/WebKit, and backend race authority was deferred to GitHub CI as recorded in the accepted plan; every corresponding required job passed.
 - The first post-tag release-helper invocation inherited an environment-specific SSH rewrite for `origin` and failed before application logic could validate the tag. Publication was completed with a process-local HTTPS rewrite, then the helper was corrected in `4d78c5327266dc939b340b4118c05888fe6cf100` to derive a canonical HTTPS remote and verify ancestry rather than exact `main` equality.
+- The first closeout PR run failed `TestSegmentedActiveDoesNotRepeatWindowsAfterFullFallback` because its single fixed-delay notification could occur before `awaitLeaseRetry` subscribed when race instrumentation slowed the initial planner. The production selector did not report a data race; the deterministic test driver was corrected and the complete required check set was rerun.
 
 ## Unresolved and follow-up work
 
@@ -100,5 +103,6 @@ The published `v3.5.5` tag is immutable. If a production rollback is required, d
 - [x] PR #54 is merged with a true merge commit and all required checks passed.
 - [x] The annotated tag, stable latest Release, protected publication workflow, aliases, architectures, digest, and published-image health are verified.
 - [x] The release helper's post-publication origin-transport defect is corrected and regression-tested.
+- [x] The segmented-selector race test no longer depends on scheduler timing.
 - [x] Repository state is documented and only approved local cache directories remain outside the delivery.
 - [x] The plan index is updated.
