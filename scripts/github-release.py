@@ -2,7 +2,7 @@
 
 GitHub credentials are read with ``git credential fill`` and remain in memory.
 The release command fails closed unless the remote VERSION tag is annotated,
-peels to the local tag commit, and matches the remote ``main`` head.
+peels to the local tag commit, and is contained by the remote ``main`` branch.
 """
 
 from __future__ import annotations
@@ -28,6 +28,10 @@ def repository() -> str:
     if value.count("/") != 1 or any(character.isspace() for character in value):
         raise SystemExit(f"invalid GitHub repository: {value!r}")
     return value
+
+
+def repository_git_url(repo: str) -> str:
+    return f"https://github.com/{repo}.git"
 
 
 def git_output(*arguments: str, root: Path = ROOT) -> str:
@@ -95,7 +99,25 @@ def parse_remote_tag_refs(output: str, tag: str) -> tuple[str, str]:
     return tag_object, peeled_commit
 
 
-def validate_remote_release_tag(tag: str) -> tuple[str, str]:
+def require_commit_ancestor(ancestor: str, descendant: str, root: Path = ROOT) -> None:
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        return
+    if result.returncode == 1:
+        raise SystemExit(
+            f"release commit {ancestor} is not contained by remote main {descendant}",
+        )
+    detail = result.stderr.strip() or result.stdout.strip() or "git merge-base failed"
+    raise SystemExit(f"unable to verify release ancestry: {detail}")
+
+
+def validate_remote_release_tag(tag: str, repo: str) -> tuple[str, str]:
+    remote = repository_git_url(repo)
     local_type = git_output("cat-file", "-t", f"refs/tags/{tag}")
     if local_type != "tag":
         raise SystemExit(f"local tag {tag} must be annotated, got object type {local_type!r}")
@@ -103,7 +125,7 @@ def validate_remote_release_tag(tag: str) -> tuple[str, str]:
     remote_output = git_output(
         "ls-remote",
         "--tags",
-        "origin",
+        remote,
         f"refs/tags/{tag}",
         f"refs/tags/{tag}^{{}}",
     )
@@ -112,14 +134,19 @@ def validate_remote_release_tag(tag: str) -> tuple[str, str]:
         raise SystemExit(
             f"remote tag {tag} peels to {remote_commit}, but the local annotated tag peels to {local_commit}",
         )
-    remote_main_lines = git_output("ls-remote", "origin", "refs/heads/main").splitlines()
+    remote_main_lines = git_output("ls-remote", remote, "refs/heads/main").splitlines()
     if len(remote_main_lines) != 1:
         raise SystemExit("unable to resolve exactly one remote main ref")
     remote_main = remote_main_lines[0].split()[0]
-    if SHA_PATTERN.fullmatch(remote_main) is None or remote_main != remote_commit:
+    if SHA_PATTERN.fullmatch(remote_main) is None:
+        raise SystemExit(f"remote main did not resolve to a commit: {remote_main!r}")
+    git_output("fetch", "--no-tags", "--quiet", remote, "refs/heads/main")
+    fetched_main = git_output("rev-parse", "--verify", "FETCH_HEAD")
+    if fetched_main != remote_main:
         raise SystemExit(
-            f"remote tag {tag} peels to {remote_commit}, but origin/main is {remote_main}",
+            f"remote main changed during validation: listed {remote_main}, fetched {fetched_main}",
         )
+    require_commit_ancestor(remote_commit, fetched_main)
     return tag_object, remote_commit
 
 
@@ -163,10 +190,10 @@ def main() -> int:
         )
         print(f"merged=True sha={require_merged(result)}")
     elif command == "check-tag":
-        tag_object, peeled_commit = validate_remote_release_tag(tag)
+        tag_object, peeled_commit = validate_remote_release_tag(tag, repo)
         print(f"annotated_tag={tag_object} peeled_commit={peeled_commit}")
     elif command == "release":
-        tag_object, peeled_commit = validate_remote_release_tag(tag)
+        tag_object, peeled_commit = validate_remote_release_tag(tag, repo)
         body = release_notes(tag)
         result = api(
             "POST",

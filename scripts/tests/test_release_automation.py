@@ -53,6 +53,12 @@ class ReleaseMetadataTests(unittest.TestCase):
 
 
 class GitHubReleaseTests(unittest.TestCase):
+    def test_repository_git_url_uses_https_transport(self) -> None:
+        self.assertEqual(
+            github_release.repository_git_url("JasmineTony/grok2api"),
+            "https://github.com/JasmineTony/grok2api.git",
+        )
+
     def test_remote_tag_parser_requires_annotated_peel(self) -> None:
         with self.assertRaises(SystemExit):
             github_release.parse_remote_tag_refs(
@@ -82,6 +88,30 @@ class GitHubReleaseTests(unittest.TestCase):
         )
         with self.assertRaises(SystemExit):
             github_release.require_merged({"merged": True, "sha": "not-a-sha"})
+
+    def test_release_commit_must_be_ancestor_of_remote_main(self) -> None:
+        with mock.patch.object(
+            github_release.subprocess,
+            "run",
+            return_value=github_release.subprocess.CompletedProcess([], 0, "", ""),
+        ) as run:
+            github_release.require_commit_ancestor("a" * 40, "b" * 40)
+
+        run.assert_called_once_with(
+            ["git", "merge-base", "--is-ancestor", "a" * 40, "b" * 40],
+            cwd=github_release.ROOT,
+            capture_output=True,
+            text=True,
+        )
+
+    def test_release_commit_outside_remote_main_is_rejected(self) -> None:
+        with mock.patch.object(
+            github_release.subprocess,
+            "run",
+            return_value=github_release.subprocess.CompletedProcess([], 1, "", ""),
+        ):
+            with self.assertRaises(SystemExit):
+                github_release.require_commit_ancestor("a" * 40, "b" * 40)
 
 
 if __name__ == "__main__":
