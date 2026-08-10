@@ -81,3 +81,4 @@ Templates are available in [`templates/`](./templates/).
 | 2026-08-07 27 - Immersive UI, Lucide governance, and full-stack performance architecture audit | [Plan](./2026-08-07-27-immersive-performance-architecture/PLAN.md) | [Result](./2026-08-07-27-immersive-performance-architecture/RESULT.md) | Complete |
 
 | 2026-08-07 28 - Upstream-aligned runtime settings UI and v3.5.2 release | [Plan](./2026-08-07-28-runtime-settings-ui-v3.5.2/PLAN.md) | [Result](./2026-08-07-28-runtime-settings-ui-v3.5.2/RESULT.md) | Complete |
+| 2026-08-10 29 - Project audit, release hardening, and v3.5.5 | [Plan](./2026-08-10-29-project-audit-v3.5.5/PLAN.md) | [Result](./2026-08-10-29-project-audit-v3.5.5/RESULT.md) | Local accepted |

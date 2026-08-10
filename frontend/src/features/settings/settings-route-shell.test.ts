@@ -317,4 +317,39 @@ describe("settings route shell boundaries", () => {
       settingsSchema.safeParse({ ...form, routing: { ...form.routing, maxAttempts: 201 } }).success,
     ).toBe(false);
   });
+
+  it("applies one trusted-service URL policy to Statsig and FlareSolverr endpoints", () => {
+    const form = toSettingsForm(settingsConfigFixture());
+    const withURLs = (statsigSignerURL: string, flareSolverrURL: string) => ({
+      ...form,
+      providerWeb: {
+        ...form.providerWeb,
+        statsigMode: "url" as const,
+        statsigSignerURL,
+        clearanceMode: "flaresolverr" as const,
+        flareSolverrURL,
+      },
+    });
+
+    expect(
+      settingsSchema.safeParse(
+        withURLs("http://statsig.internal/sign", "http://flaresolverr.local/v1"),
+      ).success,
+    ).toBe(true);
+    expect(
+      settingsSchema.safeParse(
+        withURLs("https://statsig.example.com/sign", "https://solver.example.com/v1"),
+      ).success,
+    ).toBe(true);
+    expect(
+      settingsSchema.safeParse(
+        withURLs("http://statsig.example.com/sign", "https://solver.example.com/v1"),
+      ).success,
+    ).toBe(false);
+    expect(
+      settingsSchema.safeParse(
+        withURLs("https://statsig.example.com/sign", "https://solver.example.com:8443/v1"),
+      ).success,
+    ).toBe(false);
+  });
 });
