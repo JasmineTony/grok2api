@@ -1,13 +1,15 @@
 # Iteration result: project audit, release hardening, and v3.5.5
 
 - Date completed: 2026-08-10
-- Status: Local acceptance complete; remote release pending
+- Status: Complete
 - Base commit: `2aca24006fa77d6951e3cfa98b06d431296a7ffa`
 - Local implementation commit: `1b0be34b989c8913f50faac7cbeea8114a1c4e28`
-- Release commit: Pending
-- Final documentation commit: Pending
-- Pull request: Pending
-- Release: Pending
+- Local acceptance commit: `1228648bb3b5649da5b07d95af103f8af2172f98`
+- Release commit: `792217d50e36d6ee15142e1ba9d05d9e042a2a7c`
+- Closeout helper commit: `4d78c5327266dc939b340b4118c05888fe6cf100`
+- Pull request: [#54](https://github.com/JasmineTony/grok2api/pull/54)
+- Release: [Grok2API v3.5.5](https://github.com/JasmineTony/grok2api/releases/tag/v3.5.5)
+- Release workflow: [run 31369118385](https://github.com/JasmineTony/grok2api/actions/runs/31369118385)
 
 ## Delivered
 
@@ -16,10 +18,12 @@
 - Added repository-derived version, release-note, and branch metadata with seven release-automation unit tests.
 - Added a release-version audit that validates the active README, browser fixtures, release URL, about-route identity, image aliases, notes, and absence of hard-coded versions in the release helper.
 - Made unsuccessful GitHub PR merge responses terminate the release helper with a failure.
-- Added local and remote annotated-tag validation before GitHub Release creation, including a required match with `origin/main`.
+- Added local and remote annotated-tag validation before GitHub Release creation, requiring the release commit to be contained by remote `main`.
 - Hardened release workflow preflight against lightweight tags.
 - Increased digest artifact retention from one day to 14 days and added explicit two-architecture SHA-256 digest validation.
 - Updated `VERSION`, README, E2E release fixtures, release notes, plan index, and release automation for `v3.5.5`.
+- Removed the release helper's dependency on the configured `origin` transport after publication exposed an SSH rewrite/host-key failure; tag and `main` verification now use the repository-derived HTTPS URL and permit later closeout commits on `main`.
+- Replaced fixed-sleep lease-return signals in segmented-selector retry tests with batch-observed repeated notifications, removing a race-instrumentation timing flake without changing production selection behavior.
 
 ## Verification results
 
@@ -39,8 +43,25 @@
 | Release metadata and automation | Passed | Version audit plus seven Python unit tests |
 | Workflow and documentation audit | Passed | actionlint and Markdown audit; 91 tracked Markdown files and no removable records |
 | Secret scan | Passed | Gitleaks scanned 7.23 MB from a detached clean worktree at `1b0be34b989c8913f50faac7cbeea8114a1c4e28`; no leaks found |
-| Docker/Compose/Hadolint/local image smoke | Environment unavailable | Docker is not installed; GitHub CI remains authoritative |
-| Firefox/WebKit and backend race | Pending CI | GitHub required checks are authoritative for these platform-specific gates |
+| Docker/Compose/Hadolint/local image smoke | Passed in GitHub | Docker is not installed locally; the authoritative container configuration and health-smoke job passed |
+| Firefox/WebKit and backend race | Passed in GitHub | All platform-specific required checks passed |
+| Delivery PR checks | Passed | All 15 required checks passed before merge |
+| Post-release helper regression | Passed | Ten Python tests, release-version audit, and `python scripts/github-release.py check-tag` passed without an origin URL override |
+| Segmented selector race regression | Passed after remediation | The first closeout run exposed a fixed-sleep test signal that could fire before the selector subscribed under `-race`; the test now waits through observable batch progress and reliably drives the full-planner retry |
+
+## Publication evidence
+
+| Artifact | Verified value |
+| --- | --- |
+| Delivery merge | PR #54, merge commit `792217d50e36d6ee15142e1ba9d05d9e042a2a7c`, with release branch head `1228648bb3b5649da5b07d95af103f8af2172f98` retained as the second parent |
+| Annotated tag object | `b73ca2597dd93d4b9d4e0ed24bbc5a66b514abdf` |
+| Tag peeled commit | `792217d50e36d6ee15142e1ba9d05d9e042a2a7c` |
+| GitHub Release | Release ID `367765948`; published, non-draft, non-prerelease, and selected as latest |
+| Release workflow | Run `31369118385`; validate, amd64 publish, arm64 publish, final-tag publish, and release-image smoke jobs all completed successfully |
+| GHCR OCI index | `sha256:4458da1fc56ab0dbf0af69d6a49f0eacb7585daf12b0bd7e8c904a15425a54af` |
+| GHCR aliases | `v3.5.5`, `3.5.5`, `3.5`, `3`, and `latest` all resolve to the same OCI index |
+| Linux platforms | `linux/amd64` child `sha256:1188ce2723c4957337d6333fe83c5ab90c6847970d864ceea432af03104a8b77`; `linux/arm64` child `sha256:d556d73a63e8e8a4ff1a11400b2695a468ee6d5322388094fddfda1a27a03767` |
+| Published-image health | Release workflow `/healthz` smoke passed against the published image |
 
 ## Assumptions and defaults verification
 
@@ -50,30 +71,38 @@
 | Release notes are uniquely discoverable from the version heading | Confirmed | Release metadata unit tests reject missing and ambiguous matches |
 | Protected release approvals can outlive one-day artifacts | Confirmed | Prior release workflow evidence and 14-day retention remediation |
 | Release PR branch is derived from the active non-main branch | Confirmed | Release metadata unit test rejects `main`; active branch is `release/v3.5.5-project-audit` |
-| Remote synchronization base is unchanged | Confirmed | HTTPS fetch resolved `origin/main` to `2aca24006fa77d6951e3cfa98b06d431296a7ffa` |
+| Delivery ancestry is preserved | Confirmed | PR #54 used a true merge commit with both the former `main` and accepted release head as parents |
 
 ## Push gate evidence
 
-- First remote push occurred only after final local acceptance: Yes; no remote branch exists yet
+- First release-branch push occurred only after final local acceptance: Yes
 - Final synchronization base: `2aca24006fa77d6951e3cfa98b06d431296a7ffa`
 - Final verification run: frontend full quality matrix, backend test/vet/vulnerability scan, Swagger drift, dependency audit, release automation tests, actionlint, Markdown audit, Git diff/conflict checks, and 81-case Chromium matrix
+- Remote acceptance: all 15 required PR checks passed before merge
 
 ## Deviations from plan
 
 - The local Windows Playwright process required interruption after all 81 Chromium cases reported success because its preview-server teardown did not return control.
-- Local Docker, Compose, Hadolint, container health, Firefox/WebKit, and backend race authority is deferred to GitHub CI as recorded in the accepted plan.
+- Local Docker, Compose, Hadolint, container health, Firefox/WebKit, and backend race authority was deferred to GitHub CI as recorded in the accepted plan; every corresponding required job passed.
+- The first post-tag release-helper invocation inherited an environment-specific SSH rewrite for `origin` and failed before application logic could validate the tag. Publication was completed with a process-local HTTPS rewrite, then the helper was corrected in `4d78c5327266dc939b340b4118c05888fe6cf100` to derive a canonical HTTPS remote and verify ancestry rather than exact `main` equality.
+- The first closeout PR run failed `TestSegmentedActiveDoesNotRepeatWindowsAfterFullFallback` because its single fixed-delay notification could occur before `awaitLeaseRetry` subscribed when race instrumentation slowed the initial planner. The production selector did not report a data race; the deterministic test driver was corrected and the complete required check set was rerun.
 
 ## Unresolved and follow-up work
 
-- Pull request, merge commit, annotated tag, GitHub Release, protected release jobs, GHCR alias/platform/digest verification, published-image `/healthz`, and docs-only closeout remain pending.
+- No release-blocking project finding remains open.
+- Frontend line coverage remains low in aggregate despite the new focused runtime-boundary tests; future feature work should continue adding tests around high-risk state and API boundaries rather than treating the current percentage as a release regression.
 
 ## Rollback
 
-Before publication, abandon or revert the branch. After publication, keep `v3.5.5` immutable and deploy the verified `v3.5.2` OCI index while preparing a corrective release.
+The published `v3.5.5` tag is immutable. If a production rollback is required, deploy the previously verified `v3.5.2` image while preparing a new corrective version; never move `v3.5.5`.
 
 ## Final acceptance
 
 - [x] Implementation matches the accepted scope.
 - [x] Local checks and security review are complete.
+- [x] PR #54 is merged with a true merge commit and all required checks passed.
+- [x] The annotated tag, stable latest Release, protected publication workflow, aliases, architectures, digest, and published-image health are verified.
+- [x] The release helper's post-publication origin-transport defect is corrected and regression-tested.
+- [x] The segmented-selector race test no longer depends on scheduler timing.
 - [x] Repository state is documented and only approved local cache directories remain outside the delivery.
 - [x] The plan index is updated.

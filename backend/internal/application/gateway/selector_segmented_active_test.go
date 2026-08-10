@@ -357,10 +357,8 @@ func TestSegmentedActiveDoesNotRepeatWindowsAfterFullFallback(t *testing.T) {
 	}
 	selector := newSegmentedActiveTestSelectorWithWait(100, limiter, nil, 100*time.Millisecond)
 	selector.UpdateSegmentedSelector(true, 100, 8)
-	go func() {
-		time.Sleep(5 * time.Millisecond)
-		selector.announceLeaseReturn()
-	}()
+	stopAnnouncements := announceLeaseReturnsUntilBatchCount(selector, limiter, 6)
+	defer stopAnnouncements()
 
 	_, err := selector.Acquire(context.Background(), account.ProviderBuild, 0, "model", "", "", nil, false)
 	var unavailable *SelectionUnavailableError
@@ -385,10 +383,8 @@ func TestSegmentedActiveUsesFullPlannerAfterExhaustingSmallPool(t *testing.T) {
 	}
 	selector := newSegmentedActiveTestSelectorWithWait(100, limiter, nil, 100*time.Millisecond)
 	selector.UpdateSegmentedSelector(true, 100, 64)
-	go func() {
-		time.Sleep(5 * time.Millisecond)
-		selector.announceLeaseReturn()
-	}()
+	stopAnnouncements := announceLeaseReturnsUntilBatchCount(selector, limiter, 3)
+	defer stopAnnouncements()
 
 	_, err := selector.Acquire(context.Background(), account.ProviderBuild, 0, "model", "", "", nil, false)
 	var unavailable *SelectionUnavailableError
@@ -501,6 +497,26 @@ func newSegmentedActiveTestSelectorWithWait(count int, limiter repository.Concur
 	}
 	repository := &layeredAccountRepository{bases: bases, overlays: map[string]account.RoutingOverlaySnapshot{"model": {}}}
 	return NewSelector(repository, limiter, memory.NewStickyStore(), nil, time.Hour, time.Second, time.Minute, capacityWait)
+}
+
+func announceLeaseReturnsUntilBatchCount(selector *Selector, limiter *segmentedSelectiveLimiter, target int) func() {
+	stop := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(time.Millisecond)
+		defer ticker.Stop()
+		for {
+			if len(limiter.BatchSizes()) >= target {
+				return
+			}
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				selector.announceLeaseReturn()
+			}
+		}
+	}()
+	return func() { close(stop) }
 }
 
 func activeSegmentedCursorCount(selector *Selector) uint64 {

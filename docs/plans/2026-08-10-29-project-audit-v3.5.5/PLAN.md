@@ -3,7 +3,7 @@
 - Date: 2026-08-10
 - Sequence: 29
 - Owner: JasmineTony
-- Status: Local acceptance complete; remote release pending
+- Status: Complete
 - Base commit: `2aca24006fa77d6951e3cfa98b06d431296a7ffa`
 - Working branch: `release/v3.5.5-project-audit`
 
@@ -63,7 +63,7 @@ The frontend duplication audit additionally identified repeated response-decoder
 9. Complete `RESULT.md`, synchronize with remote `main`, rerun the final acceptance matrix, and only then perform the first push.
 10. Create and merge one pull request using a true merge commit.
 11. Create and push annotated tag `v3.5.5` at the release merge commit, publish a non-draft/non-prerelease latest Release, approve protected jobs, and verify every GHCR alias, architecture, digest, and `/healthz`.
-12. Complete a docs-only closeout pull request that records release and publication evidence while distinguishing the immutable release commit from the later documentation commit.
+12. Complete a closeout pull request that records release and publication evidence, removes any environment-specific transport coupling discovered during publication, and distinguishes the immutable release commit from the later closeout commit.
 
 ## Security and compatibility constraints
 
@@ -111,11 +111,11 @@ The frontend duplication audit additionally identified repeated response-decoder
 - [x] All accepted audit findings are remediated with focused tests or executable checks.
 - [x] Public API, configuration, data, route, and Go module compatibility are preserved.
 - [x] `VERSION=v3.5.5` and all current release-facing references agree.
-- [ ] Required local checks and GitHub PR checks pass.
-- [ ] The delivery PR is merged with a true merge commit.
-- [ ] The annotated `v3.5.5` tag and stable latest GitHub Release are published and verified.
-- [ ] All GHCR aliases resolve to one multi-architecture OCI index and published-image `/healthz` passes.
-- [ ] Documentation and release closeout evidence are complete.
+- [x] Required local checks and GitHub PR checks pass.
+- [x] The delivery PR is merged with a true merge commit.
+- [x] The annotated `v3.5.5` tag and stable latest GitHub Release are published and verified.
+- [x] All GHCR aliases resolve to one multi-architecture OCI index and published-image `/healthz` passes.
+- [x] Documentation and release closeout evidence are complete.
 - [x] Assumptions and defaults are verified.
-- [x] `RESULT.md` records the complete local acceptance state and pending remote release evidence.
+- [x] `RESULT.md` records local acceptance and complete remote release evidence.
 - [x] The plan branch has not been pushed before final local acceptance.
