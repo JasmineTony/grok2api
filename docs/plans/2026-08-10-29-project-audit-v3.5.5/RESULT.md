@@ -3,6 +3,7 @@
 - Date completed: 2026-08-10
 - Status: Local acceptance complete; remote release pending
 - Base commit: `2aca24006fa77d6951e3cfa98b06d431296a7ffa`
+- Local implementation commit: `1b0be34b989c8913f50faac7cbeea8114a1c4e28`
 - Release commit: Pending
 - Final documentation commit: Pending
 - Pull request: Pending
@@ -37,7 +38,7 @@
 | Dependency audit | Passed | `pnpm audit --audit-level high`: no known vulnerabilities |
 | Release metadata and automation | Passed | Version audit plus seven Python unit tests |
 | Workflow and documentation audit | Passed | actionlint and Markdown audit; 91 tracked Markdown files and no removable records |
-| Secret scan | Pending clean-worktree rerun | Current-source scan will be repeated from the committed clean worktree so ignored dependency/build caches cannot create false positives |
+| Secret scan | Passed | Gitleaks scanned 7.23 MB from a detached clean worktree at `1b0be34b989c8913f50faac7cbeea8114a1c4e28`; no leaks found |
 | Docker/Compose/Hadolint/local image smoke | Environment unavailable | Docker is not installed; GitHub CI remains authoritative |
 | Firefox/WebKit and backend race | Pending CI | GitHub required checks are authoritative for these platform-specific gates |
 
@@ -73,6 +74,6 @@ Before publication, abandon or revert the branch. After publication, keep `v3.5.
 ## Final acceptance
 
 - [x] Implementation matches the accepted scope.
-- [x] Local checks and security review are complete except the clean-worktree secret-scan rerun recorded above.
+- [x] Local checks and security review are complete.
 - [x] Repository state is documented and only approved local cache directories remain outside the delivery.
 - [x] The plan index is updated.
