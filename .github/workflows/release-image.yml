@@ -52,6 +52,11 @@ jobs:
             exit 1
           fi
           git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
+          tag_type="$(git cat-file -t "refs/tags/$RELEASE_TAG")"
+          if [[ "$tag_type" != "tag" ]]; then
+            echo "Release tag $RELEASE_TAG must be annotated; found object type $tag_type" >&2
+            exit 1
+          fi
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           tag_sha="$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")"
           main_sha="$(git rev-parse --verify refs/remotes/origin/main)"
@@ -132,7 +137,7 @@ jobs:
           name: digests-${{ matrix.arch }}
           path: /tmp/digests/*
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 14
 
   merge_manifest:
     name: Publish final tags
@@ -152,6 +157,24 @@ jobs:
           pattern: digests-*
           path: /tmp/digests
           merge-multiple: true
+
+      - name: Verify image digests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t digest_files < <(find /tmp/digests -maxdepth 1 -type f -printf '%f\n' | sort)
+          if [[ "${#digest_files[@]}" -ne 2 ]]; then
+            echo "Expected exactly two architecture digest files, found ${#digest_files[@]}" >&2
+            printf 'Digest files: %s\n' "${digest_files[*]:-none}" >&2
+            exit 1
+          fi
+          for digest in "${digest_files[@]}"; do
+            if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "Malformed sha256 digest filename: $digest" >&2
+              exit 1
+            fi
+          done
+          printf 'Validated digest inputs: %s\n' "${digest_files[*]}"
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4

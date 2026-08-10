@@ -1,6 +1,7 @@
 import { type ApiClient } from "@/shared/api/client";
 import {
   createObjectDecoder,
+  createValidatedDecoder,
   decodeBooleanResult,
   hasShape,
   isArrayOf,
@@ -302,6 +303,13 @@ const decodeSettingsSnapshot = (value: unknown): SettingsSnapshotDTO => {
     },
   };
 };
+const egressIPProbeValidator = hasShape({
+  status: isOneOf("unknown", "healthy", "unhealthy"),
+  testedAt: isOptional(isString),
+  latencyMs: isNumber,
+  exitIp: isOptional(isString),
+  error: isOptional(isString),
+});
 const egressNodeValidator = hasShape({
   id: isString,
   name: isString,
@@ -321,71 +329,14 @@ const egressNodeValidator = hasShape({
   exitIp: isOptional(isString),
   probeError: isOptional(isString),
   probeProvider: isOptional(isOneOf("ipinfo", "cloudflare")),
-  ipv4Probe: isOptional(
-    hasShape({
-      status: isOneOf("unknown", "healthy", "unhealthy"),
-      testedAt: isOptional(isString),
-      latencyMs: isNumber,
-      exitIp: isOptional(isString),
-      error: isOptional(isString),
-    }),
-  ),
-  ipv6Probe: isOptional(
-    hasShape({
-      status: isOneOf("unknown", "healthy", "unhealthy"),
-      testedAt: isOptional(isString),
-      latencyMs: isNumber,
-      exitIp: isOptional(isString),
-      error: isOptional(isString),
-    }),
-  ),
+  ipv4Probe: isOptional(egressIPProbeValidator),
+  ipv6Probe: isOptional(egressIPProbeValidator),
   health: isNumber,
   failureCount: isNumber,
   cooldownUntil: isOptional(isString),
   lastError: isOptional(isString),
 });
-const decodeEgressNode = createObjectDecoder<EgressNodeDTO>("egress node", {
-  id: isString,
-  name: isString,
-  scope: isOneOf("grok_build", "grok_web", "grok_console", "grok_web_asset", "grok_console_asset"),
-  enabled: isBoolean,
-  proxyConfigured: isBoolean,
-  userAgent: isString,
-  cookieConfigured: isBoolean,
-  accountBoundProxy: isBoolean,
-  proxyPool: isBoolean,
-  sourceId: isOptional(isString),
-  accountCapacity: isNumber,
-  assignedAccountCount: isNumber,
-  probeStatus: isOneOf("unknown", "healthy", "unhealthy"),
-  lastProbedAt: isOptional(isString),
-  probeLatencyMs: isNumber,
-  exitIp: isOptional(isString),
-  probeError: isOptional(isString),
-  probeProvider: isOptional(isOneOf("ipinfo", "cloudflare")),
-  ipv4Probe: isOptional(
-    hasShape({
-      status: isOneOf("unknown", "healthy", "unhealthy"),
-      testedAt: isOptional(isString),
-      latencyMs: isNumber,
-      exitIp: isOptional(isString),
-      error: isOptional(isString),
-    }),
-  ),
-  ipv6Probe: isOptional(
-    hasShape({
-      status: isOneOf("unknown", "healthy", "unhealthy"),
-      testedAt: isOptional(isString),
-      latencyMs: isNumber,
-      exitIp: isOptional(isString),
-      error: isOptional(isString),
-    }),
-  ),
-  health: isNumber,
-  failureCount: isNumber,
-  cooldownUntil: isOptional(isString),
-  lastError: isOptional(isString),
-});
+const decodeEgressNode = createValidatedDecoder<EgressNodeDTO>("egress node", egressNodeValidator);
 const egressHealthCheckValidator = hasShape({
   id: isString,
   nodeId: isString,
@@ -394,14 +345,10 @@ const egressHealthCheckValidator = hasShape({
   errorCode: isOptional(isString),
   checkedAt: isString,
 });
-const decodeEgressHealthCheck = createObjectDecoder<EgressHealthCheckDTO>("egress health check", {
-  id: isString,
-  nodeId: isString,
-  healthy: isBoolean,
-  durationMs: isNumber,
-  errorCode: isOptional(isString),
-  checkedAt: isString,
-});
+const decodeEgressHealthCheck = createValidatedDecoder<EgressHealthCheckDTO>(
+  "egress health check",
+  egressHealthCheckValidator,
+);
 const decodeEgressHealthCheckList = createObjectDecoder<EgressHealthCheckListDTO>(
   "egress health check list",
   { items: isArrayOf(egressHealthCheckValidator) },
@@ -429,19 +376,10 @@ const egressSourceValidator = hasShape({
   lastSyncImported: isNumber,
   lastSyncError: isOptional(isString),
 });
-const decodeEgressSource = createObjectDecoder<EgressSourceDTO>("egress source", {
-  id: isString,
-  name: isString,
-  scope: isOneOf("grok_build", "grok_web", "grok_console", "grok_web_asset", "grok_console_asset"),
-  enabled: isBoolean,
-  urlConfigured: isBoolean,
-  refreshIntervalSeconds: isNumber,
-  defaultAccountCapacity: isNumber,
-  lastSyncedAt: isOptional(isString),
-  nextSyncAt: isOptional(isString),
-  lastSyncImported: isNumber,
-  lastSyncError: isOptional(isString),
-});
+const decodeEgressSource = createValidatedDecoder<EgressSourceDTO>(
+  "egress source",
+  egressSourceValidator,
+);
 const decodeEgressSourceList = createObjectDecoder<{ items: EgressSourceDTO[] }>(
   "egress source list",
   { items: isArrayOf(egressSourceValidator) },
@@ -457,20 +395,8 @@ const decodeEgressProbeResult = createObjectDecoder<EgressProbeResultDTO>("egres
   exitIp: isOptional(isString),
   error: isOptional(isString),
   probeProvider: isOptional(isOneOf("ipinfo", "cloudflare")),
-  ipv4: hasShape({
-    status: isOneOf("unknown", "healthy", "unhealthy"),
-    testedAt: isOptional(isString),
-    latencyMs: isNumber,
-    exitIp: isOptional(isString),
-    error: isOptional(isString),
-  }),
-  ipv6: hasShape({
-    status: isOneOf("unknown", "healthy", "unhealthy"),
-    testedAt: isOptional(isString),
-    latencyMs: isNumber,
-    exitIp: isOptional(isString),
-    error: isOptional(isString),
-  }),
+  ipv4: egressIPProbeValidator,
+  ipv6: egressIPProbeValidator,
 });
 const decodeEgressProbeBatchResult = createObjectDecoder<EgressProbeBatchResultDTO>(
   "egress probe result",

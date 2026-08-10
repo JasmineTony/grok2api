@@ -120,7 +120,7 @@ test.describe("authenticated route boundaries @cross-browser", () => {
   }) => {
     test.setTimeout(60_000);
     await page.goto("/settings/about");
-    await expect(page.locator("main").getByText("v3.5.2").first()).toBeVisible({
+    await expect(page.locator("main").getByText("v3.5.5").first()).toBeVisible({
       timeout: 30_000,
     });
   });
@@ -131,7 +131,7 @@ test.describe("authenticated route boundaries @cross-browser", () => {
     await expect(
       page.getByRole("heading", { name: /Changelog|Release notes|\u66f4\u65b0\u8bf4\u660e/ }),
     ).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText("Security and routing refinements")).toBeVisible({
+    await expect(page.getByText("Project audit and release hardening")).toBeVisible({
       timeout: 30_000,
     });
   });

@@ -116,11 +116,14 @@ export const settingsSchema = z.object({
         context.addIssue({ code: "custom", path: ["statsigManualValue"], message: "invalid" });
       }
       if (value.statsigMode === "url") {
-        if (!validStatsigSignerURL(value.statsigSignerURL)) {
+        if (!validTrustedServiceURL(value.statsigSignerURL)) {
           context.addIssue({ code: "custom", path: ["statsigSignerURL"], message: "invalid" });
         }
       }
-      if (value.clearanceMode === "flaresolverr" && !validHTTPURL(value.flareSolverrURL)) {
+      if (
+        value.clearanceMode === "flaresolverr" &&
+        !validTrustedServiceURL(value.flareSolverrURL)
+      ) {
         context.addIssue({ code: "custom", path: ["flareSolverrURL"], message: "invalid" });
       }
     }),
@@ -423,25 +426,7 @@ function validStatsigID(value: string): boolean {
   }
 }
 
-function validStatsigSignerURL(value: string): boolean {
-  try {
-    const parsed = new URL(value);
-    if (
-      parsed.username !== "" ||
-      parsed.password !== "" ||
-      parsed.search !== "" ||
-      parsed.hash !== ""
-    )
-      return false;
-    const internal = internalSignerHostname(parsed.hostname);
-    if (internal) return parsed.protocol === "http:" || parsed.protocol === "https:";
-    return parsed.protocol === "https:" && (parsed.port === "" || parsed.port === "443");
-  } catch {
-    return false;
-  }
-}
-
-function validHTTPURL(value: string): boolean {
+function validTrustedServiceURL(value: string): boolean {
   try {
     const parsed = new URL(value);
     if (
