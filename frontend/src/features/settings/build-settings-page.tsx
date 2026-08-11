@@ -129,6 +129,24 @@ export function BuildSettingsPage() {
               )}
             />
           </SettingsField>
+          <SettingsField
+            controlId="provider-stream-idle-timeout"
+            label={t("settingsProviderResponseHeader.streamIdleTimeout")}
+            description={t("settingsProviderResponseHeader.streamIdleTimeoutHelp")}
+            error={form.formState.errors.providerBuild?.streamIdleTimeout?.message}
+          >
+            <Controller
+              control={form.control}
+              name="providerBuild.streamIdleTimeout"
+              render={({ field }) => (
+                <DurationInput
+                  id="provider-stream-idle-timeout"
+                  value={field.value}
+                  onChange={field.onChange}
+                />
+              )}
+            />
+          </SettingsField>
         </div>
       </SettingsSection>
     </div>

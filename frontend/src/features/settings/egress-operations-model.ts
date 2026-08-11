@@ -2,6 +2,7 @@ import {
   type EgressFallbackConfigDTO,
   type EgressNodeDTO,
   type EgressOperationsConfigDTO,
+  type EgressOperationsConfigInput,
   type EgressScope,
   type EgressSourceInput,
   listEgressNodes,
@@ -10,6 +11,11 @@ import {
 import type { ApiClient } from "@/shared/api/client";
 
 export type SourceForm = EgressSourceInput & { url: string };
+export type OperationsForm = Omit<EgressOperationsConfigDTO, "updatedAt"> & {
+  subscriptionProxyURL: string;
+  clearSubscriptionProxy: boolean;
+};
+
 export type ImportForm = {
   name: string;
   scope: EgressScope;
@@ -56,18 +62,19 @@ export function defaultFallbacks(): Record<EgressScope, EgressFallbackConfigDTO>
   };
 }
 
-export const defaultOperationsForm: Omit<EgressOperationsConfigDTO, "updatedAt"> = {
+export const defaultOperationsForm: OperationsForm = {
   probeProvider: "cloudflare",
   probeIntervalSeconds: 900,
   autoAssignEnabled: false,
   autoBalanceEnabled: false,
   assignmentIntervalSeconds: 300,
   fallbacks: defaultFallbacks(),
+  subscriptionProxyURL: "",
+  subscriptionProxyConfigured: false,
+  clearSubscriptionProxy: false,
 };
 
-export function operationsFormFrom(
-  value?: EgressOperationsConfigDTO,
-): Omit<EgressOperationsConfigDTO, "updatedAt"> {
+export function operationsFormFrom(value?: EgressOperationsConfigDTO): OperationsForm {
   if (!value) return { ...defaultOperationsForm, fallbacks: defaultFallbacks() };
   const defaults = defaultFallbacks();
   return {
@@ -83,7 +90,26 @@ export function operationsFormFrom(
       grok_web_asset: { ...defaults.grok_web_asset, ...value.fallbacks.grok_web_asset },
       grok_console_asset: { ...defaults.grok_console_asset, ...value.fallbacks.grok_console_asset },
     },
+    subscriptionProxyURL: "",
+    subscriptionProxyConfigured: value.subscriptionProxyConfigured,
+    clearSubscriptionProxy: false,
   };
+}
+
+export function operationsInputFrom(value: OperationsForm): EgressOperationsConfigInput {
+  const result: EgressOperationsConfigInput = {
+    probeProvider: value.probeProvider,
+    probeIntervalSeconds: value.probeIntervalSeconds,
+    autoAssignEnabled: value.autoAssignEnabled,
+    autoBalanceEnabled: value.autoBalanceEnabled,
+    assignmentIntervalSeconds: value.assignmentIntervalSeconds,
+    fallbacks: value.fallbacks,
+  };
+  if (value.clearSubscriptionProxy) result.clearSubscriptionProxy = true;
+  else if (value.subscriptionProxyURL.trim()) {
+    result.subscriptionProxyURL = value.subscriptionProxyURL.trim();
+  }
+  return result;
 }
 
 export async function testAllEgressNodes(client: ApiClient) {

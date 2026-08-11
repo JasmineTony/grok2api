@@ -93,14 +93,14 @@ function createSettingsSnapshotFixture() {
 
 function createVersionFixture() {
   return {
-    currentVersion: "v3.5.5",
-    latestVersion: "v3.5.5",
+    currentVersion: "v3.5.6",
+    latestVersion: "v3.5.6",
     updateAvailable: false,
     status: "up_to_date",
     checkedAt: "2099-01-01T00:00:00Z",
-    releaseUrl: "https://github.com/JasmineTony/grok2api/releases/tag/v3.5.5",
+    releaseUrl: "https://github.com/JasmineTony/grok2api/releases/tag/v3.5.6",
     releaseNotes:
-      "## Project audit and release hardening\n\n- Stable frontend boundaries and release automation.",
+      "## Upstream v3.1.2 integration\n\n- Preserved upstream ancestry and independent compatibility boundaries.",
     error: "",
     repository: "JasmineTony/grok2api",
     upstreamRepository: "chenyme/grok2api",

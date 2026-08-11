@@ -200,6 +200,24 @@ export function WebSettingsPage() {
             />
           </SettingsField>
           <SettingsField
+            controlId="web-stream-idle-timeout"
+            label={t("settings.web.streamIdleTimeout")}
+            description={t("settings.web.streamIdleTimeoutHelp")}
+            error={form.formState.errors.providerWeb?.streamIdleTimeout?.message}
+          >
+            <Controller
+              control={form.control}
+              name="providerWeb.streamIdleTimeout"
+              render={({ field }) => (
+                <DurationInput
+                  id="web-stream-idle-timeout"
+                  value={field.value}
+                  onChange={field.onChange}
+                />
+              )}
+            />
+          </SettingsField>
+          <SettingsField
             controlId="web-recovery-base"
             label={t("settings.web.recoveryBackoffBase")}
             description={t("settings.web.recoveryBackoffBaseHelp")}

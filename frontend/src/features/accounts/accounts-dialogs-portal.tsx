@@ -1,6 +1,7 @@
 import type { ComponentProps } from "react";
 
 import { AccountBulkDialogs } from "@/features/accounts/account-bulk-dialogs";
+import { AccountDetectDialog } from "@/features/accounts/account-detect-dialog";
 import {
   AccountCleanupDialog,
   AccountDeleteDialogs,
@@ -20,6 +21,7 @@ type AccountsDialogsPortalProps = {
     targets: readonly string[] | "all" | null;
   };
   bulk: ComponentProps<typeof AccountBulkDialogs>;
+  detect: ComponentProps<typeof AccountDetectDialog>;
   device: ComponentProps<typeof AccountDeviceDialog>;
   quickImport: ComponentProps<typeof AccountQuickImportDialog>;
   edit: ComponentProps<typeof AccountEditDialog>;
@@ -35,6 +37,7 @@ export function AccountsDialogsPortal({
   settings,
   scripts,
   bulk,
+  detect,
   device,
   quickImport,
   edit,
@@ -57,6 +60,7 @@ export function AccountsDialogsPortal({
         />
       ) : null}
       <AccountBulkDialogs {...bulk} />
+      <AccountDetectDialog {...detect} />
       <AccountDeviceDialog {...device} />
       <AccountQuickImportDialog {...quickImport} />
       <AccountEditDialog {...edit} />

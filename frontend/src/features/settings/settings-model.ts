@@ -31,6 +31,14 @@ const buildResponseHeaderDuration = durationSchema.refine((value) => {
   const seconds = durationSeconds(value);
   return seconds >= 30 && seconds <= 30 * 60;
 });
+const buildStreamIdleDuration = durationSchema.refine((value) => {
+  const seconds = durationSeconds(value);
+  return seconds >= 30 && seconds <= 10 * 60;
+});
+const providerStreamIdleDuration = durationSchema.refine((value) => {
+  const seconds = durationSeconds(value);
+  return seconds >= 30 && seconds <= 10 * 60;
+});
 const forbiddenCodePattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 function parseForbiddenCodes(value: string): string[] {
@@ -76,6 +84,7 @@ export const settingsSchema = z.object({
     tokenAuthConfigured: z.boolean(),
     userAgent: z.string().trim().min(1),
     responseHeaderTimeout: buildResponseHeaderDuration,
+    streamIdleTimeout: buildStreamIdleDuration,
   }),
   providerWeb: z
     .object({
@@ -94,6 +103,7 @@ export const settingsSchema = z.object({
       ),
       quotaTimeout: durationSchema,
       chatTimeout: durationSchema,
+      streamIdleTimeout: providerStreamIdleDuration,
       imageTimeout: durationSchema,
       videoTimeout: durationSchema,
       mediaConcurrency: positiveInteger.max(64),
@@ -102,6 +112,9 @@ export const settingsSchema = z.object({
       recoveryBackoffMax: durationSchema,
     })
     .superRefine((value, context) => {
+      if (durationSeconds(value.streamIdleTimeout) > durationSeconds(value.chatTimeout)) {
+        context.addIssue({ code: "custom", path: ["streamIdleTimeout"], message: "invalid" });
+      }
       if (durationSeconds(value.recoveryBackoffMax) < durationSeconds(value.recoveryBackoffBase)) {
         context.addIssue({ code: "custom", path: ["recoveryBackoffMax"], message: "invalid" });
       }
@@ -127,10 +140,19 @@ export const settingsSchema = z.object({
         context.addIssue({ code: "custom", path: ["flareSolverrURL"], message: "invalid" });
       }
     }),
-  providerConsole: z.object({
-    baseURL: z.url().refine((value) => value.startsWith("https://")),
-    chatTimeout: consoleChatDuration,
-  }),
+  providerConsole: z
+    .object({
+      baseURL: z.url().refine((value) => value.startsWith("https://")),
+      chatTimeout: consoleChatDuration,
+      streamIdleTimeout: providerStreamIdleDuration,
+    })
+    .refine(
+      (value) => durationSeconds(value.streamIdleTimeout) <= durationSeconds(value.chatTimeout),
+      {
+        path: ["streamIdleTimeout"],
+        message: "invalid",
+      },
+    ),
   batch: z.object({
     importConcurrency: positiveInteger.max(50),
     conversionConcurrency: positiveInteger.max(50),
@@ -200,6 +222,7 @@ export const settingsSchema = z.object({
   }),
   accounts: z.object({
     markBuildForbiddenReauth: z.boolean(),
+    excludeBuildBotFlaggedFromScheduling: z.boolean(),
     buildForbiddenReauthCodes: z.string().superRefine((value, context) => {
       const codes = parseForbiddenCodes(value);
       if (
@@ -231,6 +254,7 @@ export function toSettingsForm(config: SettingsConfigDTO): SettingsForm {
     providerBuild: {
       ...config.providerBuild,
       responseHeaderTimeout: parseDuration(config.providerBuild.responseHeaderTimeout),
+      streamIdleTimeout: parseDuration(config.providerBuild.streamIdleTimeout),
     },
     providerWeb: {
       ...config.providerWeb,
@@ -239,6 +263,7 @@ export function toSettingsForm(config: SettingsConfigDTO): SettingsForm {
       clearanceRefresh: parseDuration(config.providerWeb.clearanceRefresh),
       quotaTimeout: parseDuration(config.providerWeb.quotaTimeout),
       chatTimeout: parseDuration(config.providerWeb.chatTimeout),
+      streamIdleTimeout: parseDuration(config.providerWeb.streamIdleTimeout),
       imageTimeout: parseDuration(config.providerWeb.imageTimeout),
       videoTimeout: parseDuration(config.providerWeb.videoTimeout),
       recoveryBackoffBase: parseDuration(config.providerWeb.recoveryBackoffBase),
@@ -247,6 +272,7 @@ export function toSettingsForm(config: SettingsConfigDTO): SettingsForm {
     providerConsole: {
       ...config.providerConsole,
       chatTimeout: parseDuration(config.providerConsole.chatTimeout),
+      streamIdleTimeout: parseDuration(config.providerConsole.streamIdleTimeout),
     },
     batch: { ...config.batch, randomDelay: parseDurationMilliseconds(config.batch.randomDelay) },
     media: {
@@ -276,6 +302,7 @@ export function toSettingsForm(config: SettingsConfigDTO): SettingsForm {
     clientKeyDefaults: config.clientKeyDefaults,
     accounts: {
       markBuildForbiddenReauth: config.accounts.markBuildForbiddenReauth,
+      excludeBuildBotFlaggedFromScheduling: config.accounts.excludeBuildBotFlaggedFromScheduling,
       buildForbiddenReauthCodes: config.accounts.buildForbiddenReauthCodes.join("\n"),
       autoCleanReauthEnabled: config.accounts.autoCleanReauthEnabled,
       autoCleanReauthInterval: parseDuration(config.accounts.autoCleanReauthInterval),
@@ -291,11 +318,13 @@ export function toSettingsDTO(config: SettingsForm): SettingsConfigDTO {
     providerBuild: {
       ...config.providerBuild,
       responseHeaderTimeout: formatDuration(config.providerBuild.responseHeaderTimeout),
+      streamIdleTimeout: formatDuration(config.providerBuild.streamIdleTimeout),
     },
     providerWeb: {
       ...config.providerWeb,
       quotaTimeout: formatDuration(config.providerWeb.quotaTimeout),
       chatTimeout: formatDuration(config.providerWeb.chatTimeout),
+      streamIdleTimeout: formatDuration(config.providerWeb.streamIdleTimeout),
       imageTimeout: formatDuration(config.providerWeb.imageTimeout),
       videoTimeout: formatDuration(config.providerWeb.videoTimeout),
       clearanceTimeout: formatDuration(config.providerWeb.clearanceTimeout),
@@ -306,6 +335,7 @@ export function toSettingsDTO(config: SettingsForm): SettingsConfigDTO {
     providerConsole: {
       ...config.providerConsole,
       chatTimeout: formatDuration(config.providerConsole.chatTimeout),
+      streamIdleTimeout: formatDuration(config.providerConsole.streamIdleTimeout),
     },
     batch: { ...config.batch, randomDelay: `${config.batch.randomDelay}ms` },
     media: {
@@ -335,6 +365,7 @@ export function toSettingsDTO(config: SettingsForm): SettingsConfigDTO {
     clientKeyDefaults: config.clientKeyDefaults,
     accounts: {
       markBuildForbiddenReauth: config.accounts.markBuildForbiddenReauth,
+      excludeBuildBotFlaggedFromScheduling: config.accounts.excludeBuildBotFlaggedFromScheduling,
       buildForbiddenReauthCodes: parseForbiddenCodes(config.accounts.buildForbiddenReauthCodes),
       autoCleanReauthEnabled: config.accounts.autoCleanReauthEnabled,
       autoCleanReauthInterval: formatDuration(config.accounts.autoCleanReauthInterval),
@@ -476,4 +507,37 @@ function internalSignerHostname(value: string): boolean {
     (first === 172 && second >= 16 && second <= 31) ||
     (first === 192 && second === 168)
   );
+}
+/** Validates HTTP and SOCKS proxy URLs. Empty is allowed for write-only form fields. */
+function validProxyURL(value: string): boolean {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return true;
+  if (
+    trimmed.length > 2048 ||
+    [...trimmed].some((char) => {
+      const code = char.charCodeAt(0);
+      return code <= 0x1f || code === 0x7f;
+    })
+  )
+    return false;
+  if ((trimmed.match(/\{account\}/g) ?? []).length > 1) return false;
+  try {
+    const parseValue = trimmed.replaceAll("{account}", "grok2api_account_placeholder");
+    const parsed = new URL(parseValue);
+    if (!parsed.host || !parsed.hostname) return false;
+    const scheme = parsed.protocol.replace(/:$/, "").toLowerCase();
+    if (!["http", "https", "socks4", "socks4a", "socks5", "socks5h"].includes(scheme)) return false;
+    if (parsed.search || parsed.hash || (parsed.pathname !== "" && parsed.pathname !== "/"))
+      return false;
+    if (trimmed.includes("{account}") && !parsed.username.includes("grok2api_account_placeholder"))
+      return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Subscription fetch proxies are global and must never use per-account lease placeholders. */
+export function validSubscriptionProxyURL(value: string): boolean {
+  return !value.includes("{account}") && validProxyURL(value);
 }

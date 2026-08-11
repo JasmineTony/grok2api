@@ -8,9 +8,10 @@ import {
   ImageUpscale,
   Loader2,
   TvMinimal,
+  Upload,
   X,
 } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,10 @@ import {
   WelcomeState,
 } from "@/features/creative-console/creative-console-components";
 import type { CreativePanelProps } from "@/features/creative-console/creative-console-types";
+import {
+  importVideoInputFromURL,
+  uploadVideoInput,
+} from "@/features/creative-console/creative-media-input-api";
 import { useApiClient } from "@/shared/api/use-api-client";
 import { cn } from "@/shared/lib/cn";
 
@@ -173,14 +178,35 @@ export function VideoPanel({ apiKey, model, modelOptions, onModelChange }: Creat
   const apiClient = useApiClient();
   const [prompt, setPrompt] = useState("");
   const [imageURL, setImageURL] = useState("");
+  const [imageFileID, setImageFileID] = useState("");
+  const imageFileInputRef = useRef<HTMLInputElement | null>(null);
+  const imageSelectionVersionRef = useRef(0);
   const [duration, setDuration] = useState("6");
   const [aspectRatio, setAspectRatio] = useState("16:9");
   const [resolution, setResolution] = useState("720p");
   const [job, setJob] = useState<{ requestId: string; apiKey: string } | null>(null);
 
   const createMutation = useMutation({
-    mutationFn: (request: Parameters<typeof createVideo>[1]) => createVideo(apiClient, request),
+    mutationFn: async (request: Parameters<typeof createVideo>[1]) => {
+      if (!request.imageFileID && request.imageURL && /^https?:\/\//i.test(request.imageURL)) {
+        const staged = await importVideoInputFromURL(apiClient, request.imageURL);
+        const stagedRequest = { ...request, imageFileID: staged.fileId };
+        delete stagedRequest.imageURL;
+        return createVideo(apiClient, stagedRequest);
+      }
+      return createVideo(apiClient, request);
+    },
     onSuccess: (requestId, request) => setJob({ requestId, apiKey: request.apiKey }),
+  });
+
+  const uploadMutation = useMutation({
+    mutationFn: ({ file }: { file: File; selectionVersion: number }) =>
+      uploadVideoInput(apiClient, file),
+    onSuccess: (input, request) => {
+      if (request.selectionVersion !== imageSelectionVersionRef.current) return;
+      setImageFileID(input.fileId);
+      setImageURL("");
+    },
   });
 
   const statusQuery = useQuery({
@@ -197,9 +223,10 @@ export function VideoPanel({ apiKey, model, modelOptions, onModelChange }: Creat
     if (
       !apiKey ||
       !model ||
-      (!prompt.trim() && !imageURL.trim()) ||
+      (!prompt.trim() && !imageURL.trim() && !imageFileID) ||
       !validDuration(duration) ||
-      createMutation.isPending
+      createMutation.isPending ||
+      uploadMutation.isPending
     )
       return;
     setJob(null);
@@ -208,7 +235,7 @@ export function VideoPanel({ apiKey, model, modelOptions, onModelChange }: Creat
       apiKey,
       model,
       prompt: prompt.trim(),
-      ...(imageURL.trim() ? { imageURL: imageURL.trim() } : {}),
+      ...(imageFileID ? { imageFileID } : imageURL.trim() ? { imageURL: imageURL.trim() } : {}),
       duration: Number(duration),
       aspectRatio,
       resolution,
@@ -257,12 +284,12 @@ export function VideoPanel({ apiKey, model, modelOptions, onModelChange }: Creat
                     size="sm"
                     className={cn(
                       "h-8 gap-1.5 px-2 font-normal",
-                      imageURL && "bg-secondary/70 text-foreground",
+                      (imageURL || imageFileID) && "bg-secondary/70 text-foreground",
                     )}
                     aria-label={t("creativeConsole.referenceImage")}
                   >
                     <ImagePlus />
-                    {imageURL
+                    {imageURL || imageFileID
                       ? t("creativeConsole.referenceImageAdded")
                       : t("creativeConsole.referenceImageShort")}
                   </Button>
@@ -276,23 +303,67 @@ export function VideoPanel({ apiKey, model, modelOptions, onModelChange }: Creat
                       id="video-image"
                       type="url"
                       value={imageURL}
-                      onChange={(event) => setImageURL(event.target.value)}
-                      placeholder="https://..."
+                      onChange={(event) => {
+                        imageSelectionVersionRef.current += 1;
+                        setImageURL(event.target.value);
+                        setImageFileID("");
+                      }}
+                      placeholder={
+                        imageFileID ? t("creativeConsole.referenceImageAdded") : "https://..."
+                      }
                       aria-label={t("creativeConsole.referenceImage")}
                     />
-                    {imageURL ? (
+                    {imageURL || imageFileID ? (
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon"
                         className="shrink-0"
                         aria-label={t("creativeConsole.clearReferenceImage")}
-                        onClick={() => setImageURL("")}
+                        onClick={() => {
+                          imageSelectionVersionRef.current += 1;
+                          setImageURL("");
+                          setImageFileID("");
+                        }}
                       >
                         <X />
                       </Button>
                     ) : null}
                   </div>
+                  <input
+                    ref={imageFileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) {
+                        const selectionVersion = imageSelectionVersionRef.current + 1;
+                        imageSelectionVersionRef.current = selectionVersion;
+                        setImageURL("");
+                        setImageFileID("");
+                        uploadMutation.reset();
+                        uploadMutation.mutate({ file, selectionVersion });
+                      }
+                      event.target.value = "";
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="mt-2 w-full"
+                    disabled={uploadMutation.isPending}
+                    onClick={() => imageFileInputRef.current?.click()}
+                  >
+                    {uploadMutation.isPending ? <Loader2 className="animate-spin" /> : <Upload />}
+                    {t("creativeConsole.uploadImage")}
+                  </Button>
+                  {uploadMutation.isError ? (
+                    <p className="mt-1 text-[11px] text-destructive">
+                      {uploadMutation.error.message}
+                    </p>
+                  ) : null}
                 </PopoverContent>
               </Popover>
               <CompactSelect
@@ -325,9 +396,10 @@ export function VideoPanel({ apiKey, model, modelOptions, onModelChange }: Creat
               disabled={
                 !apiKey ||
                 !model ||
-                (!prompt.trim() && !imageURL.trim()) ||
+                (!prompt.trim() && !imageURL.trim() && !imageFileID) ||
                 !validDuration(duration) ||
-                createMutation.isPending
+                createMutation.isPending ||
+                uploadMutation.isPending
               }
             >
               {createMutation.isPending ? <Loader2 className="animate-spin" /> : <ArrowUp />}

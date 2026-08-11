@@ -106,6 +106,7 @@ export type AccountDTO = {
   buildSuperEntitled: boolean;
   buildRouteMode: BuildRouteMode;
   buildBotFlagged: boolean;
+  buildBotFlagSource?: number;
   egressNodeId?: string;
   egressAssignmentMode?: "manual" | "auto";
   modelSyncFailed?: boolean;
@@ -343,13 +344,17 @@ const accountValidator = hasShape({
   buildSuperEntitled: isBoolean,
   buildRouteMode: isOneOf("auto", "build", "xai"),
   buildBotFlagged: isBoolean,
+  buildBotFlagSource: isOptional(isNumber),
   egressNodeId: isOptional(isString),
   egressAssignmentMode: isOptional(isOneOf("manual", "auto")),
   modelSyncFailed: isOptional(isBoolean),
   refreshDueAt: isOptional(isString),
   lastRefreshAt: isOptional(isString),
   refreshFailureCount: isNumber,
+  lastRefreshErrorStatus: isOptional(isNumber),
   lastRefreshErrorCode: isOptional(isString),
+  lastRefreshErrorMessage: isOptional(isString),
+  lastRefreshErrorResponse: isOptional(isString),
   priority: isNumber,
   maxConcurrent: isNumber,
   minimumRemaining: isNumber,
@@ -413,7 +418,7 @@ type ListAccountsInput = {
   risk?: string;
   agreement?: string;
   association?: string;
-  provider: AccountProvider;
+  provider?: AccountProvider;
   sortBy?: string;
   sortOrder?: SortOrder;
 };
@@ -435,7 +440,7 @@ export function listAccounts(
     query.set("sortBy", input.sortBy);
     query.set("sortOrder", input.sortOrder);
   }
-  query.set("provider", input.provider);
+  if (input.provider) query.set("provider", input.provider);
   return client.request(`/api/admin/v1/accounts?${query}`, {}, decodeAccountPage);
 }
 

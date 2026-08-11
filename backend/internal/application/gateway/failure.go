@@ -156,6 +156,13 @@ func newHTTPUpstreamFailure(status int, body []byte, accountID uint64, accountNa
 	case http.StatusForbidden:
 		failure.Code = "upstream_forbidden"
 		failure.PublicMessage = "上游拒绝了该请求"
+		// Console's DPoP requirement is an upstream auth-scheme rollout, not a
+		// property of the selected SSO account. Rotating accounts or browser
+		// egress cannot make the same Bearer-anonymous request valid.
+		if isDPoPProofRequired(upstreamCode) {
+			failure.RequestScopedForbidden = true
+			break
+		}
 		// Safety denials are request-scoped: inspect both structured metadata and the raw body
 		// so SAFETY_CHECK_TYPE_* markers still match when they only appear in nested text.
 		if isSafetyRejection(metadataText) || isSafetyRejection(string(body)) {
@@ -212,6 +219,9 @@ func newTransportUpstreamFailure(err error, accountID uint64, accountName string
 	category := FailureNetwork
 	if neterrorpkg.IsResponseHeaderTimeout(err) {
 		status, code, message = http.StatusGatewayTimeout, "upstream_header_timeout", "等待上游响应头超时"
+		category = FailureTimeout
+	} else if neterrorpkg.IsUpstreamStreamIdleTimeout(err) {
+		status, code, message = http.StatusGatewayTimeout, "upstream_stream_idle_timeout", "上游流式响应长时间无数据"
 		category = FailureTimeout
 	} else if errors.Is(err, context.DeadlineExceeded) {
 		code, message = "upstream_timeout", "连接上游服务失败"
@@ -325,6 +335,10 @@ func isSafetyRejection(text string) bool {
 	lower := strings.ToLower(text)
 	return strings.Contains(lower, "content violates usage guidelines") ||
 		strings.Contains(lower, "safety_check_type_")
+}
+
+func isDPoPProofRequired(upstreamCode string) bool {
+	return provider.IsDPoPProofRequiredText(upstreamCode)
 }
 
 func isDefinitiveAccountBlock(text string) bool {

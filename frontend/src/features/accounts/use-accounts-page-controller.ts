@@ -58,6 +58,7 @@ import {
   type WebConsoleSyncInput,
 } from "@/features/accounts/accounts-api";
 import { useAccountBulkMaintenance } from "@/features/accounts/use-account-bulk-maintenance";
+import { useAccountDetection } from "@/features/accounts/use-account-detection";
 import { useAccountEgressBinding } from "@/features/accounts/use-account-egress-binding";
 import { useAccountLinkedDeletion } from "@/features/accounts/use-account-linked-deletion";
 import {
@@ -71,6 +72,7 @@ import { useDebouncedValue } from "@/shared/hooks/use-debounced-value";
 import { nextTableSort, type SortOrder, type TableSort } from "@/shared/lib/table-sort";
 export function useAccountsPageController() {
   const { t, i18n } = useTranslation();
+  const showError = (error: unknown) => showAccountError(error, t);
   const queryClient = useQueryClient();
   const apiClient = useApiClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -250,6 +252,7 @@ export function useAccountsPageController() {
     cleanupMutation,
     resetLinkedDeletion,
   } = linkedDeletion;
+  const detection = useAccountDetection({ selected, clearSelection });
   const egressBinding = useAccountEgressBinding({
     provider,
     selected,
@@ -632,9 +635,6 @@ export function useAccountsPageController() {
     resetAccountForm(form, account);
   }
   const webConversionPending = conversionMutation.isPending || webConsoleSyncMutation.isPending;
-  function showError(error: unknown): void {
-    showAccountError(error, t);
-  }
   function changeSort(field: string, initialOrder: SortOrder): void {
     setSort((current) => nextTableSort(current, field, initialOrder));
     setPage(1);
@@ -642,6 +642,7 @@ export function useAccountsPageController() {
   const overview = deriveAccountOverview(summaryQuery.data, provider, result?.total ?? 0);
   const bulkTaskPending =
     quotaSyncMutation.isPending ||
+    detection.mutation.isPending ||
     allTokenMutation.isPending ||
     conversionMutation.isPending ||
     webConsoleSyncMutation.isPending ||
@@ -709,6 +710,13 @@ export function useAccountsPageController() {
     batchTokenMutation: bulkMaintenance.batchTokenMutation,
     setBatchDeleteOpen,
     setSyncAllOpen,
+    detectMode: detection.mode,
+    detectMutation: detection.mutation,
+    detectProgress: detection.progress,
+    detectItems: detection.items,
+    detectCounts: detection.counts,
+    openDetectDialog: detection.open,
+    closeDetectDialog: detection.close,
     setRenewAllOpen,
     setCleanupStatuses,
     setCleanupOpen,
