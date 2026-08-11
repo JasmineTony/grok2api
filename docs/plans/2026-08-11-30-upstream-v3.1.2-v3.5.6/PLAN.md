@@ -100,14 +100,15 @@ The upstream delta spans Web Gateway citation and Responses streaming support, B
 
 ## Acceptance criteria
 
-- [ ] Exact upstream `v3.1.2` commit is an ancestor of the delivery branch through a true merge commit.
-- [ ] All conflicts and semantic overlaps are reviewed and resolved without losing independent or upstream-required behavior.
-- [ ] Public API, settings routes, persistence, security, and release governance remain compatible.
-- [ ] `VERSION=v3.5.6` and all release-facing references agree.
+- [x] Exact upstream `v3.1.2` commit is an ancestor of the delivery branch through a true merge commit.
+- [x] All conflicts and semantic overlaps are reviewed and resolved without losing independent or upstream-required behavior.
+- [x] Public API, settings routes, persistence, security, and release governance remain compatible.
+- [x] `VERSION=v3.5.6` and all release-facing references agree.
 - [ ] Required local checks and GitHub checks pass.
 - [ ] Delivery PR is merged with a true merge commit.
 - [ ] Annotated `v3.5.6` tag, stable latest Release, GHCR aliases/platforms/digest, and `/healthz` are verified.
 - [ ] Documentation closeout is complete and distinguishes release SHA from final `main` SHA.
 - [ ] Assumptions and defaults are verified.
 - [ ] `RESULT.md` is complete.
-- [ ] The plan branch has not been pushed before final acceptance.
+- [x] The plan branch has not been pushed before final acceptance.
+
