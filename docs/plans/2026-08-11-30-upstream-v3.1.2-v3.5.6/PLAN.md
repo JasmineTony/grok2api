@@ -1,9 +1,9 @@
-﻿# Iteration plan: upstream v3.1.2 integration and v3.5.6 release
+# Iteration plan: upstream v3.1.2 integration and v3.5.6 release
 
 - Date: 2026-08-11
 - Sequence: 30
 - Owner: JasmineTony
-- Status: In progress
+- Status: Complete
 - Base commit: `cda4409d3e60aaea0b6140335f4422a2fe80926c`
 - Working branch: `sync/upstream-v3.1.2-v3.5.6-20260811`
 - Upstream tag: `chenyme/grok2api v3.1.2`
@@ -104,11 +104,11 @@ The upstream delta spans Web Gateway citation and Responses streaming support, B
 - [x] All conflicts and semantic overlaps are reviewed and resolved without losing independent or upstream-required behavior.
 - [x] Public API, settings routes, persistence, security, and release governance remain compatible.
 - [x] `VERSION=v3.5.6` and all release-facing references agree.
-- [ ] Required local checks and GitHub checks pass.
-- [ ] Delivery PR is merged with a true merge commit.
-- [ ] Annotated `v3.5.6` tag, stable latest Release, GHCR aliases/platforms/digest, and `/healthz` are verified.
-- [ ] Documentation closeout is complete and distinguishes release SHA from final `main` SHA.
-- [ ] Assumptions and defaults are verified.
-- [ ] `RESULT.md` is complete.
+- [x] Required local checks and GitHub checks pass.
+- [x] Delivery PR is merged with a true merge commit.
+- [x] Annotated `v3.5.6` tag, stable latest Release, GHCR aliases/platforms/digest, and `/healthz` are verified.
+- [x] Documentation closeout is complete and distinguishes release SHA from final `main` SHA.
+- [x] Assumptions and defaults are verified.
+- [x] `RESULT.md` is complete.
 - [x] The plan branch has not been pushed before final acceptance.
 
