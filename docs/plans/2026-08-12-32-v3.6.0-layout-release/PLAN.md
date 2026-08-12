@@ -1,4 +1,4 @@
-﻿# Iteration plan: responsive administration layout and v3.6.0 release
+# Iteration plan: responsive administration layout and v3.6.0 release
 
 - Date: 2026-08-12
 - Sequence: 32
@@ -71,10 +71,10 @@ Publish the accepted responsive administration-layout refresh as stable `v3.6.0`
 - [x] Layout changes remain responsive at 375/768/1440 widths without page-root horizontal overflow.
 - [x] Required local frontend, backend, repository, release, and Git hygiene gates pass.
 - [x] The branch is synchronized with current public remote `main` before its first push.
-- [ ] The release PR is merged through a merge commit after all required GitHub checks pass.
-- [ ] Annotated `v3.6.0` tag and stable latest GitHub Release are published at the accepted merge commit.
-- [ ] GHCR aliases resolve to one multi-architecture OCI index with amd64/arm64 runtime images.
-- [ ] Published `v3.6.0` image passes `/healthz`.
+- [x] The release PR is merged through a merge commit after all required GitHub checks pass.
+- [x] Annotated `v3.6.0` tag and stable latest GitHub Release are published at the accepted merge commit.
+- [x] GHCR aliases resolve to one multi-architecture OCI index with amd64/arm64 runtime images.
+- [x] Published `v3.6.0` image passes `/healthz`.
 - [ ] Documentation closeout records exact release and post-closeout main evidence.
 - [ ] Local caches and credentials remain untracked and uncommitted.
 
