@@ -1,7 +1,9 @@
 import { CircleHelp, Network, Shuffle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -17,6 +19,7 @@ import {
   fallbackDescriptionKeys,
   fallbackNodeCandidates,
   fallbackScopes,
+  type OperationsForm,
 } from "@/features/settings/egress-operations-model";
 import {
   ActionTooltip,
@@ -28,12 +31,9 @@ import type {
   EgressFallbackConfigDTO,
   EgressFallbackMode,
   EgressNodeDTO,
-  EgressOperationsConfigDTO,
   EgressScope,
 } from "@/features/settings/settings-api";
 import { ErrorState, LoadingState } from "@/shared/components/data-state";
-
-type OperationsForm = Omit<EgressOperationsConfigDTO, "updatedAt">;
 
 type EgressAutomationPanelProps = {
   form: OperationsForm;
@@ -42,6 +42,7 @@ type EgressAutomationPanelProps = {
   loading: boolean;
   error: Error | null;
   dirty: boolean;
+  subscriptionProxyError: string;
   saving: boolean;
   testing: boolean;
   rebalancing: boolean;
@@ -61,6 +62,7 @@ export function EgressAutomationPanel({
   loading,
   error,
   dirty,
+  subscriptionProxyError,
   saving,
   testing,
   rebalancing,
@@ -104,7 +106,12 @@ export function EgressAutomationPanel({
           </Button>
         </ActionTooltip>
         <ActionTooltip label={t("settings.egress.saveAutomationHelp")}>
-          <Button type="button" size="sm" disabled={!dirty || saving} onClick={onSave}>
+          <Button
+            type="button"
+            size="sm"
+            disabled={!dirty || Boolean(subscriptionProxyError) || saving}
+            onClick={onSave}
+          >
             {saving ? <Spinner /> : null}
             {t("common.save")}
           </Button>
@@ -187,6 +194,59 @@ export function EgressAutomationPanel({
                 checked={form.autoBalanceEnabled}
                 onCheckedChange={(autoBalanceEnabled) => onChange({ ...form, autoBalanceEnabled })}
               />
+            </div>
+          </AutomationRow>
+          <AutomationRow
+            controlId="egress-subscription-proxy"
+            label={t("settings.egress.subscriptionProxy")}
+            description={t("settings.egress.subscriptionProxyHelp")}
+            error={subscriptionProxyError}
+          >
+            <div className="space-y-2">
+              <div className="flex min-w-0 gap-2">
+                <Input
+                  id="egress-subscription-proxy"
+                  placeholder="socks5h://user:pass@host:port"
+                  value={form.subscriptionProxyURL}
+                  onChange={(event) =>
+                    onChange({
+                      ...form,
+                      subscriptionProxyURL: event.target.value,
+                      clearSubscriptionProxy: false,
+                    })
+                  }
+                />
+                {form.subscriptionProxyConfigured ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={form.clearSubscriptionProxy ? "secondary" : "outline"}
+                    onClick={() =>
+                      onChange({
+                        ...form,
+                        subscriptionProxyURL: "",
+                        clearSubscriptionProxy: !form.clearSubscriptionProxy,
+                      })
+                    }
+                  >
+                    {form.clearSubscriptionProxy
+                      ? t("settings.egress.cancelClearSubscriptionProxy")
+                      : t("settings.egress.clearSubscriptionProxy")}
+                  </Button>
+                ) : null}
+              </div>
+              {form.subscriptionProxyConfigured ? (
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <Badge variant={form.clearSubscriptionProxy ? "destructive" : "secondary"}>
+                    {form.clearSubscriptionProxy
+                      ? t("settings.egress.subscriptionProxyClearPending")
+                      : t("settings.egress.configured")}
+                  </Badge>
+                  {!form.clearSubscriptionProxy && !form.subscriptionProxyURL ? (
+                    <span>{t("settings.egress.keepConfigured")}</span>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </AutomationRow>
           <div className="pt-4">

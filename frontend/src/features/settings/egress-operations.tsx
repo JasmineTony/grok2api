@@ -29,7 +29,9 @@ import {
   emptySource,
   fallbackNodeCandidates,
   type ImportForm,
+  type OperationsForm,
   operationsFormFrom,
+  operationsInputFrom,
   type SourceForm,
   testAllEgressNodes,
 } from "@/features/settings/egress-operations-model";
@@ -44,7 +46,6 @@ import {
   deleteEgressSource,
   type EgressFallbackConfigDTO,
   type EgressFallbackMode,
-  type EgressOperationsConfigDTO,
   type EgressScope,
   type EgressSourceDTO,
   type EgressSourceInput,
@@ -57,11 +58,10 @@ import {
   updateEgressOperationsConfig,
   updateEgressSource,
 } from "@/features/settings/settings-api";
+import { validSubscriptionProxyURL } from "@/features/settings/settings-model";
 import { useApiClient } from "@/shared/api/use-api-client";
 import { ErrorState, TableLoadingRow } from "@/shared/components/data-state";
 import { formatDateTime } from "@/shared/lib/format";
-
-type OperationsForm = Omit<EgressOperationsConfigDTO, "updatedAt">;
 
 export function EgressOperations({ scopeLabel }: { scopeLabel: (scope: EgressScope) => string }) {
   const { t, i18n } = useTranslation();
@@ -86,6 +86,11 @@ export function EgressOperations({ scopeLabel }: { scopeLabel: (scope: EgressSco
     queryFn: () => listEgressNodes(apiClient),
   });
   const operationsForm = operationsDraft ?? operationsFormFrom(operationsQuery.data);
+  const subscriptionProxyError =
+    operationsForm.subscriptionProxyURL.trim() &&
+    !validSubscriptionProxyURL(operationsForm.subscriptionProxyURL)
+      ? t("settings.egress.invalidProxy")
+      : "";
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ["egress-nodes"] });
@@ -152,7 +157,7 @@ export function EgressOperations({ scopeLabel }: { scopeLabel: (scope: EgressSco
     onError: showError,
   });
   const saveOperations = useMutation({
-    mutationFn: () => updateEgressOperationsConfig(apiClient, operationsForm),
+    mutationFn: () => updateEgressOperationsConfig(apiClient, operationsInputFrom(operationsForm)),
     onSuccess: () => {
       setOperationsDraft(null);
       invalidate();
@@ -200,6 +205,7 @@ export function EgressOperations({ scopeLabel }: { scopeLabel: (scope: EgressSco
         loading={operationsQuery.isPending}
         error={operationsQuery.isError ? operationsQuery.error : null}
         dirty={operationsDraft !== null}
+        subscriptionProxyError={subscriptionProxyError}
         saving={saveOperations.isPending}
         testing={testAll.isPending}
         rebalancing={rebalance.isPending}

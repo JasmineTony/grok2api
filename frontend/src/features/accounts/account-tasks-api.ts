@@ -1,9 +1,32 @@
+import {
+  type AccountTaskProgressDTO,
+  type AccountTaskProgressPhase,
+  createAccountTaskProgressController,
+} from "@/features/accounts/account-task-progress";
 import { type ApiClient, ApiError } from "@/shared/api/client";
+
+export type { AccountTaskProgressDTO } from "@/features/accounts/account-task-progress";
 import { createObjectDecoder, isNumber, isOneOf, isOptional, isString } from "@/shared/api/decoder";
 import { i18n } from "@/shared/i18n";
 
 export type AccountBatchResultDTO = { succeeded: number; failed: number };
 export type AccountTokenRefreshResultDTO = AccountBatchResultDTO & { skipped: number };
+
+export type BuildDetectItemDTO = {
+  id: string;
+  name: string;
+  email?: string;
+  outcome: "ok" | "invalid" | "failed";
+  reason?: string;
+  httpStatus?: number;
+};
+
+export type BuildDetectHandlers = {
+  onProgress?: (value: AccountTaskProgressDTO) => void;
+  onItem?: (item: BuildDetectItemDTO) => void;
+};
+
+export type DetectBuildAccountsInput = { all: true; ids?: never } | { all?: false; ids: string[] };
 
 export type BuildConversionResultDTO = {
   created: number;
@@ -36,12 +59,6 @@ export type WebAccountScriptsInput =
   | { all: true; ids?: never; actions: WebAccountScriptActions }
   | { all?: false; ids: string[]; actions: WebAccountScriptActions };
 
-export type AccountTaskProgressDTO = {
-  completed: number;
-  total: number;
-  phase?: "importing" | "converting" | "syncing";
-};
-
 export type AccountImportResultDTO = {
   created: number;
   updated: number;
@@ -59,6 +76,12 @@ type AccountTaskStreamPayload = Partial<
 > & {
   code?: string;
   message?: string;
+  id?: string;
+  name?: string;
+  email?: string;
+  outcome?: BuildDetectItemDTO["outcome"];
+  reason?: string;
+  httpStatus?: number;
 };
 
 const decodeAccountTaskStreamPayload = createObjectDecoder<AccountTaskStreamPayload>(
@@ -77,8 +100,17 @@ const decodeAccountTaskStreamPayload = createObjectDecoder<AccountTaskStreamPayl
     succeeded: isOptional(isNumber),
     code: isOptional(isString),
     message: isOptional(isString),
+    id: isOptional(isString),
+    name: isOptional(isString),
+    email: isOptional(isString),
+    outcome: isOptional(isOneOf("ok", "invalid", "failed")),
+    reason: isOptional(isString),
+    httpStatus: isOptional(isNumber),
   },
 );
+
+const importSyncPhases = ["importing", "syncing"] as const;
+const conversionSyncPhases = ["converting", "syncing"] as const;
 
 function hasNumericResult(value: AccountTaskStreamPayload, fields: string[]): boolean {
   return fields.every((field) => {
@@ -94,41 +126,13 @@ async function runAccountTask<T>(
   resultFields: string[],
   onProgress?: (value: AccountTaskProgressDTO) => void,
   signal?: AbortSignal,
+  phases?: readonly AccountTaskProgressPhase[],
 ): Promise<T> {
   let result: T | undefined;
-  let pendingProgress: AccountTaskProgressDTO | undefined;
-  let progressTimer: number | undefined;
-  let lastProgressAt = 0;
-  const flushProgress = () => {
-    if (!pendingProgress || !onProgress) return;
-    const value = pendingProgress;
-    pendingProgress = undefined;
-    lastProgressAt = performance.now();
-    onProgress(value);
-  };
-  const reportProgress = (value: AccountTaskProgressDTO) => {
-    if (
-      pendingProgress &&
-      pendingProgress.phase !== value.phase &&
-      pendingProgress.completed === pendingProgress.total
-    ) {
-      if (progressTimer !== undefined) window.clearTimeout(progressTimer);
-      progressTimer = undefined;
-      flushProgress();
-    }
-    pendingProgress = value;
-    const delay = Math.max(0, 100 - (performance.now() - lastProgressAt));
-    if (delay === 0) {
-      if (progressTimer !== undefined) window.clearTimeout(progressTimer);
-      progressTimer = undefined;
-      flushProgress();
-    } else if (progressTimer === undefined) {
-      progressTimer = window.setTimeout(() => {
-        progressTimer = undefined;
-        flushProgress();
-      }, delay);
-    }
-  };
+  const progress = createAccountTaskProgressController({
+    ...(onProgress === undefined ? {} : { onProgress }),
+    ...(phases === undefined ? {} : { phases }),
+  });
   try {
     await client.eventStream(
       path,
@@ -149,7 +153,7 @@ async function runAccountTask<T>(
             data.phase === "importing" || data.phase === "converting" || data.phase === "syncing"
               ? data.phase
               : undefined;
-          reportProgress({
+          progress.report({
             completed: data.completed,
             total: data.total,
             ...(phase === undefined ? {} : { phase }),
@@ -157,7 +161,7 @@ async function runAccountTask<T>(
           return;
         }
         if (event === "complete") {
-          flushProgress();
+          progress.flush();
           if (hasNumericResult(data, resultFields)) result = data as T;
           return;
         }
@@ -174,8 +178,8 @@ async function runAccountTask<T>(
       },
     );
   } finally {
-    if (progressTimer !== undefined) window.clearTimeout(progressTimer);
-    flushProgress();
+    progress.flush();
+    progress.dispose();
   }
   if (!result) {
     throw new ApiError(502, "invalidResponse", i18n.t("apiErrors.invalidResponse"));
@@ -196,6 +200,85 @@ export function refreshAllAccountBilling(
     onProgress,
     signal,
   );
+}
+
+export async function detectBuildAccounts(
+  client: ApiClient,
+  input: DetectBuildAccountsInput,
+  handlers?: BuildDetectHandlers | ((value: AccountTaskProgressDTO) => void),
+  signal?: AbortSignal,
+): Promise<AccountBatchResultDTO> {
+  const body = input.all
+    ? { provider: "grok_build" as const, all: true }
+    : { provider: "grok_build" as const, ids: input.ids };
+  const resolved: BuildDetectHandlers =
+    typeof handlers === "function" ? { onProgress: handlers } : (handlers ?? {});
+  let result: AccountBatchResultDTO | undefined;
+  const progress = createAccountTaskProgressController({
+    ...(resolved.onProgress === undefined ? {} : { onProgress: resolved.onProgress }),
+  });
+  try {
+    await client.eventStream(
+      "/api/admin/v1/accounts/detect",
+      {
+        method: "POST",
+        headers: { Accept: "text/event-stream" },
+        body,
+        signal,
+      },
+      decodeAccountTaskStreamPayload,
+      ({ event, data }) => {
+        if (
+          event === "progress" &&
+          typeof data.completed === "number" &&
+          typeof data.total === "number"
+        ) {
+          progress.report({ completed: data.completed, total: data.total });
+          return;
+        }
+        if (
+          event === "item" &&
+          typeof data.id === "string" &&
+          typeof data.name === "string" &&
+          (data.outcome === "ok" || data.outcome === "invalid" || data.outcome === "failed")
+        ) {
+          resolved.onItem?.({
+            id: data.id,
+            name: data.name,
+            ...(data.email === undefined ? {} : { email: data.email }),
+            outcome: data.outcome,
+            ...(data.reason === undefined ? {} : { reason: data.reason }),
+            ...(data.httpStatus === undefined ? {} : { httpStatus: data.httpStatus }),
+          });
+          return;
+        }
+        if (event === "complete") {
+          progress.flush();
+          if (hasNumericResult(data, ["succeeded", "failed"])) {
+            result = data as AccountBatchResultDTO;
+          }
+          return;
+        }
+        if (event === "error") {
+          const code = data.code ?? "accountDetectFailed";
+          throw new ApiError(
+            502,
+            code,
+            i18n.exists(`apiErrors.${code}`)
+              ? i18n.t(`apiErrors.${code}`)
+              : (data.message ?? i18n.t("apiErrors.requestFailed")),
+          );
+        }
+      },
+    );
+  } finally {
+    progress.flush();
+    progress.dispose();
+  }
+  if (!result) {
+    throw new ApiError(502, "invalidResponse", i18n.t("apiErrors.invalidResponse"));
+  }
+  return result;
 }
 
 export function refreshAllAccountTokens(
@@ -256,6 +339,7 @@ export function convertWebAccountsToBuild(
     ["created", "linked", "skipped", "failed", "synced", "syncFailed"],
     onProgress,
     signal,
+    conversionSyncPhases,
   );
 }
 
@@ -272,6 +356,7 @@ export function syncWebAccountsToConsole(
     ["created", "updated", "skipped", "synced", "syncFailed"],
     onProgress,
     signal,
+    importSyncPhases,
   );
 }
 
@@ -306,6 +391,7 @@ export function importAccounts(
     ["created", "updated", "synced", "syncFailed"],
     onProgress,
     signal,
+    importSyncPhases,
   );
 }
 
@@ -324,6 +410,7 @@ export function importWebAccounts(
     ["created", "updated", "synced", "syncFailed"],
     onProgress,
     signal,
+    importSyncPhases,
   );
 }
 
@@ -342,5 +429,6 @@ export function importConsoleAccounts(
     ["created", "updated", "synced", "syncFailed"],
     onProgress,
     signal,
+    importSyncPhases,
   );
 }

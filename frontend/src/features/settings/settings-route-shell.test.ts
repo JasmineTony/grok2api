@@ -23,11 +23,13 @@ const settingsConfigFixture = (): SettingsConfigDTO => ({
     tokenAuthConfigured: true,
     userAgent: "Grok/0.2.111",
     responseHeaderTimeout: "45s",
+    streamIdleTimeout: "90s",
   },
   providerWeb: {
     baseURL: "https://grok.com",
     quotaTimeout: "30s",
     chatTimeout: "2m",
+    streamIdleTimeout: "90s",
     imageTimeout: "5m",
     videoTimeout: "10m",
     statsigMode: "url",
@@ -43,7 +45,11 @@ const settingsConfigFixture = (): SettingsConfigDTO => ({
     recoveryBackoffBase: "30s",
     recoveryBackoffMax: "5m",
   },
-  providerConsole: { baseURL: "https://console.x.ai", chatTimeout: "30s" },
+  providerConsole: {
+    baseURL: "https://console.x.ai",
+    chatTimeout: "2m",
+    streamIdleTimeout: "90s",
+  },
   batch: {
     importConcurrency: 2,
     conversionConcurrency: 2,
@@ -72,6 +78,7 @@ const settingsConfigFixture = (): SettingsConfigDTO => ({
   accounts: {
     markBuildForbiddenReauth: false,
     buildForbiddenReauthCodes: ["blocked-user"],
+    excludeBuildBotFlaggedFromScheduling: false,
     autoCleanReauthEnabled: false,
     autoCleanReauthInterval: "10m",
     autoCleanReauthMinAge: "1h",
@@ -79,7 +86,7 @@ const settingsConfigFixture = (): SettingsConfigDTO => ({
   },
 });
 
-const UPSTREAM_V3010_SETTINGS_CONTRACT = [
+const UPSTREAM_V312_SETTINGS_CONTRACT = [
   "server.maxConcurrentRequests",
   "providerBuild.baseURL",
   "providerBuild.fallbackBaseURL",
@@ -89,9 +96,11 @@ const UPSTREAM_V3010_SETTINGS_CONTRACT = [
   "providerBuild.tokenAuthConfigured",
   "providerBuild.userAgent",
   "providerBuild.responseHeaderTimeout",
+  "providerBuild.streamIdleTimeout",
   "providerWeb.baseURL",
   "providerWeb.quotaTimeout",
   "providerWeb.chatTimeout",
+  "providerWeb.streamIdleTimeout",
   "providerWeb.imageTimeout",
   "providerWeb.videoTimeout",
   "providerWeb.statsigMode",
@@ -107,6 +116,7 @@ const UPSTREAM_V3010_SETTINGS_CONTRACT = [
   "providerWeb.recoveryBackoffMax",
   "providerConsole.baseURL",
   "providerConsole.chatTimeout",
+  "providerConsole.streamIdleTimeout",
   "batch.importConcurrency",
   "batch.conversionConcurrency",
   "batch.syncConcurrency",
@@ -132,6 +142,7 @@ const UPSTREAM_V3010_SETTINGS_CONTRACT = [
   "audit.commitDelayMS",
   "clientKeyDefaults.rpmLimit",
   "clientKeyDefaults.maxConcurrent",
+  "accounts.excludeBuildBotFlaggedFromScheduling",
   "accounts.markBuildForbiddenReauth",
   "accounts.buildForbiddenReauthCodes",
   "accounts.autoCleanReauthEnabled",
@@ -168,6 +179,7 @@ const RUNTIME_POLICIES_SETTINGS_ROUTE_FIELDS = [
 ] as const;
 
 const ACCOUNT_MAINTENANCE_SETTINGS_ROUTE_FIELDS = [
+  "accounts.excludeBuildBotFlaggedFromScheduling",
   "accounts.markBuildForbiddenReauth",
   "accounts.buildForbiddenReauthCodes",
   "accounts.autoCleanReauthEnabled",
@@ -267,21 +279,21 @@ describe("settings route shell boundaries", () => {
     expect(dto.providerConsole).toEqual(config.providerConsole);
   });
 
-  it("covers the 58-field upstream v3.0.10 settings contract without duplicates", () => {
-    expect(UPSTREAM_V3010_SETTINGS_CONTRACT).toHaveLength(58);
-    expect(new Set(UPSTREAM_V3010_SETTINGS_CONTRACT).size).toBe(58);
+  it("covers the 62-field upstream v3.1.2 settings contract without duplicates", () => {
+    expect(UPSTREAM_V312_SETTINGS_CONTRACT).toHaveLength(62);
+    expect(new Set(UPSTREAM_V312_SETTINGS_CONTRACT).size).toBe(62);
     const form = toSettingsForm(settingsConfigFixture());
     const contractView = {
       ...form,
       providerBuild: { ...form.providerBuild, tokenAuthConfigured: true },
     };
-    expect(UPSTREAM_V3010_SETTINGS_CONTRACT.filter((path) => !hasPath(contractView, path))).toEqual(
+    expect(UPSTREAM_V312_SETTINGS_CONTRACT.filter((path) => !hasPath(contractView, path))).toEqual(
       [],
     );
   });
 
   it("partitions the legacy general surface without a field omission or duplicate", () => {
-    const editableGeneralFields = UPSTREAM_V3010_SETTINGS_CONTRACT.filter((path) =>
+    const editableGeneralFields = UPSTREAM_V312_SETTINGS_CONTRACT.filter((path) =>
       /^(server|batch|routing|audit|clientKeyDefaults|accounts)\./.test(path),
     );
     const generalPanelFields = getSettingsPanelFieldPaths(settingsGeneralPanelSource);

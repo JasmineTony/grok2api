@@ -60,6 +60,7 @@ export type AccountsWorkspaceProps = {
   batchTokenMutation: VoidMutation;
   setBatchDeleteOpen: Dispatch<SetStateAction<boolean>>;
   setSyncAllOpen: Dispatch<SetStateAction<boolean>>;
+  openDetectDialog: (mode: "selected" | "all") => void;
   setRenewAllOpen: Dispatch<SetStateAction<boolean>>;
   setCleanupStatuses: Dispatch<SetStateAction<Set<AccountCleanupStatus>>>;
   setCleanupOpen: Dispatch<SetStateAction<boolean>>;

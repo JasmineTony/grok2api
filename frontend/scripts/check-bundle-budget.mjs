@@ -30,9 +30,9 @@ const budgets = [
     maxGzip: 35_000,
     label: "Lucide shared chunk",
   },
-  // Raw grew past 90 KB with the upstream v3.0.11 egress/audit UI. Gzip is the number that
-  // reaches users and still has ~20% headroom, so only the raw ceiling was raised.
-  { pattern: /^index-.*\.css$/, maxRaw: 95_000, maxGzip: 20_000, label: "application CSS" },
+  // Raw grew past 90 KB with the upstream v3.0.11 egress/audit UI and the v3.1.2 settings/media surfaces.
+  // Gzip is the number that reaches users and still has headroom, so keep a bounded raw ceiling.
+  { pattern: /^index-.*\.css$/, maxRaw: 100_000, maxGzip: 20_000, label: "application CSS" },
 ];
 
 const files = readdirSync(assetsDir).map((name) => {

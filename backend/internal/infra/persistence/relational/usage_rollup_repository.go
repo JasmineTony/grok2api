@@ -172,8 +172,8 @@ func (r *UsageRollupRepository) aggregateHours(tx *gorm.DB, start, end time.Time
 func usageRollupAggregateSelect(table string) string {
 	if table == "request_audits" {
 		return "COUNT(*) AS requests, " +
-			"COALESCE(SUM(CASE WHEN status_code >= 200 AND status_code < 300 THEN 1 ELSE 0 END), 0) AS successful_requests, " +
-			"COALESCE(SUM(CASE WHEN status_code < 200 OR status_code >= 300 THEN 1 ELSE 0 END), 0) AS failed_requests, " +
+			"COALESCE(SUM(CASE WHEN status_code >= 200 AND status_code < 300 AND COALESCE(error_code, '') = '' THEN 1 ELSE 0 END), 0) AS successful_requests, " +
+			"COALESCE(SUM(CASE WHEN status_code < 200 OR status_code >= 300 OR COALESCE(error_code, '') <> '' THEN 1 ELSE 0 END), 0) AS failed_requests, " +
 			"COALESCE(SUM(input_tokens), 0) AS input_tokens, COALESCE(SUM(cached_input_tokens), 0) AS cached_input_tokens, " +
 			"COALESCE(SUM(output_tokens), 0) AS output_tokens, COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens, " +
 			"COALESCE(SUM(total_tokens), 0) AS total_tokens, COALESCE(SUM(cost_in_usd_ticks), 0) AS actual_cost_usd_ticks, " +

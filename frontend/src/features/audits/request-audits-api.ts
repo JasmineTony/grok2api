@@ -1,6 +1,7 @@
-import { type ApiClient } from "@/shared/api/client";
+﻿import { type ApiClient, type PaginatedDTO } from "@/shared/api/client";
 import {
   createObjectDecoder,
+  createPaginatedDecoder,
   hasShape,
   isArrayOf,
   isBoolean,
@@ -14,6 +15,26 @@ import type { PeriodValue } from "@/shared/lib/period";
 import type { SortOrder } from "@/shared/lib/table-sort";
 
 export type AuditPeriod = PeriodValue;
+
+export type AuditClientKeyFilterOptionDTO = { id: string; name: string; prefix: string };
+export type AuditAccountFilterOptionDTO = {
+  id: string;
+  name?: string;
+  email?: string;
+  provider: "grok_build" | "grok_web" | "grok_console";
+};
+
+const decodeAuditClientKeyFilterPage = createPaginatedDecoder<AuditClientKeyFilterOptionDTO>(
+  hasShape({ id: isString, name: isString, prefix: isString }),
+);
+const decodeAuditAccountFilterPage = createPaginatedDecoder<AuditAccountFilterOptionDTO>(
+  hasShape({
+    id: isString,
+    name: isOptional(isString),
+    email: isOptional(isString),
+    provider: isOneOf("grok_build", "grok_web", "grok_console"),
+  }),
+);
 
 export type AuditBillingComponentDTO = {
   kind:
@@ -52,6 +73,7 @@ export type AuditDTO = {
   egressScope?:
     "grok_build" | "grok_web" | "grok_console" | "grok_web_asset" | "grok_console_asset";
   egressMode?: "direct" | "proxy";
+  // A zero status denotes a stream failure after the 2xx response headers were returned.
   statusCode: number;
   streaming: boolean;
   mediaInputImages: number;
@@ -293,6 +315,24 @@ type AuditQuery = {
   sortBy?: string;
   sortOrder?: SortOrder;
 };
+
+export function listAuditClientKeyFilterOptions(
+  client: ApiClient,
+  input: { pageSize: number; search?: string },
+): Promise<PaginatedDTO<AuditClientKeyFilterOptionDTO>> {
+  const query = new URLSearchParams({ page: "1", pageSize: String(input.pageSize) });
+  if (input.search) query.set("search", input.search);
+  return client.request(`/api/admin/v1/client-keys?${query}`, {}, decodeAuditClientKeyFilterPage);
+}
+
+export function listAuditAccountFilterOptions(
+  client: ApiClient,
+  input: { pageSize: number; search?: string },
+): Promise<PaginatedDTO<AuditAccountFilterOptionDTO>> {
+  const query = new URLSearchParams({ page: "1", pageSize: String(input.pageSize) });
+  if (input.search) query.set("search", input.search);
+  return client.request(`/api/admin/v1/accounts?${query}`, {}, decodeAuditAccountFilterPage);
+}
 
 export function getRequestAudits(
   client: ApiClient,

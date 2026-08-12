@@ -89,6 +89,7 @@ export function AccountsDataTable(props: AccountsWorkspaceProps) {
     batchTokenMutation,
     setBatchDeleteOpen,
     setSyncAllOpen,
+    openDetectDialog,
     setRenewAllOpen,
     setCleanupStatuses,
     setCleanupOpen,
@@ -336,6 +337,16 @@ export function AccountsDataTable(props: AccountsWorkspaceProps) {
                   {t("webAccountScripts.action")}
                 </Button>
               ) : null}
+              {provider === "grok_build" ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={bulkTaskPending}
+                  onClick={() => openDetectDialog("selected")}
+                >
+                  {t("accounts.detectAction")}
+                </Button>
+              ) : null}
               <Button
                 variant="secondary"
                 size="sm"
@@ -403,6 +414,16 @@ export function AccountsDataTable(props: AccountsWorkspaceProps) {
                   onClick={() => setWebAccountScriptsTargets("all")}
                 >
                   {t("webAccountScripts.action")}
+                </Button>
+              ) : null}
+              {hasProviderAccounts && provider === "grok_build" ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={bulkTaskPending}
+                  onClick={() => openDetectDialog("all")}
+                >
+                  {t("accounts.detectAction")}
                 </Button>
               ) : null}
               {hasProviderAccounts ? (

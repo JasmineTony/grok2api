@@ -262,7 +262,7 @@ export function withExampleModel(
 
 export function fallbackModel(key: string): string {
   if (key.startsWith("image/"))
-    return key === "image/edits" ? "grok-imagine-image-edit" : "grok-imagine-image";
+    return key === "image/edits" ? "grok-imagine-image-edit" : "grok-imagine-image-lite";
   if (key.startsWith("video/")) return "grok-imagine-video";
   return "your-enabled-model";
 }

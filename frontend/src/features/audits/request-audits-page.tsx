@@ -30,6 +30,7 @@ import {
   RequestValue,
   UsageDetails,
 } from "@/features/audits/request-audits-components";
+import { useRequestAuditFilterOptions } from "@/features/audits/use-request-audit-filter-options";
 import { useApiClient } from "@/shared/api/use-api-client";
 import { EmptyState, ErrorState, TableLoadingRow } from "@/shared/components/data-state";
 import { DataTableFilters } from "@/shared/components/data-table-filters";
@@ -55,6 +56,10 @@ export function RequestAuditsPage() {
   const [modeFilter, setModeFilter] = useState("");
   const [keyFilter, setKeyFilter] = useState("");
   const [accountFilter, setAccountFilter] = useState("");
+  const [keyFilterOptionsOpen, setKeyFilterOptionsOpen] = useState(false);
+  const [accountFilterOptionsOpen, setAccountFilterOptionsOpen] = useState(false);
+  const [keyFilterOptionsSearch, setKeyFilterOptionsSearch] = useState("");
+  const [accountFilterOptionsSearch, setAccountFilterOptionsSearch] = useState("");
   const [periodDays, setPeriodDays] = useState<PeriodDays>(1);
   const [sort, setSort] = useState<TableSort>({ field: "createdAt", order: "desc" });
   const [manualRefreshing, setManualRefreshing] = useState(false);
@@ -129,6 +134,15 @@ export function RequestAuditsPage() {
     queryFn: () => listModels(apiClient, { page: 1, pageSize: 100 }),
     staleTime: 60_000,
   });
+  const { keyGroups: keyFilterGroups, accountGroups: accountFilterGroups } =
+    useRequestAuditFilterOptions({
+      apiClient,
+      keyOpen: keyFilterOptionsOpen,
+      accountOpen: accountFilterOptionsOpen,
+      keySearch: keyFilterOptionsSearch,
+      accountSearch: accountFilterOptionsSearch,
+      t,
+    });
   const result = auditsQuery.data;
   const summary = summaryQuery.data;
   const summaryLoading = summaryQuery.isPending || summaryQuery.isPlaceholderData;
@@ -229,6 +243,7 @@ export function RequestAuditsPage() {
                       { value: "2xx", label: `2xx · ${t("audits.statusSuccess")}` },
                       { value: "4xx", label: `4xx · ${t("audits.statusClientError")}` },
                       { value: "5xx", label: `5xx · ${t("audits.statusServerError")}` },
+                      { value: "other", label: t("audits.statusOtherError") },
                     ],
                   },
                   {
@@ -246,25 +261,47 @@ export function RequestAuditsPage() {
                   },
                   {
                     id: "key",
-                    type: "text",
                     label: t("audits.key"),
                     value: keyFilter,
-                    placeholder: t("audits.keyFilterPlaceholder"),
                     onChange: (value) => {
-                      setKeyFilter(value);
+                      setKeyFilter(value === "any" ? "" : value);
                       setCursors([""]);
                     },
+                    options: [
+                      {
+                        value: "any",
+                        label: t("audits.key"),
+                        groups: keyFilterGroups,
+                        onGroupsOpenChange: setKeyFilterOptionsOpen,
+                        groupSearch: {
+                          value: keyFilterOptionsSearch,
+                          placeholder: t("audits.keyFilterPlaceholder"),
+                          onChange: setKeyFilterOptionsSearch,
+                        },
+                      },
+                    ],
                   },
                   {
                     id: "account",
-                    type: "text",
                     label: t("audits.account"),
                     value: accountFilter,
-                    placeholder: t("audits.accountFilterPlaceholder"),
                     onChange: (value) => {
-                      setAccountFilter(value);
+                      setAccountFilter(value === "any" ? "" : value);
                       setCursors([""]);
                     },
+                    options: [
+                      {
+                        value: "any",
+                        label: t("audits.account"),
+                        groups: accountFilterGroups,
+                        onGroupsOpenChange: setAccountFilterOptionsOpen,
+                        groupSearch: {
+                          value: accountFilterOptionsSearch,
+                          placeholder: t("audits.accountFilterPlaceholder"),
+                          onChange: setAccountFilterOptionsSearch,
+                        },
+                      },
+                    ],
                   },
                 ]}
               />

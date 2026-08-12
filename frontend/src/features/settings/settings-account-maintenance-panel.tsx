@@ -49,6 +49,30 @@ export function SettingsAccountMaintenancePanel({
 
   return (
     <div className="space-y-8">
+      <SettingsSection title={t("settings.accounts.botRiskSchedulingTitle")}>
+        <div className="space-y-0">
+          <SettingsField
+            controlId="accounts-exclude-build-bot-flagged"
+            label={t("settings.accounts.excludeBuildBotFlaggedFromScheduling")}
+            description={t("settings.accounts.excludeBuildBotFlaggedFromSchedulingHelp")}
+          >
+            <Controller
+              control={form.control}
+              name="accounts.excludeBuildBotFlaggedFromScheduling"
+              render={({ field }) => (
+                <div className="flex h-9 items-center">
+                  <Switch
+                    id="accounts-exclude-build-bot-flagged"
+                    checked={Boolean(field.value)}
+                    onCheckedChange={field.onChange}
+                  />
+                </div>
+              )}
+            />
+          </SettingsField>
+        </div>
+      </SettingsSection>
+
       <SettingsSection title={t("settingsBuildForbidden.title")}>
         <div className="space-y-0">
           <SettingsField

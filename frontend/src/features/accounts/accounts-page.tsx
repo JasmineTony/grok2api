@@ -57,6 +57,13 @@ export function AccountsPage() {
     batchTokenMutation,
     setBatchDeleteOpen,
     setSyncAllOpen,
+    detectMode,
+    detectMutation,
+    detectProgress,
+    detectItems,
+    detectCounts,
+    openDetectDialog,
+    closeDetectDialog,
     setRenewAllOpen,
     setCleanupStatuses,
     setCleanupOpen,
@@ -196,6 +203,7 @@ export function AccountsPage() {
         batchTokenMutation={batchTokenMutation}
         setBatchDeleteOpen={setBatchDeleteOpen}
         setSyncAllOpen={setSyncAllOpen}
+        openDetectDialog={openDetectDialog}
         setRenewAllOpen={setRenewAllOpen}
         setCleanupStatuses={setCleanupStatuses}
         setCleanupOpen={setCleanupOpen}
@@ -265,6 +273,20 @@ export function AccountsPage() {
           exportPending: exportMutation.isPending,
           onExportOpenChange: setExportOpen,
           onExport: () => exportMutation.mutate(),
+        }}
+        detect={{
+          mode: detectMode,
+          selectedCount: selected.size,
+          pending: detectMutation.isPending,
+          progress: detectProgress,
+          items: detectItems,
+          counts: detectCounts,
+          onOpenChange: (open) => {
+            if (!open) closeDetectDialog();
+          },
+          onRun: () => {
+            if (detectMode) detectMutation.mutate(detectMode);
+          },
         }}
         egressBulk={{
           open: egressConfigurationOpen,

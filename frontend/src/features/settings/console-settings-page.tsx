@@ -40,6 +40,24 @@ export function ConsoleSettingsPage() {
               )}
             />
           </SettingsField>
+          <SettingsField
+            controlId="console-stream-idle-timeout"
+            label={t("settings.console.streamIdleTimeout")}
+            description={t("settings.console.streamIdleTimeoutHelp")}
+            error={form.formState.errors.providerConsole?.streamIdleTimeout?.message}
+          >
+            <Controller
+              control={form.control}
+              name="providerConsole.streamIdleTimeout"
+              render={({ field }) => (
+                <DurationInput
+                  id="console-stream-idle-timeout"
+                  value={field.value}
+                  onChange={field.onChange}
+                />
+              )}
+            />
+          </SettingsField>
         </div>
       </SettingsSection>
     </div>

@@ -83,11 +83,13 @@ export function AutomationRow({
   controlId,
   label,
   description,
+  error,
   children,
 }: {
   controlId: string;
   label: string;
   description: string;
+  error?: string;
   children: ReactNode;
 }) {
   return (
@@ -100,6 +102,7 @@ export function AutomationRow({
             </Label>
           </div>
           <p className="mt-1 max-w-xl text-xs leading-5 text-muted-foreground">{description}</p>
+          {error ? <p className="mt-1 text-xs text-destructive">{error}</p> : null}
         </div>
         <div className="min-w-0">{children}</div>
       </div>

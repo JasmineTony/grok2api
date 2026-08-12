@@ -158,6 +158,7 @@ type BuildProviderConfig struct {
 	TokenAuth             string   `yaml:"tokenAuth"`
 	UserAgent             string   `yaml:"userAgent"`
 	ResponseHeaderTimeout Duration `yaml:"-"`
+	StreamIdleTimeout     Duration `yaml:"-"`
 }
 
 // DefaultBuildFallbackBaseURL 是主 Build API 对可回退推理操作 403 时探测的 XAI API 根地址。
@@ -174,6 +175,7 @@ type WebProviderConfig struct {
 	ClearanceRefresh    Duration `yaml:"-"`
 	QuotaTimeout        Duration `yaml:"quotaTimeout"`
 	ChatTimeout         Duration `yaml:"chatTimeout"`
+	StreamIdleTimeout   Duration `yaml:"-"`
 	ImageTimeout        Duration `yaml:"imageTimeout"`
 	VideoTimeout        Duration `yaml:"videoTimeout"`
 	MediaConcurrency    int      `yaml:"mediaConcurrency"`
@@ -183,9 +185,10 @@ type WebProviderConfig struct {
 }
 
 type ConsoleProviderConfig struct {
-	BaseURL         string   `yaml:"baseURL"`
-	LegacyUserAgent string   `yaml:"userAgent"` // Deprecated: 仅用于兼容旧配置文件，不参与请求。
-	ChatTimeout     Duration `yaml:"chatTimeout"`
+	BaseURL           string   `yaml:"baseURL"`
+	LegacyUserAgent   string   `yaml:"userAgent"` // Deprecated: 仅用于兼容旧配置文件，不参与请求。
+	ChatTimeout       Duration `yaml:"chatTimeout"`
+	StreamIdleTimeout Duration `yaml:"-"`
 }
 
 // BatchConfig 定义可热加载的账号批量任务并发上限。
@@ -211,12 +214,13 @@ type LocalMediaConfig struct {
 }
 
 type RoutingConfig struct {
-	StickyTTL                   Duration `yaml:"stickyTTL"`
-	CooldownBase                Duration `yaml:"cooldownBase"`
-	CooldownMax                 Duration `yaml:"cooldownMax"`
-	CapacityWait                Duration `yaml:"capacityWait"`
-	MaxAttempts                 int      `yaml:"maxAttempts"`
-	PreferFreeBuild             bool     `yaml:"preferFreeBuild"`
+	StickyTTL       Duration `yaml:"stickyTTL"`
+	CooldownBase    Duration `yaml:"cooldownBase"`
+	CooldownMax     Duration `yaml:"cooldownMax"`
+	CapacityWait    Duration `yaml:"capacityWait"`
+	MaxAttempts     int      `yaml:"maxAttempts"`
+	PreferFreeBuild bool     `yaml:"preferFreeBuild"`
+	// MarkBuildChatDeniedAsReauth marks denied Build chat credentials as requiring reauthentication when enabled.
 	MarkBuildChatDeniedAsReauth bool     `yaml:"markBuildChatDeniedAsReauth"`
 	AccountIsolatedConnections  bool     `yaml:"accountIsolatedConnections"`
 	SegmentedSelectorEnabled    bool     `yaml:"segmentedSelectorEnabled"`
@@ -303,10 +307,13 @@ type ClientKeyDefaultsConfig struct {
 type AccountsConfig struct {
 	MarkBuildForbiddenReauth  bool
 	BuildForbiddenReauthCodes []string
-	AutoCleanReauthEnabled    bool
-	AutoCleanReauthInterval   Duration
-	AutoCleanReauthMinAge     Duration
-	AutoCleanIncludeDisabled  bool
+	// ExcludeBuildBotFlaggedFromScheduling removes Build accounts with bot_flag_source/bfs in {1,2}
+	// from scheduling only. Linked Web/Console accounts are unaffected.
+	ExcludeBuildBotFlaggedFromScheduling bool
+	AutoCleanReauthEnabled               bool
+	AutoCleanReauthInterval              Duration
+	AutoCleanReauthMinAge                Duration
+	AutoCleanIncludeDisabled             bool
 }
 
 type Secrets struct {
@@ -582,6 +589,9 @@ func (c Config) Validate() error {
 	if timeout := c.Provider.Build.ResponseHeaderTimeout.Value(); timeout < settingsdomain.MinBuildResponseHeaderTimeout || timeout > settingsdomain.MaxBuildResponseHeaderTimeout {
 		return errors.New("provider.build response header timeout must be between 30 seconds and 30 minutes")
 	}
+	if idle := c.Provider.Build.StreamIdleTimeout.Value(); idle < settingsdomain.MinBuildStreamIdleTimeout || idle > settingsdomain.MaxBuildStreamIdleTimeout {
+		return errors.New("Grok Build 流式空闲超时必须在 30 秒到 10 分钟之间")
+	}
 	webURL, err := url.ParseRequestURI(strings.TrimSpace(c.Provider.Web.BaseURL))
 	if err != nil || webURL.Scheme != "https" || webURL.Host == "" || webURL.User != nil {
 		return errors.New("provider.web.baseURL 必须是无凭据的 HTTPS URL")
@@ -619,6 +629,9 @@ func (c Config) Validate() error {
 		c.Provider.Web.VideoTimeout.Value() < time.Minute || c.Provider.Web.VideoTimeout.Value() > 2*time.Hour {
 		return errors.New("provider.web 上游超时配置无效")
 	}
+	if idle := c.Provider.Web.StreamIdleTimeout.Value(); idle < settingsdomain.MinProviderStreamIdleTimeout || idle > settingsdomain.MaxProviderStreamIdleTimeout {
+		return errors.New("Grok Web 流式空闲超时必须在 30 秒到 10 分钟之间")
+	}
 	if c.Provider.Web.MediaConcurrency < 1 || c.Provider.Web.MediaConcurrency > 64 {
 		return errors.New("provider.web 媒体并发必须在 1 到 64 之间")
 	}
@@ -628,6 +641,9 @@ func (c Config) Validate() error {
 	}
 	if c.Provider.Console.ChatTimeout.Value() < 5*time.Second || c.Provider.Console.ChatTimeout.Value() > 30*time.Minute {
 		return errors.New("provider.console.chatTimeout 必须在 5 秒到 30 分钟之间")
+	}
+	if idle := c.Provider.Console.StreamIdleTimeout.Value(); idle < settingsdomain.MinProviderStreamIdleTimeout || idle > settingsdomain.MaxProviderStreamIdleTimeout {
+		return errors.New("Grok Console 流式空闲超时必须在 30 秒到 10 分钟之间")
 	}
 	if c.Batch.ImportConcurrency < 1 || c.Batch.ImportConcurrency > 50 ||
 		c.Batch.ConversionConcurrency < 1 || c.Batch.ConversionConcurrency > 50 ||
@@ -818,19 +834,21 @@ func defaultConfig() Config {
 			Build: BuildProviderConfig{
 				BaseURL: "https://cli-chat-proxy.grok.com/v1", FallbackBaseURL: DefaultBuildFallbackBaseURL,
 				ClientVersion: RecommendedBuildClientVersion, ClientIdentifier: "grok-shell", TokenAuth: "xai-grok-cli",
-				UserAgent: RecommendedBuildUserAgent, ResponseHeaderTimeout: Duration(5 * time.Minute),
+				UserAgent: RecommendedBuildUserAgent, ResponseHeaderTimeout: Duration(settingsdomain.DefaultBuildResponseHeaderTimeout),
+				StreamIdleTimeout: Duration(settingsdomain.DefaultBuildStreamIdleTimeout),
 			},
 			Web: WebProviderConfig{
 				BaseURL: "https://grok.com", StatsigMode: StatsigModeURL, StatsigSignerURL: DefaultStatsigSignerURL,
 				ClearanceMode: ClearanceModeManual, FlareSolverrURL: DefaultFlareSolverrURL,
 				ClearanceTimeout: Duration(time.Minute), ClearanceRefresh: Duration(10 * time.Minute),
 				QuotaTimeout: Duration(25 * time.Second),
-				ChatTimeout:  Duration(2 * time.Minute), ImageTimeout: Duration(3 * time.Minute),
+				ChatTimeout:  Duration(2 * time.Minute), StreamIdleTimeout: Duration(settingsdomain.DefaultWebStreamIdleTimeout),
+				ImageTimeout:     Duration(3 * time.Minute),
 				VideoTimeout:     Duration(15 * time.Minute),
 				MediaConcurrency: 4, RecoveryBackoffBase: Duration(30 * time.Second),
 				RecoveryBackoffMax: Duration(30 * time.Minute),
 			},
-			Console: ConsoleProviderConfig{BaseURL: "https://console.x.ai", ChatTimeout: Duration(5 * time.Minute)},
+			Console: ConsoleProviderConfig{BaseURL: "https://console.x.ai", ChatTimeout: Duration(5 * time.Minute), StreamIdleTimeout: Duration(settingsdomain.DefaultConsoleStreamIdleTimeout)},
 		},
 		Batch: BatchConfig{
 			ImportConcurrency: 25, ConversionConcurrency: 25, SyncConcurrency: 25,
@@ -872,12 +890,13 @@ func defaultConfig() Config {
 		RequestSnapshots:  RequestSnapshotConfig{Enabled: false, TTL: Duration(24 * time.Hour)},
 		Backup:            BackupConfig{Root: "./data/backups", HookTimeout: Duration(2 * time.Minute)},
 		Accounts: AccountsConfig{
-			MarkBuildForbiddenReauth:  false,
-			BuildForbiddenReauthCodes: []string{"permission-denied"},
-			AutoCleanReauthEnabled:    false,
-			AutoCleanReauthInterval:   Duration(10 * time.Minute),
-			AutoCleanReauthMinAge:     Duration(time.Hour),
-			AutoCleanIncludeDisabled:  false,
+			MarkBuildForbiddenReauth:             false,
+			BuildForbiddenReauthCodes:            []string{"permission-denied"},
+			ExcludeBuildBotFlaggedFromScheduling: false,
+			AutoCleanReauthEnabled:               false,
+			AutoCleanReauthInterval:              Duration(10 * time.Minute),
+			AutoCleanReauthMinAge:                Duration(time.Hour),
+			AutoCleanIncludeDisabled:             false,
 		},
 	}
 }

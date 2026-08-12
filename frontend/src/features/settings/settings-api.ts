@@ -25,11 +25,13 @@ export type SettingsConfigDTO = {
     tokenAuthConfigured: boolean;
     userAgent: string;
     responseHeaderTimeout: string;
+    streamIdleTimeout: string;
   };
   providerWeb: {
     baseURL: string;
     quotaTimeout: string;
     chatTimeout: string;
+    streamIdleTimeout: string;
     imageTimeout: string;
     videoTimeout: string;
     statsigMode: "manual" | "url";
@@ -45,7 +47,7 @@ export type SettingsConfigDTO = {
     recoveryBackoffBase: string;
     recoveryBackoffMax: string;
   };
-  providerConsole: { baseURL: string; chatTimeout: string };
+  providerConsole: { baseURL: string; chatTimeout: string; streamIdleTimeout: string };
   batch: {
     importConcurrency: number;
     conversionConcurrency: number;
@@ -74,6 +76,7 @@ export type SettingsConfigDTO = {
   accounts: {
     markBuildForbiddenReauth: boolean;
     buildForbiddenReauthCodes: string[];
+    excludeBuildBotFlaggedFromScheduling: boolean;
     autoCleanReauthEnabled: boolean;
     autoCleanReauthInterval: string;
     autoCleanReauthMinAge: string;
@@ -155,6 +158,14 @@ export type EgressOperationsConfigDTO = {
   assignmentIntervalSeconds: number;
   fallbacks: Record<EgressScope, EgressFallbackConfigDTO>;
   updatedAt: string;
+  subscriptionProxyConfigured: boolean;
+};
+export type EgressOperationsConfigInput = Omit<
+  EgressOperationsConfigDTO,
+  "updatedAt" | "subscriptionProxyConfigured"
+> & {
+  subscriptionProxyURL?: string;
+  clearSubscriptionProxy?: boolean;
 };
 export type EgressImportResultDTO = { imported: number; skipped: number };
 export type EgressIPProbeDTO = {
@@ -212,11 +223,13 @@ const settingsConfigValidator = hasShape({
     tokenAuthConfigured: isBoolean,
     userAgent: isString,
     responseHeaderTimeout: isString,
+    streamIdleTimeout: isString,
   }),
   providerWeb: hasShape({
     baseURL: isString,
     quotaTimeout: isString,
     chatTimeout: isString,
+    streamIdleTimeout: isOptional(isString),
     imageTimeout: isString,
     videoTimeout: isString,
     statsigMode: isOneOf("manual", "url"),
@@ -232,7 +245,11 @@ const settingsConfigValidator = hasShape({
     recoveryBackoffBase: isString,
     recoveryBackoffMax: isString,
   }),
-  providerConsole: hasShape({ baseURL: isString, chatTimeout: isString }),
+  providerConsole: hasShape({
+    baseURL: isString,
+    chatTimeout: isString,
+    streamIdleTimeout: isOptional(isString),
+  }),
   batch: hasShape({
     importConcurrency: isNumber,
     conversionConcurrency: isNumber,
@@ -271,6 +288,7 @@ const settingsConfigValidator = hasShape({
     hasShape({
       markBuildForbiddenReauth: isBoolean,
       buildForbiddenReauthCodes: isArrayOf(isString),
+      excludeBuildBotFlaggedFromScheduling: isOptional(isBoolean),
       autoCleanReauthEnabled: isBoolean,
       autoCleanReauthInterval: isString,
       autoCleanReauthMinAge: isString,
@@ -288,6 +306,7 @@ const decodeSettingsSnapshotRaw = createObjectDecoder<SettingsSnapshotDTO>("sett
 const defaultAccountsConfig = (): SettingsConfigDTO["accounts"] => ({
   markBuildForbiddenReauth: false,
   buildForbiddenReauthCodes: [],
+  excludeBuildBotFlaggedFromScheduling: false,
   autoCleanReauthEnabled: false,
   autoCleanReauthInterval: "10m",
   autoCleanReauthMinAge: "1h",
@@ -295,11 +314,24 @@ const defaultAccountsConfig = (): SettingsConfigDTO["accounts"] => ({
 });
 const decodeSettingsSnapshot = (value: unknown): SettingsSnapshotDTO => {
   const snapshot = decodeSettingsSnapshotRaw(value);
+  const accounts = snapshot.config.accounts ?? defaultAccountsConfig();
   return {
     ...snapshot,
     config: {
       ...snapshot.config,
-      accounts: snapshot.config.accounts ?? defaultAccountsConfig(),
+      providerWeb: {
+        ...snapshot.config.providerWeb,
+        streamIdleTimeout: snapshot.config.providerWeb.streamIdleTimeout || "1m30s",
+      },
+      providerConsole: {
+        ...snapshot.config.providerConsole,
+        streamIdleTimeout: snapshot.config.providerConsole.streamIdleTimeout || "2m",
+      },
+      accounts: {
+        ...accounts,
+        excludeBuildBotFlaggedFromScheduling:
+          accounts.excludeBuildBotFlaggedFromScheduling ?? false,
+      },
     },
   };
 };
@@ -410,7 +442,14 @@ const egressFallbackConfigValidator = hasShape({
   mode: isOneOf("none", "direct", "fixed"),
   nodeId: isOptional(isString),
 });
-const decodeEgressOperationsConfig = createObjectDecoder<EgressOperationsConfigDTO>(
+type EgressOperationsConfigWireDTO = Omit<
+  EgressOperationsConfigDTO,
+  "probeProvider" | "subscriptionProxyConfigured"
+> & {
+  probeProvider?: "ipinfo" | "cloudflare";
+  subscriptionProxyConfigured?: boolean;
+};
+const decodeEgressOperationsConfigWire = createObjectDecoder<EgressOperationsConfigWireDTO>(
   "egress operations config",
   {
     probeProvider: isOneOf("ipinfo", "cloudflare"),
@@ -420,8 +459,17 @@ const decodeEgressOperationsConfig = createObjectDecoder<EgressOperationsConfigD
     assignmentIntervalSeconds: isNumber,
     fallbacks: isRecordOf(egressFallbackConfigValidator),
     updatedAt: isString,
+    subscriptionProxyConfigured: isOptional(isBoolean),
   },
 );
+const decodeEgressOperationsConfig = (value: unknown): EgressOperationsConfigDTO => {
+  const decoded = decodeEgressOperationsConfigWire(value);
+  return {
+    ...decoded,
+    probeProvider: decoded.probeProvider ?? "cloudflare",
+    subscriptionProxyConfigured: decoded.subscriptionProxyConfigured ?? false,
+  };
+};
 
 export function getSettings(client: ApiClient): Promise<SettingsSnapshotDTO> {
   return client.request("/api/admin/v1/settings", {}, decodeSettingsSnapshot);
@@ -614,7 +662,7 @@ export function getEgressOperationsConfig(client: ApiClient): Promise<EgressOper
 }
 export function updateEgressOperationsConfig(
   client: ApiClient,
-  input: Omit<EgressOperationsConfigDTO, "updatedAt">,
+  input: EgressOperationsConfigInput,
 ): Promise<EgressOperationsConfigDTO> {
   return client.request(
     "/api/admin/v1/egress-operations",
