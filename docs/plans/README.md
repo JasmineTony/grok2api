@@ -83,4 +83,4 @@ Templates are available in [`templates/`](./templates/).
 | 2026-08-07 28 - Upstream-aligned runtime settings UI and v3.5.2 release | [Plan](./2026-08-07-28-runtime-settings-ui-v3.5.2/PLAN.md) | [Result](./2026-08-07-28-runtime-settings-ui-v3.5.2/RESULT.md) | Complete |
 | 2026-08-10 29 - Project audit, release hardening, and v3.5.5 | [Plan](./2026-08-10-29-project-audit-v3.5.5/PLAN.md) | [Result](./2026-08-10-29-project-audit-v3.5.5/RESULT.md) | Complete |
 
-| 2026-08-11 30 - Upstream v3.1.2 integration and v3.5.6 release | [Plan](./2026-08-11-30-upstream-v3.1.2-v3.5.6/PLAN.md) | [Result](./2026-08-11-30-upstream-v3.1.2-v3.5.6/RESULT.md) | In progress |
+| 2026-08-11 30 - Upstream v3.1.2 integration and v3.5.6 release | [Plan](./2026-08-11-30-upstream-v3.1.2-v3.5.6/PLAN.md) | [Result](./2026-08-11-30-upstream-v3.1.2-v3.5.6/RESULT.md) | Complete |
