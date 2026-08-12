@@ -1,4 +1,4 @@
-﻿# Project plans and iteration archive
+# Project plans and iteration archive
 
 This directory is the canonical home for project plans, implementation iterations, and their completion records.
 
@@ -87,4 +87,4 @@ Templates are available in [`templates/`](./templates/).
 
 | 2026-08-12 31 - 页面布局优化与交互视觉改进 | [Plan](./2026-08-12-31-page-layout-optimization-v3.5.7/PLAN.md) | [Result](./2026-08-12-31-page-layout-optimization-v3.5.7/RESULT.md) | Complete |
 
-| 2026-08-12 32 - Responsive administration layout and v3.6.0 release | [Plan](./2026-08-12-32-v3.6.0-layout-release/PLAN.md) | [Result](./2026-08-12-32-v3.6.0-layout-release/RESULT.md) | In progress |
+| 2026-08-12 32 - Responsive administration layout and v3.6.0 release | [Plan](./2026-08-12-32-v3.6.0-layout-release/PLAN.md) | [Result](./2026-08-12-32-v3.6.0-layout-release/RESULT.md) | Complete |

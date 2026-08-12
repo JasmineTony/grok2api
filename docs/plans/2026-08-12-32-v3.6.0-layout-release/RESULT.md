@@ -1,58 +1,60 @@
 # Iteration result: responsive administration layout and v3.6.0 release
 
-- Date: 2026-08-12
-- Status: Local acceptance complete; remote publication pending
+- Date completed: 2026-08-12
+- Status: Complete
 - Base main commit: `39f0db2361ff336f55ab4a804d96c32e1b99e1d3`
-- Layout plan commit: `05daab08feb2e6a70eb00521a504262c07a6f734d`
 - Layout implementation commit: `7afd3b1a92eb0e06736167e69a0a2756e23cdbf8`
-- Accepted release-material commit: `5d34b7ee324a6bba70958fcee1682d9ff11c203d`
-- Pull request: Pending
-- Release commit: Pending
-- Annotated tag object: Pending
-- Release workflow: Pending
-- GHCR OCI index: Pending
-- Documentation closeout: Pending
+- Release-material commit: `5d34b7ee324a6bba70958fcee1682d9ff11c203d`
+- PR #58 head: `fe97539a451a129662ba3c61fb1ec463b710fe5c`
+- Delivery merge commit: `8e41ccf450f355158f02220f841f09107ec59d65`
+- Annotated tag object: `621ad55fa8e67b106e16ddfbc9871b102baf2a3b`
+- Tag peeled commit: `8e41ccf450f355158f02220f841f09107ec59d65`
+- Pull request: [#58](https://github.com/JasmineTony/grok2api/pull/58)
+- Release: [Grok2API v3.6.0](https://github.com/JasmineTony/grok2api/releases/tag/v3.6.0)
+- Release workflow: [run 31620488737](https://github.com/JasmineTony/grok2api/actions/runs/31620488737)
+- GHCR OCI index: `sha256:e44d761a493e402cb2664d872d90e2ad0ee4e48b2cb6f49cf47c5edfb4f63141`
+- Closeout evidence commit: `aac55e9db56da42c725c08397f1c5eff488f0715`
+- Closeout pull request: [#59](https://github.com/JasmineTony/grok2api/pull/59)
 
-## Delivered locally
+## Delivered
 
-- Unified application shell, content scaffold, page headers, table toolbars, and responsive layout landmarks.
-- Improved navigation touch targets, keyboard focus, sidebar scrollbar stability, and active settings-route visibility.
-- Standardized Models page title/description hierarchy and reduced Dashboard visual noise.
-- Hardened Creative Console width containment on narrow screens.
-- Added a mobile layout regression proving tables scroll locally while the document root remains within the viewport.
-- Updated canonical release identity, README, browser fixtures, release assertion, and release notes to `v3.6.0`.
+- Published the responsive administration-layout refresh built on the preserved upstream `v3.1.2` integration baseline.
+- Unified AppShell, page scaffold, page headers, data-table toolbars, settings navigation, Models, Dashboard, and Creative Console responsive behavior.
+- Added mobile layout regression coverage at 375/768/1440 widths and retained local table scrolling without document-root overflow.
+- Updated `VERSION`, README, E2E release fixtures/assertions, release notes, and plan records to `v3.6.0`.
+- Preserved public APIs, Provider behavior, persistence contracts, database compatibility, security boundaries, Go module path, and release-only GHCR publication.
 
-## Local verification results
+## Verification results
 
-| Check | Result | Notes |
+| Check | Result | Evidence |
 | --- | --- | --- |
-| Public remote baseline | Passed | HTTPS `main` is `39f0db2361ff336f55ab4a804d96c32e1b99e1d3`; latest public Release was `v3.5.6`; no open PRs |
-| Remote synchronization | Passed | Public remote main is an ancestor of local accepted branch; no unmerged paths |
-| Frontend format/type/lint | Passed | Prettier, `tsc -b`, ESLint zero warnings |
-| Frontend coverage | Passed | 16 test files, 47 tests |
-| Frontend production build | Passed | Vite build completed; bundle budget passed |
-| Frontend audits | Passed | Lucide/UI symbols, chunk cycles, Knip, code, architecture, and jscpd audits passed; one informational CSS Knip hint and six pre-existing low-rate clone blocks |
-| Chromium focused layout | Passed | Network settings, layout landmarks, settings hierarchy, and `v3.6.0` about identity all passed |
-| Backend test | Passed | `go test -p 1 ./...` with repository-local cache/temp paths |
-| Backend vet | Passed | `go vet ./...` |
-| Swagger drift | Passed | Swag v1.16.6 regeneration produced no tracked diff |
-| Release version audit | Passed | `VERSION`, README, fixtures, assertion, and release notes agree on `v3.6.0` |
-| Release automation tests | Passed | 10 tests |
-| Markdown audit | Passed | 99 tracked Markdown files; no removable files |
-| Git hygiene | Passed | `git diff --check`, unmerged-path check, and conflict-marker review passed |
-
-## Environment notes
-
-- Local Playwright assertions complete successfully, but the Windows Playwright webServer teardown remains running after results are printed and is stopped manually.
-- `make` is unavailable locally; the equivalent pinned Swagger command was run directly with repository-local Go cache, module cache, GOPATH, TEMP, and TMP.
-- Local `origin` SSH fetch currently lacks the repository-local strict known-hosts file. Public HTTPS remote verification works and is used for synchronization; authenticated delivery will use HTTPS plus the existing in-memory Git credential helper without printing credentials.
-- Full Windows desktop/tablet/mobile, Firefox/WebKit, backend race, govulncheck, actionlint, Gitleaks, and container matrix remain authoritative GitHub CI gates before merge.
+| Local frontend | Passed | Prettier, `tsc -b`, ESLint, 16 Vitest files/47 tests, Vite build |
+| Local frontend audits | Passed | Performance summary, Lucide/UI symbols, bundle budget, chunk cycles, Knip, code, architecture, jscpd |
+| Local backend | Passed | `go test -p 1 ./...`, `go vet ./...` with repository-local cache/temp paths |
+| Local repository | Passed | Swagger regeneration without diff, Markdown audit, release-version audit, 10 release automation tests, `git diff --check`, no unmerged paths/conflict markers |
+| Focused Chromium | Passed | Network settings, responsive landmarks at 375/768/1440, settings hierarchy, about identity, changelog release notes |
+| PR checks | Passed | All PR #58 CI/CodeQL checks passed, including Firefox/WebKit smoke, Visual regression, Backend race, Container health, Frontend quality, Repository audit, Workflow/secret audit, and all CodeQL languages |
+| PR merge | Passed | PR #58 true merge; parents `39f0db2361ff336f55ab4a804d96c32e1b99e1d3` and `fe97539a451a129662ba3c61fb1ec463b710fe5c` |
+| Release tag | Passed | Remote refs expose distinct annotated tag object and peeled merge commit |
+| GitHub Release | Passed | Release ID `369398749`, published, non-draft, non-prerelease, `Grok2API v3.6.0`, latest endpoint switched to v3.6.0 |
+| Release workflow | Passed | Run `31620488737`: Validate release, amd64 publish, arm64 publish, final tags, and smoke test all succeeded |
+| GHCR image | Passed | Final-tag log reports OCI index `sha256:e44d761a493e402cb2664d872d90e2ad0ee4e48b2cb6f49cf47c5edfb4f63141`; runtime manifests `linux/arm64` `sha256:3a45f0e2142e22faa9ac743530f0f00378c4ceb763fe1cf5b2d0f0381a504bfe` and `linux/amd64` `sha256:691ac0f9e410f59543d511e4a72b7af7893ba7929f2d5741b85a55f9f120a587`; attestation manifests are separate `unknown/unknown` entries |
+| GHCR aliases | Passed | Final-tag workflow pushed `v3.6.0`, `3.6.0`, `3.6`, `3`, and `latest` from the same two architecture sources; final `imagetools inspect` verified `v3.6.0` |
+| Published image health | Passed | Smoke test pulled digest `sha256:e44d761a493e402cb2664d872d90e2ad0ee4e48b2cb6f49cf47c5edfb4f63141` and `/healthz` exited successfully |
 
 ## Publication evidence
 
-Pending PR, merge, annotated tag, Release, protected release workflow, GHCR manifest, and published-image health proof.
+- Remote `main`: `8e41ccf450f355158f02220f841f09107ec59d65`.
+- Release tag `v3.6.0`: object `621ad55fa8e67b106e16ddfbc9871b102baf2a3b`, peeled commit `8e41ccf450f355158f02220f841f09107ec59d65`.
+- GitHub Release: ID `369398749`, published `2026-08-12T17:00:51Z`, stable and latest.
+- GHCR image: `ghcr.io/jasminetony/grok2api:v3.6.0` and aliases `3.6.0`, `3.6`, `3`, `latest`.
+- The local Docker CLI is unavailable, so registry evidence comes from the successful protected workflow logs; the workflow itself pulled the exact digest and passed `/healthz`.
 
-## Unresolved
+## Unresolved / follow-up
 
-- Remote branch, PR, tag, Release, GHCR aliases, and documentation closeout have not been published yet.
-- Existing local untracked `.claude/`, `.gomodcache/`, `.gopath/`, and Python cache directories remain excluded from the release.
+- Existing local untracked `.claude/`, `.gomodcache/`, `.gopath/`, `scripts/__pycache__/`, and `scripts/tests/__pycache__/` remain untouched and excluded from Git.
+- Documentation closeout is delivered through PR #59 without moving the immutable release tag; its merge produces a later docs-only `main` commit distinct from the release commit.
+
+## Rollback
+
+Keep deployments pinned to the previously verified `v3.5.6` digest if needed; never move `v3.6.0` tag. Any correction must ship as a new version.
