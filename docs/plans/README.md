@@ -84,3 +84,5 @@ Templates are available in [`templates/`](./templates/).
 | 2026-08-10 29 - Project audit, release hardening, and v3.5.5 | [Plan](./2026-08-10-29-project-audit-v3.5.5/PLAN.md) | [Result](./2026-08-10-29-project-audit-v3.5.5/RESULT.md) | Complete |
 
 | 2026-08-11 30 - Upstream v3.1.2 integration and v3.5.6 release | [Plan](./2026-08-11-30-upstream-v3.1.2-v3.5.6/PLAN.md) | [Result](./2026-08-11-30-upstream-v3.1.2-v3.5.6/RESULT.md) | Complete |
+
+| 2026-08-12 31 - 页面布局优化与交互视觉改进 | [Plan](./2026-08-12-31-page-layout-optimization-v3.5.7/PLAN.md) | [Result](./2026-08-12-31-page-layout-optimization-v3.5.7/RESULT.md) | In progress |
