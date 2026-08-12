@@ -162,7 +162,11 @@ test.describe("authenticated route boundaries @cross-browser", () => {
     await expect(
       page.getByRole("heading", { name: /Changelog|Release notes|\u66f4\u65b0\u8bf4\u660e/ }),
     ).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText("Upstream v3.1.2 integration")).toBeVisible({
+    await expect(
+      page
+        .locator("main")
+        .getByText(/Responsive administration layout|Upstream v3\.1\.2 integration/),
+    ).toBeVisible({
       timeout: 30_000,
     });
   });
