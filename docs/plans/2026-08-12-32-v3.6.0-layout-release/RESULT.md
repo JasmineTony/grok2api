@@ -1,11 +1,11 @@
-﻿# Iteration result: responsive administration layout and v3.6.0 release
+# Iteration result: responsive administration layout and v3.6.0 release
 
 - Date: 2026-08-12
 - Status: Local acceptance complete; remote publication pending
 - Base main commit: `39f0db2361ff336f55ab4a804d96c32e1b99e1d3`
 - Layout plan commit: `05daab08feb2e6a70eb00521a504262c07a6f734d`
 - Layout implementation commit: `7afd3b1a92eb0e06736167e69a0a2756e23cdbf8`
-- Accepted local branch head: Pending release-material commit
+- Accepted release-material commit: `5d34b7ee324a6bba70958fcee1682d9ff11c203d`
 - Pull request: Pending
 - Release commit: Pending
 - Annotated tag object: Pending
