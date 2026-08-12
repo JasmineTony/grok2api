@@ -29,6 +29,7 @@ function createSettingsSnapshotFixture() {
         tokenAuthConfigured: true,
         userAgent: "Grok/0.2.111",
         responseHeaderTimeout: "45s",
+        streamIdleTimeout: "1m30s",
       },
       providerWeb: {
         baseURL: "https://grok.com",
