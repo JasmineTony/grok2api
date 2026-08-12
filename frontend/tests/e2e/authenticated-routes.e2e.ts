@@ -91,6 +91,27 @@ test.describe("authenticated route boundaries @cross-browser", () => {
     }
   });
 
+  test("shared layout exposes stable responsive landmarks", async ({ authenticatedPage: page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto("/models");
+    await expectMainReady(page);
+    await expect(page.locator('[data-layout="app-shell"]')).toBeVisible();
+    await expect(page.locator('[data-layout="main-content"]')).toBeVisible();
+    await expect(page.locator('[data-layout="page-scaffold"]')).toBeVisible();
+    await expect(page.locator('[data-layout="page-header"]')).toBeVisible();
+    await expect(page.locator('[data-layout="data-table-shell"]')).toBeVisible();
+    const tableScroll = page.locator('[data-slot="table-scroll-container"]');
+    await expect(tableScroll).toBeVisible();
+    const localTableOverflow = await tableScroll.evaluate(
+      (element) => element.scrollWidth > element.clientWidth,
+    );
+    expect(localTableOverflow).toBe(true);
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > window.innerWidth + 1,
+    );
+    expect(overflow).toBe(false);
+  });
+
   test("runtime settings redirect and navigation preserve the split upstream hierarchy", async ({
     authenticatedPage: page,
   }) => {

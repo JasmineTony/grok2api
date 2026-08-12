@@ -166,7 +166,7 @@ export function CreativeConsolePage() {
   }
 
   return (
-    <div className="flex h-[calc(100dvh-5rem)] min-h-[36rem] flex-col gap-5 overflow-hidden">
+    <div className="flex h-[calc(100dvh-5rem)] min-h-[36rem] min-w-0 flex-col gap-5 overflow-hidden">
       <PageHeader
         title={t("creativeConsole.title")}
         description={t("creativeConsole.description")}
@@ -188,8 +188,8 @@ export function CreativeConsolePage() {
         </a>
       </aside>
 
-      <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="flex min-h-9 shrink-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="flex min-h-9 min-w-0 shrink-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <Tabs value={mode} onValueChange={(value) => setMode(value as CreativeMode)}>
             <TabsList className="h-9 w-full rounded-full bg-secondary/50 p-1 lg:w-auto">
               <TabsTrigger
@@ -248,7 +248,7 @@ export function CreativeConsolePage() {
           </div>
         </div>
 
-        <div className="shrink-0 space-y-2 px-3">
+        <div className="min-w-0 shrink-0 space-y-2">
           {keysQuery.isError ? (
             <RetryableError
               message={keysQuery.error.message}

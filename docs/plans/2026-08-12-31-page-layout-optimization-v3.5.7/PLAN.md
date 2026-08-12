@@ -2,7 +2,7 @@
 
 - Date: 2026-08-12
 - Sequence: 31
-- Status: In progress
+- Status: Complete
 - Base commit: $(git rev-parse HEAD)
 - Working branch: layout/optimization-v3.5.7-20260812
 
@@ -29,13 +29,13 @@
 
 ## Acceptance criteria
 
-- [ ] 全局布局在 375/768/1440 视口下无横向溢出，导航和操作可达。
-- [ ] 页面标题、辅助说明、主要操作和状态反馈层级清晰且一致。
-- [ ] 设置导航在移动端可滚动、当前项可见，桌面端分组边界明确。
-- [ ] loading/empty/error 状态不造成明显布局跳动。
-- [ ] 交互具备可见 focus、键盘可达、Reduced Motion 兼容。
-- [ ] Prettier、TypeScript、ESLint、Vitest、Vite build、bundle/chunk/code/architecture audits 通过。
-- [ ] 重点布局 E2E/组件测试通过。
+- [x] 全局布局在 375/768/1440 视口下无横向溢出，导航和操作可达。
+- [x] 页面标题、辅助说明、主要操作和状态反馈层级清晰且一致。
+- [x] 设置导航在移动端可滚动、当前项可见，桌面端分组边界明确。
+- [x] loading/empty/error 状态不造成明显布局跳动。
+- [x] 交互具备可见 focus、键盘可达、Reduced Motion 兼容。
+- [x] Prettier、TypeScript、ESLint、Vitest、Vite build、bundle/chunk/code/architecture audits 通过。
+- [x] 重点布局 E2E/组件测试通过。
 
 ## Verification
 

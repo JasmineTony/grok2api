@@ -28,6 +28,7 @@ import { ModelsTable } from "@/features/models/models-table";
 import { useApiClient } from "@/shared/api/use-api-client";
 import { DataTableFilters } from "@/shared/components/data-table-filters";
 import { DataTableShell } from "@/shared/components/data-table-shell";
+import { PageHeader } from "@/shared/components/page-header";
 import { Pagination } from "@/shared/components/pagination";
 import { useDebouncedValue } from "@/shared/hooks/use-debounced-value";
 import { nextTableSort, type SortOrder, type TableSort } from "@/shared/lib/table-sort";
@@ -270,10 +271,7 @@ export function ModelsPage() {
 
   return (
     <div className="space-y-5">
-      <header className="flex min-h-8 items-center">
-        <h1 className="text-xl font-medium">{t("models.title")}</h1>
-        <p className="sr-only">{t("models.description")}</p>
-      </header>
+      <PageHeader title={t("models.title")} description={t("models.description")} />
 
       <DataTableShell
         toolbar={

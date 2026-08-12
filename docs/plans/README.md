@@ -1,4 +1,4 @@
-# Project plans and iteration archive
+﻿# Project plans and iteration archive
 
 This directory is the canonical home for project plans, implementation iterations, and their completion records.
 
@@ -8,9 +8,9 @@ Each iteration must use its own directory:
 
 ```text
 docs/plans/
-└── YYYY-MM-DD-NN-short-slug/
-    ├── PLAN.md
-    └── RESULT.md
+鈹斺攢鈹€ YYYY-MM-DD-NN-short-slug/
+    鈹溾攢鈹€ PLAN.md
+    鈹斺攢鈹€ RESULT.md
 ```
 
 - `PLAN.md` is created before implementation and records scope, exclusions, ordered work, verification, risks, and acceptance criteria.
@@ -28,27 +28,27 @@ Templates are available in [`templates/`](./templates/).
 
 | Iteration                                          | Plan                                                            | Result                                                              | State    |
 | -------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------- | -------- |
-| 2026-07-19 01 — Repository initialization          | [Plan](./2026-07-19-01-repository-initialization/PLAN.md)       | [Result](./2026-07-19-01-repository-initialization/RESULT.md)       | Complete |
-| 2026-07-19 02 — Initial security hardening         | [Plan](./2026-07-19-02-initial-security-hardening/PLAN.md)      | [Result](./2026-07-19-02-initial-security-hardening/RESULT.md)      | Complete |
-| 2026-07-20 03 — Release pipeline hardening         | [Plan](./2026-07-20-03-release-pipeline-hardening/PLAN.md)      | [Result](./2026-07-20-03-release-pipeline-hardening/RESULT.md)      | Complete |
-| 2026-07-20 04 — Final acceptance                   | [Plan](./2026-07-20-04-final-acceptance/PLAN.md)                | [Result](./2026-07-20-04-final-acceptance/RESULT.md)                | Complete |
-| 2026-07-20 05 — Plan documentation standard        | [Plan](./2026-07-20-05-plan-documentation-standard/PLAN.md)     | [Result](./2026-07-20-05-plan-documentation-standard/RESULT.md)     | Complete |
-| 2026-07-20 06 — SSH agent and Chinese-first README | [Plan](./2026-07-20-06-ssh-agent-readme-simplification/PLAN.md) | [Result](./2026-07-20-06-ssh-agent-readme-simplification/RESULT.md) | Complete |
-| 2026-07-20 07 — Reliability platform foundation    | [Plan](./2026-07-20-07-reliability-platform-foundation/PLAN.md) | [Result](./2026-07-20-07-reliability-platform-foundation/RESULT.md) | Complete |
+| 2026-07-19 01 鈥?Repository initialization          | [Plan](./2026-07-19-01-repository-initialization/PLAN.md)       | [Result](./2026-07-19-01-repository-initialization/RESULT.md)       | Complete |
+| 2026-07-19 02 鈥?Initial security hardening         | [Plan](./2026-07-19-02-initial-security-hardening/PLAN.md)      | [Result](./2026-07-19-02-initial-security-hardening/RESULT.md)      | Complete |
+| 2026-07-20 03 鈥?Release pipeline hardening         | [Plan](./2026-07-20-03-release-pipeline-hardening/PLAN.md)      | [Result](./2026-07-20-03-release-pipeline-hardening/RESULT.md)      | Complete |
+| 2026-07-20 04 鈥?Final acceptance                   | [Plan](./2026-07-20-04-final-acceptance/PLAN.md)                | [Result](./2026-07-20-04-final-acceptance/RESULT.md)                | Complete |
+| 2026-07-20 05 鈥?Plan documentation standard        | [Plan](./2026-07-20-05-plan-documentation-standard/PLAN.md)     | [Result](./2026-07-20-05-plan-documentation-standard/RESULT.md)     | Complete |
+| 2026-07-20 06 鈥?SSH agent and Chinese-first README | [Plan](./2026-07-20-06-ssh-agent-readme-simplification/PLAN.md) | [Result](./2026-07-20-06-ssh-agent-readme-simplification/RESULT.md) | Complete |
+| 2026-07-20 07 鈥?Reliability platform foundation    | [Plan](./2026-07-20-07-reliability-platform-foundation/PLAN.md) | [Result](./2026-07-20-07-reliability-platform-foundation/RESULT.md) | Complete |
 
-| 2026-07-20 08 — Reliability platform roadmap completion | [Plan](./2026-07-20-08-reliability-platform-roadmap/PLAN.md) | [Result](./2026-07-20-08-reliability-platform-roadmap/RESULT.md) | Complete |
-| 2026-07-21 09 — Remote branch maintenance | [Plan](./2026-07-21-09-remote-branch-maintenance/PLAN.md) | [Result](./2026-07-21-09-remote-branch-maintenance/RESULT.md) | Complete |
-| 2026-07-21 10 — Exact upstream v3.0.6 sync | [Plan](./2026-07-21-10-upstream-v3.0.6-sync/PLAN.md) | [Result](./2026-07-21-10-upstream-v3.0.6-sync/RESULT.md) | Complete |
+| 2026-07-20 08 鈥?Reliability platform roadmap completion | [Plan](./2026-07-20-08-reliability-platform-roadmap/PLAN.md) | [Result](./2026-07-20-08-reliability-platform-roadmap/RESULT.md) | Complete |
+| 2026-07-21 09 鈥?Remote branch maintenance | [Plan](./2026-07-21-09-remote-branch-maintenance/PLAN.md) | [Result](./2026-07-21-09-remote-branch-maintenance/RESULT.md) | Complete |
+| 2026-07-21 10 鈥?Exact upstream v3.0.6 sync | [Plan](./2026-07-21-10-upstream-v3.0.6-sync/PLAN.md) | [Result](./2026-07-21-10-upstream-v3.0.6-sync/RESULT.md) | Complete |
 
-| 2026-07-21 11 — Chrome DevTools MCP performance | [Plan](./2026-07-21-11-chrome-devtools-performance/PLAN.md) | [Result](./2026-07-21-11-chrome-devtools-performance/RESULT.md) | Complete |
+| 2026-07-21 11 鈥?Chrome DevTools MCP performance | [Plan](./2026-07-21-11-chrome-devtools-performance/PLAN.md) | [Result](./2026-07-21-11-chrome-devtools-performance/RESULT.md) | Complete |
 
-| 2026-07-21 12 — Frontend architecture, UI, build and v3.1.0 release | [Plan](./2026-07-21-12-frontend-architecture-ui-build-release/PLAN.md) | [Result](./2026-07-21-12-frontend-architecture-ui-build-release/RESULT.md) | Complete |
+| 2026-07-21 12 鈥?Frontend architecture, UI, build and v3.1.0 release | [Plan](./2026-07-21-12-frontend-architecture-ui-build-release/PLAN.md) | [Result](./2026-07-21-12-frontend-architecture-ui-build-release/RESULT.md) | Complete |
 
-| 2026-07-22 13 — Release smoke remediation | [Plan](./2026-07-22-13-release-smoke-remediation/PLAN.md) | [Result](./2026-07-22-13-release-smoke-remediation/RESULT.md) | Complete |
-| 2026-07-22 14 — Frontend governance and component foundation | [Plan](./2026-07-22-14-frontend-governance-component-foundation/PLAN.md) | [Result](./2026-07-22-14-frontend-governance-component-foundation/RESULT.md) | Complete |
-| 2026-07-22 15 — Feature architecture and performance convergence | [Plan](./2026-07-22-15-feature-architecture-performance/PLAN.md) | [Result](./2026-07-22-15-feature-architecture-performance/RESULT.md) | Complete |
-| 2026-07-23 16 — Upstream v3.0.7 sync and dependency policy | [Plan](./2026-07-23-16-upstream-v3.0.7-dependency-policy/PLAN.md) | [Result](./2026-07-23-16-upstream-v3.0.7-dependency-policy/RESULT.md) | Complete |
-| 2026-07-23 17 — v3.1.1 release closeout | [Plan](./2026-07-23-17-v3.1.1-release-closeout/PLAN.md) | [Result](./2026-07-23-17-v3.1.1-release-closeout/RESULT.md) | Complete |
+| 2026-07-22 13 鈥?Release smoke remediation | [Plan](./2026-07-22-13-release-smoke-remediation/PLAN.md) | [Result](./2026-07-22-13-release-smoke-remediation/RESULT.md) | Complete |
+| 2026-07-22 14 鈥?Frontend governance and component foundation | [Plan](./2026-07-22-14-frontend-governance-component-foundation/PLAN.md) | [Result](./2026-07-22-14-frontend-governance-component-foundation/RESULT.md) | Complete |
+| 2026-07-22 15 鈥?Feature architecture and performance convergence | [Plan](./2026-07-22-15-feature-architecture-performance/PLAN.md) | [Result](./2026-07-22-15-feature-architecture-performance/RESULT.md) | Complete |
+| 2026-07-23 16 鈥?Upstream v3.0.7 sync and dependency policy | [Plan](./2026-07-23-16-upstream-v3.0.7-dependency-policy/PLAN.md) | [Result](./2026-07-23-16-upstream-v3.0.7-dependency-policy/RESULT.md) | Complete |
+| 2026-07-23 17 鈥?v3.1.1 release closeout | [Plan](./2026-07-23-17-v3.1.1-release-closeout/PLAN.md) | [Result](./2026-07-23-17-v3.1.1-release-closeout/RESULT.md) | Complete |
 
 | 2026-07-26 18 - Upstream v3.0.8-hotfix.1/v3.0.9 sync and settings split | [Plan](./2026-07-26-18-upstream-v3.0.9-settings-split/PLAN.md) | [Result](./2026-07-26-18-upstream-v3.0.9-settings-split/RESULT.md) | Complete |
 
@@ -85,4 +85,4 @@ Templates are available in [`templates/`](./templates/).
 
 | 2026-08-11 30 - Upstream v3.1.2 integration and v3.5.6 release | [Plan](./2026-08-11-30-upstream-v3.1.2-v3.5.6/PLAN.md) | [Result](./2026-08-11-30-upstream-v3.1.2-v3.5.6/RESULT.md) | Complete |
 
-| 2026-08-12 31 - 页面布局优化与交互视觉改进 | [Plan](./2026-08-12-31-page-layout-optimization-v3.5.7/PLAN.md) | [Result](./2026-08-12-31-page-layout-optimization-v3.5.7/RESULT.md) | In progress |
+| 2026-08-12 31 - 页面布局优化与交互视觉改进 | [Plan](./2026-08-12-31-page-layout-optimization-v3.5.7/PLAN.md) | [Result](./2026-08-12-31-page-layout-optimization-v3.5.7/RESULT.md) | Complete |
