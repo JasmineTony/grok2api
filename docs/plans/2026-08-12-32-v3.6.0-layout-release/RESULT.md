@@ -13,6 +13,8 @@
 - Release: [Grok2API v3.6.0](https://github.com/JasmineTony/grok2api/releases/tag/v3.6.0)
 - Release workflow: [run 31620488737](https://github.com/JasmineTony/grok2api/actions/runs/31620488737)
 - GHCR OCI index: `sha256:e44d761a493e402cb2664d872d90e2ad0ee4e48b2cb6f49cf47c5edfb4f63141`
+- Closeout evidence commit: `aac55e9db56da42c725c08397f1c5eff488f0715`
+- Closeout pull request: [#59](https://github.com/JasmineTony/grok2api/pull/59)
 
 ## Delivered
 
@@ -51,7 +53,7 @@
 ## Unresolved / follow-up
 
 - Existing local untracked `.claude/`, `.gomodcache/`, `.gopath/`, `scripts/__pycache__/`, and `scripts/tests/__pycache__/` remain untouched and excluded from Git.
-- Documentation closeout PR remains to be created so publication evidence can be recorded on `main` without moving the immutable release tag.
+- Documentation closeout is delivered through PR #59 without moving the immutable release tag; its merge produces a later docs-only `main` commit distinct from the release commit.
 
 ## Rollback
 

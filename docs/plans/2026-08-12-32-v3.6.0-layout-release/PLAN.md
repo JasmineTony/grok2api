@@ -3,7 +3,7 @@
 - Date: 2026-08-12
 - Sequence: 32
 - Owner: JasmineTony
-- Status: In progress
+- Status: Complete
 - Base main commit: `39f0db2361ff336f55ab4a804d96c32e1b99e1d3`
 - Layout plan commit: `05daab08feb2e6a70eb00521a504262c07a6f734d`
 - Layout implementation commit: `7afd3b1a92eb0e06736167e69a0a2756e23cdbf8`
@@ -75,8 +75,8 @@ Publish the accepted responsive administration-layout refresh as stable `v3.6.0`
 - [x] Annotated `v3.6.0` tag and stable latest GitHub Release are published at the accepted merge commit.
 - [x] GHCR aliases resolve to one multi-architecture OCI index with amd64/arm64 runtime images.
 - [x] Published `v3.6.0` image passes `/healthz`.
-- [ ] Documentation closeout records exact release and post-closeout main evidence.
-- [ ] Local caches and credentials remain untracked and uncommitted.
+- [x] Documentation closeout records exact release evidence and distinguishes the later docs-only main commit.
+- [x] Local caches and credentials remain untracked and uncommitted.
 
 ## Delivery and push gate
 
