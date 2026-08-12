@@ -7,7 +7,7 @@
 - Integration commit: `a4046a2a5c1e681f4dea5ae60087ebfd349c2031`
 - Accepted release-branch head: `7d5c8fb378a9a7ac135e2c75f771c02a88ff81cb`
 - Release commit: `4cc820aadf8656d70654d541df2b89a0de44f377`
-- Final closeout commit: Pending this documentation-only closeout
+- Closeout evidence commit: `7a6ce2b3349e7b0eebaeaf95290071aa5f68d688`
 - Pull request: [#56](https://github.com/JasmineTony/grok2api/pull/56)
 - Release: [Grok2API v3.5.6](https://github.com/JasmineTony/grok2api/releases/tag/v3.5.6)
 - Release workflow: [run 31551376271](https://github.com/JasmineTony/grok2api/actions/runs/31551376271)
