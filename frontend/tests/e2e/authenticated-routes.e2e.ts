@@ -91,26 +91,36 @@ test.describe("authenticated route boundaries @cross-browser", () => {
     }
   });
 
-  test("shared layout exposes stable responsive landmarks", async ({ authenticatedPage: page }) => {
-    await page.setViewportSize({ width: 375, height: 812 });
-    await page.goto("/models");
-    await expectMainReady(page);
-    await expect(page.locator('[data-layout="app-shell"]')).toBeVisible();
-    await expect(page.locator('[data-layout="main-content"]')).toBeVisible();
-    await expect(page.locator('[data-layout="page-scaffold"]')).toBeVisible();
-    await expect(page.locator('[data-layout="page-header"]')).toBeVisible();
-    await expect(page.locator('[data-layout="data-table-shell"]')).toBeVisible();
-    const tableScroll = page.locator('[data-slot="table-scroll-container"]');
-    await expect(tableScroll).toBeVisible();
-    const localTableOverflow = await tableScroll.evaluate(
-      (element) => element.scrollWidth > element.clientWidth,
-    );
-    expect(localTableOverflow).toBe(true);
-    const overflow = await page.evaluate(
-      () => document.documentElement.scrollWidth > window.innerWidth + 1,
-    );
-    expect(overflow).toBe(false);
-  });
+  for (const viewport of [
+    { name: "mobile", width: 375, height: 812 },
+    { name: "tablet", width: 768, height: 1024 },
+    { name: "desktop", width: 1440, height: 1000 },
+  ]) {
+    test(`shared layout exposes stable responsive landmarks at ${viewport.name} width`, async ({
+      authenticatedPage: page,
+    }) => {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      await page.goto("/models");
+      await expectMainReady(page);
+      await expect(page.locator('[data-layout="app-shell"]')).toBeVisible();
+      await expect(page.locator('[data-layout="main-content"]')).toBeVisible();
+      await expect(page.locator('[data-layout="page-scaffold"]')).toBeVisible();
+      await expect(page.locator('[data-layout="page-header"]')).toBeVisible();
+      await expect(page.locator('[data-layout="data-table-shell"]')).toBeVisible();
+      const tableScroll = page.locator('[data-slot="table-scroll-container"]');
+      await expect(tableScroll).toBeVisible();
+      if (viewport.width === 375) {
+        const localTableOverflow = await tableScroll.evaluate(
+          (element) => element.scrollWidth > element.clientWidth,
+        );
+        expect(localTableOverflow).toBe(true);
+      }
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth > window.innerWidth + 1,
+      );
+      expect(overflow).toBe(false);
+    });
+  }
 
   test("runtime settings redirect and navigation preserve the split upstream hierarchy", async ({
     authenticatedPage: page,
@@ -141,7 +151,7 @@ test.describe("authenticated route boundaries @cross-browser", () => {
   }) => {
     test.setTimeout(60_000);
     await page.goto("/settings/about");
-    await expect(page.locator("main").getByText("v3.5.6").first()).toBeVisible({
+    await expect(page.locator("main").getByText("v3.6.0").first()).toBeVisible({
       timeout: 30_000,
     });
   });

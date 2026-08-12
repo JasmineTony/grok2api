@@ -1,10 +1,10 @@
-﻿# 页面布局优化迭代结果
+# 页面布局优化迭代结果
 
 - Status: Complete
 - Date: 2026-08-12
 - Base commit: 05daab0 docs: plan page layout optimization
-- Implementation commit: Pending local commit
-- Pull request: Not created; local acceptance only
+- Implementation commit: `7afd3b1a92eb0e06736167e69a0a2756e23cdbf8`
+- Delivery: included in the `v3.6.0` release branch after local acceptance
 
 ## Findings
 

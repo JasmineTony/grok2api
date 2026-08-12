@@ -86,3 +86,5 @@ Templates are available in [`templates/`](./templates/).
 | 2026-08-11 30 - Upstream v3.1.2 integration and v3.5.6 release | [Plan](./2026-08-11-30-upstream-v3.1.2-v3.5.6/PLAN.md) | [Result](./2026-08-11-30-upstream-v3.1.2-v3.5.6/RESULT.md) | Complete |
 
 | 2026-08-12 31 - 页面布局优化与交互视觉改进 | [Plan](./2026-08-12-31-page-layout-optimization-v3.5.7/PLAN.md) | [Result](./2026-08-12-31-page-layout-optimization-v3.5.7/RESULT.md) | Complete |
+
+| 2026-08-12 32 - Responsive administration layout and v3.6.0 release | [Plan](./2026-08-12-32-v3.6.0-layout-release/PLAN.md) | [Result](./2026-08-12-32-v3.6.0-layout-release/RESULT.md) | In progress |

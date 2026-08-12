@@ -1,10 +1,12 @@
-﻿# 页面布局优化与交互视觉改进计划
+# 页面布局优化与交互视觉改进计划
 
 - Date: 2026-08-12
 - Sequence: 31
 - Status: Complete
-- Base commit: $(git rev-parse HEAD)
-- Working branch: layout/optimization-v3.5.7-20260812
+- Base commit: `39f0db2361ff336f55ab4a804d96c32e1b99e1d3`
+- Working branch: `layout/optimization-v3.5.7-20260812`
+- Plan commit: `05daab08feb2e6a70eb00521a504262c07a6f734d`
+- Implementation commit: `7afd3b1a92eb0e06736167e69a0a2756e23cdbf8`
 
 ## Objective
 
@@ -22,7 +24,7 @@
 ## Constraints
 
 - 不修改后端 API 和业务语义；不删除现有页面能力。
-- 遵守 pp → features → entities → shared 依赖方向。
+- 遵守 app → features → entities → shared 依赖方向。
 - 页面级/容器组件不超过 500 行；展示组件通过 typed props 接收状态。
 - 使用 Tailwind 设计令牌和 cn，保留 keyboard/focus-visible/reduced-motion/主题支持。
 - 不提交本地缓存、凭据、截图、Trace 或未经脱敏的运行日志。
@@ -39,6 +41,6 @@
 
 ## Verification
 
-- rontend: format/type/lint/unit/build/quality audits。
+- Frontend: format/type/lint/unit/build/quality audits。
 - Playwright Chromium desktop/tablet/mobile，必要时 Firefox/WebKit smoke。
 - git diff --check、冲突标记扫描、工作区缓存隔离。
