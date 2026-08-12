@@ -85,9 +85,9 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="space-y-5">
-      <div className="space-y-5">
-        <header className="relative overflow-hidden rounded-3xl border border-border/70 bg-card/90 shadow-xl backdrop-blur-sm px-5 py-6 sm:px-7 sm:py-8 lg:px-9">
+    <div className="space-y-6">
+      <div className="space-y-6">
+        <header className="relative overflow-hidden rounded-3xl border border-border/70 bg-card/90 px-5 py-6 shadow-lg backdrop-blur-sm sm:px-7 sm:py-8 lg:px-9">
           <div className="relative z-10 flex flex-col gap-7 xl:flex-row xl:items-end xl:justify-between">
             <div className="max-w-3xl">
               <div className="inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/10 px-3 py-1 text-[10px] font-semibold tracking-widest text-primary uppercase">

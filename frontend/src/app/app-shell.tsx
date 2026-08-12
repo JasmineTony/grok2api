@@ -122,7 +122,7 @@ export function AppShell() {
         onClick={() => setMobileOpen(false)}
         className={({ isActive }) =>
           cn(
-            "group flex h-9 items-center gap-2.5 rounded-xl border border-transparent px-3 text-xs font-medium text-muted-foreground transition-colors hover:border-sidebar-border/70 hover:bg-secondary/55 hover:text-foreground",
+            "group flex min-h-10 items-center gap-2.5 rounded-xl border border-transparent px-3 text-xs font-medium text-muted-foreground transition-[background-color,border-color,color,transform] duration-150 hover:border-sidebar-border/70 hover:bg-secondary/55 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70",
             isActive && "border-primary/20 bg-primary/10 text-foreground shadow-sm",
           )
         }
@@ -214,7 +214,7 @@ export function AppShell() {
 
   const navigationContent = (
     <nav
-      className="mt-7 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2 pb-2"
+      className="mt-7 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 pb-2 [scrollbar-gutter:stable]"
       aria-label={t("shell.navigation")}
     >
       <div className="space-y-1">{navigationLinks()}</div>
@@ -306,7 +306,7 @@ export function AppShell() {
   );
 
   return (
-    <div className="app-canvas min-h-screen bg-background/70">
+    <div data-layout="app-shell" className="app-canvas min-h-screen bg-background/70">
       <aside className="fixed inset-y-0 left-0 z-30 hidden h-screen w-[240px] flex-col overflow-hidden border-r border-sidebar-border/70 bg-sidebar px-4 py-6 shadow-xl lg:flex xl:w-[288px]">
         <div className="flex h-7 shrink-0 items-center justify-between px-2.5">
           <Link
@@ -395,7 +395,7 @@ export function AppShell() {
           </div>
         </header>
 
-        <main className="relative flex min-w-0 flex-1">
+        <main className="relative flex min-w-0 flex-1" data-layout="main-content">
           <PageScaffold className={isMediaWorkspace ? "pb-0" : undefined}>
             <Outlet />
           </PageScaffold>

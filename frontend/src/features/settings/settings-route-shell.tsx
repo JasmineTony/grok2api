@@ -1,5 +1,5 @@
 import { AlertTriangle, ArrowLeft, RotateCcw, Save } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { FormProvider } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { Link, NavLink, Outlet, useBlocker, useLocation } from "react-router-dom";
@@ -32,6 +32,7 @@ export function SettingsRouteShell() {
   const location = useLocation();
   const { form, settingsQuery, updateMutation, reset } = useSettings();
   const readOnlyRoute = isReadOnlySettingsPath(location.pathname);
+  const activeNavRef = useRef<HTMLAnchorElement | null>(null);
   const blocker = useBlocker(({ currentLocation, nextLocation }) =>
     shouldBlockSettingsNavigation(
       form.formState.isDirty,
@@ -39,6 +40,10 @@ export function SettingsRouteShell() {
       nextLocation.pathname,
     ),
   );
+
+  useEffect(() => {
+    activeNavRef.current?.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [location.pathname]);
 
   useEffect(() => {
     if (!form.formState.isDirty) return;
@@ -88,7 +93,7 @@ export function SettingsRouteShell() {
 
             <nav
               aria-label={t("settings.navigation.label")}
-              className="-mx-1 mt-5 flex gap-1 overflow-x-auto px-1 pb-2 lg:mx-0 lg:mt-6 lg:flex-col lg:overflow-visible lg:px-0 lg:pb-0"
+              className="-mx-1 mt-5 flex snap-x gap-1 overflow-x-auto px-1 pb-2 [scrollbar-width:thin] lg:mx-0 lg:mt-6 lg:flex-col lg:overflow-visible lg:px-0 lg:pb-0"
             >
               {settingsRoutes.map((route, index) => {
                 const previousRoute = settingsRoutes[index - 1];
@@ -105,13 +110,21 @@ export function SettingsRouteShell() {
                     )}
                   >
                     <NavLink
+                      ref={(node) => {
+                        if (
+                          location.pathname === route.to ||
+                          (!route.end && location.pathname.startsWith(route.to + "/"))
+                        ) {
+                          activeNavRef.current = node;
+                        }
+                      }}
                       to={route.to}
                       end={route.end}
                       onMouseEnter={() => void route.preload()}
                       onFocus={() => void route.preload()}
                       className={({ isActive }) =>
                         cn(
-                          "flex h-10 min-w-40 items-center gap-2.5 rounded-xl px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground lg:w-full lg:min-w-0",
+                          "flex h-10 min-w-40 snap-start items-center gap-2.5 rounded-xl border border-transparent px-3 text-xs font-medium text-muted-foreground transition-[background-color,border-color,color] hover:border-border/70 hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 lg:w-full lg:min-w-0",
                           isActive && "bg-muted text-foreground",
                         )
                       }
