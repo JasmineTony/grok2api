@@ -1,5 +1,5 @@
 import type { ModelRouteDTO, ModelRouteGroupDTO } from "@/entities/model/types";
-import { type ApiClient, type PaginatedDTO } from "@/shared/api/client";
+import { type ApiClient, ApiError, type PaginatedDTO } from "@/shared/api/client";
 import {
   createObjectDecoder,
   createPaginatedDecoder,
@@ -13,6 +13,7 @@ import {
   isOptional,
   isString,
 } from "@/shared/api/decoder";
+import { i18n } from "@/shared/i18n";
 import type { SortOrder } from "@/shared/lib/table-sort";
 
 export type ListModelsInput = {
@@ -33,7 +34,16 @@ const modelRouteValidator = hasShape({
   publicId: isString,
   provider: isOneOf("grok_build", "grok_web", "grok_console"),
   upstreamModel: isString,
-  capability: isOneOf("responses", "chat", "image", "image_edit", "video"),
+  capability: isOneOf(
+    "responses",
+    "chat",
+    "image",
+    "image_edit",
+    "video",
+    "tts",
+    "stt",
+    "realtime",
+  ),
   origin: isOneOf("catalog", "discovered", "manual"),
   enabled: isBoolean,
   accountIds: isArrayOf(isString),
@@ -50,7 +60,16 @@ const decodeModelRoute = createObjectDecoder<ModelRouteDTO>("model route", {
   publicId: isString,
   provider: isOneOf("grok_build", "grok_web", "grok_console"),
   upstreamModel: isString,
-  capability: isOneOf("responses", "chat", "image", "image_edit", "video"),
+  capability: isOneOf(
+    "responses",
+    "chat",
+    "image",
+    "image_edit",
+    "video",
+    "tts",
+    "stt",
+    "realtime",
+  ),
   origin: isOneOf("catalog", "discovered", "manual"),
   enabled: isBoolean,
   accountIds: isArrayOf(isString),
@@ -68,7 +87,17 @@ const modelRouteGroupValidator = hasShape({
   routes: (value: unknown) =>
     Array.isArray(value) && value.length > 0 && value.every(modelRouteValidator),
   endpointCapabilities: isArrayOf(
-    isOneOf("completions", "responses", "messages", "image", "image_edit", "video"),
+    isOneOf(
+      "completions",
+      "responses",
+      "messages",
+      "image",
+      "image_edit",
+      "video",
+      "tts",
+      "stt",
+      "realtime",
+    ),
   ),
 });
 const decodeModelGroupPage = createPaginatedDecoder<ModelRouteGroupDTO>(modelRouteGroupValidator);
@@ -111,12 +140,80 @@ export function listModelGroups(
   return client.request(`/api/admin/v1/models/groups?${query}`, {}, decodeModelGroupPage);
 }
 
-export function syncModels(client: ApiClient): Promise<{ synced: number }> {
-  return client.request(
+type ModelSyncEventDTO = {
+  synced?: number;
+  partial?: boolean;
+  accountsSucceeded?: number;
+  accountsFailed?: number;
+  completed?: number;
+  total?: number;
+  code?: string;
+  message?: string;
+};
+
+const decodeModelSyncEvent = createObjectDecoder<ModelSyncEventDTO>("model sync event", {
+  synced: isOptional(isNumber),
+  partial: isOptional(isBoolean),
+  accountsSucceeded: isOptional(isNumber),
+  accountsFailed: isOptional(isNumber),
+  completed: isOptional(isNumber),
+  total: isOptional(isNumber),
+  code: isOptional(isString),
+  message: isOptional(isString),
+});
+
+export type ModelSyncProgressDTO = { completed: number; total: number };
+export type ModelSyncResultDTO = {
+  synced: number;
+  partial: boolean;
+  accountsSucceeded: number;
+  accountsFailed: number;
+};
+
+export async function syncModels(
+  client: ApiClient,
+  onProgress?: (progress: ModelSyncProgressDTO) => void,
+): Promise<ModelSyncResultDTO> {
+  let result: ModelSyncResultDTO | undefined;
+  await client.eventStream(
     "/api/admin/v1/models/sync",
-    { method: "POST" },
-    decodeCountResult<{ synced: number }>("synced"),
+    { method: "POST", headers: { Accept: "text/event-stream" } },
+    decodeModelSyncEvent,
+    ({ event, data }) => {
+      if (
+        event === "progress" &&
+        typeof data.completed === "number" &&
+        typeof data.total === "number" &&
+        data.total > 0
+      ) {
+        onProgress?.({
+          completed: Math.min(Math.max(0, data.completed), data.total),
+          total: data.total,
+        });
+        return;
+      }
+      if (event === "complete" && typeof data.synced === "number") {
+        result = {
+          synced: data.synced,
+          partial: data.partial ?? false,
+          accountsSucceeded: data.accountsSucceeded ?? 0,
+          accountsFailed: data.accountsFailed ?? 0,
+        };
+        return;
+      }
+      if (event === "error") {
+        const code = data.code ?? "modelSyncFailed";
+        const message = i18n.exists(`apiErrors.${code}`)
+          ? i18n.t(`apiErrors.${code}`)
+          : (data.message ?? i18n.t("apiErrors.requestFailed"));
+        throw new ApiError(502, code, message);
+      }
+    },
   );
+  if (!result) {
+    throw new ApiError(502, "invalidResponse", i18n.t("apiErrors.invalidResponse"));
+  }
+  return result;
 }
 
 export type ModelAccountOptionDTO = { id: string; name: string };

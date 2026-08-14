@@ -64,7 +64,18 @@ export type AuditDTO = {
   modelPublicId?: string;
   modelUpstreamModel?: string;
   provider: "grok_build" | "grok_web" | "grok_console";
-  operation: "responses" | "compaction" | "chat" | "messages" | "image" | "image_edit" | "video";
+  operation:
+    | "responses"
+    | "compaction"
+    | "chat"
+    | "messages"
+    | "image"
+    | "image_edit"
+    | "video"
+    | "tts"
+    | "stt"
+    | "realtime"
+    | "voice";
   usageSource: "upstream" | "estimated" | "none";
   accountId?: string;
   accountName?: string;
@@ -202,7 +213,19 @@ const auditValidator = hasShape({
   modelPublicId: isOptional(isString),
   modelUpstreamModel: isOptional(isString),
   provider: isOneOf("grok_build", "grok_web", "grok_console"),
-  operation: isOneOf("responses", "compaction", "chat", "messages", "image", "image_edit", "video"),
+  operation: isOneOf(
+    "responses",
+    "compaction",
+    "chat",
+    "messages",
+    "image",
+    "image_edit",
+    "video",
+    "tts",
+    "stt",
+    "realtime",
+    "voice",
+  ),
   usageSource: isOneOf("upstream", "estimated", "none"),
   accountId: isOptional(isString),
   accountName: isOptional(isString),
@@ -233,6 +256,8 @@ const auditValidator = hasShape({
   numServerSideToolsUsed: isNumber,
   contextInputTokens: isNumber,
   contextOutputTokens: isNumber,
+  firstTokenMs: isOptional(isNumber),
+  outputTokensPerSecond: isOptional(isNumber),
   durationMs: isNumber,
   errorCode: isOptional(isString),
   attemptCount: isNumber,

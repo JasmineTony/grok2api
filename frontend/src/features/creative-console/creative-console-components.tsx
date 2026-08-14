@@ -82,6 +82,7 @@ export function CompactSelect({
   ariaLabel,
   suffix,
   icon,
+  optionLabel,
 }: {
   value: string;
   options: readonly string[];
@@ -89,6 +90,7 @@ export function CompactSelect({
   ariaLabel: string;
   suffix?: string;
   icon?: ReactNode;
+  optionLabel?: (value: string) => string;
 }) {
   return (
     <Select value={value} onValueChange={onChange}>
@@ -102,7 +104,7 @@ export function CompactSelect({
       <SelectContent>
         {options.map((option) => (
           <SelectItem key={option} value={option}>
-            {option}
+            {optionLabel ? optionLabel(option) : option}
             {suffix}
           </SelectItem>
         ))}

@@ -15,8 +15,8 @@
 
 Grok2API 以 Go 服务端和 React 管理端组成统一网关，把 Grok Build OAuth、Grok Web SSO 与 Grok Console SSO 管理为彼此隔离的账号池，并向客户端提供 OpenAI 与 Anthropic 风格接口。项目支持多账号调度、模型路由、客户端密钥、媒体任务、请求审计以及代理出口管理。
 
-当前源码版本为 **v3.6.0**，基于已完成的上游 `v3.1.2` 兼容集成，进一步统一管理端页面壳层、标题、工具栏、设置导航和数据表响应式布局。此版本改善移动端当前设置项可见性、键盘焦点、触控尺寸、内容宽度、Creative Console 宽度收缩和 Dashboard 视觉层级，同时保持公开 API、现有路由、数据库、Provider 行为、Go module 路径与发布治理兼容。
-Release v3.6.0 delivers a responsive administration-layout refresh on the preserved upstream v3.1.2 integration baseline without changing public APIs, provider behavior, persistence contracts, or release governance.
+当前源码版本为 **v3.6.1** 发布候选，已通过真实合并集成 `upstream/main@86ae605717087c2df479dc8a268219d3ad8fe731`。本版在上游一致性与独立管理端缺陷修复基础上，加入视频创建阶段的有界故障切换与重复任务防护、安全下载文件名与扩展名、公共播放 URL 校验与安全回退、大账号池分段选号、精准健康失效及 LAN 环境复制修复；同时保留拆分设置页、模型同步 SSE、网络代理批量清理与订阅同步状态、Console 媒体/语音接口和 Swagger 契约。
+Release v3.6.1 integrates upstream main through `86ae6057` while preserving the independently maintained split administration UI, API contracts, persistence state machine, and release governance. It adds bounded video create-phase failover, duplicate-job prevention, safe media filenames and playback URLs, large-pool segmented selection, precise health invalidation, and LAN clipboard reliability.
 
 > [!IMPORTANT]
 > 本项目仅用于技术研究与学习交流。使用者应遵守上游服务条款及所在地法律法规，并自行承担账号、数据与部署风险。
@@ -46,7 +46,7 @@ upstream https://github.com/chenyme/grok2api.git
 
 - **三类 Provider**：Build、Web、Console 分别维护凭据、额度、健康、冷却、并发与模型能力。
 - **兼容接口**：Responses、Chat Completions、Anthropic Messages、Images 与异步 Videos。
-- **多账号调度**：支持优先级、能力过滤、额度门控、会话粘滞、并发租约与有界故障切换。
+- **多账号调度**：支持优先级、能力过滤、额度门控、会话粘滞、并发租约与有界故障切换；至少 3000 个可用账号的大号池默认启用分段选号，限制动态并发读取，同时保留额度/等级优先级、粘滞会话、完整池回退与原子门禁。
 - **模型路由**：支持动态能力发现、静态目录、来源限定与客户端权限控制。
 - **管理后台**：管理账号、模型、客户端密钥、图库、视频任务、请求审计、代理和运行设置。
 - **部署选择**：单实例可使用 SQLite + Memory；多实例可使用 PostgreSQL + Redis。
@@ -124,6 +124,9 @@ http://127.0.0.1:8000
 
 更多部署、数据库、Redis、代理和源码运行说明见 [部署与配置参考](./docs/reference/deployment-and-configuration.md)。
 
+> [!WARNING]
+> 从旧版本升级到 v3.6.1 前，必须备份 `config.yaml`、数据库、媒体目录和持久化卷。v3.6.1 启动时会执行兼容的自动增量数据库迁移；如需回退，请使用已验证的 v3.6.0 镜像与升级前备份，切勿复用已被新版本迁移且未验证可逆的数据副本。
+
 ## 首次使用
 
 1. 使用 `bootstrapAdmin` 创建的管理员登录。
@@ -151,7 +154,7 @@ curl http://127.0.0.1:8000/v1/responses \
 
 ### 为什么找不到 GHCR 镜像？
 
-稳定镜像位于 `ghcr.io/jasminetony/grok2api`。v3.6.0 发布完成后可使用 `v3.6.0`、`3.6.0`、`3.6`、`3` 或 `latest` 标签；发布完成前请继续固定到已经验证的 v3.5.6 digest。若部署环境无法访问 GHCR，仍可使用 `docker compose up -d --build` 从当前源码构建。
+稳定镜像位于 `ghcr.io/jasminetony/grok2api`。v3.6.1 Release 发布并验证后可使用 `v3.6.1`、`3.6.1`、`3.6`、`3` 或 `latest` 标签；发布完成前请继续固定到已经验证的 v3.6.0 digest。若部署环境无法访问 GHCR，仍可使用 `docker compose up -d --build` 从当前源码构建。
 
 普通分支、`main` 推送或单独推送标签都不会发布镜像。只有发布符合版本要求的 GitHub Release，并通过受保护的 `release` environment 审批后，才会写入 GHCR。
 

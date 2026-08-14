@@ -61,6 +61,147 @@
                 }
             }
         },
+        "/v1/audio/speech": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "audio/mpeg"
+                ],
+                "tags": [
+                    "Voice"
+                ],
+                "summary": "OpenAI 兼容文本转语音",
+                "parameters": [
+                    {
+                        "description": "请求",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.SwaggerAudioSpeechRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/audio/tasks": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "audio/mpeg"
+                ],
+                "tags": [
+                    "Voice"
+                ],
+                "summary": "OpenAI 风格音频任务兼容入口",
+                "parameters": [
+                    {
+                        "description": "请求",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.SwaggerAudioSpeechRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/audio/transcriptions": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Voice"
+                ],
+                "summary": "OpenAI 兼容语音转文字",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "音频文件",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "grok-stt",
+                        "description": "模型",
+                        "name": "model",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/v1/chat/completions": {
             "post": {
                 "security": [
@@ -317,6 +458,40 @@
                 }
             }
         },
+        "/v1/realtime": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "Voice"
+                ],
+                "summary": "Realtime 语音 WebSocket",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "grok-voice-latest",
+                        "description": "Realtime 模型",
+                        "name": "model",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "101": {
+                        "description": "Switching Protocols"
+                    },
+                    "405": {
+                        "description": "Method Not Allowed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/v1/responses": {
             "post": {
                 "security": [
@@ -490,6 +665,312 @@
                 }
             }
         },
+        "/v1/stt": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "Voice"
+                ],
+                "summary": "流式语音转文字 WebSocket",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "grok-stt",
+                        "description": "转写模型",
+                        "name": "model",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "101": {
+                        "description": "Switching Protocols"
+                    },
+                    "405": {
+                        "description": "Method Not Allowed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json",
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Voice"
+                ],
+                "summary": "语音转文字",
+                "parameters": [
+                    {
+                        "description": "JSON URL 请求",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.SwaggerSTTRequest"
+                        }
+                    },
+                    {
+                        "type": "file",
+                        "description": "音频文件",
+                        "name": "file",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/tts": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "audio/mpeg",
+                    "application/json"
+                ],
+                "tags": [
+                    "Voice"
+                ],
+                "summary": "文本转语音",
+                "parameters": [
+                    {
+                        "description": "请求",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.SwaggerTTSRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/tts/voices": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Voice"
+                ],
+                "summary": "列出内置音色",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "语音模型",
+                        "name": "model",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/tts/voices/{voice_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Voice"
+                ],
+                "summary": "查询单个音色",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Voice ID",
+                        "name": "voice_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "语音模型",
+                        "name": "model",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/videos/edits": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Videos"
+                ],
+                "summary": "创建异步视频编辑任务",
+                "parameters": [
+                    {
+                        "description": "请求",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.SwaggerVideoGenerationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/videos/extensions": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Videos"
+                ],
+                "summary": "创建异步视频延长任务",
+                "parameters": [
+                    {
+                        "description": "请求",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.SwaggerVideoGenerationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/v1/videos/generations": {
             "post": {
                 "security": [
@@ -581,6 +1062,35 @@
         }
     },
     "definitions": {
+        "httpserver.SwaggerAudioSpeechRequest": {
+            "type": "object",
+            "properties": {
+                "input": {
+                    "type": "string",
+                    "example": "Hello from Grok voice."
+                },
+                "language": {
+                    "type": "string",
+                    "example": "en"
+                },
+                "model": {
+                    "type": "string",
+                    "example": "grok-voice-latest"
+                },
+                "response_format": {
+                    "type": "string",
+                    "example": "mp3"
+                },
+                "speed": {
+                    "type": "number",
+                    "example": 1
+                },
+                "voice": {
+                    "type": "string",
+                    "example": "alloy"
+                }
+            }
+        },
         "httpserver.SwaggerChatRequest": {
             "type": "object",
             "properties": {
@@ -747,6 +1257,76 @@
                 }
             }
         },
+        "httpserver.SwaggerSTTRequest": {
+            "type": "object",
+            "properties": {
+                "diarize": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "format": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "keyterm": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "language": {
+                    "type": "string",
+                    "example": "en"
+                },
+                "model": {
+                    "type": "string",
+                    "example": "grok-stt"
+                },
+                "url": {
+                    "type": "string",
+                    "example": "https://example.com/sample.wav"
+                }
+            }
+        },
+        "httpserver.SwaggerTTSRequest": {
+            "type": "object",
+            "properties": {
+                "language": {
+                    "type": "string",
+                    "example": "en"
+                },
+                "model": {
+                    "type": "string",
+                    "example": "grok-voice-latest"
+                },
+                "output_format": {},
+                "speed": {
+                    "type": "number",
+                    "example": 1
+                },
+                "text": {
+                    "type": "string",
+                    "example": "Hello from Grok voice."
+                },
+                "voice_id": {
+                    "type": "string",
+                    "example": "eve"
+                },
+                "with_timestamps": {
+                    "type": "boolean",
+                    "example": false
+                }
+            }
+        },
+        "httpserver.SwaggerVideoAudioInput": {
+            "type": "object",
+            "properties": {
+                "voice_id": {
+                    "type": "string",
+                    "example": "eve"
+                }
+            }
+        },
         "httpserver.SwaggerVideoGenerationRequest": {
             "type": "object",
             "properties": {
@@ -758,6 +1338,9 @@
                     "type": "integer",
                     "example": 8
                 },
+                "image": {
+                    "$ref": "#/definitions/httpserver.SwaggerVideoMediaInput"
+                },
                 "model": {
                     "type": "string",
                     "example": "grok-imagine-video"
@@ -766,9 +1349,37 @@
                     "type": "string",
                     "example": "A cinematic tracking shot in the rain"
                 },
+                "reference_audios": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/httpserver.SwaggerVideoAudioInput"
+                    }
+                },
+                "reference_images": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/httpserver.SwaggerVideoMediaInput"
+                    }
+                },
                 "resolution": {
                     "type": "string",
                     "example": "720p"
+                },
+                "video": {
+                    "$ref": "#/definitions/httpserver.SwaggerVideoMediaInput"
+                }
+            }
+        },
+        "httpserver.SwaggerVideoMediaInput": {
+            "type": "object",
+            "properties": {
+                "file_id": {
+                    "type": "string",
+                    "example": "file_123"
+                },
+                "url": {
+                    "type": "string",
+                    "example": "https://example.com/input.png"
                 }
             }
         }

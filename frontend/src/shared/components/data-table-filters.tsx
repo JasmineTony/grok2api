@@ -99,7 +99,7 @@ export function DataTableFilters({ filters }: { filters: DataTableFilter[] }) {
           ) : null}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-52">
+      <DropdownMenuContent align="start" className="w-[min(13rem,calc(100vw-1rem))]">
         {filters.map((filter) => {
           if (!("options" in filter)) {
             return (
@@ -107,13 +107,14 @@ export function DataTableFilters({ filters }: { filters: DataTableFilter[] }) {
                 <DropdownMenuSubTrigger>
                   <span>{filter.label}</span>
                   {filter.value ? (
-                    <span className="max-w-20 truncate text-xs text-muted-foreground">
+                    <span className="ml-auto min-w-0 max-w-[55%] whitespace-normal break-words text-right text-xs text-muted-foreground">
                       {filter.value}
                     </span>
                   ) : null}
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent
-                  className="w-64 p-2"
+                  sideOffset={-96}
+                  className="w-[min(16rem,calc(100vw-1rem))] p-2"
                   onKeyDown={(event) => event.stopPropagation()}
                 >
                   <Input
@@ -135,12 +136,12 @@ export function DataTableFilters({ filters }: { filters: DataTableFilter[] }) {
               <DropdownMenuSubTrigger>
                 <span>{filter.label}</span>
                 {selectedLabel ? (
-                  <span className="max-w-20 truncate text-xs text-muted-foreground">
+                  <span className="ml-auto min-w-0 max-w-[55%] whitespace-normal break-words text-right text-xs text-muted-foreground">
                     {selectedLabel}
                   </span>
                 ) : null}
               </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="w-52">
+              <DropdownMenuSubContent sideOffset={-48} className="w-[min(13rem,calc(100vw-1rem))]">
                 <DropdownMenuRadioGroup
                   value={filter.value || "__all"}
                   onValueChange={(value) => filter.onChange(value === "__all" ? "" : value)}
@@ -166,16 +167,18 @@ export function DataTableFilters({ filters }: { filters: DataTableFilter[] }) {
                           : { onOpenChange: option.onGroupsOpenChange })}
                       >
                         <DropdownMenuSubTrigger className="pr-2">
-                          <span className="shrink-0 whitespace-nowrap">{option.label}</span>
+                          <span className="min-w-0 flex-1 whitespace-normal break-words">
+                            {option.label}
+                          </span>
                           {narrowedLabel ? (
-                            <span className="ml-auto max-w-16 truncate text-xs text-muted-foreground">
+                            <span className="ml-auto min-w-0 max-w-[45%] whitespace-normal break-words text-right text-xs text-muted-foreground">
                               {narrowedLabel}
                             </span>
                           ) : null}
                           {option.value === filter.value ? <Check className="ml-auto" /> : null}
                         </DropdownMenuSubTrigger>
                         <DropdownMenuSubContent
-                          sideOffset={6}
+                          sideOffset={-144}
                           className="max-h-[min(26rem,calc(100vh-2rem))] w-72 max-w-[calc(100vw-1rem)] overflow-y-auto p-0 shadow-lg shadow-black/5"
                         >
                           {option.groupSearch ? (
@@ -234,12 +237,12 @@ export function DataTableFilters({ filters }: { filters: DataTableFilter[] }) {
                                       >
                                         {entry.description || entry.badge ? (
                                           <span className="min-w-0 flex-1">
-                                            <span className="block truncate text-[13px] font-normal text-foreground">
+                                            <span className="block whitespace-normal break-words text-[13px] font-normal text-foreground">
                                               {entry.label}
                                             </span>
                                             <span className="mt-px flex min-w-0 items-center gap-1 text-[10px] leading-4 text-muted-foreground/80">
                                               {entry.description ? (
-                                                <span className="truncate tabular-nums">
+                                                <span className="min-w-0 whitespace-normal break-words tabular-nums">
                                                   {entry.description}
                                                 </span>
                                               ) : null}

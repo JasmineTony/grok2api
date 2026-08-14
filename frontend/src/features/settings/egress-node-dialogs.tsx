@@ -99,6 +99,9 @@ export function EgressNodeEditorDialog({
                 <SelectItem value="grok_web">{t("settings.egress.scopeWeb")}</SelectItem>
                 <SelectItem value="grok_console">{t("console.name")}</SelectItem>
                 <SelectItem value="grok_web_asset">{t("settings.egress.scopeWebAsset")}</SelectItem>
+                <SelectItem value="grok_console_asset">
+                  {t("settings.egress.scopeConsoleAsset")}
+                </SelectItem>
               </SelectContent>
             </Select>
           </Field>

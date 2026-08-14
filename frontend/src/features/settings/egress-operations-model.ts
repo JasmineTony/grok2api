@@ -10,11 +10,13 @@ import {
 } from "@/features/settings/settings-api";
 import type { ApiClient } from "@/shared/api/client";
 
-export type SourceForm = EgressSourceInput & { url: string };
-export type OperationsForm = Omit<EgressOperationsConfigDTO, "updatedAt"> & {
-  subscriptionProxyURL: string;
-  clearSubscriptionProxy: boolean;
+export type SourceForm = EgressSourceInput & {
+  url: string;
+  clearUrl: boolean;
+  proxyURL: string;
+  clearProxyURL: boolean;
 };
+export type OperationsForm = Omit<EgressOperationsConfigDTO, "updatedAt">;
 
 export type ImportForm = {
   name: string;
@@ -28,6 +30,9 @@ export const emptySource: SourceForm = {
   scope: "grok_build",
   enabled: true,
   url: "",
+  clearUrl: false,
+  proxyURL: "",
+  clearProxyURL: false,
   refreshIntervalSeconds: 900,
   defaultAccountCapacity: 0,
 };
@@ -69,9 +74,6 @@ export const defaultOperationsForm: OperationsForm = {
   autoBalanceEnabled: false,
   assignmentIntervalSeconds: 300,
   fallbacks: defaultFallbacks(),
-  subscriptionProxyURL: "",
-  subscriptionProxyConfigured: false,
-  clearSubscriptionProxy: false,
 };
 
 export function operationsFormFrom(value?: EgressOperationsConfigDTO): OperationsForm {
@@ -90,9 +92,6 @@ export function operationsFormFrom(value?: EgressOperationsConfigDTO): Operation
       grok_web_asset: { ...defaults.grok_web_asset, ...value.fallbacks.grok_web_asset },
       grok_console_asset: { ...defaults.grok_console_asset, ...value.fallbacks.grok_console_asset },
     },
-    subscriptionProxyURL: "",
-    subscriptionProxyConfigured: value.subscriptionProxyConfigured,
-    clearSubscriptionProxy: false,
   };
 }
 
@@ -105,10 +104,6 @@ export function operationsInputFrom(value: OperationsForm): EgressOperationsConf
     assignmentIntervalSeconds: value.assignmentIntervalSeconds,
     fallbacks: value.fallbacks,
   };
-  if (value.clearSubscriptionProxy) result.clearSubscriptionProxy = true;
-  else if (value.subscriptionProxyURL.trim()) {
-    result.subscriptionProxyURL = value.subscriptionProxyURL.trim();
-  }
   return result;
 }
 
@@ -146,9 +141,12 @@ function nodeCooling(node: EgressNodeDTO): boolean {
   return node.cooldownUntil !== undefined && Date.parse(node.cooldownUntil) > Date.now();
 }
 function supportsFallbackScope(nodeScope: EgressScope, requestScope: EgressScope): boolean {
-  return (
-    nodeScope === requestScope ||
-    ((requestScope === "grok_console" || requestScope === "grok_web_asset") &&
-      nodeScope === "grok_web")
-  );
+  if (nodeScope === requestScope) return true;
+  if (requestScope === "grok_console" || requestScope === "grok_web_asset") {
+    return nodeScope === "grok_web";
+  }
+  if (requestScope === "grok_console_asset") {
+    return nodeScope === "grok_console" || nodeScope === "grok_web";
+  }
+  return false;
 }

@@ -20,7 +20,8 @@ import {
   RetryableError,
 } from "@/features/creative-console/creative-console-components";
 import type { CreativePanelProps } from "@/features/creative-console/creative-console-types";
-import { ImagePanel, VideoPanel } from "@/features/creative-console/media-panels";
+import { ImagePanel } from "@/features/creative-console/media-panels";
+import { VideoPanel } from "@/features/creative-console/video-panel";
 import { useApiClient } from "@/shared/api/use-api-client";
 import { PageHeader } from "@/shared/components/page-header";
 import { cn } from "@/shared/lib/cn";
@@ -100,9 +101,9 @@ export function CreativeConsolePage() {
       image: uniqueModelsByPublicID(
         permittedModels.filter((model) => model.capability === "image"),
       ),
-      video: uniqueModelsByPublicID(
-        permittedModels.filter((model) => model.capability === "video"),
-      ),
+      // Keep every video route so VideoPanel can detect Console edit/extend eligibility
+      // even when multiple provider targets share one public model id.
+      video: permittedModels.filter((model) => model.capability === "video"),
     }),
     [permittedModels],
   );

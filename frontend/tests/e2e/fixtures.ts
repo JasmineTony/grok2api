@@ -50,7 +50,11 @@ function createSettingsSnapshotFixture() {
         recoveryBackoffBase: "30s",
         recoveryBackoffMax: "5m",
       },
-      providerConsole: { baseURL: "https://console.x.ai", chatTimeout: "30s" },
+      providerConsole: {
+        baseURL: "https://console.x.ai",
+        chatTimeout: "30s",
+        streamIdleTimeout: "2m",
+      },
       batch: {
         importConcurrency: 2,
         conversionConcurrency: 2,
@@ -71,7 +75,10 @@ function createSettingsSnapshotFixture() {
         cooldownMax: "5m",
         capacityWait: "1s",
         maxAttempts: 3,
+        videoMaxAttempts: 999,
         preferFreeBuild: true,
+        markBuildChatDeniedAsReauth: false,
+        accountIsolatedConnections: false,
         segmentedSelector: { enabled: true, minCandidates: 100, windowSize: 16 },
       },
       audit: { bufferSize: 1024, batchSize: 64, flushInterval: "1s", commitDelayMS: 10 },
@@ -79,6 +86,7 @@ function createSettingsSnapshotFixture() {
       accounts: {
         markBuildForbiddenReauth: false,
         buildForbiddenReauthCodes: ["blocked-user"],
+        excludeBuildBotFlaggedFromScheduling: false,
         autoCleanReauthEnabled: false,
         autoCleanReauthInterval: "10m",
         autoCleanReauthMinAge: "1h",
@@ -94,14 +102,14 @@ function createSettingsSnapshotFixture() {
 
 function createVersionFixture() {
   return {
-    currentVersion: "v3.6.0",
-    latestVersion: "v3.6.0",
+    currentVersion: "v3.6.1",
+    latestVersion: "v3.6.1",
     updateAvailable: false,
     status: "up_to_date",
     checkedAt: "2099-01-01T00:00:00Z",
-    releaseUrl: "https://github.com/JasmineTony/grok2api/releases/tag/v3.6.0",
+    releaseUrl: "https://github.com/JasmineTony/grok2api/releases/tag/v3.6.1",
     releaseNotes:
-      "## Responsive administration layout\n\n- Unified page shells, navigation, toolbars, and mobile overflow boundaries.",
+      "## Upstream main parity and bounded video failover\n\n- Preserved split settings, precise health invalidation, and safe video delivery.",
     error: "",
     repository: "JasmineTony/grok2api",
     upstreamRepository: "chenyme/grok2api",
@@ -167,14 +175,83 @@ function createDashboardFixture() {
   };
 }
 
-function createEgressNodesFixture() {
+function createEgressNodesFixture(probe = "") {
+  const nodes = [
+    {
+      id: "egress-unhealthy",
+      name: "Unhealthy subscription node with a very long identifier that must wrap safely",
+      scope: "grok_console_asset",
+      enabled: true,
+      proxyConfigured: true,
+      userAgent: "Mozilla/5.0",
+      cookieConfigured: false,
+      accountBoundProxy: false,
+      proxyPool: true,
+      sourceId: "source-1",
+      accountCapacity: 20,
+      assignedAccountCount: 3,
+      probeStatus: "unhealthy",
+      lastProbedAt: "2026-08-14T08:00:00Z",
+      probeLatencyMs: 0,
+      probeError:
+        "dial tcp: upstream-proxy-node-with-an-extremely-long-hostname.example.test:443: connection timed out",
+      probeProvider: "cloudflare",
+      ipv4Probe: {
+        status: "unhealthy",
+        testedAt: "2026-08-14T08:00:00Z",
+        latencyMs: 0,
+        error: "IPv4 timeout",
+      },
+      ipv6Probe: {
+        status: "unhealthy",
+        testedAt: "2026-08-14T08:00:00Z",
+        latencyMs: 0,
+        error: "IPv6 timeout",
+      },
+      health: 0,
+      failureCount: 4,
+      lastError: "Both IP families failed during the most recent probe attempt",
+    },
+    {
+      id: "egress-healthy",
+      name: "Healthy web node",
+      scope: "grok_web",
+      enabled: true,
+      proxyConfigured: true,
+      userAgent: "Mozilla/5.0",
+      cookieConfigured: true,
+      accountBoundProxy: false,
+      proxyPool: false,
+      accountCapacity: 10,
+      assignedAccountCount: 1,
+      probeStatus: "healthy",
+      lastProbedAt: "2026-08-14T08:00:00Z",
+      probeLatencyMs: 42,
+      exitIp: "192.0.2.10",
+      probeProvider: "cloudflare",
+      ipv4Probe: {
+        status: "healthy",
+        testedAt: "2026-08-14T08:00:00Z",
+        latencyMs: 42,
+        exitIp: "192.0.2.10",
+      },
+      ipv6Probe: { status: "unknown", latencyMs: 0 },
+      health: 1,
+      failureCount: 0,
+    },
+  ];
+  const items = probe ? nodes.filter((node) => node.probeStatus === probe) : nodes;
   return {
-    items: [],
+    items,
+    page: 1,
+    pageSize: 100,
+    total: items.length,
     defaultUserAgents: {
       grok_build: "",
       grok_web: "Mozilla/5.0",
       grok_console: "Mozilla/5.0",
       grok_web_asset: "Mozilla/5.0",
+      grok_console_asset: "Mozilla/5.0",
     },
   };
 }
@@ -191,8 +268,134 @@ function createEgressOperationsFixture() {
       grok_web: { mode: "direct" },
       grok_console: { mode: "none" },
       grok_web_asset: { mode: "direct" },
+      grok_console_asset: { mode: "direct" },
     },
     updatedAt: "2099-01-01T00:00:00Z",
+  };
+}
+
+function createEgressSourcesFixture() {
+  return {
+    items: [
+      {
+        id: "source-1",
+        name: "Console asset subscription upstream",
+        scope: "grok_console_asset",
+        enabled: true,
+        urlConfigured: true,
+        proxyConfigured: true,
+        refreshIntervalSeconds: 600,
+        defaultAccountCapacity: 20,
+        lastSyncedAt: "2026-08-14T08:00:00Z",
+        nextSyncAt: "2026-08-14T08:10:00Z",
+        lastSyncImported: 12,
+        lastSyncError: "Upstream returned one malformed entry; valid nodes were retained",
+      },
+    ],
+    page: 1,
+    pageSize: 20,
+    total: 1,
+  };
+}
+
+function createClientKeysFixture() {
+  return {
+    items: [
+      {
+        id: "client-key-1",
+        name: "Creative E2E",
+        prefix: "g2_e2e",
+        enabled: true,
+        expiresAt: "2099-01-01T00:00:00Z",
+        rpmLimit: 60,
+        maxConcurrent: 4,
+        billingLimitUsdTicks: 0,
+        billedUsageUsdTicks: 0,
+        allowModelAliases: true,
+        allowedModelIds: [],
+      },
+    ],
+    page: 1,
+    pageSize: 100,
+    total: 1,
+  };
+}
+
+function createCreativeModelsFixture() {
+  const base = {
+    origin: "catalog",
+    enabled: true,
+    accountIds: [],
+    bindingMode: false,
+    supportedAccounts: 2,
+    syncedAccounts: 2,
+    totalAccounts: 2,
+    capabilityKnown: true,
+    available: true,
+    lastSyncedAt: "2026-08-14T08:00:00Z",
+  };
+  const items = [
+    {
+      ...base,
+      id: "creative-chat",
+      publicId: "grok-4.6",
+      provider: "grok_build",
+      upstreamModel: "Build/grok-4.6",
+      capability: "responses",
+    },
+    {
+      ...base,
+      id: "creative-image",
+      publicId: "grok-imagine-image-2.0",
+      provider: "grok_console",
+      upstreamModel: "grok-imagine-image-2.0",
+      capability: "image",
+    },
+    {
+      ...base,
+      id: "creative-video-web",
+      publicId: "grok-imagine-video",
+      provider: "grok_web",
+      upstreamModel: "grok-imagine-video",
+      capability: "video",
+    },
+    {
+      ...base,
+      id: "creative-video-console",
+      publicId: "grok-imagine-video",
+      provider: "grok_console",
+      upstreamModel: "grok-imagine-video",
+      capability: "video",
+    },
+  ];
+  return { items, page: 1, pageSize: 100, total: items.length };
+}
+
+function createModelGroupsFixture() {
+  const routes = [
+    {
+      id: "model-route-1",
+      publicId: "grok-4.6",
+      provider: "grok_build",
+      upstreamModel: "Build/grok-4.6",
+      capability: "responses",
+      origin: "catalog",
+      enabled: true,
+      accountIds: [],
+      bindingMode: false,
+      supportedAccounts: 8,
+      syncedAccounts: 8,
+      totalAccounts: 8,
+      capabilityKnown: true,
+      available: true,
+      lastSyncedAt: "2099-01-01T00:00:00Z",
+    },
+  ];
+  return {
+    items: [{ key: "grok-4.6", routes, endpointCapabilities: ["responses"] }],
+    page: 1,
+    pageSize: 20,
+    total: 1,
   };
 }
 
@@ -233,12 +436,36 @@ export async function installAuthenticatedApiMocks(page: Page): Promise<void> {
       await route.fulfill(ok(createSettingsSnapshotFixture()));
       return;
     }
+    if (url.pathname.endsWith("/client-keys/client-key-1/secret")) {
+      await route.fulfill(ok({ secret: "e2e-client-key-secret" }));
+      return;
+    }
+    if (url.pathname.endsWith("/client-keys")) {
+      await route.fulfill(ok(createClientKeysFixture()));
+      return;
+    }
+    if (url.pathname.endsWith("/models/groups")) {
+      await route.fulfill(ok(createModelGroupsFixture()));
+      return;
+    }
+    if (url.pathname.endsWith("/models")) {
+      await route.fulfill(ok(createCreativeModelsFixture()));
+      return;
+    }
+    if (url.pathname.endsWith("/egress-nodes/cleanup-preview")) {
+      await route.fulfill(ok({ nodes: 1, boundAccounts: 3, subscriptionManaged: 1 }));
+      return;
+    }
+    if (url.pathname.endsWith("/egress-nodes/cleanup")) {
+      await route.fulfill(ok({ deleted: 1 }));
+      return;
+    }
     if (url.pathname.endsWith("/egress-nodes")) {
-      await route.fulfill(ok(createEgressNodesFixture()));
+      await route.fulfill(ok(createEgressNodesFixture(url.searchParams.get("probe") ?? "")));
       return;
     }
     if (url.pathname.endsWith("/egress-sources")) {
-      await route.fulfill(ok({ items: [] }));
+      await route.fulfill(ok(createEgressSourcesFixture()));
       return;
     }
     if (url.pathname.endsWith("/egress-operations")) {
@@ -248,6 +475,26 @@ export async function installAuthenticatedApiMocks(page: Page): Promise<void> {
     // These fixtures exercise shell and lazy-route boundaries. Feature-level
     // decoders and component tests own the remaining detailed response contracts.
     await route.fulfill(ok({}));
+  });
+  await page.route("**/v1/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.includes("/api/admin/v1/")) {
+      await route.fallback();
+      return;
+    }
+    if (url.pathname.endsWith("/tts/voices")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ voices: [{ voice_id: "eve", name: "Eve", language: "en" }] }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ request_id: "creative-e2e-request" }),
+    });
   });
 }
 

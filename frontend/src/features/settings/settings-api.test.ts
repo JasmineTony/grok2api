@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   createEgressNode,
   type EgressNodeDTO,
+  getSettings,
   listEgressNodes,
 } from "@/features/settings/settings-api";
 import type { ApiClient } from "@/shared/api/client";
@@ -33,9 +34,81 @@ const egressNodeFixture = (): EgressNodeDTO => ({
     status: "unknown",
     latencyMs: 0,
   },
-  health: 100,
+  health: 1,
   failureCount: 0,
 });
+
+function settingsSnapshotFixture(videoMaxAttempts?: number): unknown {
+  return {
+    config: {
+      server: { maxConcurrentRequests: 1024 },
+      providerBuild: {
+        baseURL: "https://build.example.com/v1",
+        fallbackBaseURL: "https://api.x.ai/v1",
+        clientVersion: "0.2.119",
+        clientIdentifier: "grok-shell",
+        tokenAuth: "xai-grok-cli",
+        tokenAuthConfigured: true,
+        userAgent: "grok-shell/0.2.119",
+        responseHeaderTimeout: "2m",
+        streamIdleTimeout: "90s",
+      },
+      providerWeb: {
+        baseURL: "https://grok.com",
+        quotaTimeout: "25s",
+        chatTimeout: "2m",
+        streamIdleTimeout: "90s",
+        imageTimeout: "3m",
+        videoTimeout: "15m",
+        statsigMode: "manual",
+        statsigManualConfigured: true,
+        statsigSignerURL: "https://signer.example.com",
+        clearanceMode: "manual",
+        flareSolverrURL: "https://solver.example.com",
+        clearanceTimeout: "1m",
+        clearanceRefresh: "10m",
+        mediaConcurrency: 4,
+        allowNSFW: false,
+        recoveryBackoffBase: "30s",
+        recoveryBackoffMax: "30m",
+      },
+      providerConsole: {
+        baseURL: "https://console.x.ai",
+        chatTimeout: "5m",
+        streamIdleTimeout: "2m",
+      },
+      batch: {
+        importConcurrency: 25,
+        conversionConcurrency: 25,
+        syncConcurrency: 25,
+        refreshConcurrency: 25,
+        randomDelay: "500ms",
+      },
+      media: {
+        maxImageBytes: 32 * 2 ** 20,
+        maxTotalBytes: 2 ** 30,
+        cleanupThresholdPercent: 80,
+        cleanupInterval: "10m",
+      },
+      frontend: { publicApiBaseURL: "http://127.0.0.1:8000" },
+      routing: {
+        stickyTTL: "1h",
+        cooldownBase: "30s",
+        cooldownMax: "30m",
+        capacityWait: "500ms",
+        maxAttempts: 3,
+        ...(videoMaxAttempts === undefined ? {} : { videoMaxAttempts }),
+        preferFreeBuild: false,
+      },
+      audit: { bufferSize: 16384, batchSize: 256, flushInterval: "250ms", commitDelayMS: 5 },
+      clientKeyDefaults: { rpmLimit: 60, maxConcurrent: 4 },
+    },
+    recommendedProviderBuild: { clientVersion: "0.2.119", userAgent: "grok-shell/0.2.119" },
+    updatedAt: "2026-08-14T00:00:00Z",
+    revision: "revision-1",
+    restartRequired: [],
+  };
+}
 
 function decodingClient(response: unknown): ApiClient {
   return {
@@ -45,6 +118,27 @@ function decodingClient(response: unknown): ApiClient {
 }
 
 describe("settings API decoders", () => {
+  it.each([
+    [undefined, 999],
+    [0, 999],
+    [-1, -1],
+    [5, 5],
+  ] as const)(
+    "normalizes legacy video attempts %s without dropping routing defaults",
+    async (videoMaxAttempts, expected) => {
+      const snapshot = await getSettings(decodingClient(settingsSnapshotFixture(videoMaxAttempts)));
+
+      expect(snapshot.config.routing.videoMaxAttempts).toBe(expected);
+      expect(snapshot.config.routing.markBuildChatDeniedAsReauth).toBe(false);
+      expect(snapshot.config.routing.accountIsolatedConnections).toBe(false);
+      expect(snapshot.config.routing.segmentedSelector).toEqual({
+        enabled: true,
+        minCandidates: 3000,
+        windowSize: 64,
+      });
+    },
+  );
+
   it("uses the same egress node contract for list and mutation responses", async () => {
     const node = egressNodeFixture();
     const list = await listEgressNodes(

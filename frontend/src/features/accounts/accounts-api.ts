@@ -1,4 +1,5 @@
 import type { AccountTokenRefreshResultDTO } from "@/features/accounts/account-tasks-api";
+import { updateAccountsEnabledAction } from "@/shared/api/account-actions";
 import { type ApiClient, ApiError, type PaginatedDTO } from "@/shared/api/client";
 import {
   createObjectDecoder,
@@ -636,11 +637,7 @@ export function updateAccountsEnabled(
   enabled: boolean,
   provider: AccountProvider,
 ): Promise<{ updated: number }> {
-  return client.request(
-    "/api/admin/v1/accounts/batch",
-    { method: "PATCH", body: { ids, enabled, provider } },
-    decodeCountResult<{ updated: number }>("updated"),
-  );
+  return updateAccountsEnabledAction(client, ids, enabled, provider);
 }
 
 export function refreshAccountsQuota(

@@ -69,7 +69,7 @@ export function ModelsTable({
       {isError ? <ErrorState message={errorMessage} onRetry={() => void onRetry()} /> : null}
       {!isPending && !isError && items.length === 0 ? <EmptyState /> : null}
       {isPending || items.length > 0 ? (
-        <Table viewportRows={20} rowHeight={56} className="min-w-[1120px] table-fixed text-xs">
+        <Table viewportRows={20} rowHeight={72} className="min-w-[1120px] table-fixed text-xs">
           <colgroup>
             <col className="w-10" />
             <col className="w-56" />
@@ -157,14 +157,14 @@ export function ModelsTable({
             <VirtualTableBody
               items={items}
               colSpan={9}
-              rowHeight={56}
+              rowHeight={72}
               renderRow={(model) => {
                 const selectedRoutes = model.routes.filter((route) =>
                   selected.has(route.id),
                 ).length;
                 return (
                   <TableRow
-                    className="group h-14"
+                    className="group h-[72px]"
                     key={model.key}
                     data-state={selectedRoutes > 0 ? "selected" : undefined}
                   >

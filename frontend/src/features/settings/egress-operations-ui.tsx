@@ -15,27 +15,35 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import type { EgressScope } from "@/features/settings/settings-api";
 
 export function ScopeSelect({
+  id,
   value,
   onChange,
   scopeLabel,
 }: {
+  id: string;
   value: EgressScope;
   onChange: (value: EgressScope) => void;
   scopeLabel: (scope: EgressScope) => string;
 }) {
   return (
     <Select value={value} onValueChange={(next) => onChange(next as EgressScope)}>
-      <SelectTrigger>
+      <SelectTrigger id={id}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {(["grok_build", "grok_web", "grok_console", "grok_web_asset"] as EgressScope[]).map(
-          (scope) => (
-            <SelectItem key={scope} value={scope}>
-              {scopeLabel(scope)}
-            </SelectItem>
-          ),
-        )}
+        {(
+          [
+            "grok_build",
+            "grok_web",
+            "grok_console",
+            "grok_web_asset",
+            "grok_console_asset",
+          ] as EgressScope[]
+        ).map((scope) => (
+          <SelectItem key={scope} value={scope}>
+            {scopeLabel(scope)}
+          </SelectItem>
+        ))}
       </SelectContent>
     </Select>
   );
@@ -153,27 +161,41 @@ export function SourceError({ message }: { message: string }) {
     </Tooltip>
   );
 }
-export function Control({ label, children }: { label: string; children: ReactNode }) {
+export function Control({
+  controlId,
+  label,
+  children,
+}: {
+  controlId: string;
+  label: string;
+  children: ReactNode;
+}) {
   return (
     <div className="space-y-2">
-      <Label className="text-xs font-medium">{label}</Label>
+      <Label htmlFor={controlId} className="text-xs font-medium">
+        {label}
+      </Label>
       {children}
     </div>
   );
 }
 export function ToggleControl({
+  controlId,
   label,
   checked,
   onChange,
 }: {
+  controlId: string;
   label: string;
   checked: boolean;
   onChange: (value: boolean) => void;
 }) {
   return (
     <div className="flex min-h-10 items-center justify-between gap-4 rounded-md bg-muted/45 px-3">
-      <Label className="text-xs font-medium">{label}</Label>
-      <Switch checked={checked} onCheckedChange={onChange} />
+      <Label htmlFor={controlId} className="text-xs font-medium">
+        {label}
+      </Label>
+      <Switch id={controlId} checked={checked} onCheckedChange={onChange} />
     </div>
   );
 }

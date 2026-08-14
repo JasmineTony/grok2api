@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	accountapp "github.com/chenyme/grok2api/backend/internal/application/account"
@@ -15,7 +16,6 @@ import (
 	"github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/pkg/batch"
 	"github.com/chenyme/grok2api/backend/internal/repository"
-	"golang.org/x/sync/singleflight"
 )
 
 const defaultModelSyncWorkers = 25
@@ -24,10 +24,11 @@ const syncFailurePersistTimeout = 5 * time.Second
 var maxModelBatchSize = repository.MaxPageSize * len(modeldomain.Capabilities())
 
 var (
-	ErrInvalidFilter = errors.New("模型筛选条件无效")
-	ErrInvalidInput  = errors.New("模型参数无效")
-	ErrNotFound      = errors.New("模型不存在")
-	ErrConflict      = errors.New("模型名称冲突")
+	ErrInvalidFilter  = errors.New("模型筛选条件无效")
+	ErrInvalidInput   = errors.New("模型参数无效")
+	ErrNotFound       = errors.New("模型不存在")
+	ErrConflict       = errors.New("模型名称冲突")
+	ErrSyncInProgress = errors.New("模型同步正在进行")
 )
 
 type UpdateInput struct {
@@ -64,15 +65,26 @@ type ListFilter struct {
 	Sort        repository.SortQuery
 }
 
+type SyncProgressObserver func(completed, total int)
+
+type PartialSyncError struct {
+	Succeeded int
+	Failed    int
+}
+
+func (e *PartialSyncError) Error() string {
+	return fmt.Sprintf("模型同步部分失败：成功 %d，失败 %d", e.Succeeded, e.Failed)
+}
+
 // Service 负责上游模型发现、内部来源路由与对外模型名称维护。
 type Service struct {
-	models    repository.ModelRepository
-	accounts  repository.AccountRepository
-	account   *accountapp.Service
-	providers *provider.Registry
-	bulkPool  *batch.Pool
-	logger    *slog.Logger
-	syncAll   singleflight.Group
+	models      repository.ModelRepository
+	accounts    repository.AccountRepository
+	account     *accountapp.Service
+	providers   *provider.Registry
+	bulkPool    *batch.Pool
+	logger      *slog.Logger
+	syncRunning atomic.Bool
 }
 
 func NewService(models repository.ModelRepository, accounts repository.AccountRepository, accountService *accountapp.Service, providers *provider.Registry) *Service {
@@ -153,9 +165,15 @@ func endpointCapabilitiesForDefinition(routes []modeldomain.Route, definition pr
 			available["image_edit"] = definition.Media.ImageEdit
 		case modeldomain.CapabilityVideo:
 			available["video"] = definition.Media.VideoGeneration
+		case modeldomain.CapabilityTTS:
+			available["tts"] = definition.Media.TTS
+		case modeldomain.CapabilitySTT:
+			available["stt"] = definition.Media.STT
+		case modeldomain.CapabilityRealtime:
+			available["realtime"] = definition.Media.Realtime
 		}
 	}
-	order := []string{"completions", "responses", "messages", "image", "image_edit", "video"}
+	order := []string{"completions", "responses", "messages", "image", "image_edit", "video", "tts", "stt", "realtime"}
 	result := make([]string, 0, len(order))
 	for _, capability := range order {
 		if available[capability] {
@@ -398,21 +416,19 @@ func (s *Service) BatchSetEnabled(ctx context.Context, ids []uint64, enabled boo
 
 // Sync 从全部启用账号同步模型能力，并按 Provider 幂等更新公开路由表。
 func (s *Service) Sync(ctx context.Context) (int, error) {
-	result := s.syncAll.DoChan("all", func() (any, error) {
-		return s.syncAllAccounts(ctx)
-	})
-	select {
-	case <-ctx.Done():
-		return 0, ctx.Err()
-	case value := <-result:
-		if value.Err != nil {
-			return 0, value.Err
-		}
-		return value.Val.(int), nil
-	}
+	return s.SyncObserved(ctx, nil)
 }
 
-func (s *Service) syncAllAccounts(ctx context.Context) (int, error) {
+// SyncObserved 执行全量模型同步，并按已完成账号数报告进度。
+func (s *Service) SyncObserved(ctx context.Context, observer SyncProgressObserver) (int, error) {
+	if !s.syncRunning.CompareAndSwap(false, true) {
+		return 0, ErrSyncInProgress
+	}
+	defer s.syncRunning.Store(false)
+	return s.syncAllAccounts(ctx, observer)
+}
+
+func (s *Service) syncAllAccounts(ctx context.Context, observer SyncProgressObserver) (int, error) {
 	if s.providers == nil {
 		return 0, fmt.Errorf("Provider 注册表未初始化")
 	}
@@ -431,12 +447,20 @@ func (s *Service) syncAllAccounts(ctx context.Context) (int, error) {
 	if len(credentials) == 0 {
 		return 0, fmt.Errorf("没有可用于模型同步的账号")
 	}
-	results, summary, runErr := batch.Map(ctx, credentials, batch.Options{Workers: s.bulkPool.Limit(), Pool: s.bulkPool}, func(workCtx context.Context, value account.Credential) ([]string, error) {
+	if observer != nil {
+		observer(0, len(credentials))
+	}
+	var completed atomic.Int64
+	results, summary, runErr := batch.MapObserved(ctx, credentials, batch.Options{Workers: s.bulkPool.Limit(), Pool: s.bulkPool}, func(workCtx context.Context, value account.Credential) ([]string, error) {
 		adapter, ok := s.providers.Models(value.Provider)
 		if !ok {
 			return nil, fmt.Errorf("Provider %s 未注册模型同步能力", value.Provider)
 		}
 		return s.syncAccountCapabilities(workCtx, value, adapter)
+	}, func(_ int, _ batch.Result[[]string]) {
+		if observer != nil {
+			observer(int(completed.Add(1)), len(credentials))
+		}
 	})
 	pool := s.bulkPool.Snapshot()
 	s.logger.Info("model_bulk_sync_completed", "total", summary.Total, "submitted", summary.Submitted, "succeeded", summary.Succeeded, "failed", summary.Failed, "panicked", summary.Panicked, "duration_ms", summary.Duration.Milliseconds(), "canceled", summary.Canceled, "pool_limit", pool.Limit, "pool_active", pool.Active, "pool_queued", pool.Queued, "pool_peak", pool.Peak, "error", runErr)
@@ -489,6 +513,9 @@ func (s *Service) syncAllAccounts(ctx context.Context) (int, error) {
 			return 0, err
 		}
 		syncedModels += len(models)
+	}
+	if failed := len(credentials) - succeeded; failed > 0 {
+		return syncedModels, &PartialSyncError{Succeeded: succeeded, Failed: failed}
 	}
 	return syncedModels, nil
 }

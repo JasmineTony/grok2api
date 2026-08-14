@@ -19,6 +19,7 @@ import {
   type ExampleLanguage,
   type ExampleView,
   fallbackModel,
+  uniqueModelsByPublicID,
   withExampleModel,
 } from "@/features/docs/api-docs-model";
 import { useApiClient } from "@/shared/api/use-api-client";
@@ -49,9 +50,11 @@ export function ApiDocsPage() {
 
   const publicApiBaseUrl = systemQuery.data?.publicApiBaseURL || runtimeConfig.publicApiBaseUrl;
   const baseUrl = `${publicApiBaseUrl.replace(/\/$/, "")}/v1`;
-  const availableModels = (modelsQuery.data?.items ?? []).filter(
-    (model) =>
-      model.enabled && model.available && definition.capabilities.includes(model.capability),
+  const availableModels = uniqueModelsByPublicID(
+    (modelsQuery.data?.items ?? []).filter(
+      (model) =>
+        model.enabled && model.available && definition.capabilities.includes(model.capability),
+    ),
   );
   const selectedModelAvailable = availableModels.some((model) => model.publicId === selectedModel);
   const exampleModel =

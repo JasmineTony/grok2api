@@ -158,7 +158,10 @@ type AccountRepository interface {
 	NextCredentialRefreshDueAt(ctx context.Context) (*time.Time, error)
 	UpdateCredentialRefreshFailure(ctx context.Context, id uint64, failure CredentialRefreshFailure) error
 	UpdateObservedModel(ctx context.Context, id uint64, model string, observedAt time.Time) error
-	UpdateHealth(ctx context.Context, id uint64, failureCount int, cooldownUntil *time.Time, lastError string, success bool) error
+	UpdateHealth(ctx context.Context, id uint64, provider account.Provider, failureCount int, cooldownUntil *time.Time, lastError string, success bool) error
+	// TouchLastUsed persists request activity without changing routing health or
+	// invalidating candidate snapshots.
+	TouchLastUsed(ctx context.Context, id uint64, usedAt time.Time) error
 	TransitionHealth(ctx context.Context, transition AccountHealthTransition) error
 	ListStateEvents(ctx context.Context, accountID uint64, limit int) ([]account.StateHistoryEvent, error)
 	CountStates(ctx context.Context) (map[account.State]uint64, error)
@@ -183,6 +186,7 @@ type AccountRepository interface {
 	HasQuotaWindows(ctx context.Context, accountID uint64) (bool, error)
 	GetQuotaWindows(ctx context.Context, accountIDs []uint64) (map[uint64][]account.QuotaWindow, error)
 	ReplaceQuotaWindows(ctx context.Context, accountID uint64, tier account.WebTier, syncedAt time.Time, values []account.QuotaWindow) error
+	ReplaceQuotaWindowGroup(ctx context.Context, accountID uint64, syncedAt time.Time, modes []string, values []account.QuotaWindow) error
 	SaveQuotaWindows(ctx context.Context, accountID uint64, tier account.WebTier, syncedAt time.Time, values []account.QuotaWindow) error
 	UpsertManyByIdentity(ctx context.Context, values []account.Credential) ([]AccountUpsertResult, error)
 	DecrementQuotaWindow(ctx context.Context, accountID uint64, mode string, now time.Time) (bool, error)

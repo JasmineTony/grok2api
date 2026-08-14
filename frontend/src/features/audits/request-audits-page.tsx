@@ -309,11 +309,12 @@ export function RequestAuditsPage() {
           </>
         }
         footer={
-          result && result.items.length > 0 ? (
+          result && (result.items.length > 0 || cursors.length > 1) ? (
             <CursorPagination
               page={cursors.length}
               pageSize={pageSize}
               hasMore={result.hasMore && Boolean(result.nextCursor)}
+              disabled={auditsQuery.isFetching}
               onFirstPage={() => setCursors([""])}
               onPreviousPage={() => setCursors((values) => values.slice(0, -1))}
               onNextPage={() => setCursors((values) => [...values, result.nextCursor])}

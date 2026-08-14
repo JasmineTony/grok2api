@@ -124,5 +124,3 @@ export function deleteVideos(client: ApiClient, ids: string[]): Promise<{ delete
     decodeCountResult<{ deleted: number }>("deleted"),
   );
 }
-
-// 涓存椂杈撳叆涓嶄細杩涘叆鍥惧簱锛屼篃涓嶄細鐢熸垚鍏紑 URL锛涗换鍔″彧鎸佷箙鍖栫煭 file_id銆?
