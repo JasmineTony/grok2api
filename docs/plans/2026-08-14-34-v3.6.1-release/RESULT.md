@@ -43,9 +43,9 @@
 
 ## Push gate evidence
 
-- First remote push occurred only after final local acceptance: not yet occurred; local acceptance evidence above is complete and the staged snapshot is being finalized.
-- Final synchronization base: pending live refresh of `origin/main` immediately after the local merge commit and before the first push.
-- Final verification run: local suite passed against the uncommitted merge snapshot; rerun is required if refreshed `origin/main` has moved.
+- First remote push occurred only after final local acceptance: not yet occurred; local acceptance and committed-snapshot evidence are complete before the authorized push.
+- Final synchronization base: live anonymous HTTPS refresh on 2026-08-14 confirmed `origin/main=9dd7d18243ebce7ca088549d9ffab4185107480a`; it is an ancestor of local merge `5a06d687ee12d5ffe0b3febbf81d64d2ebb51667` with left/right count `0/117`.
+- Final verification run: the local suite passed for the accepted snapshot; merge commit parents are `f6c4bbc26db75ee218d760c36e1b73bc79f529a5` and `86ae605717087c2df479dc8a268219d3ad8fe731`; the refreshed `origin/main` did not move.
 
 ## Deviations from plan
 
