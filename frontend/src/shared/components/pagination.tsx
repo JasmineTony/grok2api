@@ -19,6 +19,7 @@ export function Pagination({
   total,
   onPageChange,
   onPageSizeChange,
+  pageSizeOptions = PAGE_SIZE_OPTIONS,
   className,
 }: {
   page: number;
@@ -26,6 +27,7 @@ export function Pagination({
   total: number;
   onPageChange: (page: number) => void;
   onPageSizeChange?: (pageSize: number) => void;
+  pageSizeOptions?: readonly number[];
   className?: string;
 }) {
   const { t } = useTranslation();
@@ -79,7 +81,11 @@ export function Pagination({
         </Button>
       </div>
       {onPageSizeChange ? (
-        <PageSizeSelector pageSize={pageSize} onChange={onPageSizeChange} />
+        <PageSizeSelector
+          pageSize={pageSize}
+          options={pageSizeOptions}
+          onChange={onPageSizeChange}
+        />
       ) : (
         <span />
       )}
@@ -95,6 +101,7 @@ export function CursorPagination({
   onPreviousPage,
   onNextPage,
   onPageSizeChange,
+  disabled = false,
   className,
 }: {
   page: number;
@@ -104,6 +111,7 @@ export function CursorPagination({
   onPreviousPage: () => void;
   onNextPage: () => void;
   onPageSizeChange: (pageSize: number) => void;
+  disabled?: boolean;
   className?: string;
 }) {
   const { t } = useTranslation();
@@ -115,7 +123,7 @@ export function CursorPagination({
           variant="ghost"
           size="icon"
           className="size-8"
-          disabled={page <= 1}
+          disabled={disabled || page <= 1}
           onClick={onFirstPage}
           aria-label={t("common.firstPage")}
         >
@@ -125,7 +133,7 @@ export function CursorPagination({
           variant="ghost"
           size="icon"
           className="size-8"
-          disabled={page <= 1}
+          disabled={disabled || page <= 1}
           onClick={onPreviousPage}
           aria-label={t("common.previousPage")}
         >
@@ -138,30 +146,43 @@ export function CursorPagination({
           variant="ghost"
           size="icon"
           className="size-8"
-          disabled={!hasMore}
+          disabled={disabled || !hasMore}
           onClick={onNextPage}
           aria-label={t("common.nextPage")}
         >
           <ChevronRight />
         </Button>
       </div>
-      <PageSizeSelector pageSize={pageSize} onChange={onPageSizeChange} />
+      <PageSizeSelector
+        pageSize={pageSize}
+        disabled={disabled}
+        options={PAGE_SIZE_OPTIONS}
+        onChange={onPageSizeChange}
+      />
     </div>
   );
 }
 
 function PageSizeSelector({
   pageSize,
+  disabled = false,
+  options,
   onChange,
 }: {
   pageSize: number;
+  disabled?: boolean;
+  options: readonly number[];
   onChange: (pageSize: number) => void;
 }) {
   const { t } = useTranslation();
   return (
     <div className="flex items-center gap-2 text-xs text-muted-foreground">
       <span>{t("common.perPage")}</span>
-      <Select value={String(pageSize)} onValueChange={(value) => onChange(Number(value))}>
+      <Select
+        value={String(pageSize)}
+        disabled={disabled}
+        onValueChange={(value) => onChange(Number(value))}
+      >
         <SelectTrigger
           className="h-8 w-[76px] rounded-md bg-secondary px-3 text-xs shadow-none"
           aria-label={t("common.perPage")}
@@ -169,7 +190,7 @@ function PageSizeSelector({
           <SelectValue />
         </SelectTrigger>
         <SelectContent align="end">
-          {PAGE_SIZE_OPTIONS.map((value) => (
+          {options.map((value) => (
             <SelectItem key={value} value={String(value)}>
               {value}
             </SelectItem>

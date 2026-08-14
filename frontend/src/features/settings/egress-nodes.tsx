@@ -34,6 +34,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableActionCell,
   TableActionHead,
@@ -49,6 +56,8 @@ import {
 } from "@/features/settings/egress-node-dialogs";
 import {
   checkEgressNode,
+  cleanupUnhealthyEgressNodes,
+  type ClearanceMode,
   createEgressNode,
   deleteEgressNode,
   deleteEgressNodes,
@@ -56,12 +65,14 @@ import {
   type EgressNodeInput,
   type EgressScope,
   listEgressNodes,
+  previewUnhealthyEgressNodes,
   refreshEgressClearance,
   testEgressNode,
   updateEgressNode,
 } from "@/features/settings/settings-api";
 import { useApiClient } from "@/shared/api/use-api-client";
 import { ErrorState } from "@/shared/components/data-state";
+import { Pagination } from "@/shared/components/pagination";
 import { SortableTableHead } from "@/shared/components/sortable-table-head";
 import { nextTableSort, type SortOrder, type TableSort } from "@/shared/lib/table-sort";
 const EMPTY_EGRESS_NODE_INPUT: EgressNodeInput = {
@@ -75,11 +86,7 @@ const EMPTY_EGRESS_NODE_INPUT: EgressNodeInput = {
   accountCapacity: 0,
 };
 
-export function EgressNodes({
-  clearanceMode = "manual",
-}: {
-  clearanceMode?: "manual" | "flaresolverr";
-}) {
+export function EgressNodes({ clearanceMode = "manual" }: { clearanceMode?: ClearanceMode }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const apiClient = useApiClient();
@@ -89,10 +96,24 @@ export function EgressNodes({
   const [historyNode, setHistoryNode] = useState<EgressNodeDTO | null>(null);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [probeFilter, setProbeFilter] = useState<"" | "healthy" | "unhealthy" | "unknown">("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
   const query = useQuery({
-    queryKey: ["egress-nodes", sort.field, sort.order],
+    queryKey: ["egress-nodes", probeFilter, sort.field, sort.order, page, pageSize],
     queryFn: () =>
-      listEgressNodes(apiClient, sort.field ? { sortBy: sort.field, sortOrder: sort.order } : {}),
+      listEgressNodes(apiClient, {
+        probe: probeFilter,
+        page,
+        pageSize,
+        ...(sort.field ? { sortBy: sort.field, sortOrder: sort.order } : {}),
+      }),
+  });
+  const cleanupPreview = useQuery({
+    queryKey: ["egress-nodes", "cleanup-preview"],
+    queryFn: () => previewUnhealthyEgressNodes(apiClient),
+    enabled: cleanupOpen,
   });
   const invalidateNodes = () => queryClient.invalidateQueries({ queryKey: ["egress-nodes"] });
   const save = useMutation({
@@ -129,6 +150,16 @@ export function EgressNodes({
       setBatchDeleteOpen(false);
       void invalidateNodes();
       toast.success(t("settings.egress.batchDeleted", { count: result.deleted }));
+    },
+    onError: (error) => showError(error, t("settings.egress.operationFailed")),
+  });
+  const cleanupUnhealthy = useMutation({
+    mutationFn: () => cleanupUnhealthyEgressNodes(apiClient),
+    onSuccess: (result) => {
+      setSelected(new Set());
+      setCleanupOpen(false);
+      void invalidateNodes();
+      toast.success(t("settings.egress.cleanupDeleted", { count: result.deleted }));
     },
     onError: (error) => showError(error, t("settings.egress.operationFailed")),
   });
@@ -207,8 +238,11 @@ export function EgressNodes({
     if (scope === "grok_console_asset") return t("settings.egress.scopeConsoleAsset");
     return t("settings.egress.scopeWeb");
   };
-  const changeSort = (field: string, initialOrder: SortOrder) =>
+  const changeSort = (field: string, initialOrder: SortOrder) => {
+    setSelected(new Set());
+    setPage(1);
     setSort((current) => nextTableSort(current, field, initialOrder));
+  };
 
   const nodes = query.data?.items ?? [];
   const toggleAll = (checked: boolean) =>
@@ -227,9 +261,31 @@ export function EgressNodes({
   const selectedSourceNodes = nodes.filter((node) => selected.has(node.id) && node.sourceId).length;
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs text-muted-foreground">{t("console.egressDescription")}</p>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Select
+            value={probeFilter || "all"}
+            onValueChange={(value) => {
+              setSelected(new Set());
+              setPage(1);
+              setProbeFilter(value === "all" ? "" : (value as typeof probeFilter));
+            }}
+          >
+            <SelectTrigger className="h-8 w-[9.5rem]" aria-label={t("settings.egress.probeFilter")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              <SelectItem value="all">{t("settings.egress.probeAll")}</SelectItem>
+              <SelectItem value="healthy">{t("settings.egress.probeHealthy")}</SelectItem>
+              <SelectItem value="unhealthy">{t("settings.egress.probeUnhealthy")}</SelectItem>
+              <SelectItem value="unknown">{t("settings.egress.probeUnknown")}</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button type="button" size="sm" variant="outline" onClick={() => setCleanupOpen(true)}>
+            <Trash2 />
+            {t("settings.egress.cleanupUnhealthy")}
+          </Button>
           {selected.size > 0 ? (
             <Button
               type="button"
@@ -341,6 +397,21 @@ export function EgressNodes({
               )}
             </TableBody>
           </Table>
+          <Pagination
+            className="border-t px-3 py-2"
+            page={query.data?.page ?? page}
+            pageSize={query.data?.pageSize ?? pageSize}
+            total={query.data?.total ?? nodes.length}
+            onPageChange={(nextPage) => {
+              setSelected(new Set());
+              setPage(nextPage);
+            }}
+            onPageSizeChange={(nextPageSize) => {
+              setSelected(new Set());
+              setPage(1);
+              setPageSize(nextPageSize);
+            }}
+          />
         </div>
       )}
 
@@ -382,6 +453,56 @@ export function EgressNodes({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <AlertDialog open={cleanupOpen} onOpenChange={setCleanupOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("settings.egress.cleanupTitle")}</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-1">
+              {cleanupPreview.isPending ? (
+                <span className="block">{t("common.loading")}</span>
+              ) : cleanupPreview.isError ? (
+                <span className="block text-destructive">{cleanupPreview.error.message}</span>
+              ) : (
+                <>
+                  <span className="block">
+                    {t("settings.egress.cleanupDescription", {
+                      count: cleanupPreview.data?.nodes ?? 0,
+                      accounts: cleanupPreview.data?.boundAccounts ?? 0,
+                    })}
+                  </span>
+                  {(cleanupPreview.data?.subscriptionManaged ?? 0) > 0 ? (
+                    <span className="block">
+                      {t("settings.egress.cleanupSubscriptionHint", {
+                        count: cleanupPreview.data?.subscriptionManaged ?? 0,
+                      })}
+                    </span>
+                  ) : null}
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cleanupUnhealthy.isPending}>
+              {t("common.cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              disabled={
+                cleanupPreview.isPending ||
+                cleanupPreview.isError ||
+                cleanupUnhealthy.isPending ||
+                (cleanupPreview.data?.nodes ?? 0) === 0
+              }
+              onClick={(event) => {
+                event.preventDefault();
+                cleanupUnhealthy.mutate();
+              }}
+            >
+              {t("settings.egress.cleanupConfirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <EgressNodeEditorDialog
         editing={editing}
         form={form}
@@ -398,7 +519,7 @@ export function EgressNodes({
 type EgressNodeRowProps = {
   node: EgressNodeDTO;
   scopeLabel: string;
-  clearanceMode: "manual" | "flaresolverr";
+  clearanceMode: ClearanceMode;
   selected: boolean;
   checking: boolean;
   probing: boolean;
@@ -441,7 +562,7 @@ function EgressNodeRow({
       <TableCell>
         <div className="text-xs font-medium">{node.name}</div>
         {node.lastError ? (
-          <div className="mt-0.5 max-w-72 truncate text-[11px] text-destructive">
+          <div className="mt-0.5 max-w-72 whitespace-normal break-words text-[11px] text-destructive">
             {node.lastError}
           </div>
         ) : null}
@@ -486,7 +607,7 @@ function EgressNodeRow({
               <Search />
               {t("settings.egress.test")}
             </DropdownMenuItem>
-            {clearanceMode === "flaresolverr" && node.scope === "grok_web" ? (
+            {clearanceMode !== "manual" && node.scope === "grok_web" ? (
               <DropdownMenuItem disabled={refreshingClearance} onClick={onRefreshClearance}>
                 <RefreshCw />
                 {t("settings.egress.refreshClearance")}

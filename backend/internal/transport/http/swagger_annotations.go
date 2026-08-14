@@ -63,12 +63,59 @@ type SwaggerImageEditRequest struct {
 }
 
 // SwaggerVideoGenerationRequest 表示视频生成请求。
+// image 与 reference_images/reference_audios 互斥；参考图模式 resolution 最高 720p。
 type SwaggerVideoGenerationRequest struct {
-	Model       string `json:"model" example:"grok-imagine-video"`
-	Prompt      string `json:"prompt" example:"A cinematic tracking shot in the rain"`
-	Duration    int    `json:"duration" example:"8"`
-	AspectRatio string `json:"aspect_ratio,omitempty" example:"16:9"`
-	Resolution  string `json:"resolution,omitempty" example:"720p"`
+	Model           string                   `json:"model" example:"grok-imagine-video"`
+	Prompt          string                   `json:"prompt" example:"A cinematic tracking shot in the rain"`
+	Duration        int                      `json:"duration" example:"8"`
+	AspectRatio     string                   `json:"aspect_ratio,omitempty" example:"16:9"`
+	Resolution      string                   `json:"resolution,omitempty" example:"720p"`
+	Image           *SwaggerVideoMediaInput  `json:"image,omitempty"`
+	ReferenceImages []SwaggerVideoMediaInput `json:"reference_images,omitempty"`
+	ReferenceAudios []SwaggerVideoAudioInput `json:"reference_audios,omitempty"`
+	Video           *SwaggerVideoMediaInput  `json:"video,omitempty"`
+}
+
+// SwaggerVideoMediaInput 表示视频相关的图片/视频输入。
+type SwaggerVideoMediaInput struct {
+	URL    string `json:"url,omitempty" example:"https://example.com/input.png"`
+	FileID string `json:"file_id,omitempty" example:"file_123"`
+}
+
+// SwaggerVideoAudioInput 表示参考音频（内置 voice_id）。
+type SwaggerVideoAudioInput struct {
+	VoiceID string `json:"voice_id" example:"eve"`
+}
+
+// SwaggerTTSRequest 表示原生文本转语音请求。
+type SwaggerTTSRequest struct {
+	Model          string  `json:"model,omitempty" example:"grok-voice-latest"`
+	Text           string  `json:"text" example:"Hello from Grok voice."`
+	VoiceID        string  `json:"voice_id,omitempty" example:"eve"`
+	Language       string  `json:"language" example:"en"`
+	OutputFormat   any     `json:"output_format,omitempty"`
+	Speed          float64 `json:"speed,omitempty" example:"1"`
+	WithTimestamps bool    `json:"with_timestamps,omitempty" example:"false"`
+}
+
+// SwaggerAudioSpeechRequest 表示 OpenAI 兼容文本转语音请求。
+type SwaggerAudioSpeechRequest struct {
+	Model          string  `json:"model,omitempty" example:"grok-voice-latest"`
+	Input          string  `json:"input" example:"Hello from Grok voice."`
+	Voice          string  `json:"voice,omitempty" example:"alloy"`
+	ResponseFormat string  `json:"response_format,omitempty" example:"mp3"`
+	Speed          float64 `json:"speed,omitempty" example:"1"`
+	Language       string  `json:"language,omitempty" example:"en"`
+}
+
+// SwaggerSTTRequest 表示 URL 形式的语音转文字请求；multipart 客户端可改传 file。
+type SwaggerSTTRequest struct {
+	Model    string   `json:"model,omitempty" example:"grok-stt"`
+	URL      string   `json:"url,omitempty" example:"https://example.com/sample.wav"`
+	Language string   `json:"language,omitempty" example:"en"`
+	Format   bool     `json:"format,omitempty" example:"true"`
+	Diarize  bool     `json:"diarize,omitempty" example:"false"`
+	Keyterm  []string `json:"keyterm,omitempty"`
 }
 
 // swaggerHealth godoc
@@ -217,6 +264,30 @@ func swaggerGetImage() {}
 // @Router /v1/videos/generations [post]
 func swaggerGenerateVideo() {}
 
+// swaggerEditVideo godoc
+// @Summary 创建异步视频编辑任务
+// @Tags Videos
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param request body SwaggerVideoGenerationRequest true "请求"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]any
+// @Router /v1/videos/edits [post]
+func swaggerEditVideo() {}
+
+// swaggerExtendVideo godoc
+// @Summary 创建异步视频延长任务
+// @Tags Videos
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param request body SwaggerVideoGenerationRequest true "请求"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]any
+// @Router /v1/videos/extensions [post]
+func swaggerExtendVideo() {}
+
 // swaggerGetVideo godoc
 // @Summary 查询异步视频任务
 // @Tags Videos
@@ -227,3 +298,109 @@ func swaggerGenerateVideo() {}
 // @Failure 404 {object} map[string]any
 // @Router /v1/videos/{request_id} [get]
 func swaggerGetVideo() {}
+
+// swaggerTTS godoc
+// @Summary 文本转语音
+// @Tags Voice
+// @Security BearerAuth
+// @Accept json
+// @Produce audio/mpeg
+// @Produce json
+// @Param request body SwaggerTTSRequest true "请求"
+// @Success 200 {file} binary
+// @Failure 400 {object} map[string]any
+// @Router /v1/tts [post]
+func swaggerTTS() {}
+
+// swaggerAudioSpeech godoc
+// @Summary OpenAI 兼容文本转语音
+// @Tags Voice
+// @Security BearerAuth
+// @Accept json
+// @Produce audio/mpeg
+// @Param request body SwaggerAudioSpeechRequest true "请求"
+// @Success 200 {file} binary
+// @Failure 400 {object} map[string]any
+// @Router /v1/audio/speech [post]
+func swaggerAudioSpeech() {}
+
+// swaggerAudioTasks godoc
+// @Summary OpenAI 风格音频任务兼容入口
+// @Tags Voice
+// @Security BearerAuth
+// @Accept json
+// @Produce audio/mpeg
+// @Param request body SwaggerAudioSpeechRequest true "请求"
+// @Success 200 {file} binary
+// @Failure 400 {object} map[string]any
+// @Router /v1/audio/tasks [post]
+func swaggerAudioTasks() {}
+
+// swaggerSTT godoc
+// @Summary 语音转文字
+// @Tags Voice
+// @Security BearerAuth
+// @Accept json
+// @Accept mpfd
+// @Produce json
+// @Param request body SwaggerSTTRequest false "JSON URL 请求"
+// @Param file formData file false "音频文件"
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} map[string]any
+// @Router /v1/stt [post]
+func swaggerSTT() {}
+
+// swaggerAudioTranscriptions godoc
+// @Summary OpenAI 兼容语音转文字
+// @Tags Voice
+// @Security BearerAuth
+// @Accept mpfd
+// @Produce json
+// @Param file formData file true "音频文件"
+// @Param model formData string false "模型" default(grok-stt)
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} map[string]any
+// @Router /v1/audio/transcriptions [post]
+func swaggerAudioTranscriptions() {}
+
+// swaggerTTSVoices godoc
+// @Summary 列出内置音色
+// @Tags Voice
+// @Security BearerAuth
+// @Produce json
+// @Param model query string false "语音模型"
+// @Success 200 {object} map[string]any
+// @Router /v1/tts/voices [get]
+func swaggerTTSVoices() {}
+
+// swaggerTTSVoice godoc
+// @Summary 查询单个音色
+// @Tags Voice
+// @Security BearerAuth
+// @Produce json
+// @Param voice_id path string true "Voice ID"
+// @Param model query string false "语音模型"
+// @Success 200 {object} map[string]any
+// @Failure 404 {object} map[string]any
+// @Router /v1/tts/voices/{voice_id} [get]
+func swaggerTTSVoice() {}
+
+// swaggerSTTWebSocket godoc
+// @Summary 流式语音转文字 WebSocket
+// @Tags Voice
+// @Security BearerAuth
+// @Param model query string false "转写模型" default(grok-stt)
+// @Success 101
+// @Failure 405 {object} map[string]any
+// @Router /v1/stt [get]
+func swaggerSTTWebSocket() {}
+
+// swaggerRealtime godoc
+// @Summary Realtime 语音 WebSocket
+// @Tags Voice
+// @Security BearerAuth
+// @Param model query string false "Realtime 模型" default(grok-voice-latest)
+// @Success 101
+// @Failure 405 {object} map[string]any
+// @Router /v1/realtime [get]
+func swaggerRealtime() {}

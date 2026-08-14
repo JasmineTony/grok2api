@@ -14,6 +14,8 @@ import {
 } from "@/shared/api/decoder";
 import type { SortOrder } from "@/shared/lib/table-sort";
 
+export type ClearanceMode = "manual" | "flaresolverr" | "on_demand";
+
 export type SettingsConfigDTO = {
   server: { maxConcurrentRequests: number };
   providerBuild: {
@@ -38,7 +40,7 @@ export type SettingsConfigDTO = {
     statsigManualValue?: string;
     statsigManualConfigured: boolean;
     statsigSignerURL: string;
-    clearanceMode: "manual" | "flaresolverr";
+    clearanceMode: ClearanceMode;
     flareSolverrURL: string;
     clearanceTimeout: string;
     clearanceRefresh: string;
@@ -69,6 +71,8 @@ export type SettingsConfigDTO = {
     capacityWait: string;
     maxAttempts: number;
     preferFreeBuild: boolean;
+    markBuildChatDeniedAsReauth: boolean;
+    accountIsolatedConnections: boolean;
     segmentedSelector: { enabled: boolean; minCandidates: number; windowSize: number };
   };
   audit: { bufferSize: number; batchSize: number; flushInterval: string; commitDelayMS: number };
@@ -134,6 +138,7 @@ export type EgressSourceDTO = {
   scope: EgressScope;
   enabled: boolean;
   urlConfigured: boolean;
+  proxyConfigured?: boolean;
   refreshIntervalSeconds: number;
   defaultAccountCapacity: number;
   lastSyncedAt?: string;
@@ -147,8 +152,16 @@ export type EgressSourceInput = {
   enabled: boolean;
   url?: string;
   clearUrl?: boolean;
+  proxyURL?: string;
+  clearProxyURL?: boolean;
   refreshIntervalSeconds: number;
   defaultAccountCapacity: number;
+};
+export type EgressSourceListDTO = {
+  items: EgressSourceDTO[];
+  page?: number;
+  pageSize?: number;
+  total?: number;
 };
 export type EgressOperationsConfigDTO = {
   probeProvider: "ipinfo" | "cloudflare";
@@ -158,15 +171,8 @@ export type EgressOperationsConfigDTO = {
   assignmentIntervalSeconds: number;
   fallbacks: Record<EgressScope, EgressFallbackConfigDTO>;
   updatedAt: string;
-  subscriptionProxyConfigured: boolean;
 };
-export type EgressOperationsConfigInput = Omit<
-  EgressOperationsConfigDTO,
-  "updatedAt" | "subscriptionProxyConfigured"
-> & {
-  subscriptionProxyURL?: string;
-  clearSubscriptionProxy?: boolean;
-};
+export type EgressOperationsConfigInput = Omit<EgressOperationsConfigDTO, "updatedAt">;
 export type EgressImportResultDTO = { imported: number; skipped: number };
 export type EgressIPProbeDTO = {
   status: "unknown" | "healthy" | "unhealthy";
@@ -186,6 +192,12 @@ export type EgressProbeResultDTO = {
   ipv6: EgressIPProbeDTO;
 };
 export type EgressProbeBatchResultDTO = { requested: number; healthy: number; unhealthy: number };
+export type EgressCleanupPreviewDTO = {
+  nodes: number;
+  boundAccounts: number;
+  subscriptionManaged: number;
+};
+export type EgressCleanupResultDTO = { deleted: number };
 export type EgressRebalanceResultDTO = { assigned: number; rebalanced: number; unplaced: number };
 export type EgressHealthCheckDTO = {
   id: string;
@@ -199,6 +211,9 @@ export type EgressHealthCheckListDTO = { items: EgressHealthCheckDTO[] };
 
 export type EgressNodeListDTO = {
   items: EgressNodeDTO[];
+  page?: number;
+  pageSize?: number;
+  total?: number;
   defaultUserAgents: Omit<Record<EgressScope, string>, "grok_console_asset"> & {
     grok_console_asset?: string;
   };
@@ -236,7 +251,7 @@ const settingsConfigValidator = hasShape({
     statsigManualValue: isOptional(isString),
     statsigManualConfigured: isBoolean,
     statsigSignerURL: isString,
-    clearanceMode: isOneOf("manual", "flaresolverr"),
+    clearanceMode: isOneOf("manual", "flaresolverr", "on_demand"),
     flareSolverrURL: isString,
     clearanceTimeout: isString,
     clearanceRefresh: isString,
@@ -271,6 +286,8 @@ const settingsConfigValidator = hasShape({
     capacityWait: isString,
     maxAttempts: isNumber,
     preferFreeBuild: isBoolean,
+    markBuildChatDeniedAsReauth: isOptional(isBoolean),
+    accountIsolatedConnections: isOptional(isBoolean),
     segmentedSelector: hasShape({
       enabled: isBoolean,
       minCandidates: isNumber,
@@ -326,6 +343,11 @@ const decodeSettingsSnapshot = (value: unknown): SettingsSnapshotDTO => {
       providerConsole: {
         ...snapshot.config.providerConsole,
         streamIdleTimeout: snapshot.config.providerConsole.streamIdleTimeout || "2m",
+      },
+      routing: {
+        ...snapshot.config.routing,
+        markBuildChatDeniedAsReauth: snapshot.config.routing.markBuildChatDeniedAsReauth ?? false,
+        accountIsolatedConnections: snapshot.config.routing.accountIsolatedConnections ?? false,
       },
       accounts: {
         ...accounts,
@@ -387,6 +409,9 @@ const decodeEgressHealthCheckList = createObjectDecoder<EgressHealthCheckListDTO
 );
 const decodeEgressNodeList = createObjectDecoder<EgressNodeListDTO>("egress node list", {
   items: isArrayOf(egressNodeValidator),
+  page: isOptional(isNumber),
+  pageSize: isOptional(isNumber),
+  total: isOptional(isNumber),
   defaultUserAgents: hasShape({
     grok_build: isString,
     grok_web: isString,
@@ -401,6 +426,7 @@ const egressSourceValidator = hasShape({
   scope: isOneOf("grok_build", "grok_web", "grok_console", "grok_web_asset", "grok_console_asset"),
   enabled: isBoolean,
   urlConfigured: isBoolean,
+  proxyConfigured: isOptional(isBoolean),
   refreshIntervalSeconds: isNumber,
   defaultAccountCapacity: isNumber,
   lastSyncedAt: isOptional(isString),
@@ -412,10 +438,12 @@ const decodeEgressSource = createValidatedDecoder<EgressSourceDTO>(
   "egress source",
   egressSourceValidator,
 );
-const decodeEgressSourceList = createObjectDecoder<{ items: EgressSourceDTO[] }>(
-  "egress source list",
-  { items: isArrayOf(egressSourceValidator) },
-);
+const decodeEgressSourceList = createObjectDecoder<EgressSourceListDTO>("egress source list", {
+  items: isArrayOf(egressSourceValidator),
+  page: isOptional(isNumber),
+  pageSize: isOptional(isNumber),
+  total: isOptional(isNumber),
+});
 const decodeEgressImportResult = createObjectDecoder<EgressImportResultDTO>(
   "egress import result",
   { imported: isNumber, skipped: isNumber },
@@ -434,6 +462,14 @@ const decodeEgressProbeBatchResult = createObjectDecoder<EgressProbeBatchResultD
   "egress probe result",
   { requested: isNumber, healthy: isNumber, unhealthy: isNumber },
 );
+const decodeEgressCleanupPreview = createObjectDecoder<EgressCleanupPreviewDTO>(
+  "egress cleanup preview",
+  { nodes: isNumber, boundAccounts: isNumber, subscriptionManaged: isNumber },
+);
+const decodeEgressCleanupResult = createObjectDecoder<EgressCleanupResultDTO>(
+  "egress cleanup result",
+  { deleted: isNumber },
+);
 const decodeEgressRebalanceResult = createObjectDecoder<EgressRebalanceResultDTO>(
   "egress rebalance result",
   { assigned: isNumber, rebalanced: isNumber, unplaced: isNumber },
@@ -442,24 +478,19 @@ const egressFallbackConfigValidator = hasShape({
   mode: isOneOf("none", "direct", "fixed"),
   nodeId: isOptional(isString),
 });
-type EgressOperationsConfigWireDTO = Omit<
-  EgressOperationsConfigDTO,
-  "probeProvider" | "subscriptionProxyConfigured"
-> & {
+type EgressOperationsConfigWireDTO = Omit<EgressOperationsConfigDTO, "probeProvider"> & {
   probeProvider?: "ipinfo" | "cloudflare";
-  subscriptionProxyConfigured?: boolean;
 };
 const decodeEgressOperationsConfigWire = createObjectDecoder<EgressOperationsConfigWireDTO>(
   "egress operations config",
   {
-    probeProvider: isOneOf("ipinfo", "cloudflare"),
+    probeProvider: isOptional(isOneOf("ipinfo", "cloudflare")),
     probeIntervalSeconds: isNumber,
     autoAssignEnabled: isBoolean,
     autoBalanceEnabled: isBoolean,
     assignmentIntervalSeconds: isNumber,
     fallbacks: isRecordOf(egressFallbackConfigValidator),
     updatedAt: isString,
-    subscriptionProxyConfigured: isOptional(isBoolean),
   },
 );
 const decodeEgressOperationsConfig = (value: unknown): EgressOperationsConfigDTO => {
@@ -467,7 +498,6 @@ const decodeEgressOperationsConfig = (value: unknown): EgressOperationsConfigDTO
   return {
     ...decoded,
     probeProvider: decoded.probeProvider ?? "cloudflare",
-    subscriptionProxyConfigured: decoded.subscriptionProxyConfigured ?? false,
   };
 };
 
@@ -489,10 +519,20 @@ export function updateSettings(
 
 export function listEgressNodes(
   client: ApiClient,
-  input?: { sortBy?: string; sortOrder?: SortOrder; scope?: EgressScope },
+  input?: {
+    sortBy?: string;
+    sortOrder?: SortOrder;
+    scope?: EgressScope;
+    probe?: "healthy" | "unhealthy" | "unknown" | "";
+    page?: number;
+    pageSize?: number;
+  },
 ): Promise<EgressNodeListDTO> {
   const query = new URLSearchParams();
   if (input?.scope) query.set("scope", input.scope);
+  if (input?.probe) query.set("probe", input.probe);
+  if (input?.page) query.set("page", String(input.page));
+  if (input?.pageSize) query.set("pageSize", String(input.pageSize));
   if (input?.sortBy && input.sortOrder) {
     query.set("sortBy", input.sortBy);
     query.set("sortOrder", input.sortOrder);
@@ -503,7 +543,14 @@ export function listEgressNodes(
 
 export function listAllEgressNodes(
   client: ApiClient,
-  input?: { sortBy?: string; sortOrder?: SortOrder; scope?: EgressScope },
+  input?: {
+    sortBy?: string;
+    sortOrder?: SortOrder;
+    scope?: EgressScope;
+    probe?: "healthy" | "unhealthy" | "unknown" | "";
+    page?: number;
+    pageSize?: number;
+  },
 ): Promise<EgressNodeListDTO> {
   return listEgressNodes(client, input);
 }
@@ -609,7 +656,23 @@ export function testEgressNodes(
   );
 }
 
-export function listEgressSources(client: ApiClient): Promise<{ items: EgressSourceDTO[] }> {
+export function previewUnhealthyEgressNodes(client: ApiClient): Promise<EgressCleanupPreviewDTO> {
+  return client.request(
+    "/api/admin/v1/egress-nodes/cleanup-preview",
+    {},
+    decodeEgressCleanupPreview,
+  );
+}
+
+export function cleanupUnhealthyEgressNodes(client: ApiClient): Promise<EgressCleanupResultDTO> {
+  return client.request(
+    "/api/admin/v1/egress-nodes/cleanup",
+    { method: "POST" },
+    decodeEgressCleanupResult,
+  );
+}
+
+export function listEgressSources(client: ApiClient): Promise<EgressSourceListDTO> {
   return client.request("/api/admin/v1/egress-sources", {}, decodeEgressSourceList);
 }
 export function createEgressSource(

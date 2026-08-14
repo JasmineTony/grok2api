@@ -1,4 +1,5 @@
 import {
+  AudioLines,
   Box,
   ChevronDown,
   Code2,
@@ -89,7 +90,24 @@ const documentation = [
     icon: Video,
     items: [
       { href: "/docs/video/generations", label: "Video Generations", method: "POST" },
+      { href: "/docs/video/edits", label: "Video Edits", method: "POST" },
+      { href: "/docs/video/extensions", label: "Video Extensions", method: "POST" },
       { href: "/docs/video/get", label: "Get Video", method: "GET" },
+    ],
+  },
+  {
+    label: "Voice",
+    icon: AudioLines,
+    items: [
+      { href: "/docs/voice/tts", label: "Text to Speech", method: "POST" },
+      { href: "/docs/voice/audio-speech", label: "OpenAI Speech", method: "POST" },
+      { href: "/docs/voice/audio-tasks", label: "OpenAI Audio Tasks", method: "POST" },
+      { href: "/docs/voice/audio-transcriptions", label: "OpenAI Transcriptions", method: "POST" },
+      { href: "/docs/voice/voices", label: "List Voices", method: "GET" },
+      { href: "/docs/voice/voice", label: "Get Voice", method: "GET" },
+      { href: "/docs/voice/stt", label: "Speech to Text", method: "POST" },
+      { href: "/docs/voice/stt-stream", label: "Streaming STT", method: "GET" },
+      { href: "/docs/voice/realtime", label: "Realtime WebSocket", method: "GET" },
     ],
   },
 ] as const;

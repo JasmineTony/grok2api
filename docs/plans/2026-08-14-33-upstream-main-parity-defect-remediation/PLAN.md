@@ -1,9 +1,9 @@
-﻿# Iteration plan: upstream main parity and administration defect remediation
+# Iteration plan: upstream main parity and administration defect remediation
 
 - Date: 2026-08-14
 - Sequence: 33
 - Owner: JasmineTony
-- Status: In progress
+- Status: Complete
 - Base commit: `9dd7d18243ebce7ca088549d9ffab4185107480a`
 - Working branch: `sync/upstream-main-parity-20260814`
 - Upstream branch: `chenyme/grok2api main`
@@ -106,14 +106,14 @@ Initial audit found:
 
 ## Acceptance criteria
 
-- [ ] Exact upstream commit is integrated through a true merge commit and remains an ancestor of the branch.
-- [ ] No unmerged paths or unexplained conflict-free overlap regressions remain.
-- [ ] Filter/dialog/popover/select content remains reachable and readable at 375, 768, and 1440 pixel widths.
-- [ ] Model synchronization no longer depends on a silent long-running JSON response and reports progress plus terminal errors accurately.
-- [ ] Users can filter unusable proxy nodes, clean all unusable nodes in one confirmed action, retain selected-node batch deletion, and see complete safe subscription sync state.
-- [ ] Backend and frontend ordinary configurable field inventories agree; missing routing fields are restored and explicit exceptions are documented.
-- [ ] Required focused and full checks pass, or environment-only limitations are isolated with authoritative alternative evidence.
-- [ ] Security, accessibility, responsive layout, code review, and upstream consistency audits find no release-blocking issue.
-- [ ] Documentation and `RESULT.md` are current; the plan index is updated.
-- [ ] Assumptions and defaults are verified.
-- [ ] The plan branch has not been pushed before final acceptance.
+- [x] Exact upstream commit is integrated through a true merge commit and remains an ancestor of the branch.
+- [x] No unmerged paths or unexplained conflict-free overlap regressions remain.
+- [x] Filter/dialog/popover/select content remains reachable and readable at 375, 768, and 1440 pixel widths.
+- [x] Model synchronization no longer depends on a silent long-running JSON response and reports progress plus terminal errors accurately.
+- [x] Users can filter unusable proxy nodes, clean all unusable nodes in one confirmed action, retain selected-node batch deletion, and see complete safe subscription sync state.
+- [x] Backend and frontend ordinary configurable field inventories agree; missing routing fields are restored and explicit exceptions are documented.
+- [x] Required focused and full checks pass, or environment-only limitations are isolated with authoritative alternative evidence.
+- [x] Security, accessibility, responsive layout, code review, and upstream consistency audits find no release-blocking issue.
+- [x] Documentation and `RESULT.md` are current; the plan index is updated.
+- [x] Assumptions and defaults are verified.
+- [x] The plan branch has not been pushed before final acceptance.

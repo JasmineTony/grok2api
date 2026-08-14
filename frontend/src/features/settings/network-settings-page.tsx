@@ -20,7 +20,17 @@ export function NetworkSettingsPage() {
           <EgressOperations
             scopeLabel={(scope) =>
               t(
-                `settings.egress.scope${scope === "grok_build" ? "Build" : scope === "grok_web" ? "Web" : scope === "grok_console" ? "Console" : "WebAsset"}`,
+                `settings.egress.scope${
+                  scope === "grok_build"
+                    ? "Build"
+                    : scope === "grok_web"
+                      ? "Web"
+                      : scope === "grok_console"
+                        ? "Console"
+                        : scope === "grok_console_asset"
+                          ? "ConsoleAsset"
+                          : "WebAsset"
+                }`,
               )
             }
           />

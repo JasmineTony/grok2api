@@ -188,6 +188,44 @@ export function SettingsRuntimePoliciesPanel({ t, form }: SettingsRuntimePolicie
             />
           </SettingsField>
           <SettingsField
+            controlId="routing-mark-build-chat-denied-reauth"
+            label={t("settings.routing.markBuildChatDeniedAsReauth")}
+            description={t("settings.routing.markBuildChatDeniedAsReauthHelp")}
+          >
+            <Controller
+              control={form.control}
+              name="routing.markBuildChatDeniedAsReauth"
+              render={({ field }) => (
+                <div className="flex h-9 items-center">
+                  <Switch
+                    id="routing-mark-build-chat-denied-reauth"
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </div>
+              )}
+            />
+          </SettingsField>
+          <SettingsField
+            controlId="routing-account-isolated-connections"
+            label={t("settings.routing.accountIsolatedConnections")}
+            description={t("settings.routing.accountIsolatedConnectionsHelp")}
+          >
+            <Controller
+              control={form.control}
+              name="routing.accountIsolatedConnections"
+              render={({ field }) => (
+                <div className="flex h-9 items-center">
+                  <Switch
+                    id="routing-account-isolated-connections"
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </div>
+              )}
+            />
+          </SettingsField>
+          <SettingsField
             controlId="routing-segmented-selector-enabled"
             label={t("settingsRoutingSegmented.enabled")}
             description={t("settingsRoutingSegmented.enabledHelp")}

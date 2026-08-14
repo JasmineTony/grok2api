@@ -86,9 +86,8 @@ export function EgressOperations({ scopeLabel }: { scopeLabel: (scope: EgressSco
     queryFn: () => listEgressNodes(apiClient),
   });
   const operationsForm = operationsDraft ?? operationsFormFrom(operationsQuery.data);
-  const subscriptionProxyError =
-    operationsForm.subscriptionProxyURL.trim() &&
-    !validSubscriptionProxyURL(operationsForm.subscriptionProxyURL)
+  const sourceProxyError =
+    sourceForm.proxyURL.trim() && !validSubscriptionProxyURL(sourceForm.proxyURL)
       ? t("settings.egress.invalidProxy")
       : "";
 
@@ -100,9 +99,17 @@ export function EgressOperations({ scopeLabel }: { scopeLabel: (scope: EgressSco
   const saveSource = useMutation({
     mutationFn: () => {
       const trimmedURL = sourceForm.url.trim();
+      const trimmedProxyURL = sourceForm.proxyURL.trim();
       const input: EgressSourceInput = {
-        ...sourceForm,
+        name: sourceForm.name.trim(),
+        scope: sourceForm.scope,
+        enabled: sourceForm.enabled,
+        refreshIntervalSeconds: sourceForm.refreshIntervalSeconds,
+        defaultAccountCapacity: sourceForm.defaultAccountCapacity,
         ...(trimmedURL ? { url: trimmedURL } : {}),
+        ...(sourceForm.clearUrl ? { clearUrl: true } : {}),
+        ...(trimmedProxyURL ? { proxyURL: trimmedProxyURL } : {}),
+        ...(sourceForm.clearProxyURL ? { clearProxyURL: true } : {}),
       };
       return sourceEditing
         ? updateEgressSource(apiClient, sourceEditing.id, input)
@@ -177,6 +184,9 @@ export function EgressOperations({ scopeLabel }: { scopeLabel: (scope: EgressSco
       scope: value.scope,
       enabled: value.enabled,
       url: "",
+      clearUrl: false,
+      proxyURL: "",
+      clearProxyURL: false,
       refreshIntervalSeconds: value.refreshIntervalSeconds,
       defaultAccountCapacity: value.defaultAccountCapacity,
     });
@@ -205,7 +215,6 @@ export function EgressOperations({ scopeLabel }: { scopeLabel: (scope: EgressSco
         loading={operationsQuery.isPending}
         error={operationsQuery.isError ? operationsQuery.error : null}
         dirty={operationsDraft !== null}
-        subscriptionProxyError={subscriptionProxyError}
         saving={saveOperations.isPending}
         testing={testAll.isPending}
         rebalancing={rebalance.isPending}
@@ -241,6 +250,7 @@ export function EgressOperations({ scopeLabel }: { scopeLabel: (scope: EgressSco
         editing={sourceEditing}
         form={sourceForm}
         pending={saveSource.isPending}
+        proxyError={sourceProxyError}
         scopeLabel={scopeLabel}
         onClose={() => setSourceEditing(undefined)}
         onChange={setSourceForm}
@@ -385,7 +395,12 @@ function EgressSourceRow({
                 : "size-1.5 shrink-0 rounded-full bg-muted-foreground/35"
             }
           />
-          <span className="truncate text-xs font-medium">{source.name}</span>
+          <span className="min-w-0 break-words text-xs font-medium">{source.name}</span>
+          {source.proxyConfigured ? (
+            <Badge variant="outline" className="text-[10px]">
+              {t("settings.egress.proxy")}
+            </Badge>
+          ) : null}
           {source.lastSyncError ? <SourceError message={source.lastSyncError} /> : null}
         </div>
       </TableCell>
@@ -395,9 +410,21 @@ function EgressSourceRow({
         </Badge>
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">
-        {source.lastSyncedAt
-          ? formatDateTime(source.lastSyncedAt, locale)
-          : t("settings.egress.never")}
+        <div className="space-y-0.5">
+          <div>
+            {t("settings.egress.lastSync")}:{" "}
+            {source.lastSyncedAt
+              ? formatDateTime(source.lastSyncedAt, locale)
+              : t("settings.egress.never")}
+          </div>
+          <div>
+            {t("settings.egress.nextSync")}:{" "}
+            {source.nextSyncAt
+              ? formatDateTime(source.nextSyncAt, locale)
+              : t("settings.egress.notScheduled")}
+          </div>
+          <div>{t("settings.egress.lastSyncImported", { count: source.lastSyncImported })}</div>
+        </div>
       </TableCell>
       <TableCell className="text-center text-xs tabular-nums">
         {source.defaultAccountCapacity || t("settings.egress.unlimited")}

@@ -93,7 +93,7 @@ export const settingsSchema = z.object({
       statsigManualValue: z.string().trim().max(4096),
       statsigManualConfigured: z.boolean(),
       statsigSignerURL: z.string().trim().max(2048),
-      clearanceMode: z.enum(["manual", "flaresolverr"]),
+      clearanceMode: z.enum(["manual", "flaresolverr", "on_demand"]),
       flareSolverrURL: z.string().trim().max(2048),
       clearanceTimeout: durationSchema.refine(
         (value) => durationSeconds(value) >= 10 && durationSeconds(value) <= 300,
@@ -133,10 +133,7 @@ export const settingsSchema = z.object({
           context.addIssue({ code: "custom", path: ["statsigSignerURL"], message: "invalid" });
         }
       }
-      if (
-        value.clearanceMode === "flaresolverr" &&
-        !validTrustedServiceURL(value.flareSolverrURL)
-      ) {
+      if (value.clearanceMode !== "manual" && !validTrustedServiceURL(value.flareSolverrURL)) {
         context.addIssue({ code: "custom", path: ["flareSolverrURL"], message: "invalid" });
       }
     }),
@@ -195,6 +192,8 @@ export const settingsSchema = z.object({
             value === UNLIMITED_ROUTING_ATTEMPTS || (value >= 1 && value <= MAX_ROUTING_ATTEMPTS),
         ),
       preferFreeBuild: z.boolean(),
+      markBuildChatDeniedAsReauth: z.boolean(),
+      accountIsolatedConnections: z.boolean(),
       segmentedSelector: z.object({
         enabled: z.boolean(),
         minCandidates: z.number().int().min(100).max(1_000_000),
@@ -291,6 +290,8 @@ export function toSettingsForm(config: SettingsConfigDTO): SettingsForm {
       capacityWait: parseDuration(config.routing.capacityWait),
       maxAttempts: config.routing.maxAttempts,
       preferFreeBuild: config.routing.preferFreeBuild,
+      markBuildChatDeniedAsReauth: config.routing.markBuildChatDeniedAsReauth,
+      accountIsolatedConnections: config.routing.accountIsolatedConnections,
       segmentedSelector: config.routing.segmentedSelector,
     },
     audit: {
@@ -354,6 +355,8 @@ export function toSettingsDTO(config: SettingsForm): SettingsConfigDTO {
       capacityWait: formatDuration(config.routing.capacityWait),
       maxAttempts: config.routing.maxAttempts,
       preferFreeBuild: config.routing.preferFreeBuild,
+      markBuildChatDeniedAsReauth: config.routing.markBuildChatDeniedAsReauth,
+      accountIsolatedConnections: config.routing.accountIsolatedConnections,
       segmentedSelector: config.routing.segmentedSelector,
     },
     audit: {

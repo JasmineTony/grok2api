@@ -36,6 +36,12 @@ export type VideoStatus = {
   error?: { code?: string; message: string };
 };
 
+export type VoiceInfo = {
+  voiceId: string;
+  name: string;
+  language?: string;
+};
+
 class CreativeApiError extends Error {
   readonly status: number;
   readonly code: string | undefined;
@@ -95,6 +101,7 @@ export async function generateImage(
     count: number;
     aspectRatio: string;
     resolution: string;
+    quality?: "low" | "medium";
     signal?: AbortSignal | undefined;
   },
 ): Promise<ImageResult[]> {
@@ -106,6 +113,7 @@ export async function generateImage(
       n: input.count,
       aspect_ratio: input.aspectRatio,
       resolution: input.resolution,
+      ...(input.quality ? { quality: input.quality } : {}),
       response_format: "url",
       stream: false,
     },
@@ -129,6 +137,8 @@ export async function createVideo(
     prompt: string;
     imageURL?: string;
     imageFileID?: string;
+    referenceImages?: Array<{ url?: string; fileId?: string }>;
+    referenceVoiceIds?: string[];
     duration: number;
     aspectRatio: string;
     resolution: string;
@@ -144,7 +154,80 @@ export async function createVideo(
   };
   if (input.imageFileID) body.image = { file_id: input.imageFileID };
   else if (input.imageURL) body.image = { url: input.imageURL };
+  if (input.referenceImages && input.referenceImages.length > 0) {
+    body.reference_images = input.referenceImages.map((item) =>
+      item.fileId ? { file_id: item.fileId } : { url: item.url },
+    );
+  }
+  if (input.referenceVoiceIds && input.referenceVoiceIds.length > 0) {
+    body.reference_audios = input.referenceVoiceIds.map((voiceId) => ({ voice_id: voiceId }));
+  }
   const payload = await publicApiRequest(client, input.apiKey, "/videos/generations", {
+    method: "POST",
+    body,
+    signal: input.signal,
+  });
+  const requestId = readVideoRequestID(payload);
+  if (!requestId) {
+    throw new CreativeApiError(
+      200,
+      "The video response did not contain a request ID",
+      "invalid_response",
+    );
+  }
+  return requestId;
+}
+
+export async function editVideo(
+  client: ApiClient,
+  input: {
+    apiKey: string;
+    model: string;
+    prompt: string;
+    videoURL?: string;
+    videoFileID?: string;
+    signal?: AbortSignal | undefined;
+  },
+): Promise<string> {
+  const payload = await publicApiRequest(client, input.apiKey, "/videos/edits", {
+    method: "POST",
+    body: {
+      model: input.model,
+      prompt: input.prompt,
+      video: input.videoFileID ? { file_id: input.videoFileID } : { url: input.videoURL },
+    },
+    signal: input.signal,
+  });
+  const requestId = readVideoRequestID(payload);
+  if (!requestId) {
+    throw new CreativeApiError(
+      200,
+      "The video response did not contain a request ID",
+      "invalid_response",
+    );
+  }
+  return requestId;
+}
+
+export async function extendVideo(
+  client: ApiClient,
+  input: {
+    apiKey: string;
+    model: string;
+    prompt: string;
+    videoURL?: string;
+    videoFileID?: string;
+    duration?: number;
+    signal?: AbortSignal | undefined;
+  },
+): Promise<string> {
+  const body: Record<string, unknown> = {
+    model: input.model,
+    prompt: input.prompt,
+    video: input.videoFileID ? { file_id: input.videoFileID } : { url: input.videoURL },
+  };
+  if (typeof input.duration === "number") body.duration = input.duration;
+  const payload = await publicApiRequest(client, input.apiKey, "/videos/extensions", {
     method: "POST",
     body,
     signal: input.signal,
@@ -178,6 +261,34 @@ export async function getVideo(
   return status.video
     ? { ...status, video: { ...status.video, url: resolveMediaURL(status.video.url) } }
     : status;
+}
+
+export async function listVoices(
+  client: ApiClient,
+  input: {
+    apiKey: string;
+    model?: string;
+    signal?: AbortSignal | undefined;
+  },
+): Promise<VoiceInfo[]> {
+  const query = input.model ? `?model=${encodeURIComponent(input.model)}` : "";
+  const payload = await publicApiRequest(client, input.apiKey, `/tts/voices${query}`, {
+    method: "GET",
+    signal: input.signal,
+  });
+  if (!isRecord(payload) || !Array.isArray(payload.voices)) {
+    throw new CreativeApiError(200, "The voice list response was invalid", "invalid_response");
+  }
+  return payload.voices.map((item) => {
+    if (!isRecord(item) || typeof item.voice_id !== "string") {
+      throw new CreativeApiError(200, "The voice list response was invalid", "invalid_response");
+    }
+    return {
+      voiceId: item.voice_id,
+      name: typeof item.name === "string" ? item.name : item.voice_id,
+      ...(typeof item.language === "string" ? { language: item.language } : {}),
+    };
+  });
 }
 
 async function publicApiRequest(

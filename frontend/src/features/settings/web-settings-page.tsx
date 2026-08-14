@@ -98,19 +98,22 @@ export function WebSettingsPage() {
               name="providerWeb.clearanceMode"
               render={({ field }) => (
                 <Tabs value={field.value} onValueChange={field.onChange}>
-                  <TabsList id="web-clearance-mode" className="grid w-full grid-cols-2 bg-muted/55">
+                  <TabsList id="web-clearance-mode" className="grid w-full grid-cols-3 bg-muted/55">
                     <TabsTrigger value="manual" className="font-normal">
                       {t("settings.web.clearanceManual")}
                     </TabsTrigger>
                     <TabsTrigger value="flaresolverr" className="font-normal">
                       {t("settings.web.clearanceFlareSolverr")}
                     </TabsTrigger>
+                    <TabsTrigger value="on_demand" className="font-normal">
+                      {t("settings.web.clearanceOnDemand")}
+                    </TabsTrigger>
                   </TabsList>
                 </Tabs>
               )}
             />
           </SettingsField>
-          {form.watch("providerWeb.clearanceMode") === "flaresolverr" ? (
+          {form.watch("providerWeb.clearanceMode") !== "manual" ? (
             <>
               <SettingsField
                 controlId="web-flaresolverr-url"

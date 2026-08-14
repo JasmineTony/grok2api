@@ -71,6 +71,8 @@ const settingsConfigFixture = (): SettingsConfigDTO => ({
     capacityWait: "1s",
     maxAttempts: 3,
     preferFreeBuild: true,
+    markBuildChatDeniedAsReauth: false,
+    accountIsolatedConnections: true,
     segmentedSelector: { enabled: true, minCandidates: 100, windowSize: 16 },
   },
   audit: { bufferSize: 1024, batchSize: 64, flushInterval: "1s", commitDelayMS: 10 },
@@ -133,6 +135,8 @@ const UPSTREAM_V312_SETTINGS_CONTRACT = [
   "routing.capacityWait",
   "routing.maxAttempts",
   "routing.preferFreeBuild",
+  "routing.markBuildChatDeniedAsReauth",
+  "routing.accountIsolatedConnections",
   "routing.segmentedSelector.enabled",
   "routing.segmentedSelector.minCandidates",
   "routing.segmentedSelector.windowSize",
@@ -167,6 +171,8 @@ const RUNTIME_POLICIES_SETTINGS_ROUTE_FIELDS = [
   "routing.capacityWait",
   "routing.maxAttempts",
   "routing.preferFreeBuild",
+  "routing.markBuildChatDeniedAsReauth",
+  "routing.accountIsolatedConnections",
   "routing.segmentedSelector.enabled",
   "routing.segmentedSelector.minCandidates",
   "routing.segmentedSelector.windowSize",
@@ -279,9 +285,9 @@ describe("settings route shell boundaries", () => {
     expect(dto.providerConsole).toEqual(config.providerConsole);
   });
 
-  it("covers the 62-field upstream v3.1.2 settings contract without duplicates", () => {
-    expect(UPSTREAM_V312_SETTINGS_CONTRACT).toHaveLength(62);
-    expect(new Set(UPSTREAM_V312_SETTINGS_CONTRACT).size).toBe(62);
+  it("covers the 64-field upstream-compatible settings contract without duplicates", () => {
+    expect(UPSTREAM_V312_SETTINGS_CONTRACT).toHaveLength(64);
+    expect(new Set(UPSTREAM_V312_SETTINGS_CONTRACT).size).toBe(64);
     const form = toSettingsForm(settingsConfigFixture());
     const contractView = {
       ...form,

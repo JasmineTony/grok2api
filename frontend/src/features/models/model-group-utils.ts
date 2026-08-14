@@ -81,5 +81,8 @@ export function displayCapabilityLabel(capability: ModelDisplayCapability, t: TF
     image: t("models.capabilityImage"),
     image_edit: t("models.capabilityImageEdit"),
     video: t("models.capabilityVideo"),
+    tts: t("models.capabilityTTS"),
+    stt: t("models.capabilitySTT"),
+    realtime: t("models.capabilityRealtime"),
   }[capability];
 }
