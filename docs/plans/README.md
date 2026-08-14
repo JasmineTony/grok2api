@@ -89,3 +89,4 @@ Templates are available in [`templates/`](./templates/).
 
 | 2026-08-12 32 - Responsive administration layout and v3.6.0 release | [Plan](./2026-08-12-32-v3.6.0-layout-release/PLAN.md) | [Result](./2026-08-12-32-v3.6.0-layout-release/RESULT.md) | Complete |
 | 2026-08-14 33 - Upstream main parity and administration defect remediation | [Plan](./2026-08-14-33-upstream-main-parity-defect-remediation/PLAN.md) | [Result](./2026-08-14-33-upstream-main-parity-defect-remediation/RESULT.md) | Complete |
+| 2026-08-14 34 - Latest upstream integration and v3.6.1 release | [Plan](./2026-08-14-34-v3.6.1-release/PLAN.md) | [Result](./2026-08-14-34-v3.6.1-release/RESULT.md) | In progress |
