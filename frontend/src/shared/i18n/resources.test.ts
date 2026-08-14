@@ -17,6 +17,13 @@ describe("i18n resources", () => {
     expect(flattenKeys(en).sort()).toEqual(flattenKeys(zhCN).sort());
   });
 
+  it("includes video routing attempt labels in both locales", () => {
+    expect(en.settings.routing.videoMaxAttempts).toBeTruthy();
+    expect(en.settings.routing.videoMaxAttemptsHelp).toBeTruthy();
+    expect(zhCN.settings.routing.videoMaxAttempts).toBeTruthy();
+    expect(zhCN.settings.routing.videoMaxAttemptsHelp).toBeTruthy();
+  });
+
   it("contains non-empty leaf values", () => {
     for (const resource of [zhCN, en]) {
       expect(flattenKeys(resource).length).toBeGreaterThan(100);

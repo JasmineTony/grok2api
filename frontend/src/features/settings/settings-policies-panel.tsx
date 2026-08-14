@@ -34,7 +34,9 @@ type SettingsRuntimePoliciesPanelProps = {
  */
 export function SettingsRuntimePoliciesPanel({ t, form }: SettingsRuntimePoliciesPanelProps) {
   const [confirmUnlimited, setConfirmUnlimited] = useState(false);
+  const [confirmVideoUnlimited, setConfirmVideoUnlimited] = useState(false);
   const limitedAttempts = useRef(3);
+  const limitedVideoAttempts = useRef(999);
   const segmentedSelectorEnabled = form.watch("routing.segmentedSelector.enabled") === true;
 
   return (
@@ -156,6 +158,59 @@ export function SettingsRuntimePoliciesPanel({ t, form }: SettingsRuntimePolicie
                           limitedAttempts.current =
                             Number.isFinite(field.value) && field.value > 0 ? field.value : 3;
                           setConfirmUnlimited(true);
+                        }
+                      }}
+                    >
+                      {unlimited
+                        ? t("settingsRoutingAttempts.restoreLimited")
+                        : t("settingsRoutingAttempts.unlimited")}
+                    </Button>
+                  </div>
+                );
+              }}
+            />
+          </SettingsField>
+          <SettingsField
+            controlId="routing-video-max-attempts"
+            label={t("settings.routing.videoMaxAttempts")}
+            description={t("settings.routing.videoMaxAttemptsHelp")}
+            error={form.formState.errors.routing?.videoMaxAttempts?.message}
+          >
+            <Controller
+              control={form.control}
+              name="routing.videoMaxAttempts"
+              render={({ field }) => {
+                const unlimited = field.value === UNLIMITED_ROUTING_ATTEMPTS;
+                return (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="routing-video-max-attempts"
+                      ref={field.ref}
+                      name={field.name}
+                      type="number"
+                      min={1}
+                      max={MAX_ROUTING_ATTEMPTS}
+                      disabled={unlimited}
+                      value={unlimited || !Number.isFinite(field.value) ? "" : field.value}
+                      onBlur={field.onBlur}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (Number.isFinite(value)) {
+                          limitedVideoAttempts.current = value;
+                          field.onChange(value);
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant={unlimited ? "destructive" : "outline"}
+                      onClick={() => {
+                        if (unlimited) {
+                          field.onChange(limitedVideoAttempts.current);
+                        } else {
+                          limitedVideoAttempts.current =
+                            Number.isFinite(field.value) && field.value > 0 ? field.value : 999;
+                          setConfirmVideoUnlimited(true);
                         }
                       }}
                     >
@@ -296,6 +351,33 @@ export function SettingsRuntimePoliciesPanel({ t, form }: SettingsRuntimePolicie
                   shouldValidate: true,
                 });
                 setConfirmUnlimited(false);
+              }}
+            >
+              {t("settingsRoutingAttempts.unlimitedConfirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmVideoUnlimited} onOpenChange={setConfirmVideoUnlimited}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("settingsRoutingAttempts.unlimitedTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("settingsRoutingAttempts.unlimitedDescription")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={() => {
+                form.setValue("routing.videoMaxAttempts", UNLIMITED_ROUTING_ATTEMPTS, {
+                  shouldDirty: true,
+                  shouldTouch: true,
+                  shouldValidate: true,
+                });
+                setConfirmVideoUnlimited(false);
               }}
             >
               {t("settingsRoutingAttempts.unlimitedConfirm")}

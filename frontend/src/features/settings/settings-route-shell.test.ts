@@ -70,6 +70,7 @@ const settingsConfigFixture = (): SettingsConfigDTO => ({
     cooldownMax: "5m",
     capacityWait: "1s",
     maxAttempts: 3,
+    videoMaxAttempts: 999,
     preferFreeBuild: true,
     markBuildChatDeniedAsReauth: false,
     accountIsolatedConnections: true,
@@ -134,6 +135,7 @@ const UPSTREAM_V312_SETTINGS_CONTRACT = [
   "routing.cooldownMax",
   "routing.capacityWait",
   "routing.maxAttempts",
+  "routing.videoMaxAttempts",
   "routing.preferFreeBuild",
   "routing.markBuildChatDeniedAsReauth",
   "routing.accountIsolatedConnections",
@@ -170,6 +172,7 @@ const RUNTIME_POLICIES_SETTINGS_ROUTE_FIELDS = [
   "routing.cooldownMax",
   "routing.capacityWait",
   "routing.maxAttempts",
+  "routing.videoMaxAttempts",
   "routing.preferFreeBuild",
   "routing.markBuildChatDeniedAsReauth",
   "routing.accountIsolatedConnections",
@@ -283,11 +286,17 @@ describe("settings route shell boundaries", () => {
     expect(dto.providerWeb.baseURL).toBe(config.providerWeb.baseURL);
     expect(dto.providerWeb.clearanceMode).toBe(config.providerWeb.clearanceMode);
     expect(dto.providerConsole).toEqual(config.providerConsole);
+    expect(dto.routing.videoMaxAttempts).toBe(config.routing.videoMaxAttempts);
+    expect(dto.routing.markBuildChatDeniedAsReauth).toBe(
+      config.routing.markBuildChatDeniedAsReauth,
+    );
+    expect(dto.routing.accountIsolatedConnections).toBe(config.routing.accountIsolatedConnections);
+    expect(dto.routing.segmentedSelector).toEqual(config.routing.segmentedSelector);
   });
 
-  it("covers the 64-field upstream-compatible settings contract without duplicates", () => {
-    expect(UPSTREAM_V312_SETTINGS_CONTRACT).toHaveLength(64);
-    expect(new Set(UPSTREAM_V312_SETTINGS_CONTRACT).size).toBe(64);
+  it("covers the 65-field upstream-compatible settings contract without duplicates", () => {
+    expect(UPSTREAM_V312_SETTINGS_CONTRACT).toHaveLength(65);
+    expect(new Set(UPSTREAM_V312_SETTINGS_CONTRACT).size).toBe(65);
     const form = toSettingsForm(settingsConfigFixture());
     const contractView = {
       ...form,
@@ -320,20 +329,28 @@ describe("settings route shell boundaries", () => {
     expect(partitionedFields).toEqual(editableGeneralFields);
   });
 
-  it("accepts finite attempts up to 200 and the explicit unlimited sentinel", () => {
+  it("accepts finite attempts up to 65535 and the explicit unlimited sentinel", () => {
     const form = toSettingsForm(settingsConfigFixture());
-    expect(
-      settingsSchema.safeParse({ ...form, routing: { ...form.routing, maxAttempts: -1 } }).success,
-    ).toBe(true);
-    expect(
-      settingsSchema.safeParse({ ...form, routing: { ...form.routing, maxAttempts: 200 } }).success,
-    ).toBe(true);
-    expect(
-      settingsSchema.safeParse({ ...form, routing: { ...form.routing, maxAttempts: 0 } }).success,
-    ).toBe(false);
-    expect(
-      settingsSchema.safeParse({ ...form, routing: { ...form.routing, maxAttempts: 201 } }).success,
-    ).toBe(false);
+    for (const field of ["maxAttempts", "videoMaxAttempts"] as const) {
+      expect(
+        settingsSchema.safeParse({ ...form, routing: { ...form.routing, [field]: -1 } }).success,
+      ).toBe(true);
+      expect(
+        settingsSchema.safeParse({ ...form, routing: { ...form.routing, [field]: 65_535 } })
+          .success,
+      ).toBe(true);
+      expect(
+        settingsSchema.safeParse({ ...form, routing: { ...form.routing, [field]: 0 } }).success,
+      ).toBe(false);
+      expect(
+        settingsSchema.safeParse({ ...form, routing: { ...form.routing, [field]: 65_536 } })
+          .success,
+      ).toBe(false);
+    }
+
+    const legacyVideo = settingsConfigFixture();
+    legacyVideo.routing.videoMaxAttempts = 0;
+    expect(toSettingsForm(legacyVideo).routing.videoMaxAttempts).toBe(999);
   });
 
   it("applies one trusted-service URL policy to Statsig and FlareSolverr endpoints", () => {

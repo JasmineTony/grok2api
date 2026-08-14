@@ -54,6 +54,12 @@ bootstrapAdmin:
 	if cfg.Observability.Prometheus.Enabled || cfg.Observability.Prometheus.Listen != "127.0.0.1:9090" {
 		t.Fatalf("prometheus defaults = %#v", cfg.Observability.Prometheus)
 	}
+	if !cfg.Routing.SegmentedSelectorEnabled || cfg.Routing.SegmentedMinCandidates != 3000 || cfg.Routing.SegmentedWindowSize != 64 {
+		t.Fatalf("segmented selector defaults = %#v", cfg.Routing)
+	}
+	if cfg.Routing.MaxAttempts != 3 || cfg.Routing.VideoMaxAttempts != 999 {
+		t.Fatalf("routing attempt defaults = %#v", cfg.Routing)
+	}
 	if cfg.Accounts.AutoCleanReauthEnabled || cfg.Accounts.AutoCleanIncludeDisabled {
 		t.Fatal("accounts auto-clean flags should default to false")
 	}

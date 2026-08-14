@@ -75,6 +75,7 @@ function createSettingsSnapshotFixture() {
         cooldownMax: "5m",
         capacityWait: "1s",
         maxAttempts: 3,
+        videoMaxAttempts: 999,
         preferFreeBuild: true,
         markBuildChatDeniedAsReauth: false,
         accountIsolatedConnections: false,
@@ -101,14 +102,14 @@ function createSettingsSnapshotFixture() {
 
 function createVersionFixture() {
   return {
-    currentVersion: "v3.6.0",
-    latestVersion: "v3.6.0",
+    currentVersion: "v3.6.1",
+    latestVersion: "v3.6.1",
     updateAvailable: false,
     status: "up_to_date",
     checkedAt: "2099-01-01T00:00:00Z",
-    releaseUrl: "https://github.com/JasmineTony/grok2api/releases/tag/v3.6.0",
+    releaseUrl: "https://github.com/JasmineTony/grok2api/releases/tag/v3.6.1",
     releaseNotes:
-      "## Responsive administration layout\n\n- Unified page shells, navigation, toolbars, and mobile overflow boundaries.",
+      "## Upstream main parity and bounded video failover\n\n- Preserved split settings, precise health invalidation, and safe video delivery.",
     error: "",
     repository: "JasmineTony/grok2api",
     upstreamRepository: "chenyme/grok2api",
@@ -235,7 +236,7 @@ function createEgressNodesFixture(probe = "") {
         exitIp: "192.0.2.10",
       },
       ipv6Probe: { status: "unknown", latencyMs: 0 },
-      health: 100,
+      health: 1,
       failureCount: 0,
     },
   ];

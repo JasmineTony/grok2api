@@ -41,9 +41,7 @@ func TestSchemaAndRepositoryConstraints(t *testing.T) {
 	if err := accountRepo.UpdateObservedModel(context.Background(), created.ID, "grok-observed", observedAt); err != nil {
 		t.Fatal(err)
 	}
-	if err := accountRepo.TransitionHealth(context.Background(), repository.AccountHealthTransition{
-		AccountID: created.ID, Event: account.EventRequestSucceeded, Success: true, OccurredAt: observedAt,
-	}); err != nil {
+	if err := accountRepo.UpdateHealth(context.Background(), created.ID, created.Provider, 0, nil, "", true); err != nil {
 		t.Fatal(err)
 	}
 	value.Name = "updated"
@@ -316,9 +314,7 @@ func TestAccountRepositorySummarizesOperationalStates(t *testing.T) {
 	create(account.ProviderBuild, "build-active")
 	cooldown := create(account.ProviderBuild, "build-cooldown")
 	cooldownUntil := now.Add(time.Hour)
-	if err := repo.TransitionHealth(ctx, repository.AccountHealthTransition{
-		AccountID: cooldown.ID, Event: account.EventCooldownStarted, Reason: "cooldown", FailureCount: 1, CooldownUntil: &cooldownUntil, OccurredAt: now,
-	}); err != nil {
+	if err := repo.UpdateHealth(ctx, cooldown.ID, cooldown.Provider, 1, &cooldownUntil, "cooldown", false); err != nil {
 		t.Fatal(err)
 	}
 	disabled := create(account.ProviderBuild, "build-disabled")

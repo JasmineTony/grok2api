@@ -18,9 +18,22 @@ beforeEach(() => {
 
 describe("copyToClipboard", () => {
   it("uses the synchronous fallback outside secure contexts", async () => {
+    const clearData = vi.fn();
+    const setData = vi.fn();
+    execCommand.mockImplementation(() => {
+      const event = new Event("copy", { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "clipboardData", {
+        value: { clearData, setData },
+      });
+      document.dispatchEvent(event);
+      return true;
+    });
+
     expect(await copyToClipboard("secret")).toBe(true);
     expect(execCommand).toHaveBeenCalledWith("copy");
-    expect(document.querySelector("textarea")).toBeNull();
+    expect(clearData).toHaveBeenCalledOnce();
+    expect(setData).toHaveBeenCalledWith("text/plain", "secret");
+    expect(document.querySelector('[aria-hidden="true"]')).toBeNull();
   });
   it("uses the Clipboard API in a secure context", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);

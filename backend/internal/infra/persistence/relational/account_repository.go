@@ -694,7 +694,7 @@ func (r *AccountRepository) ListRoutingAccountOverlays(ctx context.Context, prov
 	var states []accountModelSyncStateModel
 	if err := r.db.db.WithContext(ctx).
 		Table("account_model_sync_states AS state").
-		Select("state.*").
+		Select("state.account_id").
 		Joins("JOIN provider_accounts AS account ON account.id = state.account_id").
 		Where("account.provider = ? AND account.enabled = TRUE AND state.last_success_at IS NOT NULL", provider).
 		Find(&states).Error; err != nil {
@@ -709,7 +709,7 @@ func (r *AccountRepository) ListRoutingAccountOverlays(ctx context.Context, prov
 	var capabilities []accountModelCapabilityModel
 	if err := r.db.db.WithContext(ctx).
 		Table("account_model_capabilities AS capability").
-		Select("capability.*").
+		Select("capability.account_id").
 		Joins("JOIN provider_accounts AS account ON account.id = capability.account_id").
 		Where("account.provider = ? AND account.enabled = TRUE AND capability.upstream_model = ?", provider, upstreamModel).
 		Find(&capabilities).Error; err != nil {
@@ -724,7 +724,7 @@ func (r *AccountRepository) ListRoutingAccountOverlays(ctx context.Context, prov
 	var blockRows []accountModelQuotaBlockModel
 	if err := r.db.db.WithContext(ctx).
 		Table("account_model_quota_blocks AS block").
-		Select("block.*").
+		Select("block.account_id", "block.upstream_model", "block.reason", "block.cooldown_until", "block.updated_at").
 		Joins("JOIN provider_accounts AS account ON account.id = block.account_id").
 		Where("account.provider = ? AND account.enabled = TRUE AND block.upstream_model = ? AND block.cooldown_until > ?", provider, upstreamModel, time.Now().UTC()).
 		Find(&blockRows).Error; err != nil {
@@ -2082,28 +2082,55 @@ func (r *AccountRepository) MarkBuildAPIFallback(ctx context.Context, id uint64,
 	return nil
 }
 
-func (r *AccountRepository) UpdateHealth(ctx context.Context, id uint64, failureCount int, cooldownUntil *time.Time, lastError string, success bool) error {
+func (r *AccountRepository) UpdateHealth(ctx context.Context, id uint64, provider account.Provider, failureCount int, cooldownUntil *time.Time, lastError string, success bool) error {
+	if id == 0 || !provider.IsValid() {
+		return repository.ErrNotFound
+	}
+	failureCount = max(0, failureCount)
+	lastError = truncate(lastError, 512)
 	event := account.EventTransientFailure
 	if success {
 		event = account.EventRequestSucceeded
 	} else if cooldownUntil != nil {
 		event = account.EventCooldownStarted
 	}
-	return r.TransitionHealth(ctx, repository.AccountHealthTransition{AccountID: id, Event: event, Reason: lastError, FailureCount: failureCount, CooldownUntil: cooldownUntil, Success: success, OccurredAt: time.Now().UTC()})
+	transition := repository.AccountHealthTransition{
+		AccountID: id, Event: event, Reason: lastError, FailureCount: failureCount,
+		CooldownUntil: cooldownUntil, Success: success, OccurredAt: time.Now().UTC(),
+	}
+	if err := r.transitionHealth(ctx, transition, provider); err != nil {
+		return err
+	}
+	r.notifyInvalidation(ctx, repository.InvalidationEvent{
+		Kind: repository.InvalidationAccountHealthChanged, Provider: provider, AccountID: id,
+		FailureCount: failureCount, CooldownUntil: cooldownUntil,
+	})
+	return nil
 }
 
 func (r *AccountRepository) TransitionHealth(ctx context.Context, transition repository.AccountHealthTransition) error {
 	if transition.AccountID == 0 || transition.Event == "" || transition.FailureCount < 0 {
 		return repository.ErrConflict
 	}
+	if err := r.transitionHealth(ctx, transition, ""); err != nil {
+		return err
+	}
+	r.notifyInvalidation(ctx, repository.InvalidationEvent{Kind: repository.InvalidationAccountStateChanged})
+	return nil
+}
+
+func (r *AccountRepository) transitionHealth(ctx context.Context, transition repository.AccountHealthTransition, expectedProvider account.Provider) error {
 	when := transition.OccurredAt.UTC()
 	if when.IsZero() {
 		when = time.Now().UTC()
 	}
-	err := r.db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return r.db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var row accountModel
-		if err := tx.Select("id", "enabled", "auth_status", "state", "reauth_marked_at").Where("id = ?", transition.AccountID).Take(&row).Error; err != nil {
+		if err := tx.Select("id", "provider", "enabled", "auth_status", "state", "reauth_marked_at").Where("id = ?", transition.AccountID).Take(&row).Error; err != nil {
 			return mapError(err)
+		}
+		if expectedProvider != "" && account.Provider(row.Provider) != expectedProvider {
+			return repository.ErrNotFound
 		}
 		current := account.State(row.State)
 		if !current.IsValid() {
@@ -2146,8 +2173,16 @@ func (r *AccountRepository) TransitionHealth(ctx context.Context, transition rep
 			updates["auth_status"] = account.AuthStatusActive
 			updates["reauth_marked_at"] = nil
 		}
-		if err := tx.Model(&accountModel{}).Where("id = ?", transition.AccountID).Updates(updates).Error; err != nil {
-			return err
+		query := tx.Model(&accountModel{}).Where("id = ?", transition.AccountID)
+		if expectedProvider != "" {
+			query = query.Where("provider = ?", expectedProvider)
+		}
+		result := query.Updates(updates)
+		if result.Error != nil {
+			return mapError(result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return repository.ErrNotFound
 		}
 		if next == current {
 			return nil
@@ -2157,10 +2192,20 @@ func (r *AccountRepository) TransitionHealth(ctx context.Context, transition rep
 			Event: string(transition.Event), Reason: truncate(transition.Reason, 512), CreatedAt: when,
 		}).Error
 	})
-	if err == nil {
-		r.notifyInvalidation(ctx, repository.InvalidationEvent{Kind: repository.InvalidationAccountStateChanged})
+}
+
+func (r *AccountRepository) TouchLastUsed(ctx context.Context, id uint64, usedAt time.Time) error {
+	if id == 0 || usedAt.IsZero() {
+		return repository.ErrNotFound
 	}
-	return err
+	result := r.db.db.WithContext(ctx).Model(&accountModel{}).Where("id = ?", id).Update("last_used_at", usedAt.UTC())
+	if result.Error != nil {
+		return mapError(result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return repository.ErrNotFound
+	}
+	return nil
 }
 
 func (r *AccountRepository) CountStates(ctx context.Context) (map[account.State]uint64, error) {
@@ -2329,7 +2374,11 @@ func (r *AccountRepository) ClaimQuotaProbe(ctx context.Context, accountID uint6
 }
 
 func (r *AccountRepository) ClearQuotaRecovery(ctx context.Context, accountID uint64) error {
-	return r.db.db.WithContext(ctx).Delete(&quotaRecoveryModel{}, "account_id = ?", accountID).Error
+	result := r.db.db.WithContext(ctx).Delete(&quotaRecoveryModel{}, "account_id = ?", accountID)
+	if result.Error == nil && result.RowsAffected > 0 {
+		r.notifyInvalidation(ctx, repository.InvalidationEvent{Kind: repository.InvalidationAccountRecoveryChanged, AccountID: accountID})
+	}
+	return result.Error
 }
 
 func (r *AccountRepository) ResetQuotaState(ctx context.Context, provider account.Provider, accountIDs []uint64) error {

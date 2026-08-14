@@ -13,13 +13,25 @@
 
 ## Delivered
 
-- Pending implementation and remote delivery.
+- Completed the semantic upstream merge through `86ae605717087c2df479dc8a268219d3ad8fe731` while preserving the independent split settings architecture, account-state behavior, Egress controls, precise invalidation, bounded video failover, safe media delivery, and existing API compatibility.
+- Added the `routing.videoMaxAttempts` contract end to end with legacy missing/zero normalization to `999`, explicit `-1` unlimited support, finite limits through `65535`, bilingual UI, decoder/route/i18n tests, and browser coverage.
+- Aligned the release identity and documentation to `v3.6.1`, including README, E2E fixtures/assertions, release notes, and the `nanoid 3.3.18` security override.
+- Remote delivery, publication, registry verification, branch cleanup, and final documentation closeout remain pending until the first push.
 
 ## Verification results
 
 | Check | Result | Notes |
 | --- | --- | --- |
 | Baseline | Passed | `origin/main=9dd7d182...`; iteration 33 merge `17fa07b8...`; latest upstream target `86ae6057...`; remote `v3.6.1` absent before delivery |
+| Merge index | Passed | `MERGE_HEAD=86ae6057...`; `git diff --name-only --diff-filter=U` and `git ls-files -u` are empty; current merge remains uncommitted until this evidence is staged |
+| Backend | Passed | `go test -p=1 -coverprofile=coverage.out ./...`, `go vet ./...`, and `govulncheck@v1.6.0 ./...`; govulncheck reported 0 vulnerabilities |
+| Swagger | Passed | Two deterministic generations produced stable SHA-256 values: `docs.go=53199291...`, `swagger.json=C872BDB2...`, `swagger.yaml=89BBCC49...` |
+| Frontend | Passed | Prettier, `tsc -b`, ESLint with zero warnings, Vitest coverage (18 files / 59 tests), production build, performance/import/symbol/bundle/chunk/Knip/codebase/architecture/duplication audits, and `pnpm audit --audit-level high` |
+| Browser | Passed with isolated host limitation | Chromium desktop/tablet/mobile suites passed (3 + 6 + 26); WebKit 28 passed; Firefox failed before page creation with host Playwright `browserContext.newPage` `_page` startup error |
+| UI interaction | Passed | Three widths, filter/popover viewport bounds, network-proxy health filter and bulk cleanup preview/confirm, subscription sync/upstream proxy status, settings video attempts, About, Changelog, and split settings were verified |
+| Repository | Passed | Release-version audit, 10 release automation tests, Markdown audit, actionlint v1.7.7, `git diff --check`, and workflow/static audits passed |
+| Dependency security | Passed | `nanoid` override/lock updated to `3.3.18`; high-level pnpm audit reported zero vulnerabilities |
+| Remote delivery | Pending | No first push, delivery PR, tag, Release, GHCR verification, or branch deletion has occurred yet |
 
 ## Assumptions and defaults verification
 
@@ -31,17 +43,20 @@
 
 ## Push gate evidence
 
-- First remote push occurred only after final local acceptance: Pending.
-- Final synchronization base: Pending.
-- Final verification run: Pending.
+- First remote push occurred only after final local acceptance: not yet occurred; local acceptance evidence above is complete and the staged snapshot is being finalized.
+- Final synchronization base: pending live refresh of `origin/main` immediately after the local merge commit and before the first push.
+- Final verification run: local suite passed against the uncommitted merge snapshot; rerun is required if refreshed `origin/main` has moved.
 
 ## Deviations from plan
 
-- Pending.
+- Firefox cross-browser execution is isolated as a host Playwright startup defect because all failures occur before `newPage` returns; Chromium and WebKit application coverage passed.
+- The repository-local untracked caches, coverage output, Python bytecode, and `.claude/settings.local.json` remain deliberately excluded from Git.
 
 ## Unresolved and follow-up work
 
-- Pending.
+- Refresh `origin/main`, create and verify the real merge commit, push the delivery branch, and complete PR/CI/merge delivery.
+- Publish and verify the annotated `v3.6.1` tag, stable latest Release, five release jobs, common GHCR OCI index aliases, amd64/arm64 manifests, and `/healthz`.
+- Complete the docs-only closeout and containment-gated deletion of merged non-main branches.
 
 ## Rollback
 

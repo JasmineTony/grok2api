@@ -7,7 +7,7 @@ export type DurationValue = { value: number; unit: DurationUnit };
 export type ByteSizeUnit = "MiB" | "GiB";
 export type ByteSizeValue = { value: number; unit: ByteSizeUnit };
 
-export const MAX_ROUTING_ATTEMPTS = 200;
+export const MAX_ROUTING_ATTEMPTS = 65_535;
 export const UNLIMITED_ROUTING_ATTEMPTS = -1;
 
 const durationSchema = z.object({
@@ -18,7 +18,7 @@ const positiveInteger = z.number().int().positive();
 const byteSizeSchema = z.object({ value: z.number().positive(), unit: z.enum(["MiB", "GiB"]) });
 const routingTTLDuration = durationSchema.refine((value) => durationSeconds(value) <= 30 * 86_400);
 const routingCooldownDuration = durationSchema.refine((value) => durationSeconds(value) <= 86_400);
-const routingCapacityWaitDuration = durationSchema.refine((value) => durationSeconds(value) <= 5);
+const routingCapacityWaitDuration = durationSchema.refine((value) => durationSeconds(value) <= 30);
 const auditFlushDuration = durationSchema.refine((value) => {
   const seconds = durationSeconds(value);
   return seconds >= 0.01 && seconds <= 60;
@@ -184,13 +184,14 @@ export const settingsSchema = z.object({
       cooldownBase: routingCooldownDuration,
       cooldownMax: routingCooldownDuration,
       capacityWait: routingCapacityWaitDuration,
-      maxAttempts: z
-        .number()
-        .int()
-        .refine(
-          (value) =>
-            value === UNLIMITED_ROUTING_ATTEMPTS || (value >= 1 && value <= MAX_ROUTING_ATTEMPTS),
-        ),
+      maxAttempts: z.union([
+        z.literal(UNLIMITED_ROUTING_ATTEMPTS),
+        positiveInteger.max(MAX_ROUTING_ATTEMPTS),
+      ]),
+      videoMaxAttempts: z.union([
+        z.literal(UNLIMITED_ROUTING_ATTEMPTS),
+        positiveInteger.max(MAX_ROUTING_ATTEMPTS),
+      ]),
       preferFreeBuild: z.boolean(),
       markBuildChatDeniedAsReauth: z.boolean(),
       accountIsolatedConnections: z.boolean(),
@@ -289,6 +290,10 @@ export function toSettingsForm(config: SettingsConfigDTO): SettingsForm {
       cooldownMax: parseDuration(config.routing.cooldownMax),
       capacityWait: parseDuration(config.routing.capacityWait),
       maxAttempts: config.routing.maxAttempts,
+      videoMaxAttempts:
+        config.routing.videoMaxAttempts == null || config.routing.videoMaxAttempts === 0
+          ? 999
+          : config.routing.videoMaxAttempts,
       preferFreeBuild: config.routing.preferFreeBuild,
       markBuildChatDeniedAsReauth: config.routing.markBuildChatDeniedAsReauth,
       accountIsolatedConnections: config.routing.accountIsolatedConnections,
@@ -354,6 +359,10 @@ export function toSettingsDTO(config: SettingsForm): SettingsConfigDTO {
       cooldownMax: formatDuration(config.routing.cooldownMax),
       capacityWait: formatDuration(config.routing.capacityWait),
       maxAttempts: config.routing.maxAttempts,
+      videoMaxAttempts:
+        config.routing.videoMaxAttempts == null || config.routing.videoMaxAttempts === 0
+          ? 999
+          : config.routing.videoMaxAttempts,
       preferFreeBuild: config.routing.preferFreeBuild,
       markBuildChatDeniedAsReauth: config.routing.markBuildChatDeniedAsReauth,
       accountIsolatedConnections: config.routing.accountIsolatedConnections,

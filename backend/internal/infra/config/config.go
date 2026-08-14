@@ -215,12 +215,13 @@ type LocalMediaConfig struct {
 }
 
 type RoutingConfig struct {
-	StickyTTL       Duration `yaml:"stickyTTL"`
-	CooldownBase    Duration `yaml:"cooldownBase"`
-	CooldownMax     Duration `yaml:"cooldownMax"`
-	CapacityWait    Duration `yaml:"capacityWait"`
-	MaxAttempts     int      `yaml:"maxAttempts"`
-	PreferFreeBuild bool     `yaml:"preferFreeBuild"`
+	StickyTTL        Duration `yaml:"stickyTTL"`
+	CooldownBase     Duration `yaml:"cooldownBase"`
+	CooldownMax      Duration `yaml:"cooldownMax"`
+	CapacityWait     Duration `yaml:"capacityWait"`
+	MaxAttempts      int      `yaml:"maxAttempts"`
+	VideoMaxAttempts int      `yaml:"videoMaxAttempts"`
+	PreferFreeBuild  bool     `yaml:"preferFreeBuild"`
 	// MarkBuildChatDeniedAsReauth marks denied Build chat credentials as requiring reauthentication when enabled.
 	MarkBuildChatDeniedAsReauth bool     `yaml:"markBuildChatDeniedAsReauth"`
 	AccountIsolatedConnections  bool     `yaml:"accountIsolatedConnections"`
@@ -658,7 +659,7 @@ func (c Config) Validate() error {
 	if c.Provider.Web.RecoveryBackoffBase.Value() < 5*time.Second || c.Provider.Web.RecoveryBackoffMax.Value() < c.Provider.Web.RecoveryBackoffBase.Value() || c.Provider.Web.RecoveryBackoffMax.Value() > 6*time.Hour {
 		return errors.New("provider.web 恢复退避配置无效")
 	}
-	if c.Routing.StickyTTL.Value() <= 0 || c.Routing.StickyTTL.Value() > maxRoutingTTL || c.Routing.CooldownBase.Value() <= 0 || c.Routing.CooldownMax.Value() < c.Routing.CooldownBase.Value() || c.Routing.CooldownMax.Value() > maxRoutingCooldown || c.Routing.CapacityWait.Value() <= 0 || c.Routing.CapacityWait.Value() > maxRoutingCapacityWait || c.Routing.MaxAttempts < unlimitedRoutingAttempts || c.Routing.MaxAttempts == 0 || c.Routing.MaxAttempts > maxRoutingAttempts {
+	if c.Routing.StickyTTL.Value() <= 0 || c.Routing.StickyTTL.Value() > maxRoutingTTL || c.Routing.CooldownBase.Value() <= 0 || c.Routing.CooldownMax.Value() < c.Routing.CooldownBase.Value() || c.Routing.CooldownMax.Value() > maxRoutingCooldown || c.Routing.CapacityWait.Value() <= 0 || c.Routing.CapacityWait.Value() > maxRoutingCapacityWait || (c.Routing.MaxAttempts < unlimitedRoutingAttempts || c.Routing.MaxAttempts == 0 || c.Routing.MaxAttempts > maxRoutingAttempts) || (c.Routing.VideoMaxAttempts < unlimitedRoutingAttempts || c.Routing.VideoMaxAttempts > maxRoutingAttempts) {
 		return errors.New("routing 配置无效")
 	}
 	if c.Routing.SegmentedMinCandidates < 1 || c.Routing.SegmentedWindowSize < 1 {
@@ -866,10 +867,11 @@ func defaultConfig() Config {
 			CooldownMax:                 Duration(30 * time.Minute),
 			CapacityWait:                Duration(500 * time.Millisecond),
 			MaxAttempts:                 3,
+			VideoMaxAttempts:            999,
 			MarkBuildChatDeniedAsReauth: false,
 			AccountIsolatedConnections:  false,
 			PreferFreeBuild:             false,
-			SegmentedSelectorEnabled:    false,
+			SegmentedSelectorEnabled:    true,
 			SegmentedMinCandidates:      3000,
 			SegmentedWindowSize:         64,
 			ReasoningReplayEnabled:      true,

@@ -70,6 +70,7 @@ export type SettingsConfigDTO = {
     cooldownMax: string;
     capacityWait: string;
     maxAttempts: number;
+    videoMaxAttempts: number;
     preferFreeBuild: boolean;
     markBuildChatDeniedAsReauth: boolean;
     accountIsolatedConnections: boolean;
@@ -285,14 +286,17 @@ const settingsConfigValidator = hasShape({
     cooldownMax: isString,
     capacityWait: isString,
     maxAttempts: isNumber,
+    videoMaxAttempts: isOptional(isNumber),
     preferFreeBuild: isBoolean,
     markBuildChatDeniedAsReauth: isOptional(isBoolean),
     accountIsolatedConnections: isOptional(isBoolean),
-    segmentedSelector: hasShape({
-      enabled: isBoolean,
-      minCandidates: isNumber,
-      windowSize: isNumber,
-    }),
+    segmentedSelector: isOptional(
+      hasShape({
+        enabled: isBoolean,
+        minCandidates: isNumber,
+        windowSize: isNumber,
+      }),
+    ),
   }),
   audit: hasShape({
     bufferSize: isNumber,
@@ -332,6 +336,11 @@ const defaultAccountsConfig = (): SettingsConfigDTO["accounts"] => ({
 const decodeSettingsSnapshot = (value: unknown): SettingsSnapshotDTO => {
   const snapshot = decodeSettingsSnapshotRaw(value);
   const accounts = snapshot.config.accounts ?? defaultAccountsConfig();
+  const segmentedSelector = snapshot.config.routing.segmentedSelector ?? {
+    enabled: true,
+    minCandidates: 3000,
+    windowSize: 64,
+  };
   return {
     ...snapshot,
     config: {
@@ -346,8 +355,18 @@ const decodeSettingsSnapshot = (value: unknown): SettingsSnapshotDTO => {
       },
       routing: {
         ...snapshot.config.routing,
+        videoMaxAttempts:
+          snapshot.config.routing.videoMaxAttempts == null ||
+          snapshot.config.routing.videoMaxAttempts === 0
+            ? 999
+            : snapshot.config.routing.videoMaxAttempts,
         markBuildChatDeniedAsReauth: snapshot.config.routing.markBuildChatDeniedAsReauth ?? false,
         accountIsolatedConnections: snapshot.config.routing.accountIsolatedConnections ?? false,
+        segmentedSelector: {
+          enabled: segmentedSelector.enabled ?? true,
+          minCandidates: segmentedSelector.minCandidates || 3000,
+          windowSize: segmentedSelector.windowSize || 64,
+        },
       },
       accounts: {
         ...accounts,
