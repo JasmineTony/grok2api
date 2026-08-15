@@ -3,10 +3,11 @@
 - Date: 2026-08-14
 - Sequence: 34
 - Owner: JasmineTony
-- Status: Release complete; closeout in progress
+- Status: Complete
 - Base commit: `17fa07b851d0e159840ad3cd8f6b6f5eeb4d42bd`
 - Working branch: `release/v3.6.1-20260814`
 - Closeout branch: `docs/v3.6.1-release-closeout-20260814`
+- Final status branch: `docs/v3.6.1-final-closeout-20260815`
 - Previous release: `v3.6.0`
 - Target release: `v3.6.1`
 - Initial origin main: `9dd7d18243ebce7ca088549d9ffab4185107480a`
@@ -101,7 +102,7 @@ Iteration 33 produced local two-parent merge `17fa07b851d0e159840ad3cd8f6b6f5eeb
 - [x] Delivery PR is merged to `main` through a true merge commit.
 - [x] Annotated tag and published latest stable Release point to the delivery merge commit.
 - [x] GHCR aliases share one verified OCI index with amd64/arm64 images and passing `/healthz`.
-- [ ] Release closeout documentation records exact remote evidence.
-- [ ] Every deleted branch was first proven contained in final `main`; `main`, tags, upstream branches, and unmerged work are preserved.
-- [ ] `RESULT.md` and plan index are complete.
+- [x] Release closeout documentation records exact remote evidence.
+- [x] Every deleted branch was first proven contained in final `main`; `main`, tags, upstream branches, and unmerged work are preserved.
+- [x] `RESULT.md` and plan index are complete.
 - [x] The plan branch was not pushed before final local acceptance.
