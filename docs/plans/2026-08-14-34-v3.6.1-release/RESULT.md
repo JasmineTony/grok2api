@@ -14,10 +14,13 @@
 - GitHub Release: [Grok2API v3.6.1](https://github.com/JasmineTony/grok2api/releases/tag/v3.6.1) (ID `370647199`)
 - Release workflow: [run 31812373032](https://github.com/JasmineTony/grok2api/actions/runs/31812373032)
 - Closeout branch: `docs/v3.6.1-release-closeout-20260814`
-- Final status branch: `docs/v3.6.1-final-closeout-20260815`
+- Post-cleanup status branch: `docs/v3.6.1-final-closeout-20260815`
 - Closeout evidence commit: `1b833705b2f3d4ceee658423a58cd2ad49553d90`
 - Closeout pull request: [#61](https://github.com/JasmineTony/grok2api/pull/61)
-- Final docs-only main commit: `289b34886862da5254d227c048d530f4e7c8b4e2`
+- Release closeout merge commit: `289b34886862da5254d227c048d530f4e7c8b4e2`
+- Post-cleanup status evidence commit: `bb7c38e3d8493dd30a34196ddc38a11fe05965c0`
+- Post-cleanup status pull request: [#62](https://github.com/JasmineTony/grok2api/pull/62)
+- Post-cleanup status merge commit: `aaa763829a6d15cd3b6a3b784af573163d60cde4`
 
 ## Delivered
 
@@ -30,7 +33,7 @@
 
 | Check | Result | Evidence |
 | --- | --- | --- |
-| Baseline and Git state | Passed | Release commit `00702c047e...` remains the immutable `v3.6.1` target; after PR #61 and before this final status update, `HEAD=origin/main=289b34886862da5254d227c048d530f4e7c8b4e2`; no `MERGE_HEAD`; `git diff --name-only --diff-filter=U` empty; local and maintained-origin branch inventories then contained only `main`; preserved untracked caches, coverage, helper metadata, and Python bytecode remain excluded |
+| Baseline and Git state | Passed | Release commit `00702c047e...` remains the immutable `v3.6.1` target; after PR #61 and before the post-cleanup status update, `HEAD=origin/main=289b34886862da5254d227c048d530f4e7c8b4e2`; no `MERGE_HEAD`; `git diff --name-only --diff-filter=U` empty; local and maintained-origin branch inventories then contained only `main`; preserved untracked caches, coverage, helper metadata, and Python bytecode remain excluded |
 | Backend | Passed | `go test -p=1 -coverprofile=coverage.out ./...`, `go vet ./...`, and `govulncheck@v1.6.0 ./...`; govulncheck reported 0 vulnerabilities |
 | Swagger | Passed | Two deterministic generations produced stable SHA-256 values: `docs.go=53199291...`, `swagger.json=C872BDB2...`, `swagger.yaml=89BBCC49...` |
 | Frontend | Passed | Prettier, `tsc -b`, ESLint with zero warnings, Vitest coverage (18 files / 59 tests), production build, performance/import/symbol/bundle/chunk/Knip/codebase/architecture/duplication audits, and `pnpm audit --audit-level high` |
@@ -39,8 +42,9 @@
 | Repository | Passed | Release-version audit, 10 release automation tests, Markdown audit, actionlint v1.7.7, `git diff --check`, workflow/static audits, and staged-snapshot secret scan |
 | PR checks | Passed | PR #60 CI run `31809939204` and CodeQL run `31809939554` succeeded, including backend test/audit and race, frontend quality, Chromium visual regression, Firefox/WebKit smoke, container health smoke, repository/workflow/secret audits, and amd64/arm64 build jobs |
 | PR merge | Passed | PR #60 merged true-merge with parents `9dd7d182...` and `fea2badc...`; `origin/main` is `00702c047e...` |
-| Closeout PR and final main | Passed | Closeout evidence commit `1b833705b2f3d4ceee658423a58cd2ad49553d90` merged through PR #61 as true-merge commit `289b34886862da5254d227c048d530f4e7c8b4e2`, with parents `00702c047e3dcbeed1970ab6a975ccda9b696f5a` and `1b833705b2f3d4ceee658423a58cd2ad49553d90` |
-| Final main checks | Passed | Main CI run `31856575597` and CodeQL run `31856575565` completed successfully for final main `289b34886862da5254d227c048d530f4e7c8b4e2`, including backend race, required verification, and non-publishing amd64/arm64 image builds |
+| Closeout PR and cleanup baseline | Passed | Closeout evidence commit `1b833705b2f3d4ceee658423a58cd2ad49553d90` merged through PR #61 as true-merge commit `289b34886862da5254d227c048d530f4e7c8b4e2`, with parents `00702c047e3dcbeed1970ab6a975ccda9b696f5a` and `1b833705b2f3d4ceee658423a58cd2ad49553d90` |
+| PR #61 main checks | Passed | Main CI run `31856575597` and CodeQL run `31856575565` completed successfully for PR #61 merge commit `289b34886862da5254d227c048d530f4e7c8b4e2`, including backend race, required verification, and non-publishing amd64/arm64 image builds |
+| Post-cleanup status PR | Passed | Evidence commit `bb7c38e3d8493dd30a34196ddc38a11fe05965c0` merged through PR #62 as true-merge commit `aaa763829a6d15cd3b6a3b784af573163d60cde4`; PR CI run `31857815327` and CodeQL run `31857815252` passed |
 | Release tag | Passed | Remote refs expose annotated tag object `1ea8bebc...` and peeled commit `00702c047e...` |
 | GitHub Release | Passed | Release ID `370647199`, published `2026-08-14T15:00:54Z`, `draft=false`, `prerelease=false`; `/releases/latest` resolves to `v3.6.1` |
 | Release workflow | Passed | Run `31812373032`: Validate release `94805826932`, Publish image (arm64) `94805878796`, Publish image (amd64) `94805878800`, Publish final tags `94806991051`, and Smoke test release image `94809060886` all completed successfully |
@@ -57,16 +61,18 @@
 - The release workflow's final smoke job is the runtime proof; the local Docker CLI was not required for this closeout.
 - The immutable release commit remains `00702c047e3dcbeed1970ab6a975ccda9b696f5a`; the later docs-only closeout does not move `v3.6.1`.
 - Closeout evidence commit `1b833705b2f3d4ceee658423a58cd2ad49553d90` was merged through PR #61.
-- Final docs-only `main` after PR #61 is `289b34886862da5254d227c048d530f4e7c8b4e2`.
-- Final-main CI run `31856575597` and CodeQL run `31856575565` target that later docs-only commit; CodeQL and all CI jobs, including backend race and non-publishing amd64/arm64 image builds, passed.
+- The release closeout merge after PR #61 is `289b34886862da5254d227c048d530f4e7c8b4e2`.
+- PR #61 main CI run `31856575597` and CodeQL run `31856575565` target that docs-only closeout commit; CodeQL and all CI jobs, including backend race and non-publishing amd64/arm64 image builds, passed.
+- Post-cleanup status evidence commit `bb7c38e3d8493dd30a34196ddc38a11fe05965c0` merged through PR #62 as `aaa763829a6d15cd3b6a3b784af573163d60cde4`.
 
 ## Completed branch containment and cleanup
 
 - Before deletion, every maintained-origin non-main branch passed `git merge-base --is-ancestor <branch> 289b34886862da5254d227c048d530f4e7c8b4e2`.
 - Deleted 17 contained non-main branches from the maintained `origin` repository.
 - Deleted 18 contained historical local branches.
-- After PR #61 cleanup and before opening this final status branch, the local branch inventory contained only `main` and the maintained-origin tracking inventory contained only `origin/main`.
-- The short-lived `docs/v3.6.1-final-closeout-20260815` branch exists only to commit this post-cleanup evidence and must be deleted after its merge.
+- After PR #61 cleanup and before opening the post-cleanup status branch, the local branch inventory contained only `main` and the maintained-origin tracking inventory contained only `origin/main`.
+- The short-lived `docs/v3.6.1-final-closeout-20260815` branch existed only to commit the post-cleanup evidence and was deleted after its merge.
+- Its evidence commit `bb7c38e3d8493dd30a34196ddc38a11fe05965c0` was proven to be an ancestor of PR #62 merge commit `aaa763829a6d15cd3b6a3b784af573163d60cde4`; GitHub removed the remote branch and the local branch was deleted.
 - Upstream-owned refs under `chenyme/grok2api`, `main`, and all tags remain untouched.
 - The immutable `v3.6.1` tag remains on release commit `00702c047e3dcbeed1970ab6a975ccda9b696f5a`.
 
@@ -86,7 +92,7 @@ Keep deployments pinned to the verified `v3.6.1` OCI digest; never move `v3.6.1`
 - [x] Local and remote checks and security review are complete.
 - [x] Exact upstream and delivery ancestry are preserved.
 - [x] Release tag, Release flags, GHCR artifacts, and health evidence are verified.
-- [x] Closeout PR is merged and its final docs-only main SHA is recorded.
-- [x] Every deleted branch passed ancestry against that final main SHA.
+- [x] Closeout PR is merged and its release-closeout merge SHA is recorded.
+- [x] Every deleted branch passed ancestry against the containing `main` commit used at deletion time.
 - [x] Local `main` tracks final `origin/main` after cleanup.
 - [x] Repository state and plan index are current.
