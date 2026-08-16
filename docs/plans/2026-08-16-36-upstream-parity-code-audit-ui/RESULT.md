@@ -3,7 +3,7 @@
 - Date completed: 2026-08-16
 - Status: Complete
 - Base commit: `8a8ea96c` (main after PR #64)
-- Final commit: `<filled after final commit>`
+- Final commit: `f91e5395`
 - Pull request: branch `sync/upstream-20260816-parity-audit`
 
 ## Delivered
@@ -97,7 +97,7 @@
 
 ## Push gate evidence
 
-- 首次推送将在全量验证通过后进行：pending
+- 首次推送在全量验证通过后进行：Yes（backend build/vet/test 与 frontend pnpm verify 均通过后推送）
 - Final verification run: backend `go build/vet/test ./...`；frontend `pnpm verify`
 
 ## Deviations from plan
