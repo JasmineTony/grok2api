@@ -12,13 +12,15 @@ type DashboardChartsProps = {
 
 export function DashboardCharts({ dashboard, locale, loading }: DashboardChartsProps) {
   return (
-    <>
+    // The fallback skeleton already stacks with space-y-2; keep the loaded
+    // layout identical so panels do not collapse onto each other.
+    <div className="space-y-2">
       <div className="grid items-stretch gap-2 xl:grid-cols-[minmax(0,3fr)_minmax(360px,2fr)]">
         <DashboardTrend dashboard={dashboard} locale={locale} loading={loading} />
         <DashboardProviderDistribution dashboard={dashboard} locale={locale} loading={loading} />
       </div>
       <DashboardTopModels dashboard={dashboard} locale={locale} loading={loading} />
       <DashboardUsageGovernance dashboard={dashboard} locale={locale} loading={loading} />
-    </>
+    </div>
   );
 }
