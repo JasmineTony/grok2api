@@ -69,7 +69,7 @@ func TestNormalizeBatchIDsAllowsGroupedRouteExpansion(t *testing.T) {
 	}
 }
 
-func TestSyncAggregatesCapabilitiesFromAllAccounts(t *testing.T) {
+func TestSyncSyncsOnlyFirstAccountPerProvider(t *testing.T) {
 	ctx := context.Background()
 	database, err := relational.OpenSQLite(ctx, filepath.Join(t.TempDir(), "model-sync.db"))
 	if err != nil {
@@ -91,11 +91,11 @@ func TestSyncAggregatesCapabilitiesFromAllAccounts(t *testing.T) {
 	accountRepo := relational.NewAccountRepository(database)
 	modelRepo := relational.NewModelRepository(database)
 	auditRepo := relational.NewAuditRepository(database)
-	first, _, err := accountRepo.UpsertByIdentity(ctx, account.Credential{Provider: account.ProviderBuild, Name: "basic", SourceKey: "basic", EncryptedAccessToken: encrypted, ExpiresAt: time.Now().Add(time.Hour), AuthStatus: account.AuthStatusActive})
+	first, _, err := accountRepo.UpsertByIdentity(ctx, account.Credential{Provider: account.ProviderBuild, Name: "basic", Priority: 1, SourceKey: "basic", EncryptedAccessToken: encrypted, ExpiresAt: time.Now().Add(time.Hour), AuthStatus: account.AuthStatusActive})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, _, err := accountRepo.UpsertByIdentity(ctx, account.Credential{Provider: account.ProviderBuild, Name: "premium", SourceKey: "premium", EncryptedAccessToken: encrypted, ExpiresAt: time.Now().Add(time.Hour), AuthStatus: account.AuthStatusActive})
+	second, _, err := accountRepo.UpsertByIdentity(ctx, account.Credential{Provider: account.ProviderBuild, Name: "premium", Priority: 5, SourceKey: "premium", EncryptedAccessToken: encrypted, ExpiresAt: time.Now().Add(time.Hour), AuthStatus: account.AuthStatusActive})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,8 @@ func TestSyncAggregatesCapabilitiesFromAllAccounts(t *testing.T) {
 	if err != nil || count != 4 {
 		t.Fatalf("sync count = %d, err = %v", count, err)
 	}
-	if attempts := adapter.attemptCount(); attempts != 2 {
+	// Only the highest-priority build account is synced; the web pool contributes its single account.
+	if attempts := adapter.attemptCount(); attempts != 1 {
 		t.Fatalf("attempts = %d", attempts)
 	}
 	if attempts := webAdapter.attemptCount(); attempts != 1 {
@@ -130,14 +131,17 @@ func TestSyncAggregatesCapabilitiesFromAllAccounts(t *testing.T) {
 		t.Fatal(err)
 	}
 	support := make(map[uint64]bool, len(candidates))
+	known := make(map[uint64]bool, len(candidates))
 	for _, candidate := range candidates {
-		if !candidate.ModelCapabilityKnown {
-			t.Fatalf("capability unknown for account %d", candidate.Credential.ID)
-		}
+		known[candidate.Credential.ID] = candidate.ModelCapabilityKnown
 		support[candidate.Credential.ID] = candidate.SupportsModel
 	}
-	if support[first.ID] || !support[second.ID] {
-		t.Fatalf("support = %#v", support)
+	// The lower-priority account stays untouched by the bulk sync, so its capability stays unknown.
+	if known[first.ID] {
+		t.Fatalf("unsynced account has known capability: %#v", known)
+	}
+	if !known[second.ID] || !support[second.ID] {
+		t.Fatalf("support = %#v, known = %#v", support, known)
 	}
 	webCandidates, err := accountRepo.ListRoutingCandidates(ctx, account.ProviderWeb, 0, "grok-chat-auto", "")
 	if err != nil {

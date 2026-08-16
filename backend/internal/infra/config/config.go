@@ -28,7 +28,7 @@ const (
 	ClearanceModeOnDemand         = "on_demand"
 	DefaultStatsigSignerURL       = "https://grok.wodf.de/sign"
 	DefaultFlareSolverrURL        = "http://flaresolverr:8191"
-	RecommendedBuildClientVersion = "0.2.119"
+	RecommendedBuildClientVersion = "1.0.4"
 	RecommendedBuildUserAgent     = "grok-shell/" + RecommendedBuildClientVersion + " (linux; x86_64)"
 
 	maxServerBodyBytes     = 256 << 20

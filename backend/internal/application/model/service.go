@@ -414,12 +414,12 @@ func (s *Service) BatchSetEnabled(ctx context.Context, ids []uint64, enabled boo
 	return updated, err
 }
 
-// Sync 从全部启用账号同步模型能力，并按 Provider 幂等更新公开路由表。
+// Sync 从每类 Provider 的首个启用账号同步模型能力，并按 Provider 幂等更新公开路由表。
 func (s *Service) Sync(ctx context.Context) (int, error) {
 	return s.SyncObserved(ctx, nil)
 }
 
-// SyncObserved 执行全量模型同步，并按已完成账号数报告进度。
+// SyncObserved 执行模型同步（每类 Provider 仅取首个账号），并按已完成账号数报告进度。
 func (s *Service) SyncObserved(ctx context.Context, observer SyncProgressObserver) (int, error) {
 	if !s.syncRunning.CompareAndSwap(false, true) {
 		return 0, ErrSyncInProgress
@@ -442,7 +442,11 @@ func (s *Service) syncAllAccounts(ctx context.Context, observer SyncProgressObse
 		if err != nil {
 			return 0, err
 		}
-		credentials = append(credentials, values...)
+		// 只同步该 Provider 的第一个账号（ListEnabled 按 priority DESC, id ASC 排序），
+		// 避免模型页同步按钮放大到整个账号池的上游请求量。
+		if len(values) > 0 {
+			credentials = append(credentials, values[0])
+		}
 	}
 	if len(credentials) == 0 {
 		return 0, fmt.Errorf("没有可用于模型同步的账号")
