@@ -32,7 +32,31 @@ export function createQuickImportFile(tokens: string, provider: AccountProvider)
 
 export async function readQuickImportFile(file: File): Promise<string> {
   if (file.size > MAX_IMPORT_FILE_BYTES) throw new RangeError("accountImportFileTooLarge");
-  return file.text();
+  return decodeImportFileBytes(await file.arrayBuffer());
+}
+
+/**
+ * Quick-import token files exported from Windows tooling are frequently GBK/GB18030 or
+ * UTF-16 encoded. Decoding everything as UTF-8 turns those files into mojibake that is
+ * stored as account names and emails, so honor BOM markers first, then require strict
+ * UTF-8, and only fall back to GBK when the payload cannot be valid UTF-8.
+ */
+export function decodeImportFileBytes(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+    return new TextDecoder("utf-16le").decode(bytes.subarray(2));
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    return new TextDecoder("utf-16be").decode(bytes.subarray(2));
+  }
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    return new TextDecoder("utf-8").decode(bytes.subarray(3));
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return new TextDecoder("gbk").decode(bytes);
+  }
 }
 
 type AccountConversionInput =
