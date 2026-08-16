@@ -3,7 +3,7 @@
 - Date completed: 2026-08-16
 - Status: Complete
 - Base commit: `61ed11fb`
-- Final commit: `839b8d4b`
+- Final commit: `80ef1c65`
 - Pull request: branch `fix/build-client-and-sync-20260816` pushed; PR creation URL: https://github.com/JasmineTony/grok2api/pull/new/fix/build-client-and-sync-20260816 (no `gh` CLI/token in the local environment)
 
 ## Delivered
@@ -74,6 +74,7 @@ Account-pool exhaustion returns **503**, not 502, so a steady 502 points at the 
 - First remote push occurred only after final local acceptance: Yes (full backend+frontend verification passed on commit 26ecfed0 before push)
 - Final synchronization base: `61ed11fb`
 - Final verification run: backend `go build ./... && go test ./...`; frontend `pnpm typecheck && pnpm lint && pnpm test && pnpm build`
+- CI correction: the first CI run failed `prettier --check` on `account-page-utils.test.ts` (commit `80ef1c65` applied Prettier and re-ran the full `pnpm verify` locally with exit 0 before pushing the correction to the same branch)
 
 ## Deviations from plan
 
