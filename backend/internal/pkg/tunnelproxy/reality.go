@@ -107,7 +107,10 @@ func (p *realityProxy) handshake(ctx context.Context, connection net.Conn) (net.
 		return nil, err
 	}
 	hello := secure.HandshakeState.Hello
-	privateKey := secure.HandshakeState.State13.EcdheKey
+	privateKey := realityX25519Key(secure)
+	if privateKey == nil {
+		return nil, errors.New("Reality 握手缺少 X25519 TLS 1.3 key share 私钥")
+	}
 
 	hello.SessionId = make([]byte, 32)
 	copy(hello.Raw[39:], hello.SessionId)
@@ -177,12 +180,27 @@ func buildRealityClientHello(connection net.Conn, serverName string, alpn []stri
 		config.NextProtos = append([]string(nil), alpn...)
 		secure.HandshakeState.Hello.AlpnProtocols = append([]string(nil), alpn...)
 	}
-	privateKey := secure.HandshakeState.State13.EcdheKey
-	if privateKey == nil || privateKey.Curve() != ecdh.X25519() {
+	privateKey := realityX25519Key(secure)
+	if privateKey == nil {
 		return nil, fmt.Errorf("Reality 客户端指纹 %q 未提供 X25519 TLS 1.3 key share", helloID.Client)
 	}
 	return secure, nil
 }
+
+// realityX25519Key resolves the plain X25519 private key backing the
+// ClientHello TLS 1.3 key share. utls 1.7 moved preset private keys from the
+// deprecated State13.EcdheKey field to State13.KeyShareKeys.Ecdhe, so both
+// locations must be consulted.
+func realityX25519Key(secure *utls.UConn) *ecdh.PrivateKey {
+	if key := secure.HandshakeState.State13.EcdheKey; key != nil && key.Curve() == ecdh.X25519() {
+		return key
+	}
+	if keys := secure.HandshakeState.State13.KeyShareKeys; keys != nil && keys.Ecdhe != nil && keys.Ecdhe.Curve() == ecdh.X25519() {
+		return keys.Ecdhe
+	}
+	return nil
+}
+
 
 func realityPrefersAESGCM(cipherSuites []uint16) bool {
 	for _, cipherSuite := range cipherSuites {

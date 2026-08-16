@@ -13,15 +13,22 @@ import {
   Minimize2,
   WholeWord,
 } from "lucide-react";
+import { memo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Spinner } from "@/components/ui/spinner";
+import { TableCell, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { buildAuditUsageView } from "@/features/audits/audit-usage";
 import type { AuditDTO, AuditSummaryDTO } from "@/features/audits/request-audits-api";
 import { cn } from "@/shared/lib/cn";
 import { ticksToUSD } from "@/shared/lib/cost";
-import { formatDuration, formatNumber } from "@/shared/lib/format";
+import {
+  formatCompactDateTime,
+  formatDateTime,
+  formatDuration,
+  formatNumber,
+} from "@/shared/lib/format";
 
 export function RequestAuditSummary({
   summary,
@@ -440,8 +447,6 @@ export function UsageDetails({ audit, locale }: { audit: AuditDTO; locale: strin
   );
 }
 
-
-
 function StatusCode({ statusCode, hasError = false }: { statusCode: number; hasError?: boolean }) {
   const tone = statusTone(statusCode, hasError);
   return (
@@ -512,4 +517,97 @@ function providerLabel(provider: AuditDTO["provider"]): string {
 
 function formatUSDCost(ticks: number, fractionDigits: number): string {
   return `${ticksToUSD(ticks).toFixed(fractionDigits)}`;
+}
+
+export const AuditRow = memo(function AuditRow({
+  audit,
+  locale,
+  onOpen,
+}: {
+  audit: AuditDTO;
+  locale: string;
+  onOpen: (audit: AuditDTO) => void;
+}) {
+  const createdAt = formatCompactDateTime(audit.createdAt, locale);
+  const createdAtLabel = formatDateTime(audit.createdAt, locale);
+  return (
+    <TableRow className="h-[96px]">
+      <TableCell>
+        <RequestValue audit={audit} />
+      </TableCell>
+      <TableCell>
+        <ModelRouteValue
+          model={audit.modelPublicId || `#${audit.modelRouteId}`}
+          upstreamModel={audit.modelUpstreamModel || "-"}
+          account={audit.accountName || (audit.accountId ? `#${audit.accountId}` : "-")}
+          clientKey={audit.clientKeyName || `#${audit.clientKeyId}`}
+        />
+      </TableCell>
+      <TableCell className="text-center">
+        <EgressValue audit={audit} />
+      </TableCell>
+      <TableCell>
+        <BillingValue audit={audit} />
+      </TableCell>
+      <TableCell className="px-3">
+        <UsageDetails audit={audit} locale={locale} />
+      </TableCell>
+      <TableCell className="text-center">
+        <AuditStatus audit={audit} onOpen={() => onOpen(audit)} />
+      </TableCell>
+      <TableCell>
+        <ResponsePerformance audit={audit} locale={locale} />
+      </TableCell>
+      <TableCell className="whitespace-nowrap text-xs text-muted-foreground tabular-nums">
+        <time dateTime={audit.createdAt} title={createdAtLabel}>
+          {createdAt}
+        </time>
+      </TableCell>
+    </TableRow>
+  );
+});
+
+function ResponsePerformance({ audit, locale }: { audit: AuditDTO; locale: string }) {
+  const { t } = useTranslation();
+  const duration = splitDuration(formatDuration(audit.durationMs));
+  const firstToken =
+    audit.firstTokenMs === undefined
+      ? { value: "—", unit: "" }
+      : splitDuration(formatDuration(audit.firstTokenMs));
+  const throughput =
+    audit.outputTokensPerSecond === undefined
+      ? "—"
+      : formatNumber(audit.outputTokensPerSecond, locale, 1);
+  return (
+    <div className="grid w-fit max-w-full grid-cols-[auto_auto] gap-x-2.5 gap-y-0.5 whitespace-nowrap text-[11px] leading-4 tabular-nums">
+      <span className="text-muted-foreground">{t("audits.durationMetric")}</span>
+      <PerformanceValue value={duration.value} unit={duration.unit} />
+      <span className="text-muted-foreground">{t("audits.firstTokenMetric")}</span>
+      <PerformanceValue value={firstToken.value} unit={firstToken.unit} />
+      <span className="text-muted-foreground">{t("audits.throughputMetric")}</span>
+      <PerformanceValue value={throughput} unit={t("audits.tokensPerSecondUnit")} />
+    </div>
+  );
+}
+
+function PerformanceValue({ value, unit }: { value: string; unit: string }) {
+  return (
+    <span className="font-medium">
+      {value}
+      {unit ? (
+        <>
+          {" "}
+          <span className="font-normal">{unit}</span>
+        </>
+      ) : null}
+    </span>
+  );
+}
+
+function splitDuration(value: string): { value: string; unit: string } {
+  const separator = value.lastIndexOf(" ");
+  if (separator < 0) {
+    return { value, unit: "" };
+  }
+  return { value: value.slice(0, separator), unit: value.slice(separator + 1) };
 }

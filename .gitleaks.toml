@@ -56,3 +56,11 @@ condition = "AND"
 regexTarget = "line"
 regexes = ['''secret := "eyJhbGciOiJIUzI1NiJ9\.eyJ1c2VyIjoiMTIzNDU2In0\.signaturevalue"''']
 paths = ['''^backend/internal/infra/provider/web/protocol_test\.go$''']
+
+[[allowlists]]
+description = "Deterministic user-id fixture (RFC 4122 example UUID) in merged upstream media clearance tests"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''credential\.UserID = "497f19f8-49d4-458a-bee4-43ec3dcaf8ca"''']
+paths = ['''^backend/internal/infra/provider/web/media_clearance_retry_test\.go$''']

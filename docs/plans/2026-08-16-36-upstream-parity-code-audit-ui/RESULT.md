@@ -104,6 +104,17 @@
 
 - 无。
 
+## CI corrections (first run after push)
+
+首次 CI 运行 4 个失败，全部修复后二次推送：
+
+| 失败 | 修复 |
+| --- | --- |
+| `prettier --check`：`request-audits-components.tsx` | `prettier --write` |
+| `audit:architecture` oversized-view：`request-audits-page.tsx` 554 行 > 500 | `AuditRow`/`ResponsePerformance`/`PerformanceValue`/`splitDuration` 移至 `request-audits-components.tsx`（页面降至 456 行） |
+| gitleaks：`media_clearance_retry_test.go` 两处示例 UUID 触发 `generic-api-key` | `.gitleaks.toml` 增加按路径+正则的 allowlist 条目（与既有条目同构） |
+| govulncheck：utls v1.6.7 五个漏洞（含 GO-2025-3638） | 升级 `refraction-networking/utls` v1.7.0（连带 circl v1.5.0）；Reality 握手适配——utls 1.7 把 preset 私钥从弃用的 `State13.EcdheKey` 移到 `State13.KeyShareKeys.Ecdhe`，新增 `realityX25519Key` 兼容两处读取（`tunnelproxy` 测试全过） |
+
 ## Unresolved and follow-up work
 
 - 审计项 2/5/7/11（见"任务 2"遗留清单）。
