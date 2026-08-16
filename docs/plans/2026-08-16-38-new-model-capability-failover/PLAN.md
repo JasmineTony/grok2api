@@ -3,7 +3,7 @@
 - Date: 2026-08-16
 - Sequence: 38
 - Owner: JasmineTony
-- Status: In progress
+- Status: Complete
 - Base commit: `f53bbaae` (main after PR #66)
 - Working branch: `fix/new-model-capability-failover-20260816`
 
@@ -84,11 +84,11 @@
 
 ## Acceptance criteria
 
-- [ ] 首账号支持 grok-4.6、同等级第二账号旧快照缺失时，第二账号保持未知回退候选。
-- [ ] 首账号返回 502 后，同一请求切换到第二账号并成功返回。
-- [ ] 更新的明确负快照不被降级为未知。
-- [ ] Super 观测不提升非 Super 账号，反之亦然。
-- [ ] combined/layered 查询结果与等级范围模型投影一致。
-- [ ] 全量验证与独立审查通过。
-- [ ] 文档和计划索引更新完成。
-- [ ] `RESULT.md` 完整，分支在最终验收前未推送。
+- [x] 首账号支持 grok-4.6、同等级第二账号旧快照缺失时，第二账号保持未知回退候选。
+- [x] 首账号返回 502 后，同一请求切换到第二账号并成功返回。
+- [x] 更新的明确负快照不被降级为未知。
+- [x] Super 观测不提升非 Super 账号，反之亦然。
+- [x] combined/layered 查询结果与等级范围模型投影一致。
+- [x] 全量验证与独立审查通过。
+- [x] 文档和计划索引更新完成。
+- [x] `RESULT.md` 完整，分支在最终验收前未推送。
