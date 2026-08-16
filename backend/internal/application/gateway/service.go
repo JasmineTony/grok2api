@@ -43,6 +43,7 @@ var (
 	ErrResponseStateUnsupported   = errors.New("目标模型不支持有状态 Response")
 	ErrConversationUnsupported    = errors.New("目标模型不支持当前对话协议")
 	ErrVideoInputUnavailable      = errors.New("视频临时输入不存在或已过期")
+	ErrVideoParameterInvalid      = errors.New("视频请求参数无效")
 	ErrVideoOperationUnsupported  = errors.New("视频编辑/延长仅支持路由到 Console grok-imagine-video")
 	ErrLedgerUnavailable          = errors.New("计费账本暂不可用")
 	ErrVideoInputTooLarge         = errors.New("视频参考图片总大小超过 32 MiB")
@@ -110,6 +111,11 @@ type Input struct {
 }
 
 type Usage struct {
+	// Reported distinguishes a real upstream/estimated usage object from the
+	// zero value used when a response fails before usage is available. Token
+	// counts may legitimately all be zero, so the numeric fields cannot carry
+	// this presence information by themselves.
+	Reported               bool
 	InputTokens            int64
 	CachedInputTokens      int64
 	OutputTokens           int64
@@ -740,13 +746,20 @@ func (s *Service) eligibleMediaRoutes(routes []modeldomain.Route, key clientkey.
 // its immutable account plan together. A cooling or exhausted first target
 // therefore cannot hide a healthy target from another Provider.
 func (s *Service) selectSchedulableMediaRoute(ctx context.Context, routes []modeldomain.Route, key clientkey.Key, capability modeldomain.Capability, consumesQuota bool, providerSupported func(accountdomain.Provider) bool) (modeldomain.Route, *selectionSession, error) {
-	return s.selectSchedulableMediaRouteWithQuotaMode(ctx, routes, key, capability, consumesQuota, providerSupported, nil)
-}
-
-func (s *Service) selectSchedulableMediaRouteWithQuotaMode(ctx context.Context, routes []modeldomain.Route, key clientkey.Key, capability modeldomain.Capability, consumesQuota bool, providerSupported func(accountdomain.Provider) bool, resolveQuotaMode func(modeldomain.Route) string) (modeldomain.Route, *selectionSession, error) {
 	eligible, fallback, err := s.eligibleMediaRoutes(routes, key, capability, providerSupported)
 	if err != nil {
 		return fallback, nil, err
+	}
+	return s.selectSchedulableEligibleMediaRouteWithQuotaMode(ctx, eligible, key, consumesQuota, nil)
+}
+
+// selectSchedulableEligibleMediaRouteWithQuotaMode selects an account plan
+// from routes that already passed capability, client-key, and Provider support
+// checks. Callers may apply request-specific route constraints between the
+// eligibility and scheduling phases without evaluating disallowed routes.
+func (s *Service) selectSchedulableEligibleMediaRouteWithQuotaMode(ctx context.Context, eligible []modeldomain.Route, key clientkey.Key, consumesQuota bool, resolveQuotaMode func(modeldomain.Route) string) (modeldomain.Route, *selectionSession, error) {
+	if len(eligible) == 0 {
+		return modeldomain.Route{}, nil, ErrNoAvailableAccount
 	}
 	var firstSelectionErr error
 	for _, route := range eligible {
@@ -893,7 +906,7 @@ func (s *Service) createResponseAt(ctx context.Context, input Input, path string
 	auditBase := audit.Record{
 		EventID: eventID, RequestID: input.RequestID, ClientKeyID: input.ClientKey.ID, ClientKeyName: input.ClientKey.Name,
 		ModelRouteID: route.ID, ModelPublicID: publicModel, ModelUpstreamModel: modeldomain.DisplayUpstreamModel(route.Provider, route.UpstreamModel),
-		Provider: string(route.Provider), Operation: operation, UsageSource: usageSource, Streaming: input.Streaming,
+		Provider: string(route.Provider), Operation: operation, UsageSource: audit.UsageSourceNone, Streaming: input.Streaming,
 		MediaInputImages: mediaSummary.InputImages,
 	}
 	if errors.Is(routeErr, clientkeyapp.ErrModelNotAllowed) {
@@ -1326,6 +1339,9 @@ attemptLoop:
 				lease.Release()
 				now := time.Now().UTC()
 				record := auditBase
+				if usage.Reported {
+					record.UsageSource = usageSource
+				}
 				record.AccountID = &accountID
 				record.AccountName = credential.Name
 				record.StatusCode = response.StatusCode
@@ -1393,6 +1409,7 @@ attemptLoop:
 				}); err != nil {
 					s.logger.Error("request_usage_write_failed", "event_id", record.EventID, "request_id", input.RequestID, "error", err)
 				}
+				recordGatewayUsageMetrics(s.metrics, usage, record.CostInUSDTicks, record.EstimatedCostInUSDTicks)
 				if usage.ResponseModel != "" {
 					_ = budget.run("observed_model", finalizationMetadataBudget, func(stageCtx context.Context) error {
 						return s.accounts.ObserveResponseModel(stageCtx, accountID, usage.ResponseModel)
@@ -1557,6 +1574,9 @@ func (s *Service) queueAccountModelSync(accountID uint64) {
 
 	go func() {
 		defer func() {
+			if recovered := recover(); recovered != nil {
+				s.logger.Error("model_etag_refresh_panicked", "account_id", accountID, "panic", recovered)
+			}
 			s.modelSyncMu.Lock()
 			delete(s.modelSyncing, accountID)
 			s.modelSyncMu.Unlock()

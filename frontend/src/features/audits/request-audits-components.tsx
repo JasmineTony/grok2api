@@ -5,6 +5,7 @@ import {
   BrainCircuit,
   CircleCheck,
   CircleDollarSign,
+  Clock3,
   CornerDownRight,
   Database,
   Info,
@@ -12,14 +13,22 @@ import {
   Minimize2,
   WholeWord,
 } from "lucide-react";
+import { memo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Spinner } from "@/components/ui/spinner";
+import { TableCell, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { buildAuditUsageView } from "@/features/audits/audit-usage";
 import type { AuditDTO, AuditSummaryDTO } from "@/features/audits/request-audits-api";
 import { cn } from "@/shared/lib/cn";
 import { ticksToUSD } from "@/shared/lib/cost";
-import { formatDuration, formatNumber } from "@/shared/lib/format";
+import {
+  formatCompactDateTime,
+  formatDateTime,
+  formatDuration,
+  formatNumber,
+} from "@/shared/lib/format";
 
 export function RequestAuditSummary({
   summary,
@@ -358,7 +367,33 @@ export function ModelRouteValue({
 
 export function UsageDetails({ audit, locale }: { audit: AuditDTO; locale: string }) {
   const { t } = useTranslation();
-  if (audit.operation === "compaction" && audit.totalTokens === 0) {
+  const view = buildAuditUsageView(
+    {
+      operation: audit.operation,
+      usageSource: audit.usageSource,
+      mediaInputImages: audit.mediaInputImages,
+      mediaOutputImages: audit.mediaOutputImages,
+      mediaOutputSeconds: audit.mediaOutputSeconds,
+      inputTokens: audit.inputTokens,
+      cachedInputTokens: audit.cachedInputTokens,
+      outputTokens: audit.outputTokens,
+      reasoningTokens: audit.reasoningTokens,
+      totalTokens: audit.totalTokens,
+      durationMs: audit.durationMs,
+    },
+    (value) => formatNumber(value, locale),
+    {
+      input: t("audits.input"),
+      output: t("audits.output"),
+      cached: t("audits.cached"),
+      reasoning: t("audits.reasoning"),
+      mediaInput: t("audits.mediaInput"),
+      mediaOutput: t("audits.output"),
+      imageCount: (count) => t("audits.imageCount", { count }),
+      secondsCount: (count) => t("audits.secondsCount", { count }),
+    },
+  );
+  if (view.mode === "compaction") {
     return (
       <div className="flex h-[52px] w-full items-center gap-2 rounded-md bg-muted/45 px-2.5 text-[11px]">
         <Minimize2 className="size-3.5 shrink-0 text-muted-foreground" />
@@ -369,43 +404,37 @@ export function UsageDetails({ audit, locale }: { audit: AuditDTO; locale: strin
       </div>
     );
   }
-  if (audit.operation === "video") {
+  if (view.mode === "duration") {
     return (
-      <MediaUsage
-        input={t("audits.imageCount", { count: audit.mediaInputImages })}
-        output={t("audits.secondsCount", { count: audit.mediaOutputSeconds })}
-      />
+      <div className="flex h-[52px] w-full items-center justify-between gap-2 rounded-md bg-muted/45 px-2.5 text-[11px]">
+        <Clock3 className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="font-medium tabular-nums">{view.durationSeconds}s</span>
+      </div>
     );
   }
-  if (
-    audit.operation === "image" ||
-    audit.operation === "image_edit" ||
-    audit.mediaInputImages > 0 ||
-    audit.mediaOutputImages > 0
-  ) {
-    return (
-      <MediaUsage
-        input={t("audits.imageCount", { count: audit.mediaInputImages })}
-        output={t("audits.imageCount", { count: audit.mediaOutputImages })}
-      />
-    );
-  }
-  const items = [
-    { label: t("audits.input"), value: audit.inputTokens },
-    { label: t("audits.output"), value: audit.outputTokens },
-    { label: t("audits.cached"), value: audit.cachedInputTokens },
-    { label: t("audits.reasoning"), value: audit.reasoningTokens },
-  ];
   return (
-    <div className="w-full">
+    <div className="w-full space-y-1">
+      {view.mediaItems ? (
+        <div className="grid w-full gap-1">
+          {view.mediaItems.map((item) => (
+            <div
+              key={item.key}
+              className="flex h-6 items-center justify-between gap-3 rounded-md bg-muted/45 px-2 text-[11px]"
+            >
+              <span className="text-muted-foreground">{item.label}</span>
+              <span className="font-medium tabular-nums">{item.value}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
       <div className="grid grid-cols-2 gap-1">
-        {items.map((item) => (
+        {view.tokenItems?.map((item) => (
           <div
-            key={item.label}
+            key={item.key}
             className="flex h-6 min-w-0 items-center justify-between gap-2 rounded-md bg-muted/45 px-2 text-[11px]"
           >
             <span className="text-muted-foreground">{item.label}</span>
-            <span className="font-medium tabular-nums">{formatNumber(item.value, locale)}</span>
+            <span className="font-medium tabular-nums">{item.value}</span>
           </div>
         ))}
       </div>
@@ -414,22 +443,6 @@ export function UsageDetails({ audit, locale }: { audit: AuditDTO; locale: strin
           <span>{t("audits.sources", { count: audit.numSourcesUsed })}</span>
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function MediaUsage({ input, output }: { input: string; output: string }) {
-  const { t } = useTranslation();
-  return (
-    <div className="grid w-full gap-1">
-      <div className="flex h-6 items-center justify-between gap-3 rounded-md bg-muted/45 px-2 text-[11px]">
-        <span className="text-muted-foreground">{t("audits.mediaInput")}</span>
-        <span className="font-medium tabular-nums">{input}</span>
-      </div>
-      <div className="flex h-6 items-center justify-between gap-3 rounded-md bg-muted/45 px-2 text-[11px]">
-        <span className="text-muted-foreground">{t("audits.output")}</span>
-        <span className="font-medium tabular-nums">{output}</span>
-      </div>
     </div>
   );
 }
@@ -504,4 +517,97 @@ function providerLabel(provider: AuditDTO["provider"]): string {
 
 function formatUSDCost(ticks: number, fractionDigits: number): string {
   return `${ticksToUSD(ticks).toFixed(fractionDigits)}`;
+}
+
+export const AuditRow = memo(function AuditRow({
+  audit,
+  locale,
+  onOpen,
+}: {
+  audit: AuditDTO;
+  locale: string;
+  onOpen: (audit: AuditDTO) => void;
+}) {
+  const createdAt = formatCompactDateTime(audit.createdAt, locale);
+  const createdAtLabel = formatDateTime(audit.createdAt, locale);
+  return (
+    <TableRow className="h-[96px]">
+      <TableCell>
+        <RequestValue audit={audit} />
+      </TableCell>
+      <TableCell>
+        <ModelRouteValue
+          model={audit.modelPublicId || `#${audit.modelRouteId}`}
+          upstreamModel={audit.modelUpstreamModel || "-"}
+          account={audit.accountName || (audit.accountId ? `#${audit.accountId}` : "-")}
+          clientKey={audit.clientKeyName || `#${audit.clientKeyId}`}
+        />
+      </TableCell>
+      <TableCell className="text-center">
+        <EgressValue audit={audit} />
+      </TableCell>
+      <TableCell>
+        <BillingValue audit={audit} />
+      </TableCell>
+      <TableCell className="px-3">
+        <UsageDetails audit={audit} locale={locale} />
+      </TableCell>
+      <TableCell className="text-center">
+        <AuditStatus audit={audit} onOpen={() => onOpen(audit)} />
+      </TableCell>
+      <TableCell>
+        <ResponsePerformance audit={audit} locale={locale} />
+      </TableCell>
+      <TableCell className="whitespace-nowrap text-xs text-muted-foreground tabular-nums">
+        <time dateTime={audit.createdAt} title={createdAtLabel}>
+          {createdAt}
+        </time>
+      </TableCell>
+    </TableRow>
+  );
+});
+
+function ResponsePerformance({ audit, locale }: { audit: AuditDTO; locale: string }) {
+  const { t } = useTranslation();
+  const duration = splitDuration(formatDuration(audit.durationMs));
+  const firstToken =
+    audit.firstTokenMs === undefined
+      ? { value: "—", unit: "" }
+      : splitDuration(formatDuration(audit.firstTokenMs));
+  const throughput =
+    audit.outputTokensPerSecond === undefined
+      ? "—"
+      : formatNumber(audit.outputTokensPerSecond, locale, 1);
+  return (
+    <div className="grid w-fit max-w-full grid-cols-[auto_auto] gap-x-2.5 gap-y-0.5 whitespace-nowrap text-[11px] leading-4 tabular-nums">
+      <span className="text-muted-foreground">{t("audits.durationMetric")}</span>
+      <PerformanceValue value={duration.value} unit={duration.unit} />
+      <span className="text-muted-foreground">{t("audits.firstTokenMetric")}</span>
+      <PerformanceValue value={firstToken.value} unit={firstToken.unit} />
+      <span className="text-muted-foreground">{t("audits.throughputMetric")}</span>
+      <PerformanceValue value={throughput} unit={t("audits.tokensPerSecondUnit")} />
+    </div>
+  );
+}
+
+function PerformanceValue({ value, unit }: { value: string; unit: string }) {
+  return (
+    <span className="font-medium">
+      {value}
+      {unit ? (
+        <>
+          {" "}
+          <span className="font-normal">{unit}</span>
+        </>
+      ) : null}
+    </span>
+  );
+}
+
+function splitDuration(value: string): { value: string; unit: string } {
+  const separator = value.lastIndexOf(" ");
+  if (separator < 0) {
+    return { value, unit: "" };
+  }
+  return { value: value.slice(0, separator), unit: value.slice(separator + 1) };
 }

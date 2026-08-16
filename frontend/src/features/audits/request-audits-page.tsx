@@ -1,18 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCw, Search } from "lucide-react";
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listModels } from "@/entities/model/model-api";
 import { RequestAuditDetailDialog } from "@/features/audits/request-audit-detail-dialog";
 import {
@@ -21,15 +14,7 @@ import {
   getRequestAudits,
   getRequestAuditSummary,
 } from "@/features/audits/request-audits-api";
-import {
-  AuditStatus,
-  BillingValue,
-  EgressValue,
-  ModelRouteValue,
-  RequestAuditSummary,
-  RequestValue,
-  UsageDetails,
-} from "@/features/audits/request-audits-components";
+import { AuditRow, RequestAuditSummary } from "@/features/audits/request-audits-components";
 import { useRequestAuditFilterOptions } from "@/features/audits/use-request-audit-filter-options";
 import { useApiClient } from "@/shared/api/use-api-client";
 import { EmptyState, ErrorState, TableLoadingRow } from "@/shared/components/data-state";
@@ -41,7 +26,7 @@ import { PeriodSelector } from "@/shared/components/period-selector";
 import { SortableTableHead } from "@/shared/components/sortable-table-head";
 import { VirtualTableBody } from "@/shared/components/virtual-table-body";
 import { useDebouncedValue } from "@/shared/hooks/use-debounced-value";
-import { formatDateTime, formatDuration } from "@/shared/lib/format";
+import { cn } from "@/shared/lib/cn";
 import { type PeriodDays, toPeriodValue } from "@/shared/lib/period";
 import { nextTableSort, type SortOrder, type TableSort } from "@/shared/lib/table-sort";
 
@@ -64,6 +49,13 @@ export function RequestAuditsPage() {
   const [sort, setSort] = useState<TableSort>({ field: "createdAt", order: "desc" });
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [selectedAudit, setSelectedAudit] = useState<AuditDTO | null>(null);
+  const openAudit = useCallback((audit: AuditDTO) => setSelectedAudit(audit), []);
+  const renderAuditRow = useCallback(
+    (audit: AuditDTO) => (
+      <AuditRow key={audit.id} audit={audit} locale={i18n.language} onOpen={openAudit} />
+    ),
+    [i18n.language, openAudit],
+  );
   const forceSummaryRefresh = useRef(false);
   const debouncedSearch = useDebouncedValue(search);
   const debouncedKeyFilter = useDebouncedValue(keyFilter);
@@ -334,16 +326,24 @@ export function RequestAuditsPage() {
         ) : null}
         {result && result.items.length === 0 ? <EmptyState /> : null}
         {auditsQuery.isPending || (result && result.items.length > 0) ? (
-          <Table viewportRows={20} rowHeight={72} className="min-w-[1136px] table-fixed text-xs">
+          <Table
+            viewportRows={20}
+            rowHeight={96}
+            aria-busy={auditsQuery.isFetching}
+            className={cn(
+              "min-w-[1184px] table-fixed text-xs transition-opacity",
+              auditsQuery.isPlaceholderData && "pointer-events-none opacity-60",
+            )}
+          >
             <colgroup>
+              <col className="w-44" />
               <col className="w-36" />
-              <col className="w-44" />
-              <col className="w-20" />
               <col className="w-24" />
-              <col className="w-76" />
-              <col className="w-20" />
-              <col className="w-20" />
-              <col className="w-44" />
+              <col className="w-24" />
+              <col className="w-64" />
+              <col className="w-24" />
+              <col className="w-40" />
+              <col className="w-40" />
             </colgroup>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
@@ -399,7 +399,7 @@ export function RequestAuditsPage() {
                   initialOrder="desc"
                   onSort={changeSort}
                 >
-                  {t("audits.duration")}
+                  {t("audits.responsePerformance")}
                 </SortableTableHead>
                 <SortableTableHead
                   field="createdAt"
@@ -420,42 +420,9 @@ export function RequestAuditsPage() {
               <VirtualTableBody
                 items={result?.items ?? []}
                 colSpan={8}
-                rowHeight={72}
-                renderRow={(audit) => (
-                  <TableRow className="h-[72px]" key={audit.id}>
-                    <TableCell>
-                      <RequestValue audit={audit} />
-                    </TableCell>
-                    <TableCell>
-                      <ModelRouteValue
-                        model={audit.modelPublicId || `#${audit.modelRouteId}`}
-                        upstreamModel={audit.modelUpstreamModel || "-"}
-                        account={
-                          audit.accountName || (audit.accountId ? `#${audit.accountId}` : "-")
-                        }
-                        clientKey={audit.clientKeyName || `#${audit.clientKeyId}`}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <EgressValue audit={audit} />
-                    </TableCell>
-                    <TableCell>
-                      <BillingValue audit={audit} />
-                    </TableCell>
-                    <TableCell className="px-3">
-                      <UsageDetails audit={audit} locale={i18n.language} />
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <AuditStatus audit={audit} onOpen={() => setSelectedAudit(audit)} />
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-xs tabular-nums">
-                      {formatDuration(audit.durationMs)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                      {formatDateTime(audit.createdAt, i18n.language)}
-                    </TableCell>
-                  </TableRow>
-                )}
+                rowHeight={96}
+                overscan={6}
+                renderRow={renderAuditRow}
               />
             )}
           </Table>

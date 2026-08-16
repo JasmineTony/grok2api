@@ -2022,24 +2022,6 @@ func tierOrderRank(order []account.WebTier, tier account.WebTier) int {
 	return len(order)
 }
 
-func (s *Selector) MarkPaidQuotaExhausted(ctx context.Context, credential account.Credential, billing *account.Billing) bool {
-	if billing == nil || !billing.IsPaid() {
-		return false
-	}
-	periodEnd, ok := billing.PeriodEnd()
-	if !ok {
-		return false
-	}
-	now := time.Now().UTC()
-	_ = s.accounts.SaveQuotaRecovery(ctx, account.QuotaRecovery{
-		AccountID: credential.ID, Kind: account.QuotaRecoveryKindPaid, Status: account.QuotaRecoveryStatusExhausted,
-		ExhaustedAt: &now, NextProbeAt: &periodEnd, LastConfirmedAt: &now, UpdatedAt: now,
-	})
-	_ = s.sticky.DeleteByAccount(ctx, credential.ID)
-	s.invalidateCandidates(credential.Provider)
-	return true
-}
-
 func (s *Selector) MarkUpstreamFailure(ctx context.Context, credential account.Credential, failure *UpstreamFailure) {
 	if failure == nil {
 		s.MarkFailure(ctx, credential, 0, 0)
