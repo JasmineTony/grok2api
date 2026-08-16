@@ -51,23 +51,17 @@ describe("account page utilities", () => {
       decodeImportFileBytes(new Uint8Array([0xef, 0xbb, 0xbf, ...utf8Bytes("token")]).buffer),
     ).toBe("token");
 
-    const utf16le = new Uint8Array([
-      0xff, 0xfe, 0x2d, 0x4e, 0x87, 0x65, 0x0a, 0x00,
-    ]);
+    const utf16le = new Uint8Array([0xff, 0xfe, 0x2d, 0x4e, 0x87, 0x65, 0x0a, 0x00]);
     expect(decodeImportFileBytes(utf16le.buffer)).toBe("中文\n");
 
-    const utf16be = new Uint8Array([
-      0xfe, 0xff, 0x4e, 0x2d, 0x65, 0x87, 0x00, 0x0a,
-    ]);
+    const utf16be = new Uint8Array([0xfe, 0xff, 0x4e, 0x2d, 0x65, 0x87, 0x00, 0x0a]);
     expect(decodeImportFileBytes(utf16be.buffer)).toBe("中文\n");
 
     // GBK bytes for "中文" (0xD6D0 0xCEC4) followed by an ASCII token line.
     const gbk = new Uint8Array([0xd6, 0xd0, 0xce, 0xc4, 0x0a, 0x74, 0x6f, 0x6b, 0x65, 0x6e]);
     expect(decodeImportFileBytes(gbk.buffer)).toBe("中文\ntoken");
 
-    await expect(
-      readQuickImportFile(new File([gbk], "tokens.txt")),
-    ).resolves.toBe("中文\ntoken");
+    await expect(readQuickImportFile(new File([gbk], "tokens.txt"))).resolves.toBe("中文\ntoken");
   });
 
   it("keeps conversion input compatible with build and console providers", () => {
