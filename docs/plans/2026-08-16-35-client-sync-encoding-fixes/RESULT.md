@@ -3,8 +3,8 @@
 - Date completed: 2026-08-16
 - Status: Complete
 - Base commit: `61ed11fb`
-- Final commit: `26ecfed0`
-- Pull request: created after push (branch `fix/build-client-and-sync-20260816`)
+- Final commit: `839b8d4b`
+- Pull request: branch `fix/build-client-and-sync-20260816` pushed; PR creation URL: https://github.com/JasmineTony/grok2api/pull/new/fix/build-client-and-sync-20260816 (no `gh` CLI/token in the local environment)
 
 ## Delivered
 
@@ -71,7 +71,7 @@ Account-pool exhaustion returns **503**, not 502, so a steady 502 points at the 
 
 ## Push gate evidence
 
-- First remote push occurred only after final local acceptance: pending (local delivery this iteration)
+- First remote push occurred only after final local acceptance: Yes (full backend+frontend verification passed on commit 26ecfed0 before push)
 - Final synchronization base: `61ed11fb`
 - Final verification run: backend `go build ./... && go test ./...`; frontend `pnpm typecheck && pnpm lint && pnpm test && pnpm build`
 
