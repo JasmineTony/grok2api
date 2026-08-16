@@ -26,8 +26,8 @@ Templates are available in [`templates/`](./templates/).
 
 ## Iterations
 
-| Iteration                                          | Plan                                                            | Result                                                              | State    |
-| -------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------- | -------- |
+| Iteration                                           | Plan                                                            | Result                                                              | State    |
+| --------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------- | -------- |
 | 2026-07-19 01 鈥?Repository initialization          | [Plan](./2026-07-19-01-repository-initialization/PLAN.md)       | [Result](./2026-07-19-01-repository-initialization/RESULT.md)       | Complete |
 | 2026-07-19 02 鈥?Initial security hardening         | [Plan](./2026-07-19-02-initial-security-hardening/PLAN.md)      | [Result](./2026-07-19-02-initial-security-hardening/RESULT.md)      | Complete |
 | 2026-07-20 03 鈥?Release pipeline hardening         | [Plan](./2026-07-20-03-release-pipeline-hardening/PLAN.md)      | [Result](./2026-07-20-03-release-pipeline-hardening/RESULT.md)      | Complete |
@@ -93,3 +93,4 @@ Templates are available in [`templates/`](./templates/).
 | 2026-08-16 35 - Grok Build client version sync, accounts encoding fix, first-account model sync, and 502 remediation | [Plan](./2026-08-16-35-client-sync-encoding-fixes/PLAN.md) | [Result](./2026-08-16-35-client-sync-encoding-fixes/RESULT.md) | Complete |
 | 2026-08-16 36 - Upstream parity merge, interface/code audit, and UI polish | [Plan](./2026-08-16-36-upstream-parity-code-audit-ui/PLAN.md) | [Result](./2026-08-16-36-upstream-parity-code-audit-ui/RESULT.md) | Complete |
 | 2026-08-16 37 - Dashboard chart spacing fix and 502-vs-upstream diagnosis | [Plan](./2026-08-16-37-dashboard-spacing-502-diagnosis/PLAN.md) | [Result](./2026-08-16-37-dashboard-spacing-502-diagnosis/RESULT.md) | Complete |
+| 2026-08-16 38 - Grok 4.5/4.6 stale-capability failover restoration | [Plan](./2026-08-16-38-new-model-capability-failover/PLAN.md) | [Result](./2026-08-16-38-new-model-capability-failover/RESULT.md) | In progress |

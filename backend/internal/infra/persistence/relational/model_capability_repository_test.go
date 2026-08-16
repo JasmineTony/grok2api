@@ -302,10 +302,16 @@ func TestBuildPaidCapabilitiesAreSharedAcrossActiveSuperAccounts(t *testing.T) {
 		t.Fatal(err)
 	}
 	for accountID, capabilities := range map[uint64][]string{
+		peer.ID:     {"grok-4.5"},
+		freePeer.ID: {"grok-4.5"},
+	} {
+		if err := models.ReplaceAccountCapabilities(ctx, accountID, capabilities, now.Add(-time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for accountID, capabilities := range map[uint64][]string{
 		observer.ID:     {sharedModel, "grok-4.5"},
-		peer.ID:         {"grok-4.5"},
 		freeObserver.ID: {sharedModel},
-		freePeer.ID:     {"grok-4.5"},
 	} {
 		if err := models.ReplaceAccountCapabilities(ctx, accountID, capabilities, now); err != nil {
 			t.Fatal(err)
@@ -320,8 +326,8 @@ func TestBuildPaidCapabilitiesAreSharedAcrossActiveSuperAccounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if route.SupportedAccounts != 3 || route.TotalAccounts != 4 {
-		t.Fatalf("shared route availability = %#v", route)
+	if route.SupportedAccounts != 2 || route.TotalAccounts != 4 {
+		t.Fatalf("observed route availability = %#v", route)
 	}
 	if _, _, err := models.List(ctx, repository.ModelListQuery{
 		Page: repository.PageQuery{Limit: 20, Sort: repository.SortQuery{Field: "accountSupport", Direction: repository.SortDescending}},
@@ -336,13 +342,15 @@ func TestBuildPaidCapabilitiesAreSharedAcrossActiveSuperAccounts(t *testing.T) {
 	for _, candidate := range candidates {
 		byID[candidate.Credential.ID] = candidate
 	}
-	for _, accountID := range []uint64{observer.ID, peer.ID, freeObserver.ID} {
+	for _, accountID := range []uint64{observer.ID, freeObserver.ID} {
 		if candidate := byID[accountID]; !candidate.ModelCapabilityKnown || !candidate.SupportsModel {
-			t.Fatalf("account %d should support shared model: %#v", accountID, candidate)
+			t.Fatalf("observing account %d should support shared model: %#v", accountID, candidate)
 		}
 	}
-	if candidate := byID[freePeer.ID]; !candidate.ModelCapabilityKnown || candidate.SupportsModel {
-		t.Fatalf("free peer must keep its own capability snapshot: %#v", candidate)
+	for _, accountID := range []uint64{peer.ID, freePeer.ID} {
+		if candidate := byID[accountID]; candidate.ModelCapabilityKnown || candidate.SupportsModel {
+			t.Fatalf("same-entitlement peer %d should remain an unknown fallback: %#v", accountID, candidate)
+		}
 	}
 
 	observer.Enabled = false
@@ -354,7 +362,7 @@ func TestBuildPaidCapabilitiesAreSharedAcrossActiveSuperAccounts(t *testing.T) {
 		t.Fatal(err)
 	}
 	if route.SupportedAccounts != 1 || route.TotalAccounts != 3 {
-		t.Fatalf("disabled observer must not grant shared entitlement: %#v", route)
+		t.Fatalf("disabled observer must not count as observed support: %#v", route)
 	}
 	candidates, err = accounts.ListRoutingCandidates(ctx, account.ProviderBuild, 0, sharedModel, "")
 	if err != nil {

@@ -738,6 +738,168 @@ func TestSelectorRejectsCrossProviderCredentialMaterial(t *testing.T) {
 	}
 }
 
+func TestAssembleRoutingCandidatesSharesBuildModelsWithinEntitlementOnly(t *testing.T) {
+	observedAt := time.Now().UTC()
+	staleAt := observedAt.Add(-time.Hour)
+	freshAt := observedAt.Add(time.Hour)
+	bases := []account.RoutingAccountBase{
+		{Credential: account.Credential{ID: 1, Provider: account.ProviderBuild, AuthStatus: account.AuthStatusActive}},
+		{Credential: account.Credential{ID: 2, Provider: account.ProviderBuild, AuthStatus: account.AuthStatusActive}},
+		{Credential: account.Credential{ID: 3, Provider: account.ProviderBuild, AuthStatus: account.AuthStatusActive, BuildSuperEntitled: true}},
+		{Credential: account.Credential{ID: 4, Provider: account.ProviderBuild, AuthStatus: account.AuthStatusActive, BuildSuperEntitled: true}},
+	}
+	assertCandidates := func(name string, overlay account.RoutingOverlaySnapshot, expected map[uint64][2]bool) {
+		t.Helper()
+		candidates := assembleRoutingCandidates(account.ProviderBuild, "", bases, overlay)
+		byID := make(map[uint64]account.RoutingCandidate, len(candidates))
+		for _, candidate := range candidates {
+			byID[candidate.Credential.ID] = candidate
+		}
+		for accountID, flags := range expected {
+			candidate, exists := byID[accountID]
+			if !exists || candidate.ModelCapabilityKnown != flags[0] || candidate.SupportsModel != flags[1] {
+				t.Fatalf("%s account %d = %#v, want known=%t supports=%t", name, accountID, candidate, flags[0], flags[1])
+			}
+		}
+	}
+	regularObserved := account.RoutingOverlaySnapshot{Values: []account.RoutingAccountOverlay{
+		{AccountID: 1, ModelCapabilityKnown: true, SupportsModel: true, CapabilitySyncedAt: observedAt},
+		{AccountID: 2, ModelCapabilityKnown: true, CapabilitySyncedAt: staleAt},
+		{AccountID: 3, ModelCapabilityKnown: true, CapabilitySyncedAt: staleAt},
+		{AccountID: 4, ModelCapabilityKnown: true, CapabilitySyncedAt: staleAt},
+	}}
+	assertCandidates("regular observed", regularObserved, map[uint64][2]bool{
+		1: {true, true}, 2: {false, false}, 3: {true, false}, 4: {true, false},
+	})
+	superObserved := account.RoutingOverlaySnapshot{Values: []account.RoutingAccountOverlay{
+		{AccountID: 1, ModelCapabilityKnown: true, CapabilitySyncedAt: staleAt},
+		{AccountID: 2, ModelCapabilityKnown: true, CapabilitySyncedAt: staleAt},
+		{AccountID: 3, ModelCapabilityKnown: true, SupportsModel: true, CapabilitySyncedAt: observedAt},
+		{AccountID: 4, ModelCapabilityKnown: true, CapabilitySyncedAt: staleAt},
+	}}
+	assertCandidates("Super observed", superObserved, map[uint64][2]bool{
+		1: {true, false}, 2: {true, false}, 3: {true, true}, 4: {false, false},
+	})
+	regularObserved.Values[1].CapabilitySyncedAt = observedAt
+	assertCandidates("equal regular rejection", regularObserved, map[uint64][2]bool{
+		1: {true, true}, 2: {true, false}, 3: {true, false}, 4: {true, false},
+	})
+	regularObserved.Values[1].CapabilitySyncedAt = freshAt
+	assertCandidates("fresh regular rejection", regularObserved, map[uint64][2]bool{
+		1: {true, true}, 2: {true, false}, 3: {true, false}, 4: {true, false},
+	})
+}
+
+func TestSelectorUsesStaleSameEntitlementBuildPeerAsFallback(t *testing.T) {
+	observedAt := time.Now().UTC()
+	staleAt := observedAt.Add(-time.Hour)
+	repo := &layeredAccountRepository{
+		bases: []account.RoutingAccountBase{
+			{Credential: account.Credential{ID: 1, Provider: account.ProviderBuild, Enabled: true, AuthStatus: account.AuthStatusActive, Priority: 10}},
+			{Credential: account.Credential{ID: 2, Provider: account.ProviderBuild, Enabled: true, AuthStatus: account.AuthStatusActive, Priority: 100}},
+			{Credential: account.Credential{ID: 3, Provider: account.ProviderBuild, Enabled: true, AuthStatus: account.AuthStatusActive, Priority: 1000, BuildSuperEntitled: true}},
+		},
+		overlays: map[string]account.RoutingOverlaySnapshot{
+			"grok-4.6": {Values: []account.RoutingAccountOverlay{
+				{AccountID: 1, ModelCapabilityKnown: true, SupportsModel: true, CapabilitySyncedAt: observedAt},
+				{AccountID: 2, ModelCapabilityKnown: true, CapabilitySyncedAt: staleAt},
+				{AccountID: 3, ModelCapabilityKnown: true, CapabilitySyncedAt: staleAt},
+			}},
+		},
+		overlayCalls: make(map[string]int),
+	}
+	selector := NewSelector(repo, memory.NewConcurrencyLimiter(), memory.NewStickyStore(), nil, time.Hour, time.Second, time.Minute)
+	ctx := context.Background()
+	lease, err := selector.Acquire(ctx, account.ProviderBuild, 0, "grok-4.6", "", "", nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease.Credential.ID != 1 {
+		t.Fatalf("first selection = %d, want observed account 1", lease.Credential.ID)
+	}
+	lease.Release()
+
+	lease, err = selector.Acquire(ctx, account.ProviderBuild, 0, "grok-4.6", "", "", map[uint64]bool{1: true}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Release()
+	if lease.Credential.ID != 2 {
+		t.Fatalf("fallback selection = %d, want same-entitlement stale peer 2", lease.Credential.ID)
+	}
+}
+
+func TestLayeredBuildCapabilitySharingMatchesCombinedRepositoryResult(t *testing.T) {
+	ctx := context.Background()
+	database, err := relational.OpenSQLite(ctx, filepath.Join(t.TempDir(), "layered-build-sharing.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if err := database.InitializeSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	accounts := relational.NewAccountRepository(database)
+	models := relational.NewModelRepository(database)
+	createAccount := func(name string, super bool) account.Credential {
+		t.Helper()
+		value, _, createErr := accounts.UpsertByIdentity(ctx, account.Credential{
+			Provider: account.ProviderBuild, Name: name, SourceKey: name, EncryptedAccessToken: "encrypted", AuthStatus: account.AuthStatusActive,
+		})
+		if createErr != nil {
+			t.Fatal(createErr)
+		}
+		if super {
+			value.BuildSuperEntitled = true
+			if _, updateErr := accounts.Update(ctx, value); updateErr != nil {
+				t.Fatal(updateErr)
+			}
+		}
+		return value
+	}
+	regularObserver := createAccount("regular-observer", false)
+	regularPeer := createAccount("regular-peer", false)
+	superObserver := createAccount("super-observer", true)
+	superPeer := createAccount("super-peer", true)
+	staleAt := time.Now().UTC().Add(-time.Hour).Truncate(time.Millisecond)
+	observedAt := staleAt.Add(time.Hour)
+	for accountID, capabilities := range map[uint64][]string{
+		regularPeer.ID: {"grok-4.5"},
+		superPeer.ID:   {"grok-4.5"},
+	} {
+		if err := models.ReplaceAccountCapabilities(ctx, accountID, capabilities, staleAt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for accountID, capabilities := range map[uint64][]string{
+		regularObserver.ID: {"grok-4.6"},
+		superObserver.ID:   {"grok-imagine-video-1.5"},
+	} {
+		if err := models.ReplaceAccountCapabilities(ctx, accountID, capabilities, observedAt); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, upstreamModel := range []string{"grok-4.6", "grok-imagine-video-1.5"} {
+		combined, err := accounts.ListRoutingCandidates(ctx, account.ProviderBuild, 0, upstreamModel, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		bases, err := accounts.ListRoutingAccountBases(ctx, account.ProviderBuild, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		overlay, err := accounts.ListRoutingAccountOverlays(ctx, account.ProviderBuild, 0, upstreamModel)
+		if err != nil {
+			t.Fatal(err)
+		}
+		layered := assembleRoutingCandidates(account.ProviderBuild, "", bases, overlay)
+		if !reflect.DeepEqual(layered, combined) {
+			t.Fatalf("model %s layered = %#v\ncombined = %#v", upstreamModel, layered, combined)
+		}
+	}
+}
+
 func TestLayeredRoutingMatchesCombinedRepositoryResult(t *testing.T) {
 	ctx := context.Background()
 	database, err := relational.OpenSQLite(ctx, filepath.Join(t.TempDir(), "layered-equivalence.db"))

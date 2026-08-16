@@ -80,28 +80,52 @@ const availableRoutePredicate = `
 const modelAccountBuildSuperPredicate = `(EXISTS (SELECT 1 FROM account_billing_snapshots billing WHERE billing.account_id = account.id AND ` + accountPaidBillingSignals + `) OR (account.provider = 'grok_build' AND account.build_super_entitled = TRUE))`
 const modelPeerBuildSuperPredicate = `(EXISTS (SELECT 1 FROM account_billing_snapshots billing WHERE billing.account_id = peer.id AND ` + accountPaidBillingSignals + `) OR (peer.provider = 'grok_build' AND peer.build_super_entitled = TRUE))`
 
-const modelSharedPaidBuildSupportSortExpression = `(model_routes.provider = 'grok_build'
-	AND ` + modelAccountBuildSuperPredicate + `
+// Build capability fallback is valid only when a same-entitlement account
+// observed the model after this account's last successful negative snapshot.
+// The active variant mirrors gateway routing; the broader variant is used by
+// administrative tier filtering, which may intentionally include inactive data.
+const modelStaleBuildPeerScopeExpression = `(model_routes.provider = 'grok_build'
 	AND EXISTS (
 		SELECT 1
 		FROM provider_accounts peer
 		JOIN account_model_capabilities peer_capability ON peer_capability.account_id = peer.id AND peer_capability.upstream_model = model_routes.upstream_model
+		JOIN account_model_sync_states peer_sync ON peer_sync.account_id = peer.id AND peer_sync.last_success_at IS NOT NULL
 		WHERE peer.provider = model_routes.provider
-			AND peer.enabled = TRUE
-			AND peer.auth_status = 'active'
-			AND ` + modelPeerBuildSuperPredicate + `
+			AND (
+				NOT EXISTS (
+					SELECT 1 FROM account_model_sync_states account_sync
+					WHERE account_sync.account_id = account.id AND account_sync.last_success_at IS NOT NULL
+				)
+				OR peer_sync.last_success_at > (
+					SELECT account_sync.last_success_at FROM account_model_sync_states account_sync
+					WHERE account_sync.account_id = account.id AND account_sync.last_success_at IS NOT NULL
+				)
+			)
+			AND ((` + modelAccountBuildSuperPredicate + ` AND ` + modelPeerBuildSuperPredicate + `)
+				OR (NOT ` + modelAccountBuildSuperPredicate + ` AND NOT ` + modelPeerBuildSuperPredicate + `))
 	))`
 
-const modelSharedPaidBuildSupportAvailabilityExpression = `(route.provider = 'grok_build'
-	AND ` + modelAccountBuildSuperPredicate + `
+const modelActiveStaleBuildPeerScopeExpression = `(model_routes.provider = 'grok_build'
 	AND EXISTS (
 		SELECT 1
 		FROM provider_accounts peer
-		JOIN account_model_capabilities peer_capability ON peer_capability.account_id = peer.id AND peer_capability.upstream_model = route.upstream_model
-		WHERE peer.provider = route.provider
+		JOIN account_model_capabilities peer_capability ON peer_capability.account_id = peer.id AND peer_capability.upstream_model = model_routes.upstream_model
+		JOIN account_model_sync_states peer_sync ON peer_sync.account_id = peer.id AND peer_sync.last_success_at IS NOT NULL
+		WHERE peer.provider = model_routes.provider
 			AND peer.enabled = TRUE
 			AND peer.auth_status = 'active'
-			AND ` + modelPeerBuildSuperPredicate + `
+			AND (
+				NOT EXISTS (
+					SELECT 1 FROM account_model_sync_states account_sync
+					WHERE account_sync.account_id = account.id AND account_sync.last_success_at IS NOT NULL
+				)
+				OR peer_sync.last_success_at > (
+					SELECT account_sync.last_success_at FROM account_model_sync_states account_sync
+					WHERE account_sync.account_id = account.id AND account_sync.last_success_at IS NOT NULL
+				)
+			)
+			AND ((` + modelAccountBuildSuperPredicate + ` AND ` + modelPeerBuildSuperPredicate + `)
+				OR (NOT ` + modelAccountBuildSuperPredicate + ` AND NOT ` + modelPeerBuildSuperPredicate + `))
 	))`
 
 // These predicates mirror the gateway's client-key scope classification. They
@@ -123,16 +147,6 @@ const modelAccountWebFreePredicate = `(account.provider = 'grok_web'
 const modelAccountWebSuperPredicate = `(account.provider = 'grok_web'
 	AND EXISTS (SELECT 1 FROM web_account_profiles profile WHERE profile.account_id = account.id AND profile.tier IN ('super', 'heavy')))`
 
-const modelSharedPaidBuildScopeExpression = `(model_routes.provider = 'grok_build'
-	AND ` + modelAccountBuildSuperPredicate + `
-	AND EXISTS (
-		SELECT 1
-		FROM provider_accounts peer
-		JOIN account_model_capabilities peer_capability ON peer_capability.account_id = peer.id AND peer_capability.upstream_model = model_routes.upstream_model
-		WHERE peer.provider = model_routes.provider
-			AND ` + modelPeerBuildSuperPredicate + `
-	))`
-
 const modelRouteAccountCapabilityPredicate = `(
 	EXISTS (
 		SELECT 1 FROM model_route_accounts binding
@@ -148,7 +162,7 @@ const modelRouteAccountCapabilityPredicate = `(
 				WHERE capability.account_id = account.id
 					AND capability.upstream_model = model_routes.upstream_model
 			)
-			OR ` + modelSharedPaidBuildScopeExpression + `
+			OR ` + modelStaleBuildPeerScopeExpression + `
 		)
 	)
 )`
@@ -168,7 +182,7 @@ const modelAvailableRouteAccountCapabilityPredicate = `(
 				WHERE capability.account_id = account.id
 					AND capability.upstream_model = model_routes.upstream_model
 			)
-			OR ` + modelSharedPaidBuildSupportSortExpression + `
+			OR ` + modelActiveStaleBuildPeerScopeExpression + `
 		)
 	)
 )`
@@ -207,7 +221,7 @@ func modelTierAvailabilityPredicateWithAvailability(tiers []string, activeOnly b
 
 const (
 	modelProviderPriorityExpression = "CASE model_routes.provider WHEN 'grok_build' THEN 0 WHEN 'grok_web' THEN 1 WHEN 'grok_console' THEN 2 ELSE 3 END"
-	modelSupportSortExpression      = `(SELECT COUNT(*) FROM provider_accounts account WHERE account.provider = model_routes.provider AND account.enabled = TRUE AND account.auth_status = 'active' AND (EXISTS (SELECT 1 FROM model_route_accounts binding WHERE binding.model_route_id = model_routes.id AND binding.account_id = account.id) OR (NOT EXISTS (SELECT 1 FROM model_route_accounts binding WHERE binding.model_route_id = model_routes.id) AND (` + modelConsoleStaticSupportExpression + ` OR EXISTS (SELECT 1 FROM account_model_capabilities capability WHERE capability.account_id = account.id AND capability.upstream_model = model_routes.upstream_model) OR ` + modelSharedPaidBuildSupportSortExpression + `))))`
+	modelSupportSortExpression      = `(SELECT COUNT(*) FROM provider_accounts account WHERE account.provider = model_routes.provider AND account.enabled = TRUE AND account.auth_status = 'active' AND (EXISTS (SELECT 1 FROM model_route_accounts binding WHERE binding.model_route_id = model_routes.id AND binding.account_id = account.id) OR (NOT EXISTS (SELECT 1 FROM model_route_accounts binding WHERE binding.model_route_id = model_routes.id) AND (` + modelConsoleStaticSupportExpression + ` OR EXISTS (SELECT 1 FROM account_model_capabilities capability WHERE capability.account_id = account.id AND capability.upstream_model = model_routes.upstream_model)))))`
 	modelSyncedSortExpression       = `(SELECT MAX(sync.last_success_at) FROM provider_accounts account JOIN account_model_sync_states sync ON sync.account_id = account.id WHERE account.provider = model_routes.provider AND account.enabled = TRUE AND account.auth_status = 'active')`
 )
 
@@ -1190,7 +1204,7 @@ func (r *ModelRepository) annotateAvailability(ctx context.Context, values []mod
 		SELECT route.id AS route_id,
 			CASE WHEN COUNT(DISTINCT binding.account_id) > 0
 				THEN COUNT(DISTINCT CASE WHEN account.enabled = TRUE AND account.auth_status = ? AND binding.account_id IS NOT NULL THEN account.id END)
-				ELSE COUNT(DISTINCT CASE WHEN account.enabled = TRUE AND account.auth_status = ? AND (`+modelConsoleStaticSupportAvailabilityExpression+` OR capability.account_id IS NOT NULL OR `+modelSharedPaidBuildSupportAvailabilityExpression+`) THEN account.id END)
+					ELSE COUNT(DISTINCT CASE WHEN account.enabled = TRUE AND account.auth_status = ? AND (`+modelConsoleStaticSupportAvailabilityExpression+` OR capability.account_id IS NOT NULL) THEN account.id END)
 			END AS supported_accounts,
 			CASE WHEN COUNT(DISTINCT binding.account_id) > 0
 				THEN COUNT(DISTINCT CASE WHEN account.enabled = TRUE AND account.auth_status = ? AND binding.account_id IS NOT NULL AND sync.last_success_at IS NOT NULL THEN account.id END)

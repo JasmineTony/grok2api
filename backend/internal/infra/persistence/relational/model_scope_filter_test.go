@@ -50,6 +50,7 @@ func assertModelListFiltersByClientKeyProviderAndTierScope(t *testing.T, databas
 		{IdentityKey: testIdentityKey("scope-web-free"), Provider: string(account.ProviderWeb), Name: "web-free", SourceKey: "web-free", Enabled: true, AuthStatus: string(account.AuthStatusActive), Priority: 1},
 		{IdentityKey: testIdentityKey("scope-web-super"), Provider: string(account.ProviderWeb), Name: "web-super", SourceKey: "web-super", Enabled: true, AuthStatus: string(account.AuthStatusActive), Priority: 1},
 		{IdentityKey: testIdentityKey("scope-console"), Provider: string(account.ProviderConsole), Name: "console", SourceKey: "console", Enabled: true, AuthStatus: string(account.AuthStatusActive), Priority: 1},
+		{IdentityKey: testIdentityKey("scope-build-regular-observer"), Provider: string(account.ProviderBuild), Name: "build-regular-observer", SourceKey: "build-regular-observer", Enabled: true, AuthStatus: string(account.AuthStatusActive), Priority: 1},
 	}
 	for index := range accounts {
 		if err := database.db.WithContext(ctx).Create(&accounts[index]).Error; err != nil {
@@ -76,6 +77,7 @@ func assertModelListFiltersByClientKeyProviderAndTierScope(t *testing.T, databas
 		{PublicID: "scope-web-free", Provider: account.ProviderWeb, UpstreamModel: "scope-web-free", Capability: modeldomain.CapabilityChat, Enabled: true},
 		{PublicID: "scope-web-super", Provider: account.ProviderWeb, UpstreamModel: "scope-web-super", Capability: modeldomain.CapabilityChat, Enabled: true},
 		{PublicID: "scope-console", Provider: account.ProviderConsole, UpstreamModel: "scope-console", Capability: modeldomain.CapabilityResponses, Enabled: true},
+		{PublicID: "Build/scope-new-regular", Provider: account.ProviderBuild, UpstreamModel: "scope-new-regular", Capability: modeldomain.CapabilityResponses, Enabled: true},
 	}
 	routeIDs := make([]uint64, 0, len(routes))
 	for index := range routes {
@@ -101,8 +103,14 @@ func assertModelListFiltersByClientKeyProviderAndTierScope(t *testing.T, databas
 		{AccountID: accounts[2].ID, UpstreamModel: "scope-web-free"},
 		{AccountID: accounts[3].ID, UpstreamModel: "scope-web-super"},
 		{AccountID: accounts[4].ID, UpstreamModel: "scope-console"},
+		{AccountID: accounts[5].ID, UpstreamModel: "scope-new-regular"},
 	}
 	if err := database.db.WithContext(ctx).Create(&capabilities).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.db.WithContext(ctx).Create(&accountModelSyncStateModel{
+		AccountID: accounts[5].ID, LastAttemptAt: now, LastSuccessAt: &now,
+	}).Error; err != nil {
 		t.Fatal(err)
 	}
 
@@ -119,7 +127,7 @@ func assertModelListFiltersByClientKeyProviderAndTierScope(t *testing.T, databas
 	}
 
 	free := list([]string{"free"}, nil)
-	if len(free) != 3 || !free["Build/scope-free"] || !free["Web/scope-web-free"] || !free["Console/scope-console"] || free["Build/scope-super"] || free["Web/scope-web-super"] {
+	if len(free) != 4 || !free["Build/scope-free"] || !free["Build/scope-new-regular"] || !free["Web/scope-web-free"] || !free["Console/scope-console"] || free["Build/scope-super"] || free["Web/scope-web-super"] {
 		t.Fatalf("free scope models = %#v", free)
 	}
 	super := list([]string{"super"}, nil)
@@ -127,7 +135,7 @@ func assertModelListFiltersByClientKeyProviderAndTierScope(t *testing.T, databas
 		t.Fatalf("super scope models = %#v", super)
 	}
 	buildFree := list([]string{"free"}, []string{"grok_build"})
-	if len(buildFree) != 1 || !buildFree["Build/scope-free"] {
+	if len(buildFree) != 2 || !buildFree["Build/scope-free"] || !buildFree["Build/scope-new-regular"] {
 		t.Fatalf("build/free scope models = %#v", buildFree)
 	}
 
@@ -143,8 +151,18 @@ func assertModelListFiltersByClientKeyProviderAndTierScope(t *testing.T, databas
 		return result
 	}
 	enabledBuildFree := enabledForScope([]string{"free"}, []string{"grok_build"})
-	if len(enabledBuildFree) != 1 || !enabledBuildFree["Build/scope-free"] {
+	if len(enabledBuildFree) != 2 || !enabledBuildFree["Build/scope-free"] || !enabledBuildFree["Build/scope-new-regular"] {
 		t.Fatalf("enabled build/free scope models = %#v", enabledBuildFree)
+	}
+	freshAt := now.Add(time.Hour)
+	if err := database.db.WithContext(ctx).Create(&accountModelSyncStateModel{
+		AccountID: accounts[0].ID, LastAttemptAt: freshAt, LastSuccessAt: &freshAt,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	freshBuildFree := enabledForScope([]string{"free"}, []string{"grok_build"})
+	if len(freshBuildFree) != 1 || !freshBuildFree["Build/scope-free"] || freshBuildFree["Build/scope-new-regular"] {
+		t.Fatalf("fresh negative snapshot must remove fallback route: %#v", freshBuildFree)
 	}
 	if err := database.db.WithContext(ctx).Model(&accountModel{}).Where("id IN ?", []uint64{accounts[1].ID, accounts[3].ID}).Update("enabled", false).Error; err != nil {
 		t.Fatal(err)

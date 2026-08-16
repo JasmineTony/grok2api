@@ -1810,13 +1810,20 @@ func assembleRoutingCandidates(provider account.Provider, quotaMode string, base
 	for _, value := range overlay.Values {
 		byAccount[value.AccountID] = value
 	}
-	sharedSuperBuildModel := false
+	var latestSuperBuildModelSync time.Time
+	var latestRegularBuildModelSync time.Time
 	if provider == account.ProviderBuild && !overlay.HasBindings {
 		for _, base := range bases {
 			value, exists := byAccount[base.Credential.ID]
-			if exists && value.SupportsModel && account.IsBuildSuper(base.Credential, base.Billing) {
-				sharedSuperBuildModel = true
-				break
+			if !exists || !value.SupportsModel || value.CapabilitySyncedAt.IsZero() {
+				continue
+			}
+			if account.IsBuildSuper(base.Credential, base.Billing) {
+				if value.CapabilitySyncedAt.After(latestSuperBuildModelSync) {
+					latestSuperBuildModelSync = value.CapabilitySyncedAt
+				}
+			} else if value.CapabilitySyncedAt.After(latestRegularBuildModelSync) {
+				latestRegularBuildModelSync = value.CapabilitySyncedAt
 			}
 		}
 	}
@@ -1832,8 +1839,14 @@ func assembleRoutingCandidates(provider account.Provider, quotaMode string, base
 			known, supports = true, true
 		} else if overlay.HasBindings {
 			known, supports = true, true
-		} else if sharedSuperBuildModel && account.IsBuildSuper(base.Credential, base.Billing) {
-			known, supports = true, true
+		} else if provider == account.ProviderBuild && !supports {
+			modelObservedAt := latestRegularBuildModelSync
+			if account.IsBuildSuper(base.Credential, base.Billing) {
+				modelObservedAt = latestSuperBuildModelSync
+			}
+			if !modelObservedAt.IsZero() && overlayValue.CapabilitySyncedAt.Before(modelObservedAt) {
+				known = false
+			}
 		}
 		result = append(result, account.RoutingCandidate{
 			Credential: base.Credential, Billing: base.Billing, QuotaWindow: base.QuotaWindow, QuotaRecovery: base.QuotaRecovery,
