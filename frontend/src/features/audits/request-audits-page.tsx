@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCw, Search } from "lucide-react";
-import { useRef, useState } from "react";
+import { memo, useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -41,7 +41,13 @@ import { PeriodSelector } from "@/shared/components/period-selector";
 import { SortableTableHead } from "@/shared/components/sortable-table-head";
 import { VirtualTableBody } from "@/shared/components/virtual-table-body";
 import { useDebouncedValue } from "@/shared/hooks/use-debounced-value";
-import { formatDateTime, formatDuration } from "@/shared/lib/format";
+import { cn } from "@/shared/lib/cn";
+import {
+  formatCompactDateTime,
+  formatDateTime,
+  formatDuration,
+  formatNumber,
+} from "@/shared/lib/format";
 import { type PeriodDays, toPeriodValue } from "@/shared/lib/period";
 import { nextTableSort, type SortOrder, type TableSort } from "@/shared/lib/table-sort";
 
@@ -64,6 +70,13 @@ export function RequestAuditsPage() {
   const [sort, setSort] = useState<TableSort>({ field: "createdAt", order: "desc" });
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [selectedAudit, setSelectedAudit] = useState<AuditDTO | null>(null);
+  const openAudit = useCallback((audit: AuditDTO) => setSelectedAudit(audit), []);
+  const renderAuditRow = useCallback(
+    (audit: AuditDTO) => (
+      <AuditRow key={audit.id} audit={audit} locale={i18n.language} onOpen={openAudit} />
+    ),
+    [i18n.language, openAudit],
+  );
   const forceSummaryRefresh = useRef(false);
   const debouncedSearch = useDebouncedValue(search);
   const debouncedKeyFilter = useDebouncedValue(keyFilter);
@@ -334,16 +347,24 @@ export function RequestAuditsPage() {
         ) : null}
         {result && result.items.length === 0 ? <EmptyState /> : null}
         {auditsQuery.isPending || (result && result.items.length > 0) ? (
-          <Table viewportRows={20} rowHeight={72} className="min-w-[1136px] table-fixed text-xs">
+          <Table
+            viewportRows={20}
+            rowHeight={96}
+            aria-busy={auditsQuery.isFetching}
+            className={cn(
+              "min-w-[1184px] table-fixed text-xs transition-opacity",
+              auditsQuery.isPlaceholderData && "pointer-events-none opacity-60",
+            )}
+          >
             <colgroup>
+              <col className="w-44" />
               <col className="w-36" />
-              <col className="w-44" />
-              <col className="w-20" />
               <col className="w-24" />
-              <col className="w-76" />
-              <col className="w-20" />
-              <col className="w-20" />
-              <col className="w-44" />
+              <col className="w-24" />
+              <col className="w-64" />
+              <col className="w-24" />
+              <col className="w-40" />
+              <col className="w-40" />
             </colgroup>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
@@ -399,7 +420,7 @@ export function RequestAuditsPage() {
                   initialOrder="desc"
                   onSort={changeSort}
                 >
-                  {t("audits.duration")}
+                  {t("audits.responsePerformance")}
                 </SortableTableHead>
                 <SortableTableHead
                   field="createdAt"
@@ -420,42 +441,9 @@ export function RequestAuditsPage() {
               <VirtualTableBody
                 items={result?.items ?? []}
                 colSpan={8}
-                rowHeight={72}
-                renderRow={(audit) => (
-                  <TableRow className="h-[72px]" key={audit.id}>
-                    <TableCell>
-                      <RequestValue audit={audit} />
-                    </TableCell>
-                    <TableCell>
-                      <ModelRouteValue
-                        model={audit.modelPublicId || `#${audit.modelRouteId}`}
-                        upstreamModel={audit.modelUpstreamModel || "-"}
-                        account={
-                          audit.accountName || (audit.accountId ? `#${audit.accountId}` : "-")
-                        }
-                        clientKey={audit.clientKeyName || `#${audit.clientKeyId}`}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <EgressValue audit={audit} />
-                    </TableCell>
-                    <TableCell>
-                      <BillingValue audit={audit} />
-                    </TableCell>
-                    <TableCell className="px-3">
-                      <UsageDetails audit={audit} locale={i18n.language} />
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <AuditStatus audit={audit} onOpen={() => setSelectedAudit(audit)} />
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-xs tabular-nums">
-                      {formatDuration(audit.durationMs)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                      {formatDateTime(audit.createdAt, i18n.language)}
-                    </TableCell>
-                  </TableRow>
-                )}
+                rowHeight={96}
+                overscan={6}
+                renderRow={renderAuditRow}
               />
             )}
           </Table>
@@ -469,4 +457,97 @@ export function RequestAuditsPage() {
       />
     </div>
   );
+}
+
+const AuditRow = memo(function AuditRow({
+  audit,
+  locale,
+  onOpen,
+}: {
+  audit: AuditDTO;
+  locale: string;
+  onOpen: (audit: AuditDTO) => void;
+}) {
+  const createdAt = formatCompactDateTime(audit.createdAt, locale);
+  const createdAtLabel = formatDateTime(audit.createdAt, locale);
+  return (
+    <TableRow className="h-[96px]">
+      <TableCell>
+        <RequestValue audit={audit} />
+      </TableCell>
+      <TableCell>
+        <ModelRouteValue
+          model={audit.modelPublicId || `#${audit.modelRouteId}`}
+          upstreamModel={audit.modelUpstreamModel || "-"}
+          account={audit.accountName || (audit.accountId ? `#${audit.accountId}` : "-")}
+          clientKey={audit.clientKeyName || `#${audit.clientKeyId}`}
+        />
+      </TableCell>
+      <TableCell className="text-center">
+        <EgressValue audit={audit} />
+      </TableCell>
+      <TableCell>
+        <BillingValue audit={audit} />
+      </TableCell>
+      <TableCell className="px-3">
+        <UsageDetails audit={audit} locale={locale} />
+      </TableCell>
+      <TableCell className="text-center">
+        <AuditStatus audit={audit} onOpen={() => onOpen(audit)} />
+      </TableCell>
+      <TableCell>
+        <ResponsePerformance audit={audit} locale={locale} />
+      </TableCell>
+      <TableCell className="whitespace-nowrap text-xs text-muted-foreground tabular-nums">
+        <time dateTime={audit.createdAt} title={createdAtLabel}>
+          {createdAt}
+        </time>
+      </TableCell>
+    </TableRow>
+  );
+});
+
+function ResponsePerformance({ audit, locale }: { audit: AuditDTO; locale: string }) {
+  const { t } = useTranslation();
+  const duration = splitDuration(formatDuration(audit.durationMs));
+  const firstToken =
+    audit.firstTokenMs === undefined
+      ? { value: "—", unit: "" }
+      : splitDuration(formatDuration(audit.firstTokenMs));
+  const throughput =
+    audit.outputTokensPerSecond === undefined
+      ? "—"
+      : formatNumber(audit.outputTokensPerSecond, locale, 1);
+  return (
+    <div className="grid w-fit max-w-full grid-cols-[auto_auto] gap-x-2.5 gap-y-0.5 whitespace-nowrap text-[11px] leading-4 tabular-nums">
+      <span className="text-muted-foreground">{t("audits.durationMetric")}</span>
+      <PerformanceValue value={duration.value} unit={duration.unit} />
+      <span className="text-muted-foreground">{t("audits.firstTokenMetric")}</span>
+      <PerformanceValue value={firstToken.value} unit={firstToken.unit} />
+      <span className="text-muted-foreground">{t("audits.throughputMetric")}</span>
+      <PerformanceValue value={throughput} unit={t("audits.tokensPerSecondUnit")} />
+    </div>
+  );
+}
+
+function PerformanceValue({ value, unit }: { value: string; unit: string }) {
+  return (
+    <span className="font-medium">
+      {value}
+      {unit ? (
+        <>
+          {" "}
+          <span className="font-normal">{unit}</span>
+        </>
+      ) : null}
+    </span>
+  );
+}
+
+function splitDuration(value: string): { value: string; unit: string } {
+  const separator = value.lastIndexOf(" ");
+  if (separator < 0) {
+    return { value, unit: "" };
+  }
+  return { value: value.slice(0, separator), unit: value.slice(separator + 1) };
 }

@@ -1,4 +1,5 @@
 const dateTimeFormatters = new Map<string, Intl.DateTimeFormat>();
+const compactDateTimeFormatters = new Map<string, Intl.DateTimeFormat>();
 const numberFormatters = new Map<string, Intl.NumberFormat>();
 
 export function formatDateTime(value: string | null | undefined, locale: string): string {
@@ -16,6 +17,28 @@ export function formatDateTime(value: string | null | undefined, locale: string)
       timeStyle: "short",
     });
     dateTimeFormatters.set(locale, formatter);
+  }
+  return formatter.format(date);
+}
+
+export function formatCompactDateTime(value: string | null | undefined, locale: string): string {
+  if (!value) {
+    return "-";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+  let formatter = compactDateTimeFormatters.get(locale);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    compactDateTimeFormatters.set(locale, formatter);
   }
   return formatter.format(date);
 }

@@ -20,6 +20,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DegradeAccountsPanel } from "@/features/quality-guard/degrade-accounts-panel";
+import { ProbeProfilesPanel } from "@/features/quality-guard/probe-profiles-panel";
 import {
   getQualityGuardStatus,
   type QualityGuardNodeState,
@@ -247,8 +248,12 @@ export function QualityGuardPage() {
       <Tabs defaultValue="nodes">
         <TabsList>
           <TabsTrigger value="nodes">{t("qualityGuard.nodesTab")}</TabsTrigger>
+          <TabsTrigger value="profiles">{t("qualityGuard.profilesTab")}</TabsTrigger>
           <TabsTrigger value="accounts">{t("qualityGuard.degrade.tab")}</TabsTrigger>
         </TabsList>
+        <TabsContent value="profiles" className="mt-6">
+          <ProbeProfilesPanel />
+        </TabsContent>
         <TabsContent value="accounts" className="mt-6">
           <DegradeAccountsPanel
             {...(status?.config?.soft_tps === undefined ? {} : { softTPS: status.config.soft_tps })}

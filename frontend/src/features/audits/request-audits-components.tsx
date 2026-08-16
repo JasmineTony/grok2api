@@ -5,6 +5,7 @@ import {
   BrainCircuit,
   CircleCheck,
   CircleDollarSign,
+  Clock3,
   CornerDownRight,
   Database,
   Info,
@@ -16,6 +17,7 @@ import { useTranslation } from "react-i18next";
 
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { buildAuditUsageView } from "@/features/audits/audit-usage";
 import type { AuditDTO, AuditSummaryDTO } from "@/features/audits/request-audits-api";
 import { cn } from "@/shared/lib/cn";
 import { ticksToUSD } from "@/shared/lib/cost";
@@ -358,7 +360,33 @@ export function ModelRouteValue({
 
 export function UsageDetails({ audit, locale }: { audit: AuditDTO; locale: string }) {
   const { t } = useTranslation();
-  if (audit.operation === "compaction" && audit.totalTokens === 0) {
+  const view = buildAuditUsageView(
+    {
+      operation: audit.operation,
+      usageSource: audit.usageSource,
+      mediaInputImages: audit.mediaInputImages,
+      mediaOutputImages: audit.mediaOutputImages,
+      mediaOutputSeconds: audit.mediaOutputSeconds,
+      inputTokens: audit.inputTokens,
+      cachedInputTokens: audit.cachedInputTokens,
+      outputTokens: audit.outputTokens,
+      reasoningTokens: audit.reasoningTokens,
+      totalTokens: audit.totalTokens,
+      durationMs: audit.durationMs,
+    },
+    (value) => formatNumber(value, locale),
+    {
+      input: t("audits.input"),
+      output: t("audits.output"),
+      cached: t("audits.cached"),
+      reasoning: t("audits.reasoning"),
+      mediaInput: t("audits.mediaInput"),
+      mediaOutput: t("audits.output"),
+      imageCount: (count) => t("audits.imageCount", { count }),
+      secondsCount: (count) => t("audits.secondsCount", { count }),
+    },
+  );
+  if (view.mode === "compaction") {
     return (
       <div className="flex h-[52px] w-full items-center gap-2 rounded-md bg-muted/45 px-2.5 text-[11px]">
         <Minimize2 className="size-3.5 shrink-0 text-muted-foreground" />
@@ -369,43 +397,37 @@ export function UsageDetails({ audit, locale }: { audit: AuditDTO; locale: strin
       </div>
     );
   }
-  if (audit.operation === "video") {
+  if (view.mode === "duration") {
     return (
-      <MediaUsage
-        input={t("audits.imageCount", { count: audit.mediaInputImages })}
-        output={t("audits.secondsCount", { count: audit.mediaOutputSeconds })}
-      />
+      <div className="flex h-[52px] w-full items-center justify-between gap-2 rounded-md bg-muted/45 px-2.5 text-[11px]">
+        <Clock3 className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="font-medium tabular-nums">{view.durationSeconds}s</span>
+      </div>
     );
   }
-  if (
-    audit.operation === "image" ||
-    audit.operation === "image_edit" ||
-    audit.mediaInputImages > 0 ||
-    audit.mediaOutputImages > 0
-  ) {
-    return (
-      <MediaUsage
-        input={t("audits.imageCount", { count: audit.mediaInputImages })}
-        output={t("audits.imageCount", { count: audit.mediaOutputImages })}
-      />
-    );
-  }
-  const items = [
-    { label: t("audits.input"), value: audit.inputTokens },
-    { label: t("audits.output"), value: audit.outputTokens },
-    { label: t("audits.cached"), value: audit.cachedInputTokens },
-    { label: t("audits.reasoning"), value: audit.reasoningTokens },
-  ];
   return (
-    <div className="w-full">
+    <div className="w-full space-y-1">
+      {view.mediaItems ? (
+        <div className="grid w-full gap-1">
+          {view.mediaItems.map((item) => (
+            <div
+              key={item.key}
+              className="flex h-6 items-center justify-between gap-3 rounded-md bg-muted/45 px-2 text-[11px]"
+            >
+              <span className="text-muted-foreground">{item.label}</span>
+              <span className="font-medium tabular-nums">{item.value}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
       <div className="grid grid-cols-2 gap-1">
-        {items.map((item) => (
+        {view.tokenItems?.map((item) => (
           <div
-            key={item.label}
+            key={item.key}
             className="flex h-6 min-w-0 items-center justify-between gap-2 rounded-md bg-muted/45 px-2 text-[11px]"
           >
             <span className="text-muted-foreground">{item.label}</span>
-            <span className="font-medium tabular-nums">{formatNumber(item.value, locale)}</span>
+            <span className="font-medium tabular-nums">{item.value}</span>
           </div>
         ))}
       </div>
@@ -418,21 +440,7 @@ export function UsageDetails({ audit, locale }: { audit: AuditDTO; locale: strin
   );
 }
 
-function MediaUsage({ input, output }: { input: string; output: string }) {
-  const { t } = useTranslation();
-  return (
-    <div className="grid w-full gap-1">
-      <div className="flex h-6 items-center justify-between gap-3 rounded-md bg-muted/45 px-2 text-[11px]">
-        <span className="text-muted-foreground">{t("audits.mediaInput")}</span>
-        <span className="font-medium tabular-nums">{input}</span>
-      </div>
-      <div className="flex h-6 items-center justify-between gap-3 rounded-md bg-muted/45 px-2 text-[11px]">
-        <span className="text-muted-foreground">{t("audits.output")}</span>
-        <span className="font-medium tabular-nums">{output}</span>
-      </div>
-    </div>
-  );
-}
+
 
 function StatusCode({ statusCode, hasError = false }: { statusCode: number; hasError?: boolean }) {
   const tone = statusTone(statusCode, hasError);

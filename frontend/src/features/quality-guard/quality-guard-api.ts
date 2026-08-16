@@ -66,6 +66,26 @@ export type QualityGuardStatistics = {
   actions: { quarantined: number; restored: number; suppressed: number };
 };
 
+export type ProbeProfileSummary = {
+  id: string;
+  name: string;
+  built_in: boolean;
+  match_mode: string;
+  has_expected: boolean;
+  require_thinking: boolean;
+};
+
+export type ProbeProfile = {
+  id: string;
+  name: string;
+  built_in: boolean;
+  prompt: string;
+  expected_text?: string;
+  match_mode: string;
+  require_thinking: boolean;
+  max_output_tokens?: number;
+};
+
 export type QualityGuardStatus = {
   available: boolean;
   editable?: boolean;
@@ -73,6 +93,8 @@ export type QualityGuardStatus = {
   updatedAt?: number;
   lastActiveCycleAt?: number;
   lastPassivePollAt?: number;
+  activeProfileId?: string;
+  profiles?: ProbeProfileSummary[];
   config?: {
     mode: "active" | "passive" | "hybrid";
     model: string;
@@ -101,9 +123,12 @@ export type QualityTestResult = {
   firstTokenMs: number;
   durationMs: number;
   outputTokens: number;
+  reasoningTokens: number;
   visibleTokens: number;
   outputTokensPerSecond: number;
+  generationMs: number;
   expectedMatched: boolean;
+  thinkingRequired: boolean;
 };
 
 const nodeStateValidator = hasShape({
@@ -122,6 +147,15 @@ const nodeStateValidator = hasShape({
   last_first_token_ms: isNumber,
   last_duration_ms: isNumber,
 });
+const probeProfileSummaryValidator = hasShape({
+  id: isString,
+  name: isString,
+  built_in: isBoolean,
+  match_mode: isString,
+  has_expected: isBoolean,
+  require_thinking: isBoolean,
+});
+
 const eventValidator = hasShape({
   ts: isNumber,
   event: isString,
@@ -176,6 +210,8 @@ const decodeStatus = (value: unknown): QualityGuardStatus => {
     updatedAt: isNumber,
     lastActiveCycleAt: isNumber,
     lastPassivePollAt: isNumber,
+    activeProfileId: isOptional(isString),
+    profiles: isOptional(isArrayOf(probeProfileSummaryValidator)),
     config: configValidator,
     nodes: isRecordOf(nodeStateValidator),
     protectedNodeIds: isOptional(isArrayOf(isString)),
@@ -190,9 +226,12 @@ const decodeQualityTest = createObjectDecoder<QualityTestResult>("quality test",
   firstTokenMs: isNumber,
   durationMs: isNumber,
   outputTokens: isNumber,
+  reasoningTokens: isNumber,
   visibleTokens: isNumber,
   outputTokensPerSecond: isNumber,
+  generationMs: isNumber,
   expectedMatched: isBoolean,
+  thinkingRequired: isBoolean,
 });
 
 export function getQualityGuardStatus(client: ApiClient): Promise<QualityGuardStatus> {
@@ -203,12 +242,93 @@ export function runQualityTest(
   client: ApiClient,
   nodeId: string,
   status: QualityGuardStatus,
+  profileId?: string,
 ): Promise<QualityTestResult> {
   if (!status.config) throw new Error("Quality guard configuration is unavailable");
   return client.request(
     `/api/admin/v1/egress-quality-guard/nodes/${nodeId}/test`,
-    { method: "POST" },
+    { method: "POST", body: profileId ? { profileId } : {} },
     decodeQualityTest,
+  );
+}
+
+const decodeProfile = createObjectDecoder<ProbeProfile>("probe profile", {
+  id: isString,
+  name: isString,
+  built_in: isBoolean,
+  prompt: isString,
+  expected_text: isOptional(isString),
+  match_mode: isString,
+  require_thinking: isBoolean,
+  max_output_tokens: isOptional(isNumber),
+});
+
+export function listProbeProfiles(
+  client: ApiClient,
+): Promise<{ activeProfileId: string; items: ProbeProfile[] }> {
+  return client.request(
+    "/api/admin/v1/egress-quality-guard/profiles",
+    {},
+    createObjectDecoder("probe profiles", {
+      activeProfileId: isString,
+      items: isArrayOf(
+        hasShape({
+          id: isString,
+          name: isString,
+          built_in: isBoolean,
+          prompt: isString,
+          expected_text: isOptional(isString),
+          match_mode: isString,
+          require_thinking: isBoolean,
+          max_output_tokens: isOptional(isNumber),
+        }),
+      ),
+    }),
+  );
+}
+
+export function createProbeProfile(
+  client: ApiClient,
+  input: {
+    name: string;
+    prompt: string;
+    expectedText?: string;
+    matchMode: string;
+    requireThinking?: boolean;
+    active?: boolean;
+  },
+): Promise<ProbeProfile> {
+  return client.request(
+    "/api/admin/v1/egress-quality-guard/profiles",
+    { method: "POST", body: input },
+    decodeProfile,
+  );
+}
+
+export function updateProbeProfile(
+  client: ApiClient,
+  id: string,
+  input: {
+    name: string;
+    prompt: string;
+    expectedText?: string;
+    matchMode: string;
+    requireThinking?: boolean;
+    active?: boolean;
+  },
+): Promise<ProbeProfile> {
+  return client.request(
+    `/api/admin/v1/egress-quality-guard/profiles/${id}`,
+    { method: "PUT", body: input },
+    decodeProfile,
+  );
+}
+
+export function deleteProbeProfile(client: ApiClient, id: string): Promise<{ deleted: boolean }> {
+  return client.request(
+    `/api/admin/v1/egress-quality-guard/profiles/${id}`,
+    { method: "DELETE" },
+    createObjectDecoder("delete profile", { deleted: isBoolean }),
   );
 }
 
