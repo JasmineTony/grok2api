@@ -3,8 +3,8 @@
 - Date completed: 2026-08-16
 - Status: Complete
 - Base commit: `61ed11fb`
-- Final commit: `<filled after commit>`
-- Pull request: N/A (local delivery)
+- Final commit: `26ecfed0`
+- Pull request: created after push (branch `fix/build-client-and-sync-20260816`)
 
 ## Delivered
 
