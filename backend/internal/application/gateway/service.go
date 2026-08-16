@@ -746,15 +746,11 @@ func (s *Service) eligibleMediaRoutes(routes []modeldomain.Route, key clientkey.
 // its immutable account plan together. A cooling or exhausted first target
 // therefore cannot hide a healthy target from another Provider.
 func (s *Service) selectSchedulableMediaRoute(ctx context.Context, routes []modeldomain.Route, key clientkey.Key, capability modeldomain.Capability, consumesQuota bool, providerSupported func(accountdomain.Provider) bool) (modeldomain.Route, *selectionSession, error) {
-	return s.selectSchedulableMediaRouteWithQuotaMode(ctx, routes, key, capability, consumesQuota, providerSupported, nil)
-}
-
-func (s *Service) selectSchedulableMediaRouteWithQuotaMode(ctx context.Context, routes []modeldomain.Route, key clientkey.Key, capability modeldomain.Capability, consumesQuota bool, providerSupported func(accountdomain.Provider) bool, resolveQuotaMode func(modeldomain.Route) string) (modeldomain.Route, *selectionSession, error) {
 	eligible, fallback, err := s.eligibleMediaRoutes(routes, key, capability, providerSupported)
 	if err != nil {
 		return fallback, nil, err
 	}
-	return s.selectSchedulableEligibleMediaRouteWithQuotaMode(ctx, eligible, key, consumesQuota, resolveQuotaMode)
+	return s.selectSchedulableEligibleMediaRouteWithQuotaMode(ctx, eligible, key, consumesQuota, nil)
 }
 
 // selectSchedulableEligibleMediaRouteWithQuotaMode selects an account plan
@@ -1413,6 +1409,7 @@ attemptLoop:
 				}); err != nil {
 					s.logger.Error("request_usage_write_failed", "event_id", record.EventID, "request_id", input.RequestID, "error", err)
 				}
+				recordGatewayUsageMetrics(s.metrics, usage, record.CostInUSDTicks, record.EstimatedCostInUSDTicks)
 				if usage.ResponseModel != "" {
 					_ = budget.run("observed_model", finalizationMetadataBudget, func(stageCtx context.Context) error {
 						return s.accounts.ObserveResponseModel(stageCtx, accountID, usage.ResponseModel)
@@ -1577,6 +1574,9 @@ func (s *Service) queueAccountModelSync(accountID uint64) {
 
 	go func() {
 		defer func() {
+			if recovered := recover(); recovered != nil {
+				s.logger.Error("model_etag_refresh_panicked", "account_id", accountID, "panic", recovered)
+			}
 			s.modelSyncMu.Lock()
 			delete(s.modelSyncing, accountID)
 			s.modelSyncMu.Unlock()

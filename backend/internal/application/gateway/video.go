@@ -595,7 +595,9 @@ func (s *Service) runVideoJob(parent context.Context, job media.Job, route model
 		if job.AccountID != credential.ID || job.AccountName != credential.Name {
 			job.AccountID, job.AccountName = credential.ID, credential.Name
 			job.UpdatedAt = time.Now().UTC()
-			_ = s.mediaJobs.UpdateMediaJob(ctx, job)
+			if err := s.mediaJobs.UpdateMediaJob(ctx, job); err != nil {
+				s.logger.Warn("video_job_rebind_write_failed", "job_id", job.ID, "account_id", credential.ID, "error", err)
+			}
 		}
 
 		lastProgress := job.Progress
