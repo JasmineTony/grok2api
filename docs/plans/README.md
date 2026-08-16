@@ -92,3 +92,4 @@ Templates are available in [`templates/`](./templates/).
 | 2026-08-14 34 - Latest upstream integration and v3.6.1 release | [Plan](./2026-08-14-34-v3.6.1-release/PLAN.md) | [Result](./2026-08-14-34-v3.6.1-release/RESULT.md) | Complete |
 | 2026-08-16 35 - Grok Build client version sync, accounts encoding fix, first-account model sync, and 502 remediation | [Plan](./2026-08-16-35-client-sync-encoding-fixes/PLAN.md) | [Result](./2026-08-16-35-client-sync-encoding-fixes/RESULT.md) | Complete |
 | 2026-08-16 36 - Upstream parity merge, interface/code audit, and UI polish | [Plan](./2026-08-16-36-upstream-parity-code-audit-ui/PLAN.md) | [Result](./2026-08-16-36-upstream-parity-code-audit-ui/RESULT.md) | Complete |
+| 2026-08-16 37 - Dashboard chart spacing fix and 502-vs-upstream diagnosis | [Plan](./2026-08-16-37-dashboard-spacing-502-diagnosis/PLAN.md) | [Result](./2026-08-16-37-dashboard-spacing-502-diagnosis/RESULT.md) | Complete |
