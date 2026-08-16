@@ -114,6 +114,7 @@
 | `audit:architecture` oversized-view：`request-audits-page.tsx` 554 行 > 500 | `AuditRow`/`ResponsePerformance`/`PerformanceValue`/`splitDuration` 移至 `request-audits-components.tsx`（页面降至 456 行） |
 | gitleaks：`media_clearance_retry_test.go` 两处示例 UUID 触发 `generic-api-key` | `.gitleaks.toml` 增加按路径+正则的 allowlist 条目（与既有条目同构） |
 | govulncheck：utls v1.6.7 五个漏洞（含 GO-2025-3638） | 升级 `refraction-networking/utls` v1.7.0（连带 circl v1.5.0）；Reality 握手适配——utls 1.7 把 preset 私钥从弃用的 `State13.EcdheKey` 移到 `State13.KeyShareKeys.Ecdhe`，新增 `realityX25519Key` 兼容两处读取（`tunnelproxy` 测试全过） |
+| govulncheck 二次运行：utls v1.7.0 仍暴露 GO-2026-4512/4509 与 circl GO-2026-4550/GO-2025-3754 | 再升级 `utls` v1.8.2 + `circl` v1.6.3；本地 `govulncheck ./...` 复核为 0 可达漏洞，后端全量测试通过 |
 
 ## Unresolved and follow-up work
 
