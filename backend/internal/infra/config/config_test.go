@@ -99,6 +99,35 @@ func TestDefaultGrokBuildClientVersionMatchesLocalBaseline(t *testing.T) {
 	}
 }
 
+func TestLoadPromotesHistoricalOfficialBuildClientMetadata(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	data := []byte(`provider:
+  build:
+    clientVersion: "0.2.119"
+    userAgent: "grok-shell/0.2.119 (linux; x86_64)"
+secrets:
+  jwtSecret: "12345678901234567890123456789012"
+  credentialEncryptionKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Provider.Build.ClientVersion != RecommendedBuildClientVersion || cfg.Provider.Build.UserAgent != RecommendedBuildUserAgent {
+		t.Fatalf("historical Build metadata = %#v", cfg.Provider.Build)
+	}
+}
+
+func TestNormalizeBuildClientMetadataPreservesCustomIdentity(t *testing.T) {
+	clientVersion, userAgent := NormalizeBuildClientMetadata("0.2.119", "custom-build-agent")
+	if clientVersion != "0.2.119" || userAgent != "custom-build-agent" {
+		t.Fatalf("custom Build metadata = %q, %q", clientVersion, userAgent)
+	}
+}
+
 func TestDefaultConsoleProviderConfig(t *testing.T) {
 	console := defaultConfig().Provider.Console
 	if console.BaseURL != "https://console.x.ai" || console.LegacyUserAgent != "" || console.ChatTimeout.Value() != 5*time.Minute {

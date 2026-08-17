@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
+import { accountQueryKeys } from "@/features/accounts/account-query-keys";
 import {
   type AccountDTO,
   type AccountEgressPolicyDTO,
@@ -43,7 +44,7 @@ export function AccountEgressPolicyDialog({
   const { t } = useTranslation();
   const apiClient = useApiClient();
   const policyQuery = useQuery({
-    queryKey: ["accounts", account?.id, "egress-policy"],
+    queryKey: accountQueryKeys.egressPolicy(account?.id ?? ""),
     queryFn: () => getAccountEgressPolicy(apiClient, account?.id ?? ""),
     enabled: Boolean(account),
   });
@@ -119,7 +120,7 @@ function PolicyEditor({
         allowDirectFallback: strategy === "node" && allowDirectFallback,
       }),
     onSuccess: (value) => {
-      queryClient.setQueryData(["accounts", account.id, "egress-policy"], value);
+      queryClient.setQueryData(accountQueryKeys.egressPolicy(account.id), value);
       toast.success(t("accounts.egressPolicySaved"));
       onClose();
     },

@@ -308,10 +308,14 @@ func applyDomainConfig(base config.Config, value settingsdomain.Config) config.C
 	if capacityWait <= 0 {
 		capacityWait = base.Routing.CapacityWait.Value()
 	}
+	buildClientVersion, buildUserAgent := config.NormalizeBuildClientMetadata(
+		value.ProviderBuild.ClientVersion,
+		value.ProviderBuild.UserAgent,
+	)
 	base.Provider.Build = config.BuildProviderConfig{
 		BaseURL: value.ProviderBuild.BaseURL, FallbackBaseURL: config.NormalizeBuildFallbackBaseURL(value.ProviderBuild.FallbackBaseURL),
-		ClientVersion: value.ProviderBuild.ClientVersion, ClientIdentifier: value.ProviderBuild.ClientIdentifier,
-		TokenAuth: value.ProviderBuild.TokenAuth, UserAgent: value.ProviderBuild.UserAgent,
+		ClientVersion: buildClientVersion, ClientIdentifier: value.ProviderBuild.ClientIdentifier,
+		TokenAuth: value.ProviderBuild.TokenAuth, UserAgent: buildUserAgent,
 		ResponseHeaderTimeout: config.Duration(value.ProviderBuild.ResponseHeaderTimeout),
 		StreamIdleTimeout:     config.Duration(value.ProviderBuild.StreamIdleTimeout),
 	}

@@ -778,7 +778,7 @@ func TestAssembleRoutingCandidatesSharesBuildModelsWithinEntitlementOnly(t *test
 		{AccountID: 4, ModelCapabilityKnown: true, CapabilitySyncedAt: staleAt},
 	}}
 	assertCandidates("Super observed", superObserved, map[uint64][2]bool{
-		1: {true, false}, 2: {true, false}, 3: {true, true}, 4: {false, false},
+		1: {true, false}, 2: {true, false}, 3: {true, true}, 4: {true, true},
 	})
 	regularObserved.Values[1].CapabilitySyncedAt = observedAt
 	assertCandidates("equal regular rejection", regularObserved, map[uint64][2]bool{
@@ -977,6 +977,24 @@ func TestAssembleRoutingCandidatesAllowsRecognizedStaticConsoleModelWithStaleSna
 	unknown := assembleRoutingCandidates(account.ProviderConsole, "", bases, overlay)
 	if len(unknown) != 1 || !unknown[0].ModelCapabilityKnown || unknown[0].SupportsModel {
 		t.Fatalf("unknown Console model = %#v", unknown)
+	}
+}
+
+func TestAssembleRoutingCandidatesAllowsRecognizedWebImagineModelWithStaleSnapshot(t *testing.T) {
+	bases := []account.RoutingAccountBase{{Credential: account.Credential{
+		ID: 1, Provider: account.ProviderWeb, Enabled: true, AuthStatus: account.AuthStatusActive,
+	}}}
+	overlay := account.RoutingOverlaySnapshot{Values: []account.RoutingAccountOverlay{{
+		AccountID: 1, ModelCapabilityKnown: true, SupportsModel: false,
+	}}}
+
+	recognized := assembleRoutingCandidates(account.ProviderWeb, account.QuotaModeWebImagePro, bases, overlay)
+	if len(recognized) != 1 || !recognized[0].ModelCapabilityKnown || !recognized[0].SupportsModel {
+		t.Fatalf("recognized Web Imagine model = %#v", recognized)
+	}
+	unknown := assembleRoutingCandidates(account.ProviderWeb, "", bases, overlay)
+	if len(unknown) != 1 || !unknown[0].ModelCapabilityKnown || unknown[0].SupportsModel {
+		t.Fatalf("unknown Web model = %#v", unknown)
 	}
 }
 

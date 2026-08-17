@@ -173,24 +173,48 @@ func (s *Service) saveImage(ctx context.Context, data []byte, expiresAt *time.Ti
 	return asset, nil
 }
 
-// OpenInputAsset 读取未过期的临时输入；它从不通过公开媒体路由暴露。
-func (s *Service) OpenInputAsset(ctx context.Context, id string) (mediadomain.Asset, io.ReadCloser, error) {
+func (s *Service) inputAssetMetadata(ctx context.Context, id string) (mediadomain.Asset, error) {
 	id = strings.TrimSpace(id)
 	if !mediadomain.IsInputAssetID(id) {
-		return mediadomain.Asset{}, nil, ErrInputAssetNotFound
+		return mediadomain.Asset{}, ErrInputAssetNotFound
 	}
 	asset, err := s.assets.GetMediaAsset(ctx, id)
 	if errors.Is(err, repository.ErrNotFound) {
-		return mediadomain.Asset{}, nil, ErrInputAssetNotFound
+		return mediadomain.Asset{}, ErrInputAssetNotFound
 	}
 	if err != nil {
-		return mediadomain.Asset{}, nil, err
+		return mediadomain.Asset{}, err
 	}
 	if (asset.Kind != "image" && asset.Kind != "video") || asset.ExpiresAt == nil {
-		return mediadomain.Asset{}, nil, ErrInputAssetNotFound
+		return mediadomain.Asset{}, ErrInputAssetNotFound
 	}
 	if !asset.ExpiresAt.After(time.Now().UTC()) {
-		return mediadomain.Asset{}, nil, ErrInputAssetNotFound
+		return mediadomain.Asset{}, ErrInputAssetNotFound
+	}
+	return asset, nil
+}
+
+// InspectInputAsset checks metadata, expiry, and object existence without
+// opening the body. It is used by request preflight paths.
+func (s *Service) InspectInputAsset(ctx context.Context, id string) (mediadomain.Asset, error) {
+	asset, err := s.inputAssetMetadata(ctx, id)
+	if err != nil {
+		return mediadomain.Asset{}, err
+	}
+	if err := s.objects.Stat(ctx, asset.StorageKey); errors.Is(err, os.ErrNotExist) {
+		return mediadomain.Asset{}, ErrInputAssetNotFound
+	} else if err != nil {
+		return mediadomain.Asset{}, err
+	}
+	return asset, nil
+}
+
+// OpenInputAsset reads an unexpired temporary input. It is never exposed
+// through a public media route.
+func (s *Service) OpenInputAsset(ctx context.Context, id string) (mediadomain.Asset, io.ReadCloser, error) {
+	asset, err := s.inputAssetMetadata(ctx, id)
+	if err != nil {
+		return mediadomain.Asset{}, nil, err
 	}
 	body, err := s.objects.Open(ctx, asset.StorageKey)
 	if errors.Is(err, os.ErrNotExist) {

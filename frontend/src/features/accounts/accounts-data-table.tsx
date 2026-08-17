@@ -209,12 +209,13 @@ export function AccountsDataTable(props: AccountsWorkspaceProps) {
                   label: t("accounts.egressFilter"),
                   value: egressFilter,
                   onChange: (value: string) => {
+                    if (value !== "" && value !== "bound" && value !== "unbound") return;
                     setEgressFilter(value);
                     setPage(1);
                   },
                   options: [
-                    { value: "assigned", label: t("accounts.egressAssigned") },
-                    { value: "unassigned", label: t("accounts.egressUnassigned") },
+                    { value: "bound", label: t("accounts.egressAssigned") },
+                    { value: "unbound", label: t("accounts.egressUnassigned") },
                   ],
                 },
                 ...(provider === "grok_web"

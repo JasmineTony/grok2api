@@ -127,6 +127,22 @@ describe("accounts API", () => {
     ]);
   });
 
+  it("serializes the backend egress filter contract", async () => {
+    const fetchImpl = vi.fn(() =>
+      Promise.resolve(jsonResponse({ items: [], page: 1, pageSize: 20, total: 0 })),
+    );
+    const client = new ApiClient("https://admin.example", "https://public.example", fetchImpl);
+
+    await listAccounts(client, { page: 1, pageSize: 20, egress: "bound" });
+    await listAccounts(client, { page: 1, pageSize: 20, egress: "unbound" });
+
+    const urls = fetchImpl.mock.calls.map((call) => (call as unknown as [string, RequestInit])[0]);
+    expect(urls).toEqual([
+      "https://admin.example/api/admin/v1/accounts?page=1&pageSize=20&egress=bound",
+      "https://admin.example/api/admin/v1/accounts?page=1&pageSize=20&egress=unbound",
+    ]);
+  });
+
   it("normalizes a successful Device poll account from an older backend", async () => {
     const fetchImpl = vi.fn(() =>
       Promise.resolve(
