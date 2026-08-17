@@ -4,8 +4,9 @@
 - Status: Complete
 - Initial commit: `5cafe69cc772f7ba7cfbb1d0ee354236cc40aa9e`
 - Reviewed upstream main: `f42ba1765fa520c6a587387daf8b22612168b397`
-- Final commit: `893ce52d84e5bf2c5fc95d737642c5507e39be1d`
-- Pull request: Not created; remote branch authentication is currently unavailable
+- Final implementation commit: `893ce52d84e5bf2c5fc95d737642c5507e39be1d`
+- Delivery tip before this documentation update: `031301ceb4c2e9f34c7786ca1f530ff10edeacf7`
+- Pull request: Not created; compare page is ready
 
 ## Delivered
 
@@ -39,16 +40,17 @@ The first uncached backend run encountered one Windows SOCKS test connection abo
 ## Remote delivery
 
 - Local branch: `fix/upstream-architecture-performance-20260817`.
-- Local commit: `893ce52d84e5bf2c5fc95d737642c5507e39be1d`.
-- SSH push was rejected by GitHub with `Permission denied (publickey)`.
-- HTTPS push was rejected with `Invalid username or token`; the environment token is not usable.
-- The in-app GitHub page is currently signed out, so no remote branch or PR URL can be truthfully reported yet.
+- Remote branch: `origin/fix/upstream-architecture-performance-20260817`.
+- Remote branch SHA before this documentation update: `031301ceb4c2e9f34c7786ca1f530ff10edeacf7`.
+- Push verification: `git ls-remote` returned the same SHA for `refs/heads/fix/upstream-architecture-performance-20260817`.
+- Authentication: GitHub OAuth device authorization completed as `JasmineTony`; HTTPS push used Git's OpenSSL transport.
+- Pull request URL: `https://github.com/JasmineTony/grok2api/pull/new/fix/upstream-architecture-performance-20260817`.
 
 ## Deviations
 
 - Upstream cosmetic quota labels/layout were not copied when they would regress the fork's localized UI; functional quota modes and protocol semantics were integrated.
 - The upstream changes were applied semantically to the fork's existing architecture rather than replacing fork-specific files or creating a merge commit.
-- The implementation is committed locally; remote delivery remains blocked until GitHub authentication is completed in the current environment. No release, tag, or deployment side effect is included.
+- The implementation branch is pushed; no release, tag, merge, or deployment side effect is included.
 
 ## Unresolved and follow-up work
 
@@ -66,4 +68,5 @@ Discard or revert the iteration changes. No schema migration, credential change,
 - [x] Focused and full verification passes.
 - [x] Security and compatibility review is complete.
 - [x] `RESULT.md` and the plan index are current.
-- [x] No remote side effects were performed.
+- [x] Delivery branch was pushed and verified.
+- [ ] Pull request was opened and merged.
