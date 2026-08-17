@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"mime/multipart"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
@@ -103,6 +104,37 @@ func TestWriteServiceErrorUsesCredentialLimitCodes(t *testing.T) {
 				t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 			}
 		})
+	}
+}
+
+func TestResolveServiceErrorPreservesBusinessStatus(t *testing.T) {
+	status, code, message := resolveServiceError(
+		"accountConversionFailed",
+		fmt.Errorf("%w: busy", accountapp.ErrConversionBusy),
+		http.StatusInternalServerError,
+		"failed",
+	)
+	if status != http.StatusConflict || code != "accountConversionBusy" || message != "账号正在转换为 Grok Build: busy" {
+		t.Fatalf("resolved error = %d, %q, %q", status, code, message)
+	}
+
+	status, code, message = resolveServiceError("quotaRefreshFailed", fmt.Errorf("provider down"), http.StatusBadGateway, "failed")
+	if status != http.StatusBadGateway || code != "quotaRefreshFailed" || message != "failed" {
+		t.Fatalf("fallback error = %d, %q, %q", status, code, message)
+	}
+}
+
+func TestAccountEventStreamErrorIncludesStatus(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest("POST", "/api/admin/v1/accounts/detect", nil)
+	stream := &accountEventStream{context: ctx}
+
+	stream.WriteError(http.StatusTooManyRequests, "accountDetectFailed", "limited")
+
+	if body := recorder.Body.String(); body != "event: error\ndata: {\"code\":\"accountDetectFailed\",\"message\":\"limited\",\"status\":429}\n\n" {
+		t.Fatalf("body = %q", body)
 	}
 }
 

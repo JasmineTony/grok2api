@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { importConsoleAccounts, importWebAccounts } from "@/features/accounts/account-tasks-api";
-import { ApiClient } from "@/shared/api/client";
+import {
+  detectBuildAccounts,
+  importConsoleAccounts,
+  importWebAccounts,
+} from "@/features/accounts/account-tasks-api";
+import { ApiClient, type ApiError } from "@/shared/api/client";
 
 function jsonResponse(data: unknown): Response {
   return new Response(JSON.stringify({ data }), {
@@ -70,5 +74,51 @@ describe("account task API", () => {
       importWebAccounts(client, [new File(["token"], "accounts.txt")], progress),
     ).resolves.toEqual({ created: 1, updated: 0, synced: 1, syncFailed: 0 });
     expect(progress).toHaveBeenCalledWith({ completed: 1, total: 1, phase: "importing" });
+  });
+
+  it("preserves the backend SSE error status for account tasks", async () => {
+    const fetchImpl = vi.fn(() =>
+      Promise.resolve(
+        new Response(
+          [
+            "event: error",
+            'data: {"status":409,"code":"accountConversionBusy","message":"busy"}',
+            "",
+            "",
+          ].join("\n"),
+          { status: 200, headers: { "Content-Type": "text/event-stream; charset=utf-8" } },
+        ),
+      ),
+    );
+    const client = new ApiClient("https://admin.example", "https://public.example", fetchImpl);
+
+    await expect(
+      importWebAccounts(client, [new File(["token"], "accounts.txt")]),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: "accountConversionBusy",
+    } satisfies Partial<ApiError>);
+  });
+
+  it("preserves the backend SSE error status for Build detection", async () => {
+    const fetchImpl = vi.fn(() =>
+      Promise.resolve(
+        new Response(
+          [
+            "event: error",
+            'data: {"status":429,"code":"accountDetectFailed","message":"limited"}',
+            "",
+            "",
+          ].join("\n"),
+          { status: 200, headers: { "Content-Type": "text/event-stream; charset=utf-8" } },
+        ),
+      ),
+    );
+    const client = new ApiClient("https://admin.example", "https://public.example", fetchImpl);
+
+    await expect(detectBuildAccounts(client, { ids: ["1"] })).rejects.toMatchObject({
+      status: 429,
+      code: "accountDetectFailed",
+    } satisfies Partial<ApiError>);
   });
 });

@@ -74,6 +74,7 @@ type AccountTaskStreamPayload = Partial<
     AccountTokenRefreshResultDTO &
     AccountImportResultDTO
 > & {
+  status?: number;
   code?: string;
   message?: string;
   id?: string;
@@ -98,6 +99,7 @@ const decodeAccountTaskStreamPayload = createObjectDecoder<AccountTaskStreamPayl
     phase: isOptional(isOneOf("importing", "converting", "syncing")),
     updated: isOptional(isNumber),
     succeeded: isOptional(isNumber),
+    status: isOptional(isNumber),
     code: isOptional(isString),
     message: isOptional(isString),
     id: isOptional(isString),
@@ -117,6 +119,24 @@ function hasNumericResult(value: AccountTaskStreamPayload, fields: string[]): bo
     const item = value[field as keyof AccountTaskStreamPayload];
     return typeof item === "number" && Number.isInteger(item) && item >= 0;
   });
+}
+
+function accountTaskError(data: AccountTaskStreamPayload, fallbackCode: string): ApiError {
+  const code = data.code ?? fallbackCode;
+  const status =
+    typeof data.status === "number" &&
+    Number.isInteger(data.status) &&
+    data.status >= 400 &&
+    data.status <= 599
+      ? data.status
+      : 500;
+  return new ApiError(
+    status,
+    code,
+    i18n.exists(`apiErrors.${code}`)
+      ? i18n.t(`apiErrors.${code}`)
+      : (data.message ?? i18n.t("apiErrors.requestFailed")),
+  );
 }
 
 async function runAccountTask<T>(
@@ -167,14 +187,7 @@ async function runAccountTask<T>(
           return;
         }
         if (event === "error") {
-          const code = data.code ?? "accountConversionFailed";
-          throw new ApiError(
-            502,
-            code,
-            i18n.exists(`apiErrors.${code}`)
-              ? i18n.t(`apiErrors.${code}`)
-              : (data.message ?? i18n.t("apiErrors.requestFailed")),
-          );
+          throw accountTaskError(data, "accountConversionFailed");
         }
       },
     );
@@ -261,14 +274,7 @@ export async function detectBuildAccounts(
           return;
         }
         if (event === "error") {
-          const code = data.code ?? "accountDetectFailed";
-          throw new ApiError(
-            502,
-            code,
-            i18n.exists(`apiErrors.${code}`)
-              ? i18n.t(`apiErrors.${code}`)
-              : (data.message ?? i18n.t("apiErrors.requestFailed")),
-          );
+          throw accountTaskError(data, "accountDetectFailed");
         }
       },
     );
