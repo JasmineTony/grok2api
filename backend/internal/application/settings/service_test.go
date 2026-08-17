@@ -368,6 +368,36 @@ func TestLoadPersistedKeepsClearanceDefaultsForOlderPayload(t *testing.T) {
 	}
 }
 
+func TestLoadPersistedPromotesHistoricalOfficialBuildClientMetadata(t *testing.T) {
+	cfg := testConfig(t)
+	value := toDomainConfig(cfg)
+	value.ProviderBuild.ClientVersion = "0.2.119"
+	value.ProviderBuild.UserAgent = "grok-shell/0.2.119 (linux; x86_64)"
+	repository := &runtimeSettingsRepositoryStub{value: value, found: true}
+	loaded, _, _, err := LoadPersisted(context.Background(), cfg, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Provider.Build.ClientVersion != config.RecommendedBuildClientVersion || loaded.Provider.Build.UserAgent != config.RecommendedBuildUserAgent {
+		t.Fatalf("persisted Build metadata = %#v", loaded.Provider.Build)
+	}
+}
+
+func TestLoadPersistedPreservesCustomBuildClientMetadata(t *testing.T) {
+	cfg := testConfig(t)
+	value := toDomainConfig(cfg)
+	value.ProviderBuild.ClientVersion = "0.2.119"
+	value.ProviderBuild.UserAgent = "custom-build-agent"
+	repository := &runtimeSettingsRepositoryStub{value: value, found: true}
+	loaded, _, _, err := LoadPersisted(context.Background(), cfg, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Provider.Build.ClientVersion != "0.2.119" || loaded.Provider.Build.UserAgent != "custom-build-agent" {
+		t.Fatalf("custom persisted Build metadata = %#v", loaded.Provider.Build)
+	}
+}
+
 func TestSnapshotIncludesRecommendedBuildBaseline(t *testing.T) {
 	service := NewService(testConfig(t), time.Time{}, 0, &runtimeSettingsRepositoryStub{}, nil, nil)
 	recommended := service.Get().RecommendedProviderBuild

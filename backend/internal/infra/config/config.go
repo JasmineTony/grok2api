@@ -391,6 +391,10 @@ func Load(path string) (Config, error) {
 	if err := applyEnvironmentOverrides(&cfg); err != nil {
 		return Config{}, err
 	}
+	cfg.Provider.Build.ClientVersion, cfg.Provider.Build.UserAgent = NormalizeBuildClientMetadata(
+		cfg.Provider.Build.ClientVersion,
+		cfg.Provider.Build.UserAgent,
+	)
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -738,6 +742,64 @@ func NormalizeBuildFallbackBaseURL(value string) string {
 		return DefaultBuildFallbackBaseURL
 	}
 	return strings.TrimSpace(value)
+}
+
+// NormalizeBuildClientMetadata advances historical gateway defaults to the
+// current verified Build client while preserving explicit custom identities.
+func NormalizeBuildClientMetadata(clientVersion, userAgent string) (string, string) {
+	clientVersion = strings.TrimSpace(clientVersion)
+	userAgent = strings.TrimSpace(userAgent)
+	if clientVersion == "" {
+		clientVersion = RecommendedBuildClientVersion
+	}
+	if userAgent == "" {
+		userAgent = buildUserAgent(clientVersion)
+	}
+	if isLegacyRecommendedBuildClientVersion(clientVersion) && isOfficialBuildUserAgent(userAgent, clientVersion) {
+		return RecommendedBuildClientVersion, RecommendedBuildUserAgent
+	}
+	if clientVersion == RecommendedBuildClientVersion && isLegacyOfficialBuildUserAgent(userAgent) {
+		return RecommendedBuildClientVersion, RecommendedBuildUserAgent
+	}
+	return clientVersion, userAgent
+}
+
+func buildUserAgent(clientVersion string) string {
+	return "grok-shell/" + clientVersion + " (linux; x86_64)"
+}
+
+func isOfficialBuildUserAgent(userAgent, clientVersion string) bool {
+	return userAgent == buildUserAgent(clientVersion) || userAgent == RecommendedBuildUserAgent
+}
+
+func isLegacyOfficialBuildUserAgent(userAgent string) bool {
+	for _, clientVersion := range legacyRecommendedBuildClientVersions {
+		if userAgent == buildUserAgent(clientVersion) {
+			return true
+		}
+	}
+	return false
+}
+
+func isLegacyRecommendedBuildClientVersion(clientVersion string) bool {
+	for _, value := range legacyRecommendedBuildClientVersions {
+		if clientVersion == value {
+			return true
+		}
+	}
+	return false
+}
+
+var legacyRecommendedBuildClientVersions = [...]string{
+	"0.2.93",
+	"0.2.99",
+	"0.2.101",
+	"0.2.102",
+	"0.2.103",
+	"0.2.106",
+	"0.2.110",
+	"0.2.111",
+	"0.2.119",
 }
 
 func validateQualityGuardConfig(value QualityGuardConfig) error {

@@ -27,6 +27,7 @@ import {
   acceptWebAccountTerms,
   type AccountCleanupStatus,
   type AccountDTO,
+  type AccountEgressFilter,
   type AccountProvider,
   type AccountTaskProgressDTO,
   type AccountUpdateInput,
@@ -92,7 +93,7 @@ export function useAccountsPageController() {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [egressFilter, setEgressFilter] = useState("");
+  const [egressFilter, setEgressFilter] = useState<AccountEgressFilter>("");
   const [agreementFilter, setAgreementFilter] = useState("");
   const [associationFilter, setAssociationFilter] = useState("");
   const [renewalFilter, setRenewalFilter] = useState("");

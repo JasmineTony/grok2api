@@ -283,7 +283,7 @@ type ListAccountsInput = {
   search?: string;
   type?: string;
   status?: string;
-  egress?: string;
+  egress?: AccountEgressFilter;
   renewal?: string;
   risk?: string;
   agreement?: string;
@@ -292,6 +292,8 @@ type ListAccountsInput = {
   sortBy?: string;
   sortOrder?: SortOrder;
 };
+
+export type AccountEgressFilter = "" | "bound" | "unbound" | `node:${number}` | `source:${number}`;
 
 export function listAccounts(
   client: ApiClient,
