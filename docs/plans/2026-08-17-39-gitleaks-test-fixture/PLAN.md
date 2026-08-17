@@ -3,7 +3,7 @@
 - Date: 2026-08-17
 - Sequence: 39
 - Owner: JasmineTony
-- Status: Planned
+- Status: Complete
 - Base commit: `d04c5ef1`
 - Working branch: `fix/new-model-capability-failover-20260816`
 
@@ -66,10 +66,10 @@ CI 使用 gitleaks v8.30.1 扫描工作树时，将
 
 ## Acceptance criteria
 
-- [ ] gitleaks v8.30.1 工作树扫描无泄漏告警。
-- [ ] 目标测试和后端全量测试通过。
-- [ ] 未新增 gitleaks allowlist。
-- [ ] 文档和计划索引更新完成。
-- [ ] 假设与默认值已验证。
-- [ ] `RESULT.md` 完整。
-- [ ] 修正提交在最终本地验收前未推送。
+- [x] gitleaks v8.30.1 工作树扫描无泄漏告警。
+- [x] 目标测试和后端全量测试通过。
+- [x] 未新增 gitleaks allowlist。
+- [x] 文档和计划索引更新完成。
+- [x] 假设与默认值已验证。
+- [x] `RESULT.md` 完整。
+- [x] 修正提交在最终本地验收前未推送。
