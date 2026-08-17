@@ -20,20 +20,21 @@
 
 ## Verification results
 
-| Check                       | Result | Notes                                                                                   |
-| --------------------------- | ------ | --------------------------------------------------------------------------------------- |
-| Focused frontend tests      | Passed | 3 files, 14 tests.                                                                      |
-| Full frontend tests         | Passed | 21 files, 76 tests.                                                                     |
-| Frontend typecheck          | Passed | `tsc -b`.                                                                               |
-| Frontend lint               | Passed | ESLint with zero warnings.                                                              |
-| Frontend production build   | Passed | Vite transformed 3,836 modules.                                                         |
-| Admin API contract audit    | Passed | 112 calls, 109 unique contracts, 15 production registration groups, 0 unresolved calls. |
-| Frontend governance audits  | Passed | Code, architecture, bundle, chunk-cycle, icon, and UI-symbol checks.                    |
-| Backend tests               | Passed | `go test ./...`.                                                                        |
-| Backend static analysis     | Passed | `go vet ./...`.                                                                         |
-| Markdown audit              | Passed | 117 tracked Markdown files, no removable files.                                         |
-| Formatting and diff hygiene | Passed | Prettier and `git diff --check`.                                                        |
-| Independent review          | Passed | No P0/P1 findings; all three P2 audit/MIME findings were fixed and revalidated.         |
+| Check                       | Result | Notes                                                                                    |
+| --------------------------- | ------ | ---------------------------------------------------------------------------------------- |
+| Focused frontend tests      | Passed | 3 files, 14 tests.                                                                       |
+| Full frontend tests         | Passed | 21 files, 76 tests.                                                                      |
+| Frontend typecheck          | Passed | `tsc -b`.                                                                                |
+| Frontend lint               | Passed | ESLint with zero warnings.                                                               |
+| Frontend production build   | Passed | Vite transformed 3,836 modules.                                                          |
+| Admin API contract audit    | Passed | 112 calls, 109 unique contracts, 15 production registration groups, 0 unresolved calls.  |
+| Frontend governance audits  | Passed | Code, architecture, bundle, chunk-cycle, icon, and UI-symbol checks.                     |
+| Frontend Knip export audit  | Passed | Removed redundant `AccountState` and `BillingHistoryDTO` re-exports from the API facade. |
+| Backend tests               | Passed | `go test ./...`.                                                                         |
+| Backend static analysis     | Passed | `go vet ./...`.                                                                          |
+| Markdown audit              | Passed | 117 tracked Markdown files, no removable files.                                          |
+| Formatting and diff hygiene | Passed | Prettier and `git diff --check`.                                                         |
+| Independent review          | Passed | No P0/P1 findings; all three P2 audit/MIME findings were fixed and revalidated.          |
 
 ## Assumptions and defaults verification
 
@@ -52,7 +53,7 @@
 - Final origin synchronization base: `origin/main` remains `f53bbaae8d40316da6c337db3301941760f0990c` and is already contained by the branch base.
 - Final feature synchronization base: `origin/fix/new-model-capability-failover-20260816` is `5588f2232d035931ff1e78e7791d9f5f36b74980`; iteration 39 was fast-forwarded before the final verification run.
 - Final upstream review base: `f06d6fe79fd51b002b3a25b2f0be7532a455a298`; its new image-edit-only changes are intentionally not merged into this request-scoped branch.
-- Remote verification: `refs/heads/fix/account-request-parity-20260817` resolves to `bd8b589c64a44d1fed04c4944be29d8692c1cee4` via HTTPS `ls-remote`.
+- Initial implementation push verification: `refs/heads/fix/account-request-parity-20260817` resolved to `bd8b589c64a44d1fed04c4944be29d8692c1cee4` via HTTPS `ls-remote`.
 - SSH push was rejected by the local `Permission denied (publickey)` state; the authorized HTTPS push succeeded without changing the repository remote URL.
 - Final verification run: Completed after the independent review fixes and before the documentation-only closeout commit.
 
