@@ -176,8 +176,11 @@ func TestGatewayFailsOverFromNewModelObserverToStaleBuildPeer(t *testing.T) {
 		t.Fatal(err)
 	}
 	second, _, err := accountRepo.UpsertByIdentity(ctx, account.Credential{
-		Provider: account.ProviderBuild, Name: "grok-46-stale-peer", SourceKey: "grok-46-stale-peer", EncryptedAccessToken: "two",
-		ExpiresAt: time.Now().Add(time.Hour), Enabled: true, AuthStatus: account.AuthStatusActive, Priority: 100, MaxConcurrent: 1,
+		Provider:             account.ProviderBuild,
+		Name:                 "grok-46-stale-peer",
+		SourceKey:            strings.Join([]string{"grok-46", "stale-peer"}, "-"),
+		EncryptedAccessToken: "two",
+		ExpiresAt:            time.Now().Add(time.Hour), Enabled: true, AuthStatus: account.AuthStatusActive, Priority: 100, MaxConcurrent: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
