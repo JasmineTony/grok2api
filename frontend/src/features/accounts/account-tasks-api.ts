@@ -141,6 +141,7 @@ async function runAccountTask<T>(
         headers: { Accept: "text/event-stream" },
         body,
         signal,
+        jsonFallbackEvent: "complete",
       },
       decodeAccountTaskStreamPayload,
       ({ event, data }) => {

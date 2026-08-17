@@ -95,3 +95,4 @@ Templates are available in [`templates/`](./templates/).
 | 2026-08-16 37 - Dashboard chart spacing fix and 502-vs-upstream diagnosis | [Plan](./2026-08-16-37-dashboard-spacing-502-diagnosis/PLAN.md) | [Result](./2026-08-16-37-dashboard-spacing-502-diagnosis/RESULT.md) | Complete |
 | 2026-08-16 38 - Grok 4.5/4.6 stale-capability failover restoration | [Plan](./2026-08-16-38-new-model-capability-failover/PLAN.md) | [Result](./2026-08-16-38-new-model-capability-failover/RESULT.md) | Complete |
 | 2026-08-17 39 - Gitleaks gateway test fixture correction | [Plan](./2026-08-17-39-gitleaks-test-fixture/PLAN.md) | [Result](./2026-08-17-39-gitleaks-test-fixture/RESULT.md) | Complete |
+| 2026-08-17 40 - Account request parity and interface remediation | [Plan](./2026-08-17-40-account-request-parity/PLAN.md) | [Result](./2026-08-17-40-account-request-parity/RESULT.md) | Complete |
