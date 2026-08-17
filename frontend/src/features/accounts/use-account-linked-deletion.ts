@@ -3,6 +3,7 @@ import type { TFunction } from "i18next";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { accountQueryKeys } from "@/features/accounts/account-query-keys";
 import {
   type AccountCleanupStatus,
   type AccountDTO,
@@ -45,13 +46,11 @@ export function useAccountLinkedDeletion({
   const selectedIDs = [...selected].sort();
 
   const deletionPreviewQuery = useQuery({
-    queryKey: [
-      "accounts",
-      "deletion-preview",
+    queryKey: accountQueryKeys.deletionPreview(
       provider,
       deleting?.id ?? selectedIDs.join(","),
       linkedDeleteTargets.join(","),
-    ],
+    ),
     queryFn: () =>
       previewAccountDeletion(
         apiClient,
@@ -66,13 +65,11 @@ export function useAccountLinkedDeletion({
   });
 
   const cleanupPreviewQuery = useQuery({
-    queryKey: [
-      "accounts",
-      "cleanup-preview",
+    queryKey: accountQueryKeys.cleanupPreview(
       provider,
       [...cleanupStatuses].sort().join(","),
       cleanupLinkedTargets.join(","),
-    ],
+    ),
     queryFn: () => previewCleanup(apiClient, provider, [...cleanupStatuses], cleanupLinkedTargets),
     enabled: cleanupOpen && cleanupStatuses.size > 0,
   });

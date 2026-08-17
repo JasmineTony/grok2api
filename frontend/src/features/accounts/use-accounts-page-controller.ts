@@ -1,6 +1,6 @@
 ﻿import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -21,6 +21,7 @@ import {
   resetAccountForm,
   showAccountError,
 } from "@/features/accounts/account-page-utils";
+import { accountQueryKeys } from "@/features/accounts/account-query-keys";
 import { useAccountSelection } from "@/features/accounts/account-selection";
 import {
   acceptWebAccountTerms,
@@ -58,6 +59,7 @@ import {
   type WebConsoleSyncInput,
 } from "@/features/accounts/accounts-api";
 import { useAccountBulkMaintenance } from "@/features/accounts/use-account-bulk-maintenance";
+import { useAccountDataInvalidation } from "@/features/accounts/use-account-data-invalidation";
 import { useAccountDetection } from "@/features/accounts/use-account-detection";
 import { useAccountEgressBinding } from "@/features/accounts/use-account-egress-binding";
 import { useAccountLinkedDeletion } from "@/features/accounts/use-account-linked-deletion";
@@ -173,8 +175,7 @@ export function useAccountsPageController() {
     name: "buildRouteMode",
   });
   const accountsQuery = useQuery({
-    queryKey: [
-      "accounts",
+    queryKey: accountQueryKeys.list(
       provider,
       page,
       pageSize,
@@ -188,7 +189,7 @@ export function useAccountsPageController() {
       riskFilter,
       sort.field,
       sort.order,
-    ],
+    ),
     queryFn: () =>
       listAccounts(apiClient, {
         provider,
@@ -207,11 +208,11 @@ export function useAccountsPageController() {
       }),
   });
   const summaryQuery = useQuery({
-    queryKey: ["accounts", "summary"],
+    queryKey: accountQueryKeys.summary(),
     queryFn: () => getAccountSummary(apiClient),
   });
   const stateEventsQuery = useQuery({
-    queryKey: ["accounts", stateHistoryAccount?.id, "state-events"],
+    queryKey: accountQueryKeys.stateEvents(stateHistoryAccount?.id ?? ""),
     queryFn: () => listAccountStateEvents(apiClient, stateHistoryAccount?.id ?? ""),
     enabled: Boolean(stateHistoryAccount),
   });
@@ -222,10 +223,7 @@ export function useAccountsPageController() {
   function clearSelection(): void {
     resetSelection();
   }
-  const invalidateAccountData = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ["accounts"] });
-    void queryClient.invalidateQueries({ queryKey: ["accounts", "summary"] });
-  }, [queryClient]);
+  const invalidateAccountData = useAccountDataInvalidation();
   const linkedDeletion = useAccountLinkedDeletion({
     apiClient,
     provider,

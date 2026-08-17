@@ -464,6 +464,9 @@ func (s *countingObjectStore) CommitVideoUpload(ctx context.Context, tempPath, s
 func (s *countingObjectStore) AbortVideoUpload(ctx context.Context, tempPath string) error {
 	return s.inner.AbortVideoUpload(ctx, tempPath)
 }
+func (s *countingObjectStore) Stat(ctx context.Context, storageKey string) error {
+	return s.inner.Stat(ctx, storageKey)
+}
 func (s *countingObjectStore) Open(ctx context.Context, storageKey string) (io.ReadCloser, error) {
 	return s.inner.Open(ctx, storageKey)
 }
@@ -561,6 +564,9 @@ func (s *failingCommitStore) CommitVideoUpload(ctx context.Context, tempPath, st
 }
 func (s *failingCommitStore) AbortVideoUpload(ctx context.Context, tempPath string) error {
 	return s.inner.AbortVideoUpload(ctx, tempPath)
+}
+func (s *failingCommitStore) Stat(ctx context.Context, storageKey string) error {
+	return s.inner.Stat(ctx, storageKey)
 }
 func (s *failingCommitStore) Open(ctx context.Context, storageKey string) (io.ReadCloser, error) {
 	return s.inner.Open(ctx, storageKey)

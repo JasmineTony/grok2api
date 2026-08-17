@@ -192,6 +192,27 @@ func (s *LocalStore) Open(ctx context.Context, storageKey string) (io.ReadCloser
 	return file, nil
 }
 
+func (s *LocalStore) Stat(ctx context.Context, storageKey string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	path, err := s.resolve(storageKey)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return os.ErrNotExist
+	}
+	if err != nil {
+		return fmt.Errorf("检查媒体文件: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return os.ErrNotExist
+	}
+	return nil
+}
+
 func (s *LocalStore) Delete(ctx context.Context, storageKey string) error {
 	if err := ctx.Err(); err != nil {
 		return err

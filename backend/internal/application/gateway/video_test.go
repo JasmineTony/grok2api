@@ -77,6 +77,9 @@ func TestGetVideoExposesOnlyReadableResultAsset(t *testing.T) {
 			if job.ResultAssetID != test.want {
 				t.Fatalf("result asset ID = %q, want %q", job.ResultAssetID, test.want)
 			}
+			if store, ok := test.store.(*videoAssetStoreStub); ok && store.openVideoCalls != 0 {
+				t.Fatalf("status polling opened video body %d times", store.openVideoCalls)
+			}
 		})
 	}
 }
@@ -475,6 +478,9 @@ func TestResolveVideoInputFileReferenceToDataURI(t *testing.T) {
 	if err := service.validateVideoInputReferences(context.Background(), []string{reference}, "image"); err != nil {
 		t.Fatal(err)
 	}
+	if store.openInputCalls != 0 {
+		t.Fatalf("input preflight opened body %d times", store.openInputCalls)
+	}
 	if err := service.validateVideoInputReferences(context.Background(), []string{reference}, "video"); !errors.Is(err, ErrVideoInputUnavailable) {
 		t.Fatalf("image accepted as video input: %v", err)
 	}
@@ -556,6 +562,8 @@ func (a *videoPersistAdapter) DownloadVideo(_ context.Context, credential accoun
 
 type videoAssetStoreStub struct {
 	saveCalls      int
+	inspectCalls   int
+	openVideoCalls int
 	openInputCalls int
 	openAsset      media.Asset
 	openData       []byte
@@ -582,7 +590,19 @@ func (s *videoAssetStoreStub) SaveVideo(_ context.Context, jobID, contentType st
 	return media.Asset{ID: "vid_local", Kind: "video", MIMEType: "video/mp4", SizeBytes: int64(len(data))}, nil
 }
 
+func (s *videoAssetStoreStub) InspectVideo(_ context.Context, id string) (media.Asset, error) {
+	s.inspectCalls++
+	if s.openErr != nil {
+		return media.Asset{}, s.openErr
+	}
+	if s.openAsset.ID == "" || id != s.openAsset.ID {
+		return media.Asset{}, errors.New("not implemented")
+	}
+	return s.openAsset, nil
+}
+
 func (s *videoAssetStoreStub) OpenVideo(_ context.Context, id string) (media.Asset, io.ReadCloser, error) {
+	s.openVideoCalls++
 	if s.openErr != nil {
 		return media.Asset{}, nil, s.openErr
 	}
@@ -592,10 +612,9 @@ func (s *videoAssetStoreStub) OpenVideo(_ context.Context, id string) (media.Ass
 	return s.openAsset, io.NopCloser(bytes.NewReader(s.openData)), nil
 }
 
-func (s *videoAssetStoreStub) OpenInputAsset(_ context.Context, id string) (media.Asset, io.ReadCloser, error) {
-	s.openInputCalls++
+func (s *videoAssetStoreStub) InspectInputAsset(_ context.Context, id string) (media.Asset, error) {
 	if id != s.inputID || len(s.inputData) == 0 {
-		return media.Asset{}, nil, errors.New("not implemented")
+		return media.Asset{}, errors.New("not implemented")
 	}
 	size := s.inputSize
 	if size <= 0 {
@@ -609,7 +628,16 @@ func (s *videoAssetStoreStub) OpenInputAsset(_ context.Context, id string) (medi
 	if mimeType == "" {
 		mimeType = "image/png"
 	}
-	return media.Asset{ID: id, Kind: kind, MIMEType: mimeType, SizeBytes: size}, io.NopCloser(bytes.NewReader(s.inputData)), nil
+	return media.Asset{ID: id, Kind: kind, MIMEType: mimeType, SizeBytes: size}, nil
+}
+
+func (s *videoAssetStoreStub) OpenInputAsset(_ context.Context, id string) (media.Asset, io.ReadCloser, error) {
+	s.openInputCalls++
+	asset, err := s.InspectInputAsset(context.Background(), id)
+	if err != nil {
+		return media.Asset{}, nil, err
+	}
+	return asset, io.NopCloser(bytes.NewReader(s.inputData)), nil
 }
 
 func (*videoAssetStoreStub) ReleaseInputAssets(context.Context, []string) error { return nil }

@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { isAbortError, showAccountError } from "@/features/accounts/account-page-utils";
+import { accountMutationInvalidationKeys } from "@/features/accounts/account-query-keys";
 import {
   type AccountTaskProgressDTO,
   type BuildDetectItemDTO,
@@ -28,8 +29,9 @@ export function useAccountDetection({
   const queryClient = useQueryClient();
   const { t } = useTranslation();
   const invalidateAccountData = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ["accounts"] });
-    void queryClient.invalidateQueries({ queryKey: ["accounts", "summary"] });
+    for (const queryKey of accountMutationInvalidationKeys()) {
+      void queryClient.invalidateQueries({ queryKey });
+    }
   }, [queryClient]);
   const showError = (error: unknown) => showAccountError(error, t);
   const abortRef = useRef<AbortController | null>(null);

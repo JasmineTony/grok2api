@@ -843,13 +843,14 @@ func TestWebRediscoveryRestoresCatalogRouteDefaults(t *testing.T) {
 	}
 }
 
-func TestWebImageRediscoveryUsesLitePublicNames(t *testing.T) {
+func TestWebImageRediscoveryUsesCurrentPublicNames(t *testing.T) {
 	ctx := context.Background()
 	database := openTestDatabase(t)
 	repo := NewModelRepository(database)
 	tests := map[string]string{
 		"grok-imagine-image":         "Web/grok-imagine-image-lite",
-		"grok-imagine-image-quality": "Web/grok-imagine-image-quality-lite",
+		"grok-imagine-image-quality": "Web/grok-imagine-image",
+		"grok-imagine-image-2.0":     "Web/grok-imagine-image-2.0",
 	}
 	for upstreamModel, publicID := range tests {
 		if err := repo.UpsertDiscovered(ctx, account.ProviderWeb, []string{upstreamModel}); err != nil {

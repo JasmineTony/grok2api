@@ -40,13 +40,13 @@ func VideoInputFileReference(fileID string) string {
 }
 
 type VideoInput struct {
-	RequestID      string
-	ClientKey      clientkey.Key
-	PublicModel    string
+	RequestID   string
+	ClientKey   clientkey.Key
+	PublicModel string
 	// Operation defaults to generate when empty.
-	Operation provider.VideoOperation
-	Prompt    string
-	Duration  int
+	Operation   provider.VideoOperation
+	Prompt      string
+	Duration    int
 	AspectRatio string
 	Resolution  string
 	// ImageURL is the optional first-frame image (official "image").
@@ -56,7 +56,7 @@ type VideoInput struct {
 	// ReferenceAudios are preset voice_ids for reference-to-video.
 	ReferenceAudios []string
 	// VideoURL is required for edit/extend (official "video").
-	VideoURL        string
+	VideoURL       string
 	ForcedProvider string
 }
 
@@ -301,7 +301,7 @@ func (s *Service) getVideoJob(ctx context.Context, id string, key clientkey.Key)
 }
 
 // GetVideo returns the client-facing job state. A result asset is exposed only
-// while the local object can still be opened; completed assets are eligible for
+// while the local object still exists; completed assets are eligible for
 // capacity cleanup, and a stale asset ID would otherwise produce a dead public URL.
 func (s *Service) GetVideo(ctx context.Context, id string, key clientkey.Key) (media.Job, error) {
 	job, err := s.getVideoJob(ctx, id, key)
@@ -315,12 +315,10 @@ func (s *Service) GetVideo(ctx context.Context, id string, key clientkey.Key) (m
 		job.ResultAssetID = ""
 		return job, nil
 	}
-	_, body, openErr := s.mediaAssets.OpenVideo(ctx, job.ResultAssetID)
-	if openErr != nil || body == nil {
+	if _, inspectErr := s.mediaAssets.InspectVideo(ctx, job.ResultAssetID); inspectErr != nil {
 		job.ResultAssetID = ""
 		return job, nil
 	}
-	_ = body.Close()
 	return job, nil
 }
 
@@ -742,12 +740,7 @@ func (s *Service) runVideoJob(parent context.Context, job media.Job, route model
 		return
 	}
 	s.selector.MarkSuccess(context.Background(), lease.Credential)
-	refreshMode := lease.QuotaMode
-	decrementMode := lease.QuotaMode
-	if quotaRefreshGroup != "" {
-		refreshMode = quotaRefreshGroup
-		decrementMode = quotaMode
-	}
+	refreshMode, decrementMode := quotaFinalizationModes(lease.QuotaMode, quotaRefreshGroup)
 	if decrementMode != "" && decrementMode != "weekly" {
 		quotaCtx, quotaCancel := context.WithTimeout(context.Background(), accountStateWriteTimeout)
 		updated, quotaErr := s.accounts.DecrementQuota(quotaCtx, job.AccountID, decrementMode, 1)
@@ -811,11 +804,10 @@ func (s *Service) validateVideoInputReferences(ctx context.Context, references [
 		if s.mediaAssets == nil || !local {
 			return ErrVideoInputUnavailable
 		}
-		asset, body, err := s.mediaAssets.OpenInputAsset(ctx, fileID)
+		asset, err := s.mediaAssets.InspectInputAsset(ctx, fileID)
 		if err != nil {
 			return fmt.Errorf("%w: %v", ErrVideoInputUnavailable, err)
 		}
-		_ = body.Close()
 		if asset.Kind != expectedKind {
 			return fmt.Errorf("%w: file_id 必须引用%s", ErrVideoInputUnavailable, expectedKind)
 		}
