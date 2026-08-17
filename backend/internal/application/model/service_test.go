@@ -99,6 +99,9 @@ func TestSyncSyncsOnlyFirstAccountPerProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := modelRepo.ReplaceAccountCapabilities(ctx, first.ID, []string{"grok-basic"}, time.Now().UTC().Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
 	webAccount, _, err := accountRepo.UpsertByIdentity(ctx, account.Credential{Provider: account.ProviderWeb, AuthType: account.AuthTypeSSO, WebTier: account.WebTierSuper, Name: "web-super", SourceKey: "web-super", EncryptedAccessToken: encrypted, ExpiresAt: time.Now().Add(time.Hour), AuthStatus: account.AuthStatusActive})
 	if err != nil {
 		t.Fatal(err)
@@ -136,9 +139,11 @@ func TestSyncSyncsOnlyFirstAccountPerProvider(t *testing.T) {
 		known[candidate.Credential.ID] = candidate.ModelCapabilityKnown
 		support[candidate.Credential.ID] = candidate.SupportsModel
 	}
-	// The lower-priority account stays untouched by the bulk sync, so its capability stays unknown.
-	if known[first.ID] {
-		t.Fatalf("unsynced account has known capability: %#v", known)
+	// The lower-priority account keeps its older successful snapshot, but a model
+	// newly observed by a same-entitlement peer must make that negative snapshot
+	// inconclusive so the account remains available for failover.
+	if known[first.ID] || support[first.ID] {
+		t.Fatalf("stale peer should be an unknown fallback: support = %#v, known = %#v", support, known)
 	}
 	if !known[second.ID] || !support[second.ID] {
 		t.Fatalf("support = %#v, known = %#v", support, known)

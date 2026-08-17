@@ -153,6 +153,83 @@ func (r *etagSyncResolver) GetByProviderUpstream(context.Context, account.Provid
 	return modeldomain.Route{}, repository.ErrNotFound
 }
 
+func TestGatewayFailsOverFromNewModelObserverToStaleBuildPeer(t *testing.T) {
+	ctx := context.Background()
+	database, err := relational.OpenSQLite(ctx, filepath.Join(t.TempDir(), "grok-46-failover.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if err := database.InitializeSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	accountRepo := relational.NewAccountRepository(database)
+	modelRepo := relational.NewModelRepository(database)
+	auditRepo := relational.NewAuditRepository(database)
+	responseRepo := relational.NewResponseRepository(database)
+	keyRepo := relational.NewClientKeyRepository(database)
+	first, _, err := accountRepo.UpsertByIdentity(ctx, account.Credential{
+		Provider: account.ProviderBuild, Name: "grok-46-observer", SourceKey: "grok-46-observer", EncryptedAccessToken: "one",
+		ExpiresAt: time.Now().Add(time.Hour), Enabled: true, AuthStatus: account.AuthStatusActive, Priority: 200, MaxConcurrent: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _, err := accountRepo.UpsertByIdentity(ctx, account.Credential{
+		Provider:             account.ProviderBuild,
+		Name:                 "grok-46-stale-peer",
+		SourceKey:            strings.Join([]string{"grok-46", "stale-peer"}, "-"),
+		EncryptedAccessToken: "two",
+		ExpiresAt:            time.Now().Add(time.Hour), Enabled: true, AuthStatus: account.AuthStatusActive, Priority: 100, MaxConcurrent: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	observedAt := time.Now().UTC()
+	if err := modelRepo.ReplaceAccountCapabilities(ctx, second.ID, []string{"grok-4.5"}, observedAt.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := modelRepo.UpsertDiscovered(ctx, account.ProviderBuild, []string{"grok-4.6"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := modelRepo.ReplaceAccountCapabilities(ctx, first.ID, []string{"grok-4.6"}, observedAt); err != nil {
+		t.Fatal(err)
+	}
+	clientKey, err := keyRepo.Create(ctx, clientkey.Key{
+		Name: "grok-46-key", Prefix: "grok-46", SecretHash: strings.Repeat("4", 64), EncryptedSecret: "encrypted",
+		Enabled: true, RPMLimit: 120, MaxConcurrent: 8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter := &failoverAdapter{firstID: first.ID, failureStatus: http.StatusBadGateway, failureBody: `{"error":"upstream unavailable"}`}
+	registry := provider.NewRegistry(adapter)
+	sticky := memory.NewStickyStore()
+	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
+	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
+	service := NewService(modelRepo, auditRepo, accountService, clientkeyapp.NewService(nil, nil, nil, 60, 4, nil), registry, selector, responseRepo, 3)
+
+	result, err := service.CreateResponse(ctx, Input{
+		RequestID: "req-grok-46-failover", ClientKey: clientKey, PublicModel: "grok-4.6",
+		Body: []byte(`{"model":"grok-4.6","input":"hello"}`), ForcedProvider: string(account.ProviderBuild),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(result.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result.Finalize(Usage{}, "", "")
+	_ = result.Body.Close()
+	if string(body) != "ok" {
+		t.Fatalf("body = %q", body)
+	}
+	if len(adapter.attempts) != 2 || adapter.attempts[0] != first.ID || adapter.attempts[1] != second.ID {
+		t.Fatalf("attempts = %#v, want observer %d then stale peer %d", adapter.attempts, first.ID, second.ID)
+	}
+}
+
 func TestGatewayFailsOverBeforeReturningBody(t *testing.T) {
 	ctx := context.Background()
 	database, err := relational.OpenSQLite(ctx, filepath.Join(t.TempDir(), "gateway.db"))

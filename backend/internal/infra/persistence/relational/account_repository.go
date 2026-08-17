@@ -381,6 +381,7 @@ func (r *AccountRepository) ListRoutingCandidates(ctx context.Context, provider 
 		return nil, err
 	}
 	known := make(map[uint64]bool, len(ids))
+	capabilitySyncedAt := make(map[uint64]time.Time, len(ids))
 	supported := make(map[uint64]bool, len(ids))
 	modelQuotaBlocks := make(map[uint64]account.ModelQuotaBlock, len(ids))
 	if strings.TrimSpace(upstreamModel) != "" && len(ids) > 0 {
@@ -391,6 +392,7 @@ func (r *AccountRepository) ListRoutingCandidates(ctx context.Context, provider 
 			}
 			for _, state := range states {
 				known[state.AccountID] = true
+				capabilitySyncedAt[state.AccountID] = state.LastSuccessAt.UTC()
 			}
 			var capabilities []accountModelCapabilityModel
 			if err := r.db.db.WithContext(ctx).Where("account_id IN ? AND upstream_model = ?", batch, upstreamModel).Find(&capabilities).Error; err != nil {
@@ -412,10 +414,15 @@ func (r *AccountRepository) ListRoutingCandidates(ctx context.Context, provider 
 			return nil, err
 		}
 	}
-	sharedSuperBuildModel := false
+	var latestSuperBuildModelSync time.Time
+	var latestRegularBuildModelSync time.Time
 	if provider == account.ProviderBuild && len(bound) == 0 {
 		for _, value := range values {
 			if !supported[value.ID] {
+				continue
+			}
+			syncedAt := capabilitySyncedAt[value.ID]
+			if syncedAt.IsZero() {
 				continue
 			}
 			var billing *account.Billing
@@ -423,8 +430,11 @@ func (r *AccountRepository) ListRoutingCandidates(ctx context.Context, provider 
 				billing = &snapshot
 			}
 			if account.IsBuildSuper(value, billing) {
-				sharedSuperBuildModel = true
-				break
+				if syncedAt.After(latestSuperBuildModelSync) {
+					latestSuperBuildModelSync = syncedAt
+				}
+			} else if syncedAt.After(latestRegularBuildModelSync) {
+				latestRegularBuildModelSync = syncedAt
 			}
 		}
 	}
@@ -441,13 +451,21 @@ func (r *AccountRepository) ListRoutingCandidates(ctx context.Context, provider 
 			capabilityKnown, supportsModel = true, true
 		} else if len(bound) > 0 {
 			capabilityKnown, supportsModel = true, true
-		} else if sharedSuperBuildModel {
+		} else if provider == account.ProviderBuild && !supportsModel {
 			var billing *account.Billing
 			if snapshot, exists := billings[value.ID]; exists {
 				billing = &snapshot
 			}
+			modelObservedAt := latestRegularBuildModelSync
 			if account.IsBuildSuper(value, billing) {
-				capabilityKnown, supportsModel = true, true
+				modelObservedAt = latestSuperBuildModelSync
+			}
+			if peerSyncedAt := capabilitySyncedAt[value.ID]; !modelObservedAt.IsZero() && peerSyncedAt.Before(modelObservedAt) {
+				// Manual catalog sync probes one account per Provider. A peer's older
+				// successful snapshot cannot prove that a newly observed model is
+				// unsupported, so retain it as an unknown failover candidate. Do not
+				// claim support: observed accounts still sort ahead of unknown peers.
+				capabilityKnown = false
 			}
 		}
 		candidate := account.RoutingCandidate{Credential: value, ModelCapabilityKnown: capabilityKnown, SupportsModel: supportsModel}
@@ -694,7 +712,7 @@ func (r *AccountRepository) ListRoutingAccountOverlays(ctx context.Context, prov
 	var states []accountModelSyncStateModel
 	if err := r.db.db.WithContext(ctx).
 		Table("account_model_sync_states AS state").
-		Select("state.account_id").
+		Select("state.account_id", "state.last_success_at").
 		Joins("JOIN provider_accounts AS account ON account.id = state.account_id").
 		Where("account.provider = ? AND account.enabled = TRUE AND state.last_success_at IS NOT NULL", provider).
 		Find(&states).Error; err != nil {
@@ -704,6 +722,7 @@ func (r *AccountRepository) ListRoutingAccountOverlays(ctx context.Context, prov
 		overlay := values[state.AccountID]
 		overlay.AccountID = state.AccountID
 		overlay.ModelCapabilityKnown = true
+		overlay.CapabilitySyncedAt = state.LastSuccessAt.UTC()
 		values[state.AccountID] = overlay
 	}
 	var capabilities []accountModelCapabilityModel

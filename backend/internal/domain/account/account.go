@@ -530,6 +530,7 @@ type RoutingAccountOverlay struct {
 	Bound                bool
 	ModelCapabilityKnown bool
 	SupportsModel        bool
+	CapabilitySyncedAt   time.Time
 	ModelQuotaBlock      *ModelQuotaBlock
 }
 

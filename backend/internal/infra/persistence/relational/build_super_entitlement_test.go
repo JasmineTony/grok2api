@@ -108,7 +108,7 @@ func TestListRoutingCandidatesSharesEntitledBuildModels(t *testing.T) {
 	if err := models.ReplaceAccountCapabilities(ctx, observer.ID, []string{sharedModel}, now); err != nil {
 		t.Fatal(err)
 	}
-	if err := models.ReplaceAccountCapabilities(ctx, peer.ID, []string{"grok-4.5"}, now); err != nil {
+	if err := models.ReplaceAccountCapabilities(ctx, peer.ID, []string{"grok-4.5"}, now.Add(-time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	candidates, err := accounts.ListRoutingCandidates(ctx, account.ProviderBuild, 0, sharedModel, "")
@@ -122,10 +122,103 @@ func TestListRoutingCandidatesSharesEntitledBuildModels(t *testing.T) {
 	if c := byID[observer.ID]; !c.SupportsModel {
 		t.Fatalf("entitled observer should support model: %#v", c)
 	}
-	if c := byID[peer.ID]; !c.SupportsModel || !c.ModelCapabilityKnown {
-		t.Fatalf("entitled peer should share Super model support: %#v", c)
+	if c := byID[peer.ID]; c.ModelCapabilityKnown || c.SupportsModel {
+		t.Fatalf("entitled peer with a stale snapshot should remain an unknown fallback: %#v", c)
 	}
 	// paid filter includes entitlement
 	assertAccountFilterCount(t, ctx, accounts, repository.AccountListFilter{QuotaType: "paid", Now: now}, 2)
 	assertAccountFilterCount(t, ctx, accounts, repository.AccountListFilter{QuotaType: "free", Now: now}, 0)
+}
+
+func TestListRoutingCandidatesSharesBuildModelsWithinEntitlementOnly(t *testing.T) {
+	ctx := context.Background()
+	database := openTestDatabase(t)
+	accounts := NewAccountRepository(database)
+	models := NewModelRepository(database)
+
+	createAccount := func(name string, super bool) account.Credential {
+		t.Helper()
+		value, _, err := accounts.UpsertByIdentity(ctx, account.Credential{
+			Provider: account.ProviderBuild, Name: name, SourceKey: name,
+			EncryptedAccessToken: testEncryptedToken, Enabled: true, AuthStatus: account.AuthStatusActive,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if super {
+			value.BuildSuperEntitled = true
+			if _, err := accounts.Update(ctx, value); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return value
+	}
+
+	regularObserver := createAccount("regular-observer", false)
+	regularPeer := createAccount("regular-peer", false)
+	superObserver := createAccount("super-observer", true)
+	superPeer := createAccount("super-peer", true)
+	const regularModel = "grok-4.6"
+	const superModel = "grok-imagine-video-1.5"
+	now := time.Now().UTC()
+	if err := models.UpsertDiscovered(ctx, account.ProviderBuild, []string{regularModel, superModel}); err != nil {
+		t.Fatal(err)
+	}
+	for accountID, capabilities := range map[uint64][]string{
+		regularPeer.ID: {"grok-4.5"},
+		superPeer.ID:   {"grok-4.5"},
+	} {
+		if err := models.ReplaceAccountCapabilities(ctx, accountID, capabilities, now.Add(-time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for accountID, capabilities := range map[uint64][]string{
+		regularObserver.ID: {regularModel},
+		superObserver.ID:   {superModel},
+	} {
+		if err := models.ReplaceAccountCapabilities(ctx, accountID, capabilities, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	assertCandidates := func(upstreamModel string, expected map[uint64][2]bool) {
+		t.Helper()
+		candidates, err := accounts.ListRoutingCandidates(ctx, account.ProviderBuild, 0, upstreamModel, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		byID := make(map[uint64]account.RoutingCandidate, len(candidates))
+		for _, candidate := range candidates {
+			byID[candidate.Credential.ID] = candidate
+		}
+		for accountID, flags := range expected {
+			candidate, exists := byID[accountID]
+			if !exists || candidate.ModelCapabilityKnown != flags[0] || candidate.SupportsModel != flags[1] {
+				t.Fatalf("model %s account %d = %#v, want known=%t supports=%t", upstreamModel, accountID, candidate, flags[0], flags[1])
+			}
+		}
+	}
+
+	assertCandidates(regularModel, map[uint64][2]bool{
+		regularObserver.ID: {true, true},
+		regularPeer.ID:     {false, false},
+		superObserver.ID:   {true, false},
+		superPeer.ID:       {true, false},
+	})
+	assertCandidates(superModel, map[uint64][2]bool{
+		regularObserver.ID: {true, false},
+		regularPeer.ID:     {true, false},
+		superObserver.ID:   {true, true},
+		superPeer.ID:       {false, false},
+	})
+
+	if err := models.ReplaceAccountCapabilities(ctx, regularPeer.ID, []string{"grok-4.5"}, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	assertCandidates(regularModel, map[uint64][2]bool{
+		regularObserver.ID: {true, true},
+		regularPeer.ID:     {true, false},
+		superObserver.ID:   {true, false},
+		superPeer.ID:       {true, false},
+	})
 }
