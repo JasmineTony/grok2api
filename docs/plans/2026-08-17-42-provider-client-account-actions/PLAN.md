@@ -3,7 +3,7 @@
 - Date: 2026-08-17
 - Sequence: 42
 - Owner: JasmineTony
-- Status: In progress
+- Status: Complete
 - Base commit: `a7f9736b4654f93eef9e0c61c6d7d50f87e58371`
 - Working branch: `fix/upstream-architecture-performance-20260817`
 
@@ -87,12 +87,12 @@ Iterations 40 and 41 restored onboarding compatibility and reconciled upstream m
 
 ## Acceptance criteria
 
-- [ ] Upstream `v3.1.3` is merged with a true merge commit and exact ancestry is recorded.
-- [ ] Latest upstream and current branch provider metadata are compared by exact commit.
-- [ ] All listed Build, Web, and Console account actions have a documented request-chain audit.
-- [ ] Confirmed client-version and request-contract defects are fixed.
-- [ ] Regression tests cover every corrected action.
-- [ ] Required frontend and backend checks pass.
-- [ ] Security, consistency, and architecture review is complete.
-- [ ] Documentation and `RESULT.md` are current.
-- [ ] Assumptions and defaults are verified.
+- [x] Upstream `v3.1.3` is merged with a true merge commit and exact ancestry is recorded.
+- [x] Latest upstream and current branch provider metadata are compared by exact commit.
+- [x] All listed Build, Web, and Console account actions have a documented request-chain audit.
+- [x] Confirmed client-version and request-contract defects are fixed.
+- [x] Regression tests cover every corrected action.
+- [x] Required frontend and backend checks pass.
+- [x] Security, consistency, and architecture review is complete.
+- [x] Documentation and `RESULT.md` are current.
+- [x] Assumptions and defaults are verified.
