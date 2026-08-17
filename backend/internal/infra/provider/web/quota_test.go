@@ -477,6 +477,22 @@ func TestDecodeImagineQuotaSnapshotMatchesObservedProtocol(t *testing.T) {
 	}
 }
 
+func TestDecodeImagineQuotaSnapshotPrefersUpstreamNextAvailableAt(t *testing.T) {
+	now := time.Date(2026, 8, 13, 8, 0, 0, 0, time.UTC)
+	upstreamResetAt := now.Add(37 * time.Minute)
+	body := []byte(`{
+		"image":null,"imageEdit":null,"video":null,"video720p":null,
+		"imagePro":{"available":true,"remainingQueries":4,"windowSizeSeconds":86400,"nextAvailableAt":"` + upstreamResetAt.Format(time.RFC3339) + `"}
+	}`)
+	windows, err := decodeImagineQuotaSnapshot(body, 42, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(windows) != 1 || windows[0].ResetAt == nil || !windows[0].ResetAt.Equal(upstreamResetAt) {
+		t.Fatalf("windows = %#v", windows)
+	}
+}
+
 func TestDecodeImagineQuotaSnapshotRequiresCompleteResponse(t *testing.T) {
 	now := time.Now().UTC()
 	_, err := decodeImagineQuotaSnapshot([]byte(`{"image":null,"imageEdit":null,"imagePro":null,"video":null}`), 42, now)

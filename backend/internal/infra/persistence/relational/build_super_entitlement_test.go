@@ -122,8 +122,8 @@ func TestListRoutingCandidatesSharesEntitledBuildModels(t *testing.T) {
 	if c := byID[observer.ID]; !c.SupportsModel {
 		t.Fatalf("entitled observer should support model: %#v", c)
 	}
-	if c := byID[peer.ID]; c.ModelCapabilityKnown || c.SupportsModel {
-		t.Fatalf("entitled peer with a stale snapshot should remain an unknown fallback: %#v", c)
+	if c := byID[peer.ID]; !c.ModelCapabilityKnown || !c.SupportsModel {
+		t.Fatalf("entitled peer should share an active paid observer's model: %#v", c)
 	}
 	// paid filter includes entitlement
 	assertAccountFilterCount(t, ctx, accounts, repository.AccountListFilter{QuotaType: "paid", Now: now}, 2)
@@ -209,7 +209,7 @@ func TestListRoutingCandidatesSharesBuildModelsWithinEntitlementOnly(t *testing.
 		regularObserver.ID: {true, false},
 		regularPeer.ID:     {true, false},
 		superObserver.ID:   {true, true},
-		superPeer.ID:       {false, false},
+		superPeer.ID:       {true, true},
 	})
 
 	if err := models.ReplaceAccountCapabilities(ctx, regularPeer.ID, []string{"grok-4.5"}, now.Add(time.Hour)); err != nil {

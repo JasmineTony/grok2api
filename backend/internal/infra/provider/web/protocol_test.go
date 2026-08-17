@@ -207,7 +207,7 @@ func TestImageChatRejectsOnlyCurrentTurnAttachment(t *testing.T) {
 	}
 }
 
-func TestQualityImageResponsesUsesImageCompatibilityValidation(t *testing.T) {
+func TestImagineImageResponsesUsesImageCompatibilityValidation(t *testing.T) {
 	response, err := (&Adapter{}).ForwardResponse(context.Background(), provider.ResponseResourceRequest{
 		Method: http.MethodPost, Model: "grok-imagine-image-quality", Operation: conversation.OperationResponses,
 		Body: []byte(`{"model":"grok-imagine-image","input":[{"role":"user","content":[{"type":"input_text","text":"draw"}]}],"image_config":{"n":0}}`),
@@ -1240,6 +1240,20 @@ func TestModelsUseLowestSufficientTierFirst(t *testing.T) {
 	}
 }
 
+func TestWebVideoTierOrderFollowsConfirmedQuotaProduct(t *testing.T) {
+	adapter := &Adapter{}
+	if got := adapter.TierOrderForQuotaMode("grok-imagine-video", account.QuotaModeWebVideo720p); !slices.Equal(got, []account.WebTier{
+		account.WebTierBasic, account.WebTierSuper, account.WebTierHeavy,
+	}) {
+		t.Fatalf("720p video tier order = %v", got)
+	}
+	if got := adapter.TierOrderForQuotaMode("grok-imagine-video", account.QuotaModeWebVideo); !slices.Equal(got, []account.WebTier{
+		account.WebTierSuper, account.WebTierHeavy,
+	}) {
+		t.Fatalf("unverified video product tier order = %v", got)
+	}
+}
+
 func TestOnlyChatModelsExposeRateLimitModes(t *testing.T) {
 	for _, spec := range Catalog() {
 		if spec.Capability == modeldomain.CapabilityChat {
@@ -1328,15 +1342,17 @@ func TestPreflightClassifiesAntiBotRejection(t *testing.T) {
 }
 
 func TestImagineRequestContainsOnlyProtocolProperties(t *testing.T) {
-	message := imagineRequestMessage("request", "prompt", "16:9", false, true, 8)
-	item := message["item"].(map[string]any)
-	content := item["content"].([]any)[0].(map[string]any)
-	properties := content["properties"].(map[string]any)
-	if properties["aspect_ratio"] != "16:9" || properties["enable_pro"] != true || properties["enable_nsfw"] != false || properties["num_generations"] != 8 {
-		t.Fatalf("properties = %#v", properties)
+	for _, pro := range []bool{false, true} {
+		message := imagineRequestMessage("request", "prompt", "16:9", false, pro, 2)
+		item := message["item"].(map[string]any)
+		content := item["content"].([]any)[0].(map[string]any)
+		properties := content["properties"].(map[string]any)
+		if properties["aspect_ratio"] != "16:9" || properties["enable_pro"] != pro || properties["enable_nsfw"] != false || properties["num_generations"] != 2 {
+			t.Fatalf("pro=%v properties=%#v", pro, properties)
+		}
+		encoded := string(MarshalJSONBytes(message))
+		assertForbiddenFieldsAbsent(t, encoded)
 	}
-	encoded := string(MarshalJSONBytes(message))
-	assertForbiddenFieldsAbsent(t, encoded)
 }
 
 func TestImagineModelAndGenerationCountMapping(t *testing.T) {

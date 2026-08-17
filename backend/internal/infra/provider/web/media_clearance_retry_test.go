@@ -107,7 +107,8 @@ func TestGenerateWSImageReacquiresAfterChallengeHandshake(t *testing.T) {
 	adapter, credential := testMediaAdapter(t, server.URL)
 	enableTestClearance(adapter, server.URL)
 	response, err := adapter.GenerateImage(context.Background(), provider.ImageGenerationRequest{
-		Credential: credential, Model: "grok-imagine-image-quality", Prompt: "draw a teapot", Count: 1, ResponseFormat: "b64_json",
+		Credential: credential, Model: "grok-imagine-image-quality", Prompt: "draw a teapot", Count: 1,
+		Resolution: "2k", Quality: "medium", ResponseFormat: "b64_json",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -328,12 +329,13 @@ func TestImageEditReplaysWholeFlowWithRefreshedClearance(t *testing.T) {
 			adapter, credential := testMediaAdapter(t, server.URL)
 			enableTestClearance(adapter, server.URL)
 			response, err := adapter.EditImage(context.Background(), provider.ImageEditRequest{
-				Credential: credential,
-				ImageURLs:  []string{"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="},
-				Prompt:     "turn it blue",
-				Count:      1,
-				Resolution: "1k",
-				Streaming:  true,
+				Credential:  credential,
+				ImageURLs:   []string{"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="},
+				Prompt:      "turn it blue",
+				Count:       1,
+				Resolution:  "1k",
+				AspectRatio: "9:16",
+				Streaming:   true,
 			})
 			if err != nil {
 				t.Fatal(err)

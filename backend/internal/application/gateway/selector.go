@@ -877,10 +877,33 @@ func annotateSelectionAccountScope(err *error, scope clientkeydomain.AccountScop
 }
 
 func effectiveQuotaMode(candidate account.RoutingCandidate, fallback string) string {
-	if candidate.QuotaWindow != nil && candidate.QuotaWindow.Mode == "weekly" {
-		return "weekly"
+	if candidate.QuotaWindow != nil && candidate.QuotaWindow.Mode != "" {
+		return candidate.QuotaWindow.Mode
+	}
+	if candidate.Credential.Provider == account.ProviderWeb && fallback == account.QuotaModeWebImageEdit {
+		switch candidate.Credential.WebTier {
+		case account.WebTierSuper, account.WebTierHeavy:
+			return account.QuotaModeWebImageEdit
+		default:
+			return account.QuotaModeWebImagePro
+		}
 	}
 	return fallback
+}
+
+// candidateSupportsModel treats a recognized Web catalog entry as an
+// effective capability for tiers that the adapter explicitly allows. This
+// prevents a historical capability snapshot from blocking a newly enabled
+// catalog feature, while unknown/manual Web routes and all other providers
+// retain the persisted snapshot semantics.
+func (s *Selector) candidateSupportsModel(provider account.Provider, upstreamModel, quotaMode string, candidate account.RoutingCandidate) bool {
+	if provider == account.ProviderWeb {
+		order := s.resolveTierOrder(provider, upstreamModel, quotaMode)
+		if len(order) > 0 {
+			return webTierInOrder(order, candidate.Credential.WebTier)
+		}
+	}
+	return !candidate.ModelCapabilityKnown || candidate.SupportsModel
 }
 
 func (s *Selector) MarkSuccess(ctx context.Context, credential account.Credential) {
@@ -1812,6 +1835,7 @@ func assembleRoutingCandidates(provider account.Provider, quotaMode string, base
 	}
 	var latestSuperBuildModelSync time.Time
 	var latestRegularBuildModelSync time.Time
+	sharedSuperBuildModel := false
 	if provider == account.ProviderBuild && !overlay.HasBindings {
 		for _, base := range bases {
 			value, exists := byAccount[base.Credential.ID]
@@ -1819,6 +1843,7 @@ func assembleRoutingCandidates(provider account.Provider, quotaMode string, base
 				continue
 			}
 			if account.IsBuildSuper(base.Credential, base.Billing) {
+				sharedSuperBuildModel = true
 				if value.CapabilitySyncedAt.After(latestSuperBuildModelSync) {
 					latestSuperBuildModelSync = value.CapabilitySyncedAt
 				}
@@ -1841,12 +1866,16 @@ func assembleRoutingCandidates(provider account.Provider, quotaMode string, base
 		} else if overlay.HasBindings {
 			known, supports = true, true
 		} else if provider == account.ProviderBuild && !supports {
-			modelObservedAt := latestRegularBuildModelSync
-			if account.IsBuildSuper(base.Credential, base.Billing) {
-				modelObservedAt = latestSuperBuildModelSync
-			}
-			if !modelObservedAt.IsZero() && overlayValue.CapabilitySyncedAt.Before(modelObservedAt) {
-				known = false
+			if sharedSuperBuildModel && account.IsBuildSuper(base.Credential, base.Billing) {
+				known, supports = true, true
+			} else {
+				modelObservedAt := latestRegularBuildModelSync
+				if account.IsBuildSuper(base.Credential, base.Billing) {
+					modelObservedAt = latestSuperBuildModelSync
+				}
+				if !modelObservedAt.IsZero() && overlayValue.CapabilitySyncedAt.Before(modelObservedAt) {
+					known = false
+				}
 			}
 		}
 		result = append(result, account.RoutingCandidate{
@@ -2020,16 +2049,6 @@ func retryDelay(now, retryAt time.Time) time.Duration {
 	return retryAt.Sub(now)
 }
 
-func (s *Selector) candidateSupportsModel(provider account.Provider, upstreamModel, quotaMode string, candidate account.RoutingCandidate) bool {
-	if provider == account.ProviderWeb {
-		order := s.resolveTierOrder(provider, upstreamModel, quotaMode)
-		if len(order) > 0 {
-			return webTierInOrder(order, candidate.Credential.WebTier)
-		}
-	}
-	return !candidate.ModelCapabilityKnown || candidate.SupportsModel
-}
-
 func (s *Selector) resolveTierOrder(provider account.Provider, upstreamModel, quotaMode string) []account.WebTier {
 	if s.tierOrders == nil {
 		return nil
@@ -2052,15 +2071,21 @@ func tierOrderRank(order []account.WebTier, tier account.WebTier) int {
 	return len(order)
 }
 
-func webTierInOrder(order []account.WebTier, tier account.WebTier) bool {
-	return tierOrderRank(order, tier) < len(order)
-}
-
 func normalizedRoutingWebTier(tier account.WebTier) account.WebTier {
 	if tier == "" || tier == account.WebTierAuto {
 		return account.WebTierBasic
 	}
 	return tier
+}
+
+func webTierInOrder(order []account.WebTier, tier account.WebTier) bool {
+	tier = normalizedRoutingWebTier(tier)
+	for _, allowed := range order {
+		if allowed == tier {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Selector) MarkUpstreamFailure(ctx context.Context, credential account.Credential, failure *UpstreamFailure) {
