@@ -4,8 +4,9 @@
 - Status: Complete
 - Initial base commit: `d04c5ef13a3c034326f7684201e5db0b214d1630`
 - Final synchronized base: `5588f2232d035931ff1e78e7791d9f5f36b74980`
-- Final commit: `N/A (uncommitted local worktree)`
-- Pull request: `N/A`
+- Implementation commit: `bd8b589c64a44d1fed04c4944be29d8692c1cee4`
+- Final commit: `Documentation closeout after implementation commit bd8b589c64a44d1fed04c4944be29d8692c1cee4`
+- Pull request: `N/A (branch pushed; PR not created)`
 
 ## Delivered
 
@@ -47,11 +48,13 @@
 
 ## Push gate evidence
 
-- First remote push occurred only after final local acceptance: No remote push performed.
+- First remote push occurred only after final local acceptance: Yes, implementation commit `bd8b589c64a44d1fed04c4944be29d8692c1cee4`.
 - Final origin synchronization base: `origin/main` remains `f53bbaae8d40316da6c337db3301941760f0990c` and is already contained by the branch base.
 - Final feature synchronization base: `origin/fix/new-model-capability-failover-20260816` is `5588f2232d035931ff1e78e7791d9f5f36b74980`; iteration 39 was fast-forwarded before the final verification run.
 - Final upstream review base: `f06d6fe79fd51b002b3a25b2f0be7532a455a298`; its new image-edit-only changes are intentionally not merged into this request-scoped branch.
-- Final verification run: Completed after the independent review fixes.
+- Remote verification: `refs/heads/fix/account-request-parity-20260817` resolves to `bd8b589c64a44d1fed04c4944be29d8692c1cee4` via HTTPS `ls-remote`.
+- SSH push was rejected by the local `Permission denied (publickey)` state; the authorized HTTPS push succeeded without changing the repository remote URL.
+- Final verification run: Completed after the independent review fixes and before the documentation-only closeout commit.
 
 ## Deviations from plan
 
@@ -71,5 +74,5 @@ Revert the iteration files or remove the isolated worktree and local branch. No 
 
 - [x] Implementation matches the accepted scope.
 - [x] Checks and security review are complete.
-- [x] Repository state is documented; only the intentional uncommitted iteration diff remains.
+- [x] Repository state is documented and the implementation commit is pushed.
 - [x] The plan index is updated.

@@ -86,4 +86,4 @@ The independent repository already contained upstream `main` commit `369de6fd648
 - [x] Documentation is updated.
 - [x] Assumptions and defaults are verified.
 - [x] `RESULT.md` is complete.
-- [x] The plan branch has not been pushed before final acceptance.
+- [x] The plan branch was pushed only after final local acceptance.
