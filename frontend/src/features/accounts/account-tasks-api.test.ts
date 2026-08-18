@@ -30,6 +30,7 @@ describe("account task API", () => {
       await expect(run(client, [file])).resolves.toEqual({
         created: 1,
         updated: 0,
+        skipped: 0,
         synced: 1,
         syncFailed: 0,
       });
@@ -72,7 +73,7 @@ describe("account task API", () => {
 
     await expect(
       importWebAccounts(client, [new File(["token"], "accounts.txt")], progress),
-    ).resolves.toEqual({ created: 1, updated: 0, synced: 1, syncFailed: 0 });
+    ).resolves.toEqual({ created: 1, updated: 0, skipped: 0, synced: 1, syncFailed: 0 });
     expect(progress).toHaveBeenCalledWith({ completed: 1, total: 1, phase: "importing" });
   });
 

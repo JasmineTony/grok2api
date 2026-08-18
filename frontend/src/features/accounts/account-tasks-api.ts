@@ -173,6 +173,7 @@ async function runAccountTask<T>(
   onProgress?: (value: AccountTaskProgressDTO) => void,
   signal?: AbortSignal,
   phases?: readonly AccountTaskProgressPhase[],
+  numericDefaults?: Readonly<Record<string, number>>,
 ): Promise<T> {
   let result: T | undefined;
   const progress = createAccountTaskProgressController({
@@ -209,7 +210,11 @@ async function runAccountTask<T>(
         }
         if (event === "complete") {
           progress.flush();
-          if (hasNumericResult(data, resultFields)) result = data as T;
+          const normalized = { ...data } as AccountTaskStreamPayload & Record<string, unknown>;
+          for (const [field, fallback] of Object.entries(numericDefaults ?? {})) {
+            if (normalized[field] === undefined) normalized[field] = fallback;
+          }
+          if (hasNumericResult(normalized, resultFields)) result = normalized as T;
           return;
         }
         if (event === "error") {
@@ -390,6 +395,7 @@ export function syncWebAccountsToConsole(
     onProgress,
     signal,
     importSyncPhases,
+    { skipped: 0 },
   );
 }
 
@@ -425,6 +431,7 @@ export function importAccounts(
     onProgress,
     signal,
     importSyncPhases,
+    { skipped: 0 },
   );
 }
 
@@ -444,6 +451,7 @@ export function importWebAccounts(
     onProgress,
     signal,
     importSyncPhases,
+    { skipped: 0 },
   );
 }
 
@@ -463,5 +471,6 @@ export function importConsoleAccounts(
     onProgress,
     signal,
     importSyncPhases,
+    { skipped: 0 },
   );
 }
