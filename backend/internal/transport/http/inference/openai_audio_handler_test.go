@@ -1,11 +1,13 @@
 package inference
 
 import (
+	"errors"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -24,6 +26,96 @@ func TestStreamingSTTDurationAcceptsOnlyCompletedFiniteEvents(t *testing.T) {
 		if duration, ok := streamingSTTDuration(payload); ok || duration != 0 {
 			t.Fatalf("invalid payload %q produced duration %v, ok = %t", payload, duration, ok)
 		}
+	}
+}
+
+func TestStreamingSTTDurationLimitRejectsOnlyUsageAboveReservation(t *testing.T) {
+	if streamingSTTDurationLimitExceeded(3600, 3600) {
+		t.Fatal("duration equal to reservation should be accepted")
+	}
+	if !streamingSTTDurationLimitExceeded(3600.01, 3600) {
+		t.Fatal("duration above reservation should be rejected")
+	}
+	if streamingSTTDurationLimitExceeded(7200, 0) {
+		t.Fatal("zero limit should disable duration enforcement")
+	}
+}
+
+func TestVoiceWebSocketOriginAllowsSameHostAndEmptyOriginOnly(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "http://api.example.com/v1/stt", nil)
+	if !voiceWSUpgrader.CheckOrigin(request) {
+		t.Fatal("empty Origin should be accepted for non-browser websocket clients")
+	}
+	request.Header.Set("Origin", "https://api.example.com")
+	if !voiceWSUpgrader.CheckOrigin(request) {
+		t.Fatal("same-host Origin should be accepted")
+	}
+	request.Header.Set("Origin", "https://attacker.example")
+	if voiceWSUpgrader.CheckOrigin(request) {
+		t.Fatal("cross-host Origin should be rejected")
+	}
+}
+
+func TestVoiceWebSocketPolicyDefaultsAndOverrides(t *testing.T) {
+	handler := NewHandler(nil, nil, 1<<20)
+	if handler.voiceWSIdleTimeout != defaultVoiceWSIdleTimeout ||
+		handler.voiceWSMessagesPerSecond != defaultVoiceWSMessagesPerSecond ||
+		handler.voiceWSMessageBurst != defaultVoiceWSMessageBurst {
+		t.Fatalf("default voice websocket policy = %#v", handler)
+	}
+	handler.SetVoiceWebSocketPolicy(45*time.Second, 20, 40)
+	if handler.voiceWSIdleTimeout != 45*time.Second ||
+		handler.voiceWSMessagesPerSecond != 20 ||
+		handler.voiceWSMessageBurst != 40 {
+		t.Fatalf("overridden voice websocket policy = %#v", handler)
+	}
+}
+
+func TestVoiceWebSocketMessageLimiterEnforcesBurstAndRefill(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	limiter := &voiceWSMessageLimiter{
+		now: func() time.Time { return now }, rate: 2, burst: 2, tokens: 2, last: now,
+	}
+	if !limiter.Allow() || !limiter.Allow() || limiter.Allow() {
+		t.Fatal("limiter did not enforce the initial burst")
+	}
+	now = now.Add(500 * time.Millisecond)
+	if !limiter.Allow() || limiter.Allow() {
+		t.Fatal("limiter did not refill exactly one token")
+	}
+}
+
+func TestVoiceWebSocketActivityTracksBidirectionalIdleTime(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	activity := &voiceWSActivity{now: func() time.Time { return now }}
+	activity.Touch()
+	now = now.Add(3 * time.Second)
+	if idle := activity.IdleFor(); idle != 3*time.Second {
+		t.Fatalf("idle duration = %s", idle)
+	}
+	activity.Touch()
+	if idle := activity.IdleFor(); idle != 0 {
+		t.Fatalf("idle duration after activity = %s", idle)
+	}
+}
+
+func TestVoiceWebSocketPumpStopsBeforeWritingRateLimitedMessage(t *testing.T) {
+	reads, writes := 0, 0
+	result := proxyVoiceWSPump(func() (int, []byte, error) {
+		reads++
+		return 1, []byte("message"), nil
+	}, func(int, []byte) error {
+		writes++
+		return nil
+	}, voiceWSPumpOptions{
+		allow:    func() bool { return reads <= 2 },
+		limitErr: errVoiceWSMessageRateLimit,
+	})
+	if !errors.Is(result.err, errVoiceWSMessageRateLimit) || result.writeFailed {
+		t.Fatalf("pump result = %#v", result)
+	}
+	if reads != 3 || writes != 2 {
+		t.Fatalf("reads=%d writes=%d", reads, writes)
 	}
 }
 

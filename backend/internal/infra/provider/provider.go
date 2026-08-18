@@ -53,6 +53,14 @@ type PublicMessageError interface {
 	PublicErrorMessage() string
 }
 
+// PublicCodeError exposes a stable, non-sensitive machine code that may cross
+// the public API boundary. Error strings remain private unless the error also
+// implements PublicMessageError.
+type PublicCodeError interface {
+	error
+	PublicErrorCode() string
+}
+
 // ErrorHTTPStatus extracts the upstream HTTP status from a Provider error chain.
 func ErrorHTTPStatus(err error) (int, bool) {
 	var statusError HTTPStatusError
@@ -194,6 +202,26 @@ func ErrorPublicMessage(err error) (string, bool) {
 	return message, message != ""
 }
 
+// ErrorPublicCode extracts a bounded machine code explicitly approved by a
+// Provider error. Codes are restricted to lowercase ASCII identifiers.
+func ErrorPublicCode(err error) (string, bool) {
+	var publicError PublicCodeError
+	if !errors.As(err, &publicError) {
+		return "", false
+	}
+	code := strings.TrimSpace(publicError.PublicErrorCode())
+	if len(code) == 0 || len(code) > 64 {
+		return "", false
+	}
+	for _, value := range code {
+		if (value >= 'a' && value <= 'z') || (value >= '0' && value <= '9') || value == '_' || value == '-' {
+			continue
+		}
+		return "", false
+	}
+	return code, true
+}
+
 // MediaPostProcessingStage identifies a local processing stage that failed after media generation.
 type MediaPostProcessingStage string
 
@@ -310,7 +338,12 @@ type Response struct {
 	Body        io.ReadCloser
 	QuotaUnits  int
 	UpstreamURL string
-	Diagnostic  *DiagnosticResponse
+	// ReplaySafe explicitly allows the gateway's outer account traversal to
+	// retry a response whose status would otherwise be indeterminate. Provider
+	// adapters must set this only when the upstream contract provides
+	// idempotency or the request was never submitted.
+	ReplaySafe bool
+	Diagnostic *DiagnosticResponse
 	// RecoveredPrimaryFailure records a primary-plane failure hidden by a successful Provider fallback.
 	RecoveredPrimaryFailure *DiagnosticResponse
 	RateLimit               *RateLimitMetadata

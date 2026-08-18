@@ -29,7 +29,7 @@ import (
 )
 
 func Run(args []string) error {
-	if len(args) > 0 && args[0] != "serve" && args[0] != "--config" && args[0] != "--listen" {
+	if len(args) > 0 && args[0] != "--config" && args[0] != "--listen" {
 		return runCommand(args)
 	}
 	options, err := parseOptions(args)

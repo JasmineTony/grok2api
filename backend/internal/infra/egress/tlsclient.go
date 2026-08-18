@@ -21,6 +21,13 @@ import (
 
 type browserClient struct{ inner tlsclient.HttpClient }
 
+const (
+	browserMaxIdleConnections        = 8
+	browserMaxIdleConnectionsPerHost = 2
+	browserMaxConnectionsPerHost     = 64
+	browserIdleConnectionTimeout     = 90 * time.Second
+)
+
 var chromeMajorPattern = regexp.MustCompile(`(?i)Chrome/(\d+)`)
 
 func (l *Lease) DialWebSocket(ctx context.Context, endpoint string, headers fhttp.Header, handshakeTimeout time.Duration) (*websocket.Conn, *fhttp.Response, error) {
@@ -72,6 +79,7 @@ func newBrowserClient(proxyURL, userAgent string) (*browserClient, error) {
 		tlsclient.WithTimeoutSeconds(7200),
 		tlsclient.WithClientProfile(browserProfile(userAgent)),
 		tlsclient.WithNotFollowRedirects(),
+		tlsclient.WithTransportOptions(browserTransportOptions()),
 	}
 	if proxyURL != "" {
 		parsed, err := url.Parse(proxyURL)
@@ -93,6 +101,16 @@ func newBrowserClient(proxyURL, userAgent string) (*browserClient, error) {
 		return nil, err
 	}
 	return &browserClient{inner: client}, nil
+}
+
+func browserTransportOptions() *tlsclient.TransportOptions {
+	idleTimeout := browserIdleConnectionTimeout
+	return &tlsclient.TransportOptions{
+		MaxIdleConns:        browserMaxIdleConnections,
+		MaxIdleConnsPerHost: browserMaxIdleConnectionsPerHost,
+		MaxConnsPerHost:     browserMaxConnectionsPerHost,
+		IdleConnTimeout:     &idleTimeout,
+	}
 }
 
 func browserProfile(userAgent string) profiles.ClientProfile {

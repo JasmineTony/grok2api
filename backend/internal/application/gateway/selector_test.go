@@ -1240,6 +1240,71 @@ func TestSelectorWaitsBrieflyForAccountCapacity(t *testing.T) {
 	}
 }
 
+func TestSelectorProviderConcurrencyBoundsAllAccountLeases(t *testing.T) {
+	ctx := context.Background()
+	limiter := memory.NewConcurrencyLimiter()
+	selector := NewSelector(nil, limiter, nil, nil, time.Hour, time.Second, time.Minute)
+	selector.UpdateProviderConcurrency(map[account.Provider]int{
+		account.ProviderBuild: 1,
+		account.ProviderWeb:   1,
+	})
+	buildA := account.Credential{ID: 1, Provider: account.ProviderBuild, MaxConcurrent: 2}
+	buildB := account.Credential{ID: 2, Provider: account.ProviderBuild, MaxConcurrent: 2}
+	web := account.Credential{ID: 3, Provider: account.ProviderWeb, MaxConcurrent: 1}
+
+	first, err := selector.claimAccountSlot(ctx, buildA)
+	if err != nil || first == nil {
+		t.Fatalf("first build lease = %#v, err = %v", first, err)
+	}
+	if blocked, err := selector.claimAccountSlot(ctx, buildB); err != nil || blocked != nil {
+		t.Fatalf("provider-saturated build lease = %#v, err = %v", blocked, err)
+	}
+	webLease, err := selector.claimAccountSlot(ctx, web)
+	if err != nil || webLease == nil {
+		t.Fatalf("independent web lease = %#v, err = %v", webLease, err)
+	}
+	if active, _ := limiter.Current(ctx, repository.ProviderConcurrencyKey(account.ProviderBuild)); active != 1 {
+		t.Fatalf("active build provider leases = %d", active)
+	}
+	if active, _ := limiter.Current(ctx, repository.ProviderConcurrencyKey(account.ProviderWeb)); active != 1 {
+		t.Fatalf("active web provider leases = %d", active)
+	}
+
+	first.Release()
+	first.Release()
+	second, err := selector.claimAccountSlot(ctx, buildB)
+	if err != nil || second == nil {
+		t.Fatalf("build lease after release = %#v, err = %v", second, err)
+	}
+	second.Release()
+	webLease.Release()
+	for _, providerValue := range []account.Provider{account.ProviderBuild, account.ProviderWeb} {
+		if active, _ := limiter.Current(ctx, repository.ProviderConcurrencyKey(providerValue)); active != 0 {
+			t.Fatalf("active %s provider leases after release = %d", providerValue, active)
+		}
+	}
+}
+
+func TestSelectorAccountConcurrencyRemainsBelowProviderLimit(t *testing.T) {
+	ctx := context.Background()
+	limiter := memory.NewConcurrencyLimiter()
+	selector := NewSelector(nil, limiter, nil, nil, time.Hour, time.Second, time.Minute)
+	selector.UpdateProviderConcurrency(map[account.Provider]int{account.ProviderConsole: 4})
+	credential := account.Credential{ID: 7, Provider: account.ProviderConsole, MaxConcurrent: 1}
+
+	lease, err := selector.claimAccountSlot(ctx, credential)
+	if err != nil || lease == nil {
+		t.Fatalf("first account lease = %#v, err = %v", lease, err)
+	}
+	if blocked, err := selector.claimAccountSlot(ctx, credential); err != nil || blocked != nil {
+		t.Fatalf("account-saturated lease = %#v, err = %v", blocked, err)
+	}
+	if active, _ := limiter.Current(ctx, repository.ProviderConcurrencyKey(account.ProviderConsole)); active != 1 {
+		t.Fatalf("provider slot leaked after account saturation: %d", active)
+	}
+	lease.Release()
+}
+
 func TestSelectorStickySessionWaitsForBoundAccountCapacity(t *testing.T) {
 	ctx := context.Background()
 	sticky := memory.NewStickyStore()

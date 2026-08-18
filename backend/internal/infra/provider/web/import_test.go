@@ -13,11 +13,11 @@ func TestParseImportedCredentialsAcceptsOneSSOTokenPerLine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(values) != 2 {
+	if len(values) != 3 {
 		t.Fatalf("credentials = %#v", values)
 	}
-	if values[0].AccessToken != "token-one" || values[1].AccessToken != "token-two" {
-		t.Fatalf("tokens = %q, %q", values[0].AccessToken, values[1].AccessToken)
+	if values[0].AccessToken != "token-one" || values[1].AccessToken != "token-two" || values[2].AccessToken != "token-one" {
+		t.Fatalf("tokens = %q, %q, %q", values[0].AccessToken, values[1].AccessToken, values[2].AccessToken)
 	}
 	for _, value := range values {
 		if value.Provider != account.ProviderWeb || value.AuthType != account.AuthTypeSSO || value.WebTier != account.WebTierAuto {

@@ -18,8 +18,14 @@ import (
 	"github.com/chenyme/grok2api/backend/internal/application/gateway"
 	clientkeydomain "github.com/chenyme/grok2api/backend/internal/domain/clientkey"
 	mediadomain "github.com/chenyme/grok2api/backend/internal/domain/media"
+	"github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/gin-gonic/gin"
 )
+
+type publicProviderCodeError string
+
+func (e publicProviderCodeError) Error() string           { return "private upstream detail" }
+func (e publicProviderCodeError) PublicErrorCode() string { return string(e) }
 
 type chunkErrorReader struct {
 	data []byte
@@ -218,6 +224,24 @@ func TestGatewayErrorDoesNotExposeInternalDetails(t *testing.T) {
 	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
 	if recorder.Code != http.StatusBadGateway || strings.Contains(recorder.Body.String(), "postgres") || !strings.Contains(recorder.Body.String(), "上游服务暂不可用") {
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestGatewayErrorExposesOnlyApprovedProviderCode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/", func(c *gin.Context) {
+		writeGatewayError(c, publicProviderCodeError("web_lite_image_parse_failed"))
+	})
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	if recorder.Code != http.StatusBadGateway ||
+		!strings.Contains(recorder.Body.String(), `"code":"web_lite_image_parse_failed"`) ||
+		strings.Contains(recorder.Body.String(), "private upstream detail") {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if code, ok := provider.ErrorPublicCode(publicProviderCodeError("web_lite_image_parse_failed")); !ok || code == "" {
+		t.Fatalf("provider code=%q ok=%t", code, ok)
 	}
 }
 

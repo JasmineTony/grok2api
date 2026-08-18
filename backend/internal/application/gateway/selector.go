@@ -288,6 +288,7 @@ type Selector struct {
 	capacityWait           time.Duration
 	preferFreeBuild        bool
 	excludeBuildBotFlagged bool
+	providerConcurrency    map[account.Provider]int
 	segmentedConfig        segmentedSelectorConfig
 	segmentedState         segmentedSelectorState
 	configMu               sync.RWMutex
@@ -329,7 +330,7 @@ func NewSelector(accounts repository.AccountRepository, concurrency repository.C
 	if len(capacityWait) > 0 && capacityWait[0] > 0 {
 		wait = capacityWait[0]
 	}
-	return &Selector{accounts: accounts, concurrency: concurrency, sticky: sticky, tierOrders: tierOrders, stickyTTL: stickyTTL, cooldownBase: cooldownBase, cooldownMax: cooldownMax, capacityWait: wait, leaseWake: make(chan struct{}), logger: slog.Default(), lastSelectedAt: make(map[uint64]time.Time), lastSuccessAt: make(map[uint64]time.Time), healthOverrides: make(map[uint64]routingHealthOverride), quotaConsumed: make(map[quotaConsumptionKey]int), staleFallbackLoggedAt: make(map[string]time.Time), candidates: make(map[candidateCacheKey]candidateSnapshot), routingBases: make(map[routingBaseCacheKey]routingBaseSnapshot), routingOverlays: make(map[routingOverlayCacheKey]routingOverlaySnapshot), routingAccountProvider: make(map[uint64]account.Provider), baseProviderVersion: make(map[account.Provider]uint64), overlayProviderVersion: make(map[account.Provider]uint64), concurrencySnapshots: resultcache.New[[32]byte, map[string]int](maxConcurrencySnapshots, concurrencySnapshotTTL)}
+	return &Selector{accounts: accounts, concurrency: concurrency, sticky: sticky, tierOrders: tierOrders, stickyTTL: stickyTTL, cooldownBase: cooldownBase, cooldownMax: cooldownMax, capacityWait: wait, providerConcurrency: make(map[account.Provider]int), leaseWake: make(chan struct{}), logger: slog.Default(), lastSelectedAt: make(map[uint64]time.Time), lastSuccessAt: make(map[uint64]time.Time), healthOverrides: make(map[uint64]routingHealthOverride), quotaConsumed: make(map[quotaConsumptionKey]int), staleFallbackLoggedAt: make(map[string]time.Time), candidates: make(map[candidateCacheKey]candidateSnapshot), routingBases: make(map[routingBaseCacheKey]routingBaseSnapshot), routingOverlays: make(map[routingOverlayCacheKey]routingOverlaySnapshot), routingAccountProvider: make(map[uint64]account.Provider), baseProviderVersion: make(map[account.Provider]uint64), overlayProviderVersion: make(map[account.Provider]uint64), concurrencySnapshots: resultcache.New[[32]byte, map[string]int](maxConcurrencySnapshots, concurrencySnapshotTTL)}
 }
 
 func (s *Selector) SetLogger(logger *slog.Logger) {
@@ -348,6 +349,24 @@ func (s *Selector) UpdateConfig(stickyTTL, cooldownBase, cooldownMax time.Durati
 		s.capacityWait = max(time.Duration(0), capacityWait[0])
 	}
 	s.configMu.Unlock()
+}
+
+func (s *Selector) UpdateProviderConcurrency(values map[account.Provider]int) {
+	next := make(map[account.Provider]int, len(values))
+	for providerValue, limit := range values {
+		if limit > 0 {
+			next[providerValue] = limit
+		}
+	}
+	s.configMu.Lock()
+	s.providerConcurrency = next
+	s.configMu.Unlock()
+}
+
+func (s *Selector) providerConcurrencyLimit(providerValue account.Provider) int {
+	s.configMu.RLock()
+	defer s.configMu.RUnlock()
+	return s.providerConcurrency[providerValue]
 }
 
 // UpdatePreferFreeBuild 热更新 Build Free 账号优先策略。
@@ -1937,15 +1956,29 @@ func (s *Selector) claimAccountSlot(ctx context.Context, value account.Credentia
 	if limit <= 0 {
 		limit = account.DefaultMaxConcurrent
 	}
+	providerRelease := func() {}
+	if providerLimit := s.providerConcurrencyLimit(value.Provider); providerLimit > 0 {
+		release, acquired, err := s.concurrency.Acquire(ctx, repository.ProviderConcurrencyKey(value.Provider), providerLimit)
+		if err != nil {
+			return nil, fmt.Errorf("获取 Provider 并发租约: %w", err)
+		}
+		if !acquired {
+			return nil, nil
+		}
+		providerRelease = release
+	}
 	release, acquired, err := s.concurrency.Acquire(ctx, accountConcurrencyKey(value.ID), limit)
 	if err != nil {
+		providerRelease()
 		return nil, fmt.Errorf("获取账号并发租约: %w", err)
 	}
 	if !acquired {
+		providerRelease()
 		return nil, nil
 	}
 	releaseSlot := func() {
 		release()
+		providerRelease()
 		s.announceLeaseReturn()
 	}
 	if s.accounts != nil {

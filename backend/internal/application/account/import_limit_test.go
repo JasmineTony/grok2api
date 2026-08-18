@@ -97,8 +97,8 @@ func TestImportConsoleDocumentsRejectsAggregateOverflowWithoutPartialWrites(t *t
 	}
 }
 
-// Web/Console adapter 在单个文件内按 token 去重，service 再按 SourceKey
-// 对跨文件结果去重。本用例验证最终落库数量，不代表重复项可豁免解析总量限制。
+// Web/Console adapter 保留解析条目，service 统一按 Provider + SourceKey
+// 去重并统计 skipped。本用例验证最终落库和请求内重复明细。
 func TestImportConsoleDocumentsCountDeduplicatedTokens(t *testing.T) {
 	service, accounts := newConsoleImportService(t)
 	duplicateDoc := []byte(`[{"sso_token":"shared"},{"sso_token":"shared"}]`)
@@ -108,8 +108,8 @@ func TestImportConsoleDocumentsCountDeduplicatedTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Created != 2 || countConsoleAccounts(t, accounts) != 2 {
-		t.Fatalf("result = %#v, stored = %d, want deduplicated count 2", result, countConsoleAccounts(t, accounts))
+	if result.Created != 2 || result.Skipped != 2 || countConsoleAccounts(t, accounts) != 2 {
+		t.Fatalf("result = %#v, stored = %d, want created 2 skipped 2", result, countConsoleAccounts(t, accounts))
 	}
 }
 

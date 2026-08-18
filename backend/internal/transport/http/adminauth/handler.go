@@ -68,7 +68,7 @@ func (h *Handler) login(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "invalidRequest", "请求参数无效")
 		return
 	}
-	adminValue, tokens, err := h.service.Login(c.Request.Context(), request.Username, request.Password, remoteAddress(c.Request))
+	adminValue, tokens, err := h.service.Login(c.Request.Context(), request.Username, request.Password, clientAddress(c))
 	if err != nil {
 		if errors.Is(err, adminapp.ErrLoginRateLimited) {
 			response.Error(c, http.StatusTooManyRequests, "loginRateLimited", "登录尝试过于频繁，请稍后重试")
@@ -92,6 +92,13 @@ func remoteAddress(request *http.Request) string {
 		return host
 	}
 	return value
+}
+
+func clientAddress(c *gin.Context) string {
+	if value := strings.TrimSpace(c.ClientIP()); value != "" {
+		return value
+	}
+	return remoteAddress(c.Request)
 }
 
 func (h *Handler) refresh(c *gin.Context) {

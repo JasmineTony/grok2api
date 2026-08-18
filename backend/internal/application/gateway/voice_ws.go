@@ -15,6 +15,7 @@ import (
 	modeldomain "github.com/chenyme/grok2api/backend/internal/domain/model"
 	infraegress "github.com/chenyme/grok2api/backend/internal/infra/egress"
 	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	"github.com/chenyme/grok2api/backend/internal/pkg/perfmetrics"
 )
 
 type VoiceWebSocketInput struct {
@@ -26,15 +27,16 @@ type VoiceWebSocketInput struct {
 }
 
 type VoiceWebSocketSession struct {
-	Conn        provider.VoiceWebSocketConn
-	Finalize    func(VoiceWebSocketOutcome)
-	RequestID   string
-	PublicModel string
-	Provider    accountdomain.Provider
-	AccountID   uint64
-	AccountName string
-	Operation   audit.Operation
-	Capability  modeldomain.Capability
+	Conn                    provider.VoiceWebSocketConn
+	Finalize                func(VoiceWebSocketOutcome)
+	RequestID               string
+	PublicModel             string
+	Provider                accountdomain.Provider
+	AccountID               uint64
+	AccountName             string
+	Operation               audit.Operation
+	Capability              modeldomain.Capability
+	MaxAudioDurationSeconds float64
 }
 
 type VoiceWebSocketOutcome struct {
@@ -43,8 +45,10 @@ type VoiceWebSocketOutcome struct {
 	AudioDurationSeconds float64
 }
 
+const streamingSTTReservationDurationSeconds = 3600
+
 // OpenVoiceWebSocket selects a Console account and dials the upstream voice websocket.
-func (s *Service) OpenVoiceWebSocket(ctx context.Context, input VoiceWebSocketInput) (*VoiceWebSocketSession, error) {
+func (s *Service) OpenVoiceWebSocket(ctx context.Context, input VoiceWebSocketInput) (session *VoiceWebSocketSession, resultErr error) {
 	pathValue := strings.TrimSpace(input.Path)
 	capability, operation, defaultModel, err := voiceWebSocketRoute(pathValue)
 	if err != nil {
@@ -78,6 +82,17 @@ func (s *Service) OpenVoiceWebSocket(ctx context.Context, input VoiceWebSocketIn
 		preselectedSession = nil
 	}
 	externalModel := modeldomain.ExternalPublicID(route.Provider, route.PublicID)
+	openMetricRecorded := false
+	defer func() {
+		if openMetricRecorded {
+			return
+		}
+		outcome := "failed"
+		if errors.Is(resultErr, context.Canceled) || errors.Is(resultErr, context.DeadlineExceeded) {
+			outcome = "canceled"
+		}
+		recordVoiceWebSocketMetric(operation, route.Provider, "open", outcome)
+	}()
 	auditBase := audit.Record{
 		EventID: eventID, RequestID: input.RequestID, ClientKeyID: input.ClientKey.ID, ClientKeyName: input.ClientKey.Name,
 		ModelRouteID: route.ID, ModelPublicID: externalModel, ModelUpstreamModel: modeldomain.DisplayUpstreamModel(route.Provider, route.UpstreamModel),
@@ -111,6 +126,13 @@ func (s *Service) OpenVoiceWebSocket(ctx context.Context, input VoiceWebSocketIn
 		defer cancel()
 		if auditErr := s.audits.Create(persistCtx, record); auditErr != nil {
 			s.logger.Error("request_usage_write_failed", "event_id", record.EventID, "request_id", input.RequestID, "error", auditErr)
+		}
+	}
+	if operation == audit.OperationSTT {
+		if reservation, priced := audit.EstimateOfficialSTTCost(streamingSTTReservationDurationSeconds, true); priced {
+			if _, err := s.clientKeys.ReserveBilling(ctx, input.ClientKey, eventID, reservation.CostInUSDTicks, mediaBillingReservationTTL); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -224,9 +246,11 @@ func (s *Service) OpenVoiceWebSocket(ctx context.Context, input VoiceWebSocketIn
 		// Keep the account lease until the websocket finishes so scheduling stays consistent.
 		accountLeaseRef := lease
 		accountCredential := credential
+		s.changeVoiceWebSocketActive(operation, route.Provider, 1)
 		var finalizeOnce sync.Once
 		finalize := func(outcome VoiceWebSocketOutcome) {
 			finalizeOnce.Do(func() {
+				s.changeVoiceWebSocketActive(operation, route.Provider, -1)
 				if cleanup != nil {
 					cleanup()
 				}
@@ -274,18 +298,65 @@ func (s *Service) OpenVoiceWebSocket(ctx context.Context, input VoiceWebSocketIn
 				}); auditErr != nil {
 					s.logger.Error("request_usage_write_failed", "event_id", record.EventID, "request_id", input.RequestID, "error", auditErr)
 				}
+				recordVoiceWebSocketMetric(operation, route.Provider, "close", voiceWebSocketMetricOutcome(outcome))
 			})
 		}
+		recordVoiceWebSocketMetric(operation, route.Provider, "open", "success")
+		openMetricRecorded = true
 		return &VoiceWebSocketSession{
 			Conn: conn, Finalize: finalize, RequestID: input.RequestID, PublicModel: externalModel,
 			Provider: route.Provider, AccountID: credential.ID, AccountName: credential.Name,
 			Operation: operation, Capability: capability,
+			MaxAudioDurationSeconds: voiceWebSocketMaxAudioDuration(operation),
 		}, nil
 	}
 	if lastErr != nil {
 		return nil, lastErr
 	}
 	return nil, ErrNoAvailableAccount
+}
+
+func recordVoiceWebSocketMetric(operation audit.Operation, providerValue accountdomain.Provider, stage, outcome string) {
+	perfmetrics.Default.Inc("voice_websocket_sessions_total", perfmetrics.Labels{
+		Subsystem: "gateway", Operation: string(operation), Provider: string(providerValue),
+		Stage: stage, Outcome: outcome,
+	})
+}
+
+type voiceWebSocketMetricKey struct {
+	operation audit.Operation
+	provider  accountdomain.Provider
+}
+
+func (s *Service) changeVoiceWebSocketActive(operation audit.Operation, providerValue accountdomain.Provider, delta int64) {
+	key := voiceWebSocketMetricKey{operation: operation, provider: providerValue}
+	s.voiceWebSocketMu.Lock()
+	if s.voiceWebSocketActive == nil {
+		s.voiceWebSocketActive = make(map[voiceWebSocketMetricKey]int64)
+	}
+	active := max(int64(0), s.voiceWebSocketActive[key]+delta)
+	s.voiceWebSocketActive[key] = active
+	s.voiceWebSocketMu.Unlock()
+	perfmetrics.Default.SetGauge("voice_websocket_active", perfmetrics.Labels{
+		Subsystem: "gateway", Operation: string(operation), Provider: string(providerValue),
+	}, active)
+}
+
+func voiceWebSocketMetricOutcome(outcome VoiceWebSocketOutcome) string {
+	switch {
+	case strings.TrimSpace(outcome.ErrorCode) == "":
+		return "success"
+	case strings.TrimSpace(outcome.ErrorCode) == "stt_duration_limit_exceeded":
+		return "duration_limit"
+	case strings.TrimSpace(outcome.ErrorCode) == "websocket_idle_timeout":
+		return "idle_timeout"
+	case strings.TrimSpace(outcome.ErrorCode) == "websocket_rate_limit_exceeded":
+		return "rate_limited"
+	case outcome.UpstreamFailed:
+		return "upstream_error"
+	default:
+		return "client_error"
+	}
 }
 
 func voiceWebSocketAuditOutcome(outcome VoiceWebSocketOutcome) (int, string) {
@@ -295,7 +366,23 @@ func voiceWebSocketAuditOutcome(outcome VoiceWebSocketOutcome) (int, string) {
 		// HTTP 101, while successful request accounting uses the common 2xx predicate.
 		return http.StatusOK, ""
 	}
+	if errorCode == "stt_duration_limit_exceeded" {
+		return http.StatusPaymentRequired, errorCode
+	}
+	if errorCode == "websocket_rate_limit_exceeded" {
+		return http.StatusTooManyRequests, errorCode
+	}
+	if errorCode == "websocket_idle_timeout" {
+		return http.StatusRequestTimeout, errorCode
+	}
 	return http.StatusBadGateway, errorCode
+}
+
+func voiceWebSocketMaxAudioDuration(operation audit.Operation) float64 {
+	if operation == audit.OperationSTT {
+		return streamingSTTReservationDurationSeconds
+	}
+	return 0
 }
 
 func voiceWebSocketRoute(pathValue string) (modeldomain.Capability, audit.Operation, string, error) {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -76,12 +77,16 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Listen                string   `yaml:"listen"`
-	MaxBodyBytes          int64    `yaml:"maxBodyBytes"`
-	MaxConcurrentRequests int      `yaml:"maxConcurrentRequests"`
-	ReadTimeout           Duration `yaml:"readTimeout"`
-	RequestTimeout        Duration `yaml:"requestTimeout"`
-	SwaggerEnabled        bool     `yaml:"swaggerEnabled"`
+	Listen                          string   `yaml:"listen"`
+	TrustedProxies                  []string `yaml:"trustedProxies"`
+	MaxBodyBytes                    int64    `yaml:"maxBodyBytes"`
+	MaxConcurrentRequests           int      `yaml:"maxConcurrentRequests"`
+	ReadTimeout                     Duration `yaml:"readTimeout"`
+	RequestTimeout                  Duration `yaml:"requestTimeout"`
+	VoiceWebSocketIdleTimeout       Duration `yaml:"voiceWebSocketIdleTimeout"`
+	VoiceWebSocketMessagesPerSecond int      `yaml:"voiceWebSocketMessagesPerSecond"`
+	VoiceWebSocketMessageBurst      int      `yaml:"voiceWebSocketMessageBurst"`
+	SwaggerEnabled                  bool     `yaml:"swaggerEnabled"`
 }
 
 type FrontendConfig struct {
@@ -215,13 +220,14 @@ type LocalMediaConfig struct {
 }
 
 type RoutingConfig struct {
-	StickyTTL        Duration `yaml:"stickyTTL"`
-	CooldownBase     Duration `yaml:"cooldownBase"`
-	CooldownMax      Duration `yaml:"cooldownMax"`
-	CapacityWait     Duration `yaml:"capacityWait"`
-	MaxAttempts      int      `yaml:"maxAttempts"`
-	VideoMaxAttempts int      `yaml:"videoMaxAttempts"`
-	PreferFreeBuild  bool     `yaml:"preferFreeBuild"`
+	StickyTTL           Duration                  `yaml:"stickyTTL"`
+	CooldownBase        Duration                  `yaml:"cooldownBase"`
+	CooldownMax         Duration                  `yaml:"cooldownMax"`
+	CapacityWait        Duration                  `yaml:"capacityWait"`
+	MaxAttempts         int                       `yaml:"maxAttempts"`
+	VideoMaxAttempts    int                       `yaml:"videoMaxAttempts"`
+	PreferFreeBuild     bool                      `yaml:"preferFreeBuild"`
+	ProviderConcurrency ProviderConcurrencyConfig `yaml:"providerConcurrency"`
 	// MarkBuildChatDeniedAsReauth marks denied Build chat credentials as requiring reauthentication when enabled.
 	MarkBuildChatDeniedAsReauth bool     `yaml:"markBuildChatDeniedAsReauth"`
 	AccountIsolatedConnections  bool     `yaml:"accountIsolatedConnections"`
@@ -231,6 +237,12 @@ type RoutingConfig struct {
 	ReasoningReplayEnabled      bool     `yaml:"reasoningReplayEnabled"`
 	ReasoningReplayTTL          Duration `yaml:"reasoningReplayTTL"`
 	ReasoningReplayMaxEntries   int      `yaml:"reasoningReplayMaxEntries"`
+}
+
+type ProviderConcurrencyConfig struct {
+	Build   int `yaml:"build"`
+	Web     int `yaml:"web"`
+	Console int `yaml:"console"`
 }
 
 type AuditConfig struct {
@@ -401,36 +413,6 @@ func Load(path string) (Config, error) {
 	return cfg, nil
 }
 
-// applyEnvironmentOverrides applies application-owned environment overrides.
-func applyEnvironmentOverrides(cfg *Config) error {
-	value := strings.TrimSpace(os.Getenv(DatabaseURLEnv))
-	if value == "" {
-		return nil
-	}
-	dsn, err := validatePostgresEnvironmentURL(value)
-	if err != nil {
-		return err
-	}
-	cfg.Database.Driver = "postgres"
-	cfg.Database.Postgres.DSN = dsn
-	return nil
-}
-
-func validatePostgresEnvironmentURL(value string) (string, error) {
-	lower := strings.ToLower(value)
-	if strings.HasPrefix(lower, "postgresql+asyncpg://") {
-		return "", fmt.Errorf("%s does not support SQLAlchemy asyncpg URLs; use postgresql://", DatabaseURLEnv)
-	}
-	if !strings.HasPrefix(lower, "postgres://") && !strings.HasPrefix(lower, "postgresql://") {
-		return "", fmt.Errorf("%s must use a postgres:// or postgresql:// URL", DatabaseURLEnv)
-	}
-	parsed, err := url.ParseRequestURI(value)
-	if err != nil || parsed.Scheme == "" || parsed.Fragment != "" {
-		return "", fmt.Errorf("%s is not a valid PostgreSQL URL", DatabaseURLEnv)
-	}
-	return value, nil
-}
-
 func resolveRelativePaths(cfg *Config, configPath string) error {
 	absoluteConfigPath, err := filepath.Abs(configPath)
 	if err != nil {
@@ -470,6 +452,28 @@ func (c Config) Validate() error {
 	}
 	if c.Server.MaxConcurrentRequests < 1 || c.Server.MaxConcurrentRequests > 100000 {
 		return errors.New("server.maxConcurrentRequests 必须在 1 到 100000 之间")
+	}
+	if c.Server.VoiceWebSocketIdleTimeout.Value() < time.Second || c.Server.VoiceWebSocketIdleTimeout.Value() > 30*time.Minute {
+		return errors.New("server.voiceWebSocketIdleTimeout 必须在 1 秒到 30 分钟之间")
+	}
+	if c.Server.VoiceWebSocketMessagesPerSecond < 1 || c.Server.VoiceWebSocketMessagesPerSecond > 10000 {
+		return errors.New("server.voiceWebSocketMessagesPerSecond 必须在 1 到 10000 之间")
+	}
+	if c.Server.VoiceWebSocketMessageBurst < c.Server.VoiceWebSocketMessagesPerSecond ||
+		c.Server.VoiceWebSocketMessageBurst > 50000 {
+		return errors.New("server.voiceWebSocketMessageBurst 必须不小于每秒速率且不超过 50000")
+	}
+	for _, proxy := range c.Server.TrustedProxies {
+		proxy = strings.TrimSpace(proxy)
+		if proxy == "" {
+			return errors.New("server.trustedProxies 不能包含空值")
+		}
+		if net.ParseIP(proxy) != nil {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(proxy); err != nil {
+			return fmt.Errorf("server.trustedProxies 包含无效网络: %s", proxy)
+		}
 	}
 	for _, item := range []struct {
 		name  string
@@ -665,6 +669,14 @@ func (c Config) Validate() error {
 	}
 	if c.Routing.StickyTTL.Value() <= 0 || c.Routing.StickyTTL.Value() > maxRoutingTTL || c.Routing.CooldownBase.Value() <= 0 || c.Routing.CooldownMax.Value() < c.Routing.CooldownBase.Value() || c.Routing.CooldownMax.Value() > maxRoutingCooldown || c.Routing.CapacityWait.Value() <= 0 || c.Routing.CapacityWait.Value() > maxRoutingCapacityWait || (c.Routing.MaxAttempts < unlimitedRoutingAttempts || c.Routing.MaxAttempts == 0 || c.Routing.MaxAttempts > maxRoutingAttempts) || (c.Routing.VideoMaxAttempts < unlimitedRoutingAttempts || c.Routing.VideoMaxAttempts > maxRoutingAttempts) {
 		return errors.New("routing 配置无效")
+	}
+	for name, limit := range map[string]int{
+		"build": c.Routing.ProviderConcurrency.Build, "web": c.Routing.ProviderConcurrency.Web,
+		"console": c.Routing.ProviderConcurrency.Console,
+	} {
+		if limit < 1 || limit > 100000 {
+			return fmt.Errorf("routing.providerConcurrency.%s 必须在 1 到 100000 之间", name)
+		}
 	}
 	if c.Routing.SegmentedMinCandidates < 1 || c.Routing.SegmentedWindowSize < 1 {
 		return errors.New("routing segmented selector limits must be positive")
@@ -873,11 +885,14 @@ func validUniquePositiveIDs(values []uint64) bool {
 func defaultConfig() Config {
 	return Config{
 		Server: ServerConfig{
-			Listen:                "127.0.0.1:8000",
-			MaxBodyBytes:          32 << 20,
-			MaxConcurrentRequests: 1024,
-			ReadTimeout:           Duration(15 * time.Minute),
-			RequestTimeout:        Duration(2 * time.Hour),
+			Listen:                          "127.0.0.1:8000",
+			MaxBodyBytes:                    32 << 20,
+			MaxConcurrentRequests:           1024,
+			ReadTimeout:                     Duration(15 * time.Minute),
+			RequestTimeout:                  Duration(2 * time.Hour),
+			VoiceWebSocketIdleTimeout:       Duration(2 * time.Minute),
+			VoiceWebSocketMessagesPerSecond: 100,
+			VoiceWebSocketMessageBurst:      200,
 		},
 		Frontend:   FrontendConfig{PublicAPIBaseURL: DefaultPublicAPIBaseURL, StaticPath: "./frontend/dist"},
 		Deployment: DeploymentConfig{Replicas: 1},
@@ -930,6 +945,7 @@ func defaultConfig() Config {
 			CapacityWait:                Duration(500 * time.Millisecond),
 			MaxAttempts:                 3,
 			VideoMaxAttempts:            999,
+			ProviderConcurrency:         ProviderConcurrencyConfig{Build: 512, Web: 256, Console: 256},
 			MarkBuildChatDeniedAsReauth: false,
 			AccountIsolatedConnections:  false,
 			PreferFreeBuild:             false,

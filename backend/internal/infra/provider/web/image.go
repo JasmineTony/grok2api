@@ -25,6 +25,7 @@ import (
 	"github.com/chenyme/grok2api/backend/internal/infra/egress"
 	"github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/provider/conversation"
+	"github.com/chenyme/grok2api/backend/internal/pkg/perfmetrics"
 )
 
 const (
@@ -350,6 +351,18 @@ type liteUpstreamError struct {
 	Body       []byte
 }
 
+type liteImageParseError struct {
+	reason string
+}
+
+func (e *liteImageParseError) Error() string {
+	return "Grok Web Lite 响应结束但未解析到最终图片"
+}
+
+func (e *liteImageParseError) PublicErrorCode() string {
+	return "web_lite_image_parse_failed"
+}
+
 func (e *liteUpstreamError) Error() string {
 	return fmt.Sprintf("Lite 图片上游返回 %d", e.StatusCode)
 }
@@ -439,33 +452,40 @@ func (a *Adapter) generateLiteImageURL(ctx context.Context, credential account.C
 		a.egress.Feedback(context.WithoutCancel(ctx), lease.NodeID, http.StatusOK, nil)
 		lease.Release()
 		if firstImage != "" {
+			recordLiteParserMetric("stream", "success")
 			return firstImage, nil
 		}
+		parserStage := "parsed"
 		if len(parsed.Images) == 0 {
 			parsed.Images = extractMarkdownImages(parsed.Text.String())
+			parserStage = "markdown"
 		}
 		if len(parsed.Images) == 0 {
 			parsed.Images = extractCapturedImageURLs(capture.Bytes())
+			parserStage = "capture"
 		}
 		if len(parsed.Images) == 0 {
 			diagnostics := inspectLiteCapture(capture.Bytes())
+			reason := liteCaptureOutcome(diagnostics)
+			recordLiteParserMetric("capture", reason)
 			a.log().Warn("web_lite_image_not_found",
 				"account_id", credential.ID,
+				"reason", reason,
 				"captured_bytes", len(capture.Bytes()),
 				"frames", diagnostics.Frames,
-				"response_fields", diagnostics.ResponseFields,
-				"message_tags", diagnostics.MessageTags,
+				"response_field_count", len(diagnostics.ResponseFields),
+				"message_tag_count", len(diagnostics.MessageTags),
 				"image_chunks", diagnostics.ImageChunks,
 				"image_urls", diagnostics.ImageURLs,
-				"image_fields", diagnostics.ImageFields,
+				"image_field_count", len(diagnostics.ImageFields),
 				"max_progress", diagnostics.MaxProgress,
 				"soft_stop", diagnostics.SoftStop,
-				"upstream_error_code", diagnostics.ErrorCode,
-				"upstream_error", diagnostics.ErrorMessage,
+				"upstream_error", diagnostics.ErrorCode != "" || diagnostics.ErrorMessage != "",
 			)
-			return "", fmt.Errorf("Grok Web Lite 响应结束但未解析到最终图片")
+			return "", &liteImageParseError{reason: reason}
 		}
 		// Lite 上游固定生成两张，但每次查询只计一次 Fast 额度；按旧协议取首张并为 n 重复查询。
+		recordLiteParserMetric(parserStage, "success")
 		return parsed.Images[0], nil
 	}
 	return "", fmt.Errorf("Grok Web Lite 图片签名刷新失败")
@@ -1156,6 +1176,32 @@ func inspectLiteCapture(data []byte) liteCaptureDiagnostics {
 	result.MessageTags = sortedSetValues(tags)
 	result.ImageFields = sortedSetValues(imageFields)
 	return result
+}
+
+func liteCaptureOutcome(value liteCaptureDiagnostics) string {
+	switch {
+	case value.Frames == 0:
+		return "empty_capture"
+	case value.ErrorCode != "" || value.ErrorMessage != "":
+		return "upstream_error"
+	case value.ImageChunks == 0 && value.SoftStop:
+		return "soft_stop_no_image"
+	case value.ImageChunks == 0:
+		return "no_image_chunk"
+	case value.MaxProgress > 0 && value.MaxProgress < 100:
+		return "incomplete_image"
+	case value.ImageURLs == 0:
+		return "completed_without_url"
+	default:
+		return "unusable_image_url"
+	}
+}
+
+func recordLiteParserMetric(stage, outcome string) {
+	perfmetrics.Default.Inc("web_lite_parser_total", perfmetrics.Labels{
+		Subsystem: "provider", Operation: "image_lite", Provider: string(account.ProviderWeb),
+		Stage: stage, Outcome: outcome,
+	})
 }
 
 func inspectLiteCaptureValue(value any, result *liteCaptureDiagnostics, imageFields map[string]struct{}) {

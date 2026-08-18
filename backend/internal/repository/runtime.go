@@ -14,6 +14,10 @@ func AccountConcurrencyKey(accountID uint64) string {
 	return "account:" + strconv.FormatUint(accountID, 10)
 }
 
+func ProviderConcurrencyKey(provider account.Provider) string {
+	return "provider:" + string(provider)
+}
+
 // RateLimiter 定义客户端 RPM 限制边界。
 type RateLimiter interface {
 	Allow(ctx context.Context, key string, limit int, now time.Time) (bool, error)

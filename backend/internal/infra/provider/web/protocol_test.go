@@ -13,6 +13,8 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -31,6 +33,7 @@ import (
 	providerstreamidle "github.com/chenyme/grok2api/backend/internal/infra/provider/streamidle"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
 	"github.com/chenyme/grok2api/backend/internal/pkg/neterror"
+	"github.com/chenyme/grok2api/backend/internal/pkg/perfmetrics"
 	"github.com/chenyme/grok2api/backend/internal/repository"
 )
 
@@ -709,6 +712,11 @@ func TestLiteChatRejectsInvalidImageConfigBeforeUpstream(t *testing.T) {
 }
 
 func TestLiteChatStreamFailsBeforeReturningSuccessResponse(t *testing.T) {
+	registry := perfmetrics.NewRegistry()
+	previous := perfmetrics.Default
+	perfmetrics.Default = registry
+	t.Cleanup(func() { perfmetrics.Default = previous })
+
 	server := fhttptest.NewServer(fhttp.HandlerFunc(func(writer fhttp.ResponseWriter, request *fhttp.Request) {
 		if request.URL.Path != "/ws/mgw/" {
 			fhttp.NotFound(writer, request)
@@ -756,6 +764,10 @@ func TestLiteChatStreamFailsBeforeReturningSuccessResponse(t *testing.T) {
 	if err == nil || response != nil || !strings.Contains(err.Error(), "未解析到最终图片") {
 		t.Fatalf("response=%#v error=%v", response, err)
 	}
+	if code, ok := provider.ErrorPublicCode(err); !ok || code != "web_lite_image_parse_failed" {
+		t.Fatalf("public error code=%q ok=%t error=%v", code, ok, err)
+	}
+	assertLiteParserMissMetric(t, registry.CollectAndReset())
 }
 
 func TestParseLiteImageCardAttachment(t *testing.T) {
@@ -792,6 +804,64 @@ func TestParseLiteImageCardAttachmentVariants(t *testing.T) {
 	if err != nil || kind != "image" || delta != want || !slices.Equal(parsed.Images, []string{want}) {
 		t.Fatalf("kind=%q delta=%q images=%#v err=%v", kind, delta, parsed.Images, err)
 	}
+}
+
+func TestRedactedWebLiteFixtures(t *testing.T) {
+	tests := []struct {
+		name        string
+		fixture     string
+		wantImages  []string
+		wantOutcome string
+	}{
+		{
+			name:       "final nested card",
+			fixture:    "final-nested.sse.jsonl",
+			wantImages: []string{"https://assets.grok.com/users/fixture/generated/final/image.jpg"},
+		},
+		{
+			name:        "completed without image",
+			fixture:     "completed-no-image.sse.jsonl",
+			wantOutcome: "no_image_chunk",
+		},
+		{
+			name:       "duplicate final card",
+			fixture:    "duplicate-final.sse.jsonl",
+			wantImages: []string{"https://assets.grok.com/users/fixture/generated/duplicate/image.jpg"},
+		},
+		{
+			name:        "partial only",
+			fixture:     "partial-only.sse.jsonl",
+			wantOutcome: "incomplete_image",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := loadWebLiteFixture(t, test.fixture)
+			parsed, err := consumeUpstream(bytes.NewReader(fixture), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(parsed.Images, test.wantImages) {
+				t.Fatalf("images=%#v, want %#v", parsed.Images, test.wantImages)
+			}
+			if test.wantOutcome == "" {
+				return
+			}
+			if outcome := liteCaptureOutcome(inspectLiteCapture(fixture)); outcome != test.wantOutcome {
+				t.Fatalf("outcome=%q, want %q", outcome, test.wantOutcome)
+			}
+		})
+	}
+}
+
+func loadWebLiteFixture(t *testing.T, name string) []byte {
+	t.Helper()
+	path := filepath.Join("..", "..", "..", "..", "testdata", "protocol", "web_lite", name)
+	value, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", name, err)
+	}
+	return value
 }
 
 func TestCapturedLiteRenderFileFlowCompletesOnImageCard(t *testing.T) {
@@ -971,6 +1041,43 @@ func TestExtractCapturedImageURLsHandlesNestedJSONData(t *testing.T) {
 	if got := extractCapturedImageURLs(fixture); !slices.Equal(got, want) {
 		t.Fatalf("urls = %#v, want %#v", got, want)
 	}
+}
+
+func TestLiteCaptureOutcomeUsesBoundedDiagnosticClasses(t *testing.T) {
+	tests := []struct {
+		name        string
+		diagnostics liteCaptureDiagnostics
+		want        string
+	}{
+		{name: "empty", diagnostics: liteCaptureDiagnostics{}, want: "empty_capture"},
+		{name: "upstream error", diagnostics: liteCaptureDiagnostics{Frames: 1, ErrorMessage: "private detail"}, want: "upstream_error"},
+		{name: "soft stop", diagnostics: liteCaptureDiagnostics{Frames: 1, SoftStop: true}, want: "soft_stop_no_image"},
+		{name: "no chunk", diagnostics: liteCaptureDiagnostics{Frames: 1}, want: "no_image_chunk"},
+		{name: "incomplete", diagnostics: liteCaptureDiagnostics{Frames: 1, ImageChunks: 1, ImageURLs: 1, MaxProgress: 50}, want: "incomplete_image"},
+		{name: "missing url", diagnostics: liteCaptureDiagnostics{Frames: 1, ImageChunks: 1, MaxProgress: 100}, want: "completed_without_url"},
+		{name: "unusable url", diagnostics: liteCaptureDiagnostics{Frames: 1, ImageChunks: 1, ImageURLs: 1, MaxProgress: 100}, want: "unusable_image_url"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := liteCaptureOutcome(test.diagnostics); got != test.want {
+				t.Fatalf("outcome=%q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func assertLiteParserMissMetric(t *testing.T, samples []perfmetrics.Sample) {
+	t.Helper()
+	for _, sample := range samples {
+		if sample.Name == "web_lite_parser_total" &&
+			sample.Labels.Provider == string(account.ProviderWeb) &&
+			sample.Labels.Operation == "image_lite" &&
+			sample.Labels.Outcome != "success" &&
+			sample.Total == 1 {
+			return
+		}
+	}
+	t.Fatalf("missing Lite parser miss metric in %#v", samples)
 }
 
 func TestLiteModelResponseCardAttachmentsFallback(t *testing.T) {

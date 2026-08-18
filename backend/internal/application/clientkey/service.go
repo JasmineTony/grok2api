@@ -87,7 +87,8 @@ type Service struct {
 	touches       *touchTracker
 	cipher        *security.Cipher
 	activeMu      sync.RWMutex
-	activeBilling map[string]struct{}
+	activeBilling map[string]time.Time
+	now           func() time.Time
 }
 
 type billingReservationRepository interface {
@@ -101,7 +102,10 @@ type internalKeyInspector interface {
 }
 
 func NewService(keys repository.ClientKeyRepository, rateLimiter repository.RateLimiter, concurrency repository.ConcurrencyLimiter, defaultRPM, defaultMax int, cipher *security.Cipher) *Service {
-	service := &Service{keys: keys, rateLimiter: rateLimiter, concurrency: concurrency, authCache: newAuthKeyCache(), touches: newTouchTracker(), cipher: cipher, activeBilling: make(map[string]struct{})}
+	service := &Service{
+		keys: keys, rateLimiter: rateLimiter, concurrency: concurrency, authCache: newAuthKeyCache(),
+		touches: newTouchTracker(), cipher: cipher, activeBilling: make(map[string]time.Time), now: time.Now,
+	}
 	service.UpdateDefaults(defaultRPM, defaultMax)
 	return service
 }
@@ -499,12 +503,14 @@ func (s *Service) ReserveBilling(ctx context.Context, key clientkeydomain.Key, e
 	}
 	repo, ok := s.keys.(billingReservationRepository)
 	if !ok {
+		perfmetrics.Default.Inc("billing_reservation_total", perfmetrics.Labels{Subsystem: "billing", Operation: "reserve", Outcome: "writer_unavailable"})
 		return false, fmt.Errorf("%w: 客户端 Key 仓储不支持计费预留", ErrRuntimeUnavailable)
 	}
 	if ttl <= 0 {
 		ttl = 24 * time.Hour
 	}
-	reserved, err := repo.ReserveBillingUsage(ctx, key.ID, eventID, amount, time.Now().UTC().Add(ttl))
+	now := s.now().UTC()
+	reserved, err := repo.ReserveBillingUsage(ctx, key.ID, eventID, amount, now.Add(ttl))
 	if errors.Is(err, repository.ErrLimitExceeded) {
 		perfmetrics.Default.Inc("billing_reservation_total", perfmetrics.Labels{Subsystem: "billing", Operation: "reserve", Outcome: "limit_exceeded"})
 		return false, ErrBillingLimit
@@ -515,8 +521,9 @@ func (s *Service) ReserveBilling(ctx context.Context, key clientkeydomain.Key, e
 	}
 	if reserved {
 		s.activeMu.Lock()
-		s.activeBilling[eventID] = struct{}{}
+		s.activeBilling[eventID] = now
 		s.activeMu.Unlock()
+		s.updateBillingReservationGauges(now)
 	}
 	perfmetrics.Default.Inc("billing_reservation_total", perfmetrics.Labels{Subsystem: "billing", Operation: "reserve", Outcome: "success"})
 	return reserved, nil
@@ -561,12 +568,33 @@ func (s *Service) ReleaseBillingProtectionBatch(eventIDs []string) {
 		delete(s.activeBilling, eventID)
 	}
 	s.activeMu.Unlock()
+	s.updateBillingReservationGauges(s.now().UTC())
+}
+
+func (s *Service) updateBillingReservationGauges(now time.Time) {
+	s.activeMu.RLock()
+	active := len(s.activeBilling)
+	var oldest time.Time
+	for _, createdAt := range s.activeBilling {
+		if oldest.IsZero() || createdAt.Before(oldest) {
+			oldest = createdAt
+		}
+	}
+	s.activeMu.RUnlock()
+	ageSeconds := int64(0)
+	if !oldest.IsZero() && now.After(oldest) {
+		ageSeconds = int64(now.Sub(oldest) / time.Second)
+	}
+	labels := perfmetrics.Labels{Subsystem: "billing", Operation: "reservation", Stage: "active"}
+	perfmetrics.Default.SetGauge("billing_reservation_active", labels, int64(active))
+	perfmetrics.Default.SetGauge("billing_reservation_age_seconds", labels, ageSeconds)
 }
 
 // CleanupExpiredBilling 释放进程异常遗留的过期预留。
 func (s *Service) CleanupExpiredBilling(ctx context.Context, limit int) (int, error) {
 	repo, ok := s.keys.(billingReservationRepository)
 	if !ok {
+		perfmetrics.Default.Inc("billing_reservation_total", perfmetrics.Labels{Subsystem: "billing", Operation: "cleanup", Outcome: "writer_unavailable"})
 		return 0, fmt.Errorf("%w: 客户端 Key 仓储不支持计费预留", ErrRuntimeUnavailable)
 	}
 	s.activeMu.RLock()
@@ -575,12 +603,14 @@ func (s *Service) CleanupExpiredBilling(ctx context.Context, limit int) (int, er
 		protected = append(protected, eventID)
 	}
 	s.activeMu.RUnlock()
-	cleaned, err := repo.CleanupExpiredBillingReservations(ctx, time.Now().UTC(), limit, protected)
+	now := s.now().UTC()
+	cleaned, err := repo.CleanupExpiredBillingReservations(ctx, now, limit, protected)
 	outcome := "success"
 	if err != nil {
 		outcome = "failed"
 	}
 	perfmetrics.Default.Add("billing_reservation_cleanup_rows", perfmetrics.Labels{Subsystem: "billing", Operation: "cleanup", Outcome: outcome}, int64(cleaned))
+	s.updateBillingReservationGauges(now)
 	return cleaned, err
 }
 

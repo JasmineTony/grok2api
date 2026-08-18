@@ -376,3 +376,20 @@ func TestAccountSyncPipelineUsesFinalQueuedTotal(t *testing.T) {
 		}
 	}
 }
+
+func TestAccountImportResponseIncludesProviderBreakdown(t *testing.T) {
+	value := newAccountImportResponse(
+		accountdomain.ProviderWeb,
+		accountapp.ImportResult{Created: 2, Updated: 1, Skipped: 3},
+		accountsyncapp.Result{Succeeded: 2, Failed: 1},
+	)
+	detail, ok := value.ByProvider[string(accountdomain.ProviderWeb)]
+	if !ok || value.Provider != string(accountdomain.ProviderWeb) ||
+		value.Created != 2 || value.Updated != 1 || value.Skipped != 3 ||
+		value.Synced != 2 || value.SyncFailed != 1 ||
+		detail.Created != value.Created || detail.Updated != value.Updated ||
+		detail.Skipped != value.Skipped || detail.Synced != value.Synced ||
+		detail.SyncFailed != value.SyncFailed {
+		t.Fatalf("response = %#v", value)
+	}
+}

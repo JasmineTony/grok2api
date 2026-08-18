@@ -1,0 +1,2 @@
+data: {"result":{"response":{"cardAttachment":{"jsonData":"{\"id\":\"fixture-duplicate\",\"image_chunk\":{\"progress\":100,\"imageUrl\":\"users/fixture/generated/duplicate/image.jpg\",\"moderated\":false}}"}}}}
+data: {"result":{"response":{"cardAttachments":[{"jsonData":{"id":"fixture-duplicate","imageChunk":{"progress":100,"image_url":"users/fixture/generated/duplicate/image.jpg","moderated":false}}}]}}}

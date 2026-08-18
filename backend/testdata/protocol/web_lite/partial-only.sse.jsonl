@@ -1,0 +1,2 @@
+data: {"result":{"response":{"cardAttachment":{"jsonData":"{\"id\":\"fixture-partial\",\"image_chunk\":{\"progress\":50,\"imageUrl\":\"users/fixture/generated/partial-part-0/image.jpg\",\"moderated\":false}}"}}}}
+data: {"event":{"type":"response.done","response":{"id":"fixture-partial-only","status":"completed"}}}

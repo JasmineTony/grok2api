@@ -68,3 +68,33 @@ func TestRefreshUsesHTTPOnlyCookieAndDoesNotExposeToken(t *testing.T) {
 		t.Fatalf("refresh response exposed refresh token: %s", refresh.Body.String())
 	}
 }
+
+func TestClientAddressHonorsOnlyConfiguredTrustedProxy(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	if err := router.SetTrustedProxies([]string{"192.0.2.0/24"}); err != nil {
+		t.Fatal(err)
+	}
+	var got string
+	router.GET("/", func(c *gin.Context) {
+		got = clientAddress(c)
+		c.Status(http.StatusNoContent)
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request.RemoteAddr = "192.0.2.10:1234"
+	request.Header.Set("X-Forwarded-For", "198.51.100.7")
+	router.ServeHTTP(httptest.NewRecorder(), request)
+	if got != "198.51.100.7" {
+		t.Fatalf("trusted proxy client address = %q", got)
+	}
+
+	if err := router.SetTrustedProxies(nil); err != nil {
+		t.Fatal(err)
+	}
+	got = ""
+	router.ServeHTTP(httptest.NewRecorder(), request)
+	if got != "192.0.2.10" {
+		t.Fatalf("untrusted forwarded address = %q", got)
+	}
+}

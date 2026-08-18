@@ -6,12 +6,22 @@
 server:
   # [通常不要修改] Docker 镜像会通过启动参数覆盖为 0.0.0.0:8000。
   listen: "127.0.0.1:8000"
+  # [按需修改] 仅填写实际反向代理网段；为空时不信任 X-Forwarded-For。
+  trustedProxies: []
   # [通常不要修改] 单次请求体上限 32 MiB。
   maxBodyBytes: 33554432
+  # [按需修改] 单实例同时处理的 /v1 请求数。
+  maxConcurrentRequests: 1024
   # [通常不要修改] 仅限制客户端上传完整请求体的时间，不限制推理或流式响应。
   readTimeout: 15m
   # [通常不要修改] 管理 API 和非流式请求的最长生命周期。
   requestTimeout: 2h
+  # [通常不要修改] Voice WebSocket 双向无消息达到此时长后关闭。
+  voiceWebSocketIdleTimeout: 2m
+  # [按需修改] 单个 Voice WebSocket 每秒允许发送到上游的消息数。
+  voiceWebSocketMessagesPerSecond: 100
+  # [按需修改] 单个 Voice WebSocket 短时突发消息容量，不能小于每秒速率。
+  voiceWebSocketMessageBurst: 200
   # [按需修改] 仅在本地或受信任环境开启，生产环境保持 false。
   swaggerEnabled: false
 
@@ -88,6 +98,11 @@ routing:
   reasoningReplayEnabled: true
   reasoningReplayTTL: 1h
   reasoningReplayMaxEntries: 10240
+  # [按需修改] 单实例或共享 Redis 运行态中，每个 Provider 的总活跃推理租约上限。
+  providerConcurrency:
+    build: 512
+    web: 256
+    console: 256
   # [按需修改] 按账号隔离上游连接池，适合外部 L4/连接哈希负载均衡；会增加连接数、TLS 握手和文件描述符占用。
   accountIsolatedConnections: false
   # [通常不要修改] 大账号池默认使用有界分段选号；保留完整池回退、额度优先级和原子并发门禁。

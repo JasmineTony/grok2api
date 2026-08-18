@@ -13,6 +13,7 @@ import (
 
 	auditdomain "github.com/chenyme/grok2api/backend/internal/domain/audit"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
+	"github.com/chenyme/grok2api/backend/internal/pkg/perfmetrics"
 	"github.com/chenyme/grok2api/backend/internal/repository"
 )
 
@@ -155,11 +156,16 @@ func TestCreateDurableHonorsCallerDeadline(t *testing.T) {
 }
 
 func TestCreateRequiresStartedWriter(t *testing.T) {
+	registry := perfmetrics.NewRegistry()
+	previous := perfmetrics.Default
+	perfmetrics.Default = registry
+	t.Cleanup(func() { perfmetrics.Default = previous })
 	service := NewService(&toggleAuditRepository{}, slog.Default(), 8, 4, time.Second)
-	err := service.Create(context.Background(), auditdomain.Record{EventID: "not-started"})
+	err := service.Create(context.Background(), auditdomain.Record{EventID: "not-started", EstimatedCostInUSDTicks: 1})
 	if !errors.Is(err, ErrWriterUnavailable) {
 		t.Fatalf("err = %v", err)
 	}
+	assertBillingSettlementMetric(t, registry.CollectAndReset(), "writer_unavailable")
 }
 
 func TestCloseStartsWriterAndFlushesPrestartRecords(t *testing.T) {
@@ -447,6 +453,10 @@ func TestLedgerReadinessDetectsSustainedQueuePressure(t *testing.T) {
 }
 
 func TestCommitObserverRunsOnlyAfterDurableCommit(t *testing.T) {
+	registry := perfmetrics.NewRegistry()
+	previous := perfmetrics.Default
+	perfmetrics.Default = registry
+	t.Cleanup(func() { perfmetrics.Default = previous })
 	repo := &toggleAuditRepository{}
 	service := NewService(repo, slog.Default(), 8, 4, time.Hour)
 	service.Start()
@@ -457,7 +467,7 @@ func TestCommitObserverRunsOnlyAfterDurableCommit(t *testing.T) {
 		committed = append(committed, values...)
 		mu.Unlock()
 	})
-	if err := service.CreateDurable(context.Background(), auditdomain.Record{EventID: "sync"}); err != nil {
+	if err := service.CreateDurable(context.Background(), auditdomain.Record{EventID: "sync", EstimatedCostInUSDTicks: 1}); err != nil {
 		t.Fatal(err)
 	}
 	if !service.Record(auditdomain.Record{EventID: "batch"}) {
@@ -473,6 +483,17 @@ func TestCommitObserverRunsOnlyAfterDurableCommit(t *testing.T) {
 	if len(committed) != 2 || committed[0] != "sync" || committed[1] != "batch" {
 		t.Fatalf("committed = %#v", committed)
 	}
+	assertBillingSettlementMetric(t, registry.CollectAndReset(), "success")
+}
+
+func assertBillingSettlementMetric(t *testing.T, samples []perfmetrics.Sample, outcome string) {
+	t.Helper()
+	for _, sample := range samples {
+		if sample.Name == "billing_reservation_total" && sample.Labels.Operation == "settle" && sample.Labels.Outcome == outcome && sample.Total == 1 {
+			return
+		}
+	}
+	t.Fatalf("missing billing settlement outcome %q in %#v", outcome, samples)
 }
 
 type toggleAuditRepository struct {

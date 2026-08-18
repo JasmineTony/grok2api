@@ -47,7 +47,6 @@ func parseImportedCredentials(data []byte) ([]provider.CredentialSeed, error) {
 	if len(entries) == 0 {
 		return nil, fmt.Errorf("账号文件中没有 Grok Console 账号")
 	}
-	seen := make(map[string]struct{}, len(entries))
 	result := make([]provider.CredentialSeed, 0, len(entries))
 	for index, entry := range entries {
 		token := sanitizeSSOToken(firstNonEmpty(entry.SSOToken, entry.Token))
@@ -57,10 +56,6 @@ func parseImportedCredentials(data []byte) ([]provider.CredentialSeed, error) {
 		if len(token) > maxSSOTokenBytes {
 			return nil, fmt.Errorf("第 %d 个账号的 sso_token 超过 16 KiB", index+1)
 		}
-		if _, exists := seen[token]; exists {
-			continue
-		}
-		seen[token] = struct{}{}
 		name := strings.TrimSpace(entry.Name)
 		if name == "" {
 			name = "Grok Console " + security.HashToken(token)[:8]
@@ -76,7 +71,6 @@ func parseImportedCredentials(data []byte) ([]provider.CredentialSeed, error) {
 
 func parsePlainTextCredentials(value string) ([]provider.CredentialSeed, error) {
 	lines := strings.Split(value, "\n")
-	seen := make(map[string]struct{}, len(lines))
 	result := make([]provider.CredentialSeed, 0, len(lines))
 	for index, line := range lines {
 		token := sanitizeSSOToken(line)
@@ -86,10 +80,6 @@ func parsePlainTextCredentials(value string) ([]provider.CredentialSeed, error) 
 		if len(token) > maxSSOTokenBytes {
 			return nil, fmt.Errorf("第 %d 行的 sso token 超过 16 KiB", index+1)
 		}
-		if _, exists := seen[token]; exists {
-			continue
-		}
-		seen[token] = struct{}{}
 		result = append(result, credentialSeed("Grok Console "+security.HashToken(token)[:8], token))
 		if len(result) > maxImportAccounts {
 			return nil, provider.ErrCredentialLimit

@@ -12,6 +12,7 @@ import (
 	clientkeydomain "github.com/chenyme/grok2api/backend/internal/domain/clientkey"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
+	"github.com/chenyme/grok2api/backend/internal/pkg/perfmetrics"
 	"github.com/chenyme/grok2api/backend/internal/repository"
 )
 
@@ -240,6 +241,10 @@ func TestBillingLimitUsesAtomicReservations(t *testing.T) {
 }
 
 func TestCleanupExpiredBillingProtectsActiveRequest(t *testing.T) {
+	registry := perfmetrics.NewRegistry()
+	previous := perfmetrics.Default
+	perfmetrics.Default = registry
+	t.Cleanup(func() { perfmetrics.Default = previous })
 	ctx := context.Background()
 	database, err := relational.OpenSQLite(ctx, filepath.Join(t.TempDir(), "active-billing.db"))
 	if err != nil {
@@ -251,6 +256,8 @@ func TestCleanupExpiredBillingProtectsActiveRequest(t *testing.T) {
 	}
 	repository := relational.NewClientKeyRepository(database)
 	service := NewService(repository, nil, nil, 60, 5, testCipher(t))
+	now := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
+	service.now = func() time.Time { return now }
 	created, err := service.Create(ctx, CreateInput{Name: "active", Enabled: true, BillingLimitUSDTicks: 100})
 	if err != nil {
 		t.Fatal(err)
@@ -259,14 +266,34 @@ func TestCleanupExpiredBillingProtectsActiveRequest(t *testing.T) {
 	if reserved, reserveErr := service.ReserveBilling(ctx, created.Key, eventID, 40, time.Nanosecond); reserveErr != nil || !reserved {
 		t.Fatalf("reserve: reserved=%v err=%v", reserved, reserveErr)
 	}
-	time.Sleep(time.Millisecond)
+	now = now.Add(time.Millisecond)
 	if cleaned, cleanupErr := service.CleanupExpiredBilling(ctx, 10); cleanupErr != nil || cleaned != 0 {
 		t.Fatalf("active cleanup: cleaned=%d err=%v", cleaned, cleanupErr)
 	}
+	now = now.Add(10 * time.Second)
+	if cleaned, cleanupErr := service.CleanupExpiredBilling(ctx, 10); cleanupErr != nil || cleaned != 0 {
+		t.Fatalf("active age refresh: cleaned=%d err=%v", cleaned, cleanupErr)
+	}
+	assertBillingReservationGauge(t, registry.Collect(), "billing_reservation_active", 1)
+	assertBillingReservationGauge(t, registry.Collect(), "billing_reservation_age_seconds", 10)
 	service.CompleteBilling(eventID)
 	if cleaned, cleanupErr := service.CleanupExpiredBilling(ctx, 10); cleanupErr != nil || cleaned != 1 {
 		t.Fatalf("completed cleanup: cleaned=%d err=%v", cleaned, cleanupErr)
 	}
+	assertBillingReservationGauge(t, registry.Collect(), "billing_reservation_active", 0)
+}
+
+func assertBillingReservationGauge(t *testing.T, samples []perfmetrics.Sample, name string, want int64) {
+	t.Helper()
+	for _, sample := range samples {
+		if sample.Name == name && sample.HasGauge {
+			if sample.Gauge != want {
+				t.Fatalf("%s=%d, want %d", name, sample.Gauge, want)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing gauge %s in %#v", name, samples)
 }
 
 func TestAuthenticateCachesUnlimitedKeyAndInvalidatesOnDisable(t *testing.T) {

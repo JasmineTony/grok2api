@@ -42,6 +42,21 @@ func TestCollectAndResetReadsDynamicGaugeAtCollectionTime(t *testing.T) {
 	}
 }
 
+func TestCollectDoesNotResetCounters(t *testing.T) {
+	registry := NewRegistry()
+	labels := Labels{Subsystem: "account", Operation: "credentials", Provider: "grok_web", Outcome: "success"}
+	registry.Add("account_import_runs_total", labels, 2)
+
+	first := registry.Collect()
+	second := registry.Collect()
+	if len(first) != 1 || first[0].Total != 2 || first[0].Count != 1 {
+		t.Fatalf("first samples = %#v", first)
+	}
+	if len(second) != 1 || second[0].Total != 2 || second[0].Count != 1 {
+		t.Fatalf("second samples = %#v", second)
+	}
+}
+
 func BenchmarkRegistryParallel(b *testing.B) {
 	registry := NewRegistry()
 	labels := Labels{Subsystem: "gateway", Operation: "responses", Provider: "grok_build", Stage: "upstream", Outcome: "success"}
