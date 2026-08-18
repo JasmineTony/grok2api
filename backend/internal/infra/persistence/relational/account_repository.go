@@ -376,7 +376,7 @@ func (r *AccountRepository) ListRoutingCandidates(ctx context.Context, provider 
 	if err != nil {
 		return nil, err
 	}
-	quotaWindows, err := r.getRoutingQuotaWindows(ctx, ids, provider, quotaMode)
+	quotaWindows, err := r.getRoutingQuotaWindowsForCredentials(ctx, provider, quotaMode, values)
 	if err != nil {
 		return nil, err
 	}
@@ -416,6 +416,7 @@ func (r *AccountRepository) ListRoutingCandidates(ctx context.Context, provider 
 	}
 	var latestSuperBuildModelSync time.Time
 	var latestRegularBuildModelSync time.Time
+	sharedSuperBuildModel := false
 	if provider == account.ProviderBuild && len(bound) == 0 {
 		for _, value := range values {
 			if !supported[value.ID] {
@@ -430,6 +431,7 @@ func (r *AccountRepository) ListRoutingCandidates(ctx context.Context, provider 
 				billing = &snapshot
 			}
 			if account.IsBuildSuper(value, billing) {
+				sharedSuperBuildModel = true
 				if syncedAt.After(latestSuperBuildModelSync) {
 					latestSuperBuildModelSync = syncedAt
 				}
@@ -439,15 +441,16 @@ func (r *AccountRepository) ListRoutingCandidates(ctx context.Context, provider 
 		}
 	}
 	result := make([]account.RoutingCandidate, 0, len(values))
-	staticConsoleModel := provider == account.ProviderConsole && strings.TrimSpace(quotaMode) != ""
+	staticProviderModel := (provider == account.ProviderConsole && strings.TrimSpace(quotaMode) != "") ||
+		(provider == account.ProviderWeb && account.IsWebImagineQuotaMode(quotaMode))
 	for _, value := range values {
 		capabilityKnown, supportsModel := known[value.ID], supported[value.ID]
-		if staticConsoleModel {
-			// Console exposes a provider-wide static catalog. Historical account
-			// snapshots may predate newly shipped catalog entries, but must not
-			// make those built-in routes unroutable until every account is synced
-			// again. A non-empty quota mode proves the adapter recognizes the
-			// upstream model; unknown/manual models keep snapshot-based gating.
+		if staticProviderModel {
+			// Console and Web Imagine expose provider-wide static catalogs.
+			// Historical account snapshots may predate newly shipped catalog
+			// entries, but must not make those routes unroutable. A recognized
+			// quota mode proves the adapter knows the model; unknown/manual models
+			// keep snapshot-based gating.
 			capabilityKnown, supportsModel = true, true
 		} else if len(bound) > 0 {
 			capabilityKnown, supportsModel = true, true
@@ -456,16 +459,20 @@ func (r *AccountRepository) ListRoutingCandidates(ctx context.Context, provider 
 			if snapshot, exists := billings[value.ID]; exists {
 				billing = &snapshot
 			}
-			modelObservedAt := latestRegularBuildModelSync
-			if account.IsBuildSuper(value, billing) {
-				modelObservedAt = latestSuperBuildModelSync
-			}
-			if peerSyncedAt := capabilitySyncedAt[value.ID]; !modelObservedAt.IsZero() && peerSyncedAt.Before(modelObservedAt) {
-				// Manual catalog sync probes one account per Provider. A peer's older
-				// successful snapshot cannot prove that a newly observed model is
-				// unsupported, so retain it as an unknown failover candidate. Do not
-				// claim support: observed accounts still sort ahead of unknown peers.
-				capabilityKnown = false
+			if sharedSuperBuildModel && account.IsBuildSuper(value, billing) {
+				capabilityKnown, supportsModel = true, true
+			} else {
+				modelObservedAt := latestRegularBuildModelSync
+				if account.IsBuildSuper(value, billing) {
+					modelObservedAt = latestSuperBuildModelSync
+				}
+				if peerSyncedAt := capabilitySyncedAt[value.ID]; !modelObservedAt.IsZero() && peerSyncedAt.Before(modelObservedAt) {
+					// Manual catalog sync probes one account per Provider. A peer's older
+					// successful snapshot cannot prove that a newly observed model is
+					// unsupported, so retain it as an unknown failover candidate. Do not
+					// claim support: observed accounts still sort ahead of unknown peers.
+					capabilityKnown = false
+				}
 			}
 		}
 		candidate := account.RoutingCandidate{Credential: value, ModelCapabilityKnown: capabilityKnown, SupportsModel: supportsModel}
@@ -503,7 +510,7 @@ func (r *AccountRepository) ListRoutingAccountBases(ctx context.Context, provide
 	if err != nil {
 		return nil, err
 	}
-	quotaWindows, err := r.getRoutingQuotaWindows(ctx, ids, provider, quotaMode)
+	quotaWindows, err := r.getRoutingQuotaWindowsForCredentials(ctx, provider, quotaMode, values)
 	if err != nil {
 		return nil, err
 	}
@@ -660,6 +667,20 @@ var routingQuotaWindowColumns = []string{
 }
 
 func (r *AccountRepository) getRoutingQuotaWindows(ctx context.Context, accountIDs []uint64, provider account.Provider, quotaMode string) (map[uint64]account.QuotaWindow, error) {
+	return r.getRoutingQuotaWindowsWithTiers(ctx, accountIDs, provider, quotaMode, nil)
+}
+
+func (r *AccountRepository) getRoutingQuotaWindowsForCredentials(ctx context.Context, provider account.Provider, quotaMode string, credentials []account.Credential) (map[uint64]account.QuotaWindow, error) {
+	accountIDs := make([]uint64, 0, len(credentials))
+	webTiers := make(map[uint64]account.WebTier, len(credentials))
+	for _, credential := range credentials {
+		accountIDs = append(accountIDs, credential.ID)
+		webTiers[credential.ID] = credential.WebTier
+	}
+	return r.getRoutingQuotaWindowsWithTiers(ctx, accountIDs, provider, quotaMode, webTiers)
+}
+
+func (r *AccountRepository) getRoutingQuotaWindowsWithTiers(ctx context.Context, accountIDs []uint64, provider account.Provider, quotaMode string, webTiers map[uint64]account.WebTier) (map[uint64]account.QuotaWindow, error) {
 	result := make(map[uint64]account.QuotaWindow, len(accountIDs))
 	if len(accountIDs) == 0 || (provider != account.ProviderWeb && quotaMode == "") {
 		return result, nil
@@ -670,6 +691,12 @@ func (r *AccountRepository) getRoutingQuotaWindows(ctx context.Context, accountI
 	// a weekly row merely because the same account also has paid chat access.
 	if provider == account.ProviderWeb && !account.IsWebImagineQuotaMode(quotaMode) {
 		modes = append(modes, "weekly")
+	}
+	if provider == account.ProviderWeb && quotaMode == account.QuotaModeWebImageEdit {
+		// Basic Web accounts use image_pro for editing, while Super/Heavy
+		// accounts have the dedicated image_edit product. Load both once and
+		// select the authoritative window per account below.
+		modes = append(modes, account.QuotaModeWebImagePro)
 	}
 	if quotaMode != "" {
 		modes = append(modes, quotaMode)
@@ -684,6 +711,9 @@ func (r *AccountRepository) getRoutingQuotaWindows(ctx context.Context, accountI
 			return err
 		}
 		for _, row := range rows {
+			if provider == account.ProviderWeb && quotaMode == account.QuotaModeWebImageEdit && row.Mode != webImageEditRoutingQuotaMode(webTiers[row.AccountID]) {
+				continue
+			}
 			if _, exists := result[row.AccountID]; !exists {
 				result[row.AccountID] = toRoutingQuotaWindowDomain(row)
 			}
@@ -694,6 +724,17 @@ func (r *AccountRepository) getRoutingQuotaWindows(ctx context.Context, accountI
 		return nil, err
 	}
 	return result, nil
+}
+
+func webImageEditRoutingQuotaMode(tier account.WebTier) string {
+	switch tier {
+	case account.WebTierSuper, account.WebTierHeavy:
+		return account.QuotaModeWebImageEdit
+	default:
+		// Empty and auto tiers are deliberately treated as Basic, matching the
+		// Web adapter's conservative capability normalization.
+		return account.QuotaModeWebImagePro
+	}
 }
 
 func (r *AccountRepository) ListRoutingAccountOverlays(ctx context.Context, provider account.Provider, modelRouteID uint64, upstreamModel string) (account.RoutingOverlaySnapshot, error) {

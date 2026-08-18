@@ -356,17 +356,39 @@ func (s *Service) commitStagedVideo(ctx context.Context, staged stagedVideo, cre
 	return asset, nil
 }
 
-// OpenVideo 读取视频元数据与正文。
-func (s *Service) OpenVideo(ctx context.Context, id string) (mediadomain.Asset, io.ReadCloser, error) {
+func (s *Service) videoMetadata(ctx context.Context, id string) (mediadomain.Asset, error) {
 	asset, err := s.assets.GetMediaAsset(ctx, strings.TrimSpace(id))
 	if errors.Is(err, repository.ErrNotFound) {
-		return mediadomain.Asset{}, nil, ErrAssetNotFound
+		return mediadomain.Asset{}, ErrAssetNotFound
 	}
 	if err != nil {
-		return mediadomain.Asset{}, nil, err
+		return mediadomain.Asset{}, err
 	}
 	if asset.Kind != "video" || asset.ExpiresAt != nil {
-		return mediadomain.Asset{}, nil, ErrAssetNotFound
+		return mediadomain.Asset{}, ErrAssetNotFound
+	}
+	return asset, nil
+}
+
+// InspectVideo checks metadata and object existence without opening the body.
+func (s *Service) InspectVideo(ctx context.Context, id string) (mediadomain.Asset, error) {
+	asset, err := s.videoMetadata(ctx, id)
+	if err != nil {
+		return mediadomain.Asset{}, err
+	}
+	if err := s.objects.Stat(ctx, asset.StorageKey); errors.Is(err, os.ErrNotExist) {
+		return mediadomain.Asset{}, ErrAssetNotFound
+	} else if err != nil {
+		return mediadomain.Asset{}, err
+	}
+	return asset, nil
+}
+
+// OpenVideo reads video metadata and content.
+func (s *Service) OpenVideo(ctx context.Context, id string) (mediadomain.Asset, io.ReadCloser, error) {
+	asset, err := s.videoMetadata(ctx, id)
+	if err != nil {
+		return mediadomain.Asset{}, nil, err
 	}
 	body, err := s.objects.Open(ctx, asset.StorageKey)
 	if errors.Is(err, os.ErrNotExist) {

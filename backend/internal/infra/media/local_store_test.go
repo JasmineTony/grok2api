@@ -27,6 +27,9 @@ func TestLocalStoreWritesAndRejectsTraversal(t *testing.T) {
 	if err != nil || string(data) != "image" {
 		t.Fatalf("stored image = %q, err=%v", data, err)
 	}
+	if err := store.Stat(context.Background(), key); err != nil {
+		t.Fatalf("stored image stat: %v", err)
+	}
 	if _, err := store.SaveImage(context.Background(), "img_abcdefghijklmnopqrstuvwxyz", "image/jpeg", []byte("replacement")); err == nil {
 		t.Fatal("existing image was overwritten")
 	}
@@ -35,6 +38,9 @@ func TestLocalStoreWritesAndRejectsTraversal(t *testing.T) {
 	}
 	if err := store.Delete(context.Background(), key); err != nil {
 		t.Fatal(err)
+	}
+	if err := store.Stat(context.Background(), key); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("missing object stat error = %v", err)
 	}
 	if err := store.Delete(context.Background(), key); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("missing object delete error = %v", err)

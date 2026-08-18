@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"mime/multipart"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	accountsyncapp "github.com/chenyme/grok2api/backend/internal/application/accountsync"
 	accountdomain "github.com/chenyme/grok2api/backend/internal/domain/account"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
+	"github.com/chenyme/grok2api/backend/internal/infra/security"
 	"github.com/gin-gonic/gin"
 )
 
@@ -103,6 +105,57 @@ func TestWriteServiceErrorUsesCredentialLimitCodes(t *testing.T) {
 				t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 			}
 		})
+	}
+}
+
+func TestResolveServiceErrorPreservesBusinessStatus(t *testing.T) {
+	status, code, message := resolveServiceError(
+		"accountConversionFailed",
+		fmt.Errorf("%w: busy", accountapp.ErrConversionBusy),
+		http.StatusInternalServerError,
+		"failed",
+	)
+	if status != http.StatusConflict || code != "accountConversionBusy" || message != "账号正在转换为 Grok Build: busy" {
+		t.Fatalf("resolved error = %d, %q, %q", status, code, message)
+	}
+
+	status, code, message = resolveServiceError("quotaRefreshFailed", fmt.Errorf("provider down"), http.StatusBadGateway, "failed")
+	if status != http.StatusBadGateway || code != "quotaRefreshFailed" || message != "failed" {
+		t.Fatalf("fallback error = %d, %q, %q", status, code, message)
+	}
+
+	status, code, message = resolveServiceError(
+		"tokenRefreshFailed",
+		fmt.Errorf("%w: invalid_grant", accountapp.ErrCredentialRefreshPermanent),
+		http.StatusBadGateway,
+		"failed",
+	)
+	if status != http.StatusConflict || code != "accountReauthorizationRequired" || message != "账号 OAuth 凭据已失效，请重新授权" {
+		t.Fatalf("permanent refresh error = %d, %q, %q", status, code, message)
+	}
+
+	status, code, message = resolveServiceError(
+		"quotaRefreshFailed",
+		fmt.Errorf("sync quota: %w", security.ErrCredentialDecrypt),
+		http.StatusBadGateway,
+		"failed",
+	)
+	if status != http.StatusConflict || code != "credentialDecryptionFailed" || message != "已保存账号凭据无法解密，请恢复原 credentialEncryptionKey 或重新导入账号" {
+		t.Fatalf("credential decrypt error = %d, %q, %q", status, code, message)
+	}
+}
+
+func TestAccountEventStreamErrorIncludesStatus(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest("POST", "/api/admin/v1/accounts/detect", nil)
+	stream := &accountEventStream{context: ctx}
+
+	stream.WriteError(http.StatusTooManyRequests, "accountDetectFailed", "limited")
+
+	if body := recorder.Body.String(); body != "event: error\ndata: {\"code\":\"accountDetectFailed\",\"message\":\"limited\",\"status\":429}\n\n" {
+		t.Fatalf("body = %q", body)
 	}
 }
 

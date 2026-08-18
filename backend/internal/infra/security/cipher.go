@@ -5,9 +5,12 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 )
+
+var ErrCredentialDecrypt = errors.New("credential decryption failed")
 
 // Cipher 使用 AES-256-GCM 加密数据库中的 OAuth 凭据。
 type Cipher struct {
@@ -54,15 +57,15 @@ func (c *Cipher) Decrypt(encoded string) (string, error) {
 	}
 	data, err := base64.RawStdEncoding.DecodeString(encoded)
 	if err != nil {
-		return "", fmt.Errorf("解析加密凭据: %w", err)
+		return "", fmt.Errorf("%w: 解析加密凭据: %v", ErrCredentialDecrypt, err)
 	}
 	if len(data) < c.aead.NonceSize() {
-		return "", fmt.Errorf("加密凭据长度无效")
+		return "", fmt.Errorf("%w: 加密凭据长度无效", ErrCredentialDecrypt)
 	}
 	nonce, ciphertext := data[:c.aead.NonceSize()], data[c.aead.NonceSize():]
 	plain, err := c.aead.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		return "", fmt.Errorf("解密凭据: %w", err)
+		return "", fmt.Errorf("%w: 解密凭据: %v", ErrCredentialDecrypt, err)
 	}
 	return string(plain), nil
 }

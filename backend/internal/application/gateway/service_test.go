@@ -583,7 +583,7 @@ func TestGatewayFailsOverBeforeReturningBody(t *testing.T) {
 	}
 	_ = interrupted.Body.Close()
 	interruptedAccount, err := accountRepo.Get(ctx, adapter.attempts[0])
-	if err != nil || interruptedAccount.FailureCount != 1 || interruptedAccount.CooldownUntil == nil {
+	if err != nil || interruptedAccount.FailureCount != 0 || interruptedAccount.CooldownUntil == nil {
 		t.Fatalf("interrupted account health = %#v, err=%v", interruptedAccount, err)
 	}
 }
@@ -2405,7 +2405,7 @@ func TestImageStreamPropagatesWithoutTouchingChatQuota(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := modelRepo.UpsertRoutes(ctx, []modeldomain.Route{
-		{PublicID: "grok-imagine-image-quality-lite", Provider: account.ProviderWeb, UpstreamModel: "grok-imagine-image-quality", Capability: modeldomain.CapabilityImage, Enabled: true},
+		{PublicID: "grok-imagine-image", Provider: account.ProviderWeb, UpstreamModel: "grok-imagine-image-quality", Capability: modeldomain.CapabilityImage, Enabled: true},
 		{PublicID: "grok-imagine-image-lite", Provider: account.ProviderWeb, UpstreamModel: "grok-imagine-image", Capability: modeldomain.CapabilityImage, Enabled: true},
 		{PublicID: "grok-imagine-image-edit", Provider: account.ProviderWeb, UpstreamModel: "grok-imagine-image-edit", Capability: modeldomain.CapabilityImageEdit, Enabled: true},
 	}); err != nil {
@@ -2430,8 +2430,8 @@ func TestImageStreamPropagatesWithoutTouchingChatQuota(t *testing.T) {
 	service := NewService(modelRepo, auditRepo, accountService, clientkeyapp.NewService(keyRepo, nil, nil, 60, 4, nil), registry, selector, responseRepo, 1)
 
 	result, err := service.GenerateImage(ctx, ImageGenerationInput{
-		RequestID: "req-image-stream", ClientKey: key, PublicModel: "grok-imagine-image-quality-lite",
-		Prompt: "test", Count: 1, Resolution: "1k", ResponseFormat: "url", Streaming: true, PartialImages: 1,
+		RequestID: "req-image-stream", ClientKey: key, PublicModel: "grok-imagine-image",
+		Prompt: "test", Count: 1, Resolution: "2k", Quality: "medium", ResponseFormat: "url", Streaming: true, PartialImages: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2546,7 +2546,7 @@ func TestImageStreamPropagatesWithoutTouchingChatQuota(t *testing.T) {
 
 	adapter.FailGenerationWith(imagePublicCodeError("web_lite_image_parse_failed"))
 	if _, err := service.GenerateImage(ctx, ImageGenerationInput{
-		RequestID: "req-image-lite-parse-failed", ClientKey: key, PublicModel: "grok-imagine-image-quality-lite",
+		RequestID: "req-image-lite-parse-failed", ClientKey: key, PublicModel: "grok-imagine-image",
 		Prompt: "test", Count: 1, Resolution: "1k", ResponseFormat: "url",
 	}); err == nil {
 		t.Fatal("expected Web Lite parser failure")
@@ -2585,7 +2585,7 @@ func TestImageStreamPropagatesWithoutTouchingChatQuota(t *testing.T) {
 	attemptsBeforeFailure := len(adapter.Attempts())
 	adapter.FailWithEgress(infraegress.NewManager(relational.NewEgressRepository(database), testCipher(t)))
 	if _, err := service.GenerateImage(ctx, ImageGenerationInput{
-		RequestID: "req-image-failed", ClientKey: key, PublicModel: "grok-imagine-image-quality-lite",
+		RequestID: "req-image-failed", ClientKey: key, PublicModel: "grok-imagine-image",
 		Prompt: "test", Count: 1, Resolution: "1k", ResponseFormat: "url",
 	}); err == nil {
 		t.Fatal("expected image transport failure")

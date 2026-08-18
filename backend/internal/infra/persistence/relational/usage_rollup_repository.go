@@ -184,7 +184,7 @@ func usageRollupAggregateSelect(table string) string {
 			"COUNT(first_token_ms) AS first_token_samples, COALESCE(SUM(first_token_ms), 0) AS first_token_total_ms, " +
 			"COALESCE(SUM(CASE WHEN first_token_ms IS NOT NULL AND output_tokens > 0 AND duration_ms > first_token_ms THEN 1 ELSE 0 END), 0) AS throughput_samples, " +
 			"COALESCE(SUM(CASE WHEN first_token_ms IS NOT NULL AND output_tokens > 0 AND duration_ms > first_token_ms THEN output_tokens ELSE 0 END), 0) AS throughput_tokens, " +
-			"COALESCE(SUM(CASE WHEN first_token_ms IS NOT NULL AND output_tokens > 0 AND duration_ms > first_token_ms THEN duration_ms - first_token_ms ELSE 0 END), 0) AS generation_total_ms, " +
+			"COALESCE(SUM(CASE WHEN first_token_ms IS NOT NULL AND output_tokens > 0 AND duration_ms > first_token_ms THEN CASE WHEN reasoning_tokens > 0 AND duration_ms - first_token_ms < first_token_ms AND duration_ms - first_token_ms < 1000 THEN duration_ms ELSE duration_ms - first_token_ms END ELSE 0 END), 0) AS generation_total_ms, " +
 			"COALESCE(SUM(duration_ms), 0) AS duration_ms"
 	}
 	return "COALESCE(SUM(requests), 0) AS requests, COALESCE(SUM(successful_requests), 0) AS successful_requests, " +

@@ -6,6 +6,7 @@ import { AccountProviderToolbar } from "@/features/accounts/account-provider-too
 import type {
   AccountCleanupStatus,
   AccountDTO,
+  AccountEgressFilter,
   AccountProvider,
 } from "@/features/accounts/accounts-api";
 import { AccountsDataTable } from "@/features/accounts/accounts-data-table";
@@ -35,8 +36,8 @@ export type AccountsWorkspaceProps = {
   setTypeFilter: Dispatch<SetStateAction<string>>;
   statusFilter: string;
   setStatusFilter: Dispatch<SetStateAction<string>>;
-  egressFilter: string;
-  setEgressFilter: Dispatch<SetStateAction<string>>;
+  egressFilter: AccountEgressFilter;
+  setEgressFilter: Dispatch<SetStateAction<AccountEgressFilter>>;
   agreementFilter: string;
   setAgreementFilter: Dispatch<SetStateAction<string>>;
   associationFilter: string;

@@ -53,6 +53,10 @@ describe("ApiClient", () => {
       Promise.all([client.refreshAccessToken(), client.refreshAccessToken()]),
     ).resolves.toEqual(["refreshed", "refreshed"]);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://admin.example/api/admin/v1/auth/refresh",
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 
   it("uses the injected public base URL and preserves cancellation", async () => {
@@ -82,5 +86,65 @@ describe("ApiClient", () => {
 
     await expect(client.refreshAccessToken()).resolves.toBe("invalid");
     expect(invalidated).toHaveBeenCalledTimes(1);
+  });
+
+  it("adapts one successful JSON response into one terminal stream event", async () => {
+    const fetchImpl = vi.fn(() => Promise.resolve(jsonResponse("complete")));
+    const client = new ApiClient("https://admin.example", "https://public.example", fetchImpl);
+    const onEvent = vi.fn();
+
+    await client.eventStream(
+      "/stream",
+      { method: "POST", jsonFallbackEvent: "complete" },
+      decodeString,
+      onEvent,
+    );
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(onEvent).toHaveBeenCalledOnce();
+    expect(onEvent).toHaveBeenCalledWith({ event: "complete", data: "complete" });
+  });
+
+  it("preserves JSON error envelopes without retrying the stream request", async () => {
+    const fetchImpl = vi.fn(() =>
+      Promise.resolve(jsonResponse({ code: "invalidImport", message: "invalid file" }, 400)),
+    );
+    const client = new ApiClient("https://admin.example", "https://public.example", fetchImpl);
+    const onEvent = vi.fn();
+
+    const request = client.eventStream(
+      "/stream",
+      { method: "POST", jsonFallbackEvent: "complete" },
+      decodeString,
+      onEvent,
+    );
+
+    await expect(request).rejects.toEqual(
+      expect.objectContaining({ status: 400, code: "invalidImport" }),
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(onEvent).not.toHaveBeenCalled();
+  });
+
+  it("rejects JSON-like MIME types that are not the legacy JSON envelope contract", async () => {
+    const fetchImpl = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ data: "complete" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json-seq" },
+        }),
+      ),
+    );
+    const client = new ApiClient("https://admin.example", "https://public.example", fetchImpl);
+
+    await expect(
+      client.eventStream(
+        "/stream",
+        { method: "POST", jsonFallbackEvent: "complete" },
+        decodeString,
+        vi.fn(),
+      ),
+    ).rejects.toEqual(expect.objectContaining({ status: 200, code: "invalidResponse" }));
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });

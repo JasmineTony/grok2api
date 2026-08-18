@@ -189,7 +189,20 @@ jobs:
           export GROK2API_PORT="18000"
           docker compose config --quiet
       - name: Build local smoke image
-        run: docker build --platform linux/amd64 --tag grok2api-ci:local .
+        shell: bash
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3 4; do
+            echo "Building local smoke image (attempt ${attempt}/4)"
+            if docker build --platform linux/amd64 --tag grok2api-ci:local .; then
+              exit 0
+            fi
+            if [ "${attempt}" -lt 4 ]; then
+              sleep $((attempt * 15))
+            fi
+          done
+          echo "Docker image build failed after 4 attempts" >&2
+          exit 1
       - name: Run Compose health smoke
         shell: bash
         run: |

@@ -633,7 +633,7 @@ func (h *Handler) detectBuildAccounts(c *gin.Context) {
 	}
 	succeeded, failed, err := h.service.DetectBuildAccountsWithProgress(c.Request.Context(), ids, request.All, stream.ProgressObserver(), itemObserver)
 	if err != nil {
-		stream.WriteError("accountDetectFailed", "检测 Grok Build 账号失败")
+		stream.WriteServiceError("accountDetectFailed", err, http.StatusBadGateway, "检测 Grok Build 账号失败")
 		return
 	}
 	_ = stream.Write("complete", accountBatchResponse{Succeeded: succeeded, Failed: failed})
@@ -965,7 +965,7 @@ func (h *Handler) streamWebToConsoleSync(c *gin.Context, all bool, ids []uint64,
 	var total atomic.Int64
 	result, syncResult, err := h.runWebToConsoleSync(c.Request.Context(), all, ids, strategy, stream.PhaseProgressObserver("importing", &total), stream.SyncProgressObserver())
 	if err != nil {
-		stream.WriteError("accountConsoleSyncFailed", "Grok Web 账号同步到 Console 失败")
+		stream.WriteServiceError("accountConsoleSyncFailed", err, http.StatusInternalServerError, "Grok Web 账号同步到 Console 失败")
 		return
 	}
 	_ = stream.Write("complete", newAccountImportResponse(accountdomain.ProviderConsole, result, syncResult))
@@ -992,7 +992,7 @@ func (h *Handler) streamWebToBuildConversion(c *gin.Context, all bool, ids []uin
 	var total atomic.Int64
 	result, syncResult, err := h.runWebToBuildConversion(c.Request.Context(), all, ids, strategy, stream.PhaseProgressObserver("converting", &total), stream.SyncProgressObserver())
 	if err != nil {
-		stream.WriteError("accountConversionFailed", "Grok Web 账号转换失败")
+		stream.WriteServiceError("accountConversionFailed", err, http.StatusInternalServerError, "Grok Web 账号转换失败")
 		return
 	}
 	_ = stream.Write("complete", newBuildConversionResponse(result, syncResult))
@@ -1046,8 +1046,13 @@ func (s *accountEventStream) SyncProgressObserver() func(completed, total int) {
 	}
 }
 
-func (s *accountEventStream) WriteError(code, message string) {
-	_ = s.Write("error", gin.H{"code": code, "message": message})
+func (s *accountEventStream) WriteError(status int, code, message string) {
+	_ = s.Write("error", gin.H{"status": status, "code": code, "message": message})
+}
+
+func (s *accountEventStream) WriteServiceError(code string, err error, fallbackStatus int, fallbackMessage string) {
+	status, resolvedCode, message := resolveServiceError(code, err, fallbackStatus, fallbackMessage)
+	s.WriteError(status, resolvedCode, message)
 }
 
 func (s *accountEventStream) Write(event string, value any) error {
@@ -1142,7 +1147,7 @@ func (h *Handler) importFile(c *gin.Context, providerValue accountdomain.Provide
 	}
 	syncResult := pipeline.Finish(err != nil)
 	if err != nil {
-		stream.WriteError("authImportFailed", "导入账号失败")
+		stream.WriteServiceError("authImportFailed", err, http.StatusInternalServerError, "导入账号失败")
 		return
 	}
 	_ = stream.Write("complete", newAccountImportResponse(providerValue, result, syncResult))
@@ -1403,30 +1408,39 @@ func newAccountDeleteResponse(result accountapp.AccountDeleteResult) gin.H {
 	}
 }
 
-// writeServiceError 仅暴露明确的账号业务错误，未知内部错误使用稳定文案。
-func (h *Handler) writeServiceError(c *gin.Context, code string, err error, fallbackStatus int, fallbackMessage string) {
+func resolveServiceError(code string, err error, fallbackStatus int, fallbackMessage string) (int, string, string) {
 	switch {
 	case errors.Is(err, accountapp.ErrImportLimit):
-		response.Error(c, http.StatusBadRequest, "accountImportLimitExceeded", err.Error())
+		return http.StatusBadRequest, "accountImportLimitExceeded", err.Error()
 	case errors.Is(err, accountapp.ErrExportLimit):
-		response.Error(c, http.StatusBadRequest, "accountExportLimitExceeded", err.Error())
+		return http.StatusBadRequest, "accountExportLimitExceeded", err.Error()
 	case errors.Is(err, accountapp.ErrInvalidInput), errors.Is(err, accountapp.ErrInvalidImport):
-		response.Error(c, http.StatusBadRequest, code, err.Error())
+		return http.StatusBadRequest, code, err.Error()
 	case errors.Is(err, accountapp.ErrAccountPoolMismatch):
-		response.Error(c, http.StatusConflict, "accountPoolMismatch", err.Error())
+		return http.StatusConflict, "accountPoolMismatch", err.Error()
 	case errors.Is(err, accountapp.ErrConflict):
-		response.Error(c, http.StatusConflict, code, err.Error())
+		return http.StatusConflict, code, err.Error()
 	case errors.Is(err, accountapp.ErrNotFound):
-		response.Error(c, http.StatusNotFound, "accountNotFound", err.Error())
+		return http.StatusNotFound, "accountNotFound", err.Error()
+	case errors.Is(err, accountapp.ErrCredentialRefreshPermanent):
+		return http.StatusConflict, "accountReauthorizationRequired", "账号 OAuth 凭据已失效，请重新授权"
+	case accountapp.IsCredentialStorageError(err):
+		return http.StatusConflict, "credentialDecryptionFailed", "已保存账号凭据无法解密，请恢复原 credentialEncryptionKey 或重新导入账号"
 	case errors.Is(err, accountapp.ErrUnsupported):
-		response.Error(c, http.StatusConflict, "accountOperationUnsupported", err.Error())
+		return http.StatusConflict, "accountOperationUnsupported", err.Error()
 	case errors.Is(err, accountapp.ErrConversionBusy):
-		response.Error(c, http.StatusConflict, "accountConversionBusy", err.Error())
+		return http.StatusConflict, "accountConversionBusy", err.Error()
 	case errors.Is(err, accountapp.ErrWebAccountScriptBusy):
-		response.Error(c, http.StatusConflict, "webAccountScriptBusy", err.Error())
+		return http.StatusConflict, "webAccountScriptBusy", err.Error()
 	default:
-		response.Error(c, fallbackStatus, code, fallbackMessage)
+		return fallbackStatus, code, fallbackMessage
 	}
+}
+
+// writeServiceError 仅暴露明确的账号业务错误，未知内部错误使用稳定文案。
+func (h *Handler) writeServiceError(c *gin.Context, code string, err error, fallbackStatus int, fallbackMessage string) {
+	status, resolvedCode, message := resolveServiceError(code, err, fallbackStatus, fallbackMessage)
+	response.Error(c, status, resolvedCode, message)
 }
 
 func (h *Handler) refreshToken(c *gin.Context) {
@@ -1496,7 +1510,7 @@ func (h *Handler) refreshAllBilling(c *gin.Context) {
 	defer stream.Close()
 	succeeded, failed, err := h.service.SyncAllBillingWithProgress(c.Request.Context(), stream.ProgressObserver())
 	if err != nil {
-		stream.WriteError("billingRefreshFailed", "刷新账号额度失败")
+		stream.WriteServiceError("billingRefreshFailed", err, http.StatusBadGateway, "刷新账号额度失败")
 		return
 	}
 	_ = stream.Write("complete", accountBatchResponse{Succeeded: succeeded, Failed: failed})
@@ -1507,7 +1521,7 @@ func (h *Handler) refreshAllTokens(c *gin.Context) {
 	defer stream.Close()
 	succeeded, failed, skipped, err := h.service.RefreshAllTokensWithProgress(c.Request.Context(), stream.ProgressObserver())
 	if err != nil {
-		stream.WriteError("tokenRefreshFailed", "续期账号凭据失败")
+		stream.WriteServiceError("tokenRefreshFailed", err, http.StatusBadGateway, "续期账号凭据失败")
 		return
 	}
 	_ = stream.Write("complete", accountTokenRefreshResponse{Succeeded: succeeded, Failed: failed, Skipped: skipped})
@@ -1518,7 +1532,7 @@ func (h *Handler) refreshAllWebQuotas(c *gin.Context) {
 	defer stream.Close()
 	succeeded, failed, err := h.service.SyncAllWebQuotasWithProgress(c.Request.Context(), stream.ProgressObserver())
 	if err != nil {
-		stream.WriteError("quotaRefreshFailed", "同步 Grok Web 账号额度失败")
+		stream.WriteServiceError("quotaRefreshFailed", err, http.StatusBadGateway, "同步 Grok Web 账号额度失败")
 		return
 	}
 	_ = stream.Write("complete", accountBatchResponse{Succeeded: succeeded, Failed: failed})
@@ -1529,7 +1543,7 @@ func (h *Handler) refreshAllConsoleQuotas(c *gin.Context) {
 	defer stream.Close()
 	succeeded, failed, err := h.service.SyncAllConsoleQuotasWithProgress(c.Request.Context(), stream.ProgressObserver())
 	if err != nil {
-		stream.WriteError("quotaRefreshFailed", "同步 Grok Console 账号额度失败")
+		stream.WriteServiceError("quotaRefreshFailed", err, http.StatusBadGateway, "同步 Grok Console 账号额度失败")
 		return
 	}
 	_ = stream.Write("complete", accountBatchResponse{Succeeded: succeeded, Failed: failed})

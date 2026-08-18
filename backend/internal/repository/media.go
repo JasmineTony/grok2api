@@ -108,6 +108,7 @@ type MediaObjectStorage interface {
 	BeginVideoUpload(ctx context.Context, id, mimeType string) (tempPath, storageKey string, err error)
 	CommitVideoUpload(ctx context.Context, tempPath, storageKey string) error
 	AbortVideoUpload(ctx context.Context, tempPath string) error
+	Stat(ctx context.Context, storageKey string) error
 	Open(ctx context.Context, storageKey string) (io.ReadCloser, error)
 	Delete(ctx context.Context, storageKey string) error
 }

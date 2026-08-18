@@ -1,3 +1,17 @@
+import type {
+  AccountCleanupStatus,
+  AccountDTO,
+  AccountEgressPolicyDTO,
+  AccountEgressPolicyInput,
+  AccountProvider,
+  AccountState,
+  AccountStateEventDTO,
+  AccountSummaryDTO,
+  AccountUpdateInput,
+  BillingDTO,
+  DevicePollDTO,
+  DeviceSessionDTO,
+} from "@/features/accounts/account-contracts";
 import type { AccountTokenRefreshResultDTO } from "@/features/accounts/account-tasks-api";
 import { updateAccountsEnabledAction } from "@/shared/api/account-actions";
 import { type ApiClient, ApiError, type PaginatedDTO } from "@/shared/api/client";
@@ -19,202 +33,26 @@ import {
 import { i18n } from "@/shared/i18n";
 import type { SortOrder } from "@/shared/lib/table-sort";
 
-export type AccountProvider = "grok_build" | "grok_web" | "grok_console";
-export type BuildRouteMode = "auto" | "build" | "xai";
-export type AccountCleanupStatus = "cooldown" | "disabled" | "reauthRequired";
-export type AccountState =
-  "ready" | "degraded" | "cooldown" | "quota_exhausted" | "reauth_required" | "disabled";
+export type {
+  AccountCleanupStatus,
+  AccountDTO,
+  AccountEgressPolicyDTO,
+  AccountEgressPolicyInput,
+  AccountEgressPolicyStrategy,
+  AccountProvider,
+  AccountStateEventDTO,
+  AccountSummaryDTO,
+  AccountUpdateInput,
+  BillingDTO,
+  BuildRouteMode,
+  DevicePollDTO,
+  DeviceSessionDTO,
+  LinkedAccountDTO,
+  QuotaDTO,
+} from "@/features/accounts/account-contracts";
 
-export type BillingDTO = {
-  planCode?: string;
-  planName?: string;
-  monthlyLimit: number;
-  used: number;
-  remaining: number;
-  onDemandCap: number;
-  onDemandUsed: number;
-  prepaidBalance: number;
-  creditUsagePercent: number;
-  isUnifiedBillingUser: boolean;
-  onDemandEnabled?: boolean;
-  topUpMethod?: string;
-  usagePeriodType?: string;
-  usagePeriodStart?: string;
-  usagePeriodEnd?: string;
-  billingPeriodStart?: string;
-  billingPeriodEnd?: string;
-  history?: BillingHistoryDTO[];
-  syncedAt: string;
-};
-
-export type BillingHistoryDTO = {
-  year: number;
-  month: number;
-  periodType?: string;
-  periodStart?: string;
-  periodEnd?: string;
-  includedUsed: number;
-  onDemandUsed: number;
-  totalUsed: number;
-};
-
-export type QuotaDTO = {
-  type: "free" | "paid" | "unknown";
-  source:
-    | "unknown"
-    | "upstreamBilling"
-    | "upstreamExhaustion"
-    | "responseModel"
-    | "billingProfile"
-    | "buildSuperEntitlement";
-  confidence: "estimated" | "observed" | "confirmed" | "";
-  status: "active" | "waitingReset" | "probing";
-  unit?: "tokens" | "credits" | "percent";
-  used: number;
-  limit: number;
-  remaining: number;
-  usagePercent: number;
-  limitKnown: boolean;
-  windowHours?: number;
-  observed: boolean;
-  confirmed: boolean;
-  periodStart?: string;
-  periodEnd?: string;
-  exhaustedAt?: string;
-  nextProbeAt?: string;
-  lastConfirmedAt?: string;
-};
-
-export type AccountDTO = {
-  id: string;
-  provider: AccountProvider;
-  authType: "oauth" | "sso";
-  webTier?: "auto" | "basic" | "super" | "heavy";
-  webTierSyncedAt?: string;
-  nsfwEnabledAt?: string;
-  termsAcceptedAt?: string;
-  name: string;
-  email?: string;
-  userId?: string;
-  teamId?: string;
-  enabled: boolean;
-  authStatus: "active" | "reauthRequired";
-  state: AccountState;
-  stateChangedAt?: string;
-  expiresAt?: string;
-  refreshable: boolean;
-  cloudflareCookieConfigured: boolean;
-  buildSuperEntitled: boolean;
-  buildRouteMode: BuildRouteMode;
-  buildBotFlagged: boolean;
-  buildBotFlagSource?: number;
-  egressNodeId?: string;
-  egressAssignmentMode?: "manual" | "auto";
-  modelSyncFailed?: boolean;
-  refreshDueAt?: string;
-  lastRefreshAt?: string;
-  refreshFailureCount: number;
-  lastRefreshErrorStatus?: number;
-  lastRefreshErrorCode?: string;
-  lastRefreshErrorMessage?: string;
-  lastRefreshErrorResponse?: string;
-  priority: number;
-  maxConcurrent: number;
-  minimumRemaining: number;
-  failureCount: number;
-  cooldownUntil?: string;
-  lastError?: string;
-  lastUsedAt?: string;
-  linkedAccountId?: string;
-  linkedAccountName?: string;
-  linkedProvider?: "grok_build" | "grok_web";
-  linkedAccounts?: LinkedAccountDTO[];
-  createdAt: string;
-  billing?: BillingDTO;
-  quota: QuotaDTO;
-  quotaWindows?: Array<{
-    mode: string;
-    remaining: number;
-    total: number;
-    usagePercent: number;
-    breakdown?: Array<{ productCode: number; usagePercent: number }>;
-    windowSeconds: number;
-    resetAt?: string;
-    syncedAt?: string;
-    source: "default" | "estimated" | "upstream";
-  }>;
-};
-
-export type AccountStateEventDTO = {
-  id: string;
-  fromState: AccountState;
-  toState: AccountState;
-  event: string;
-  reason?: string;
-  createdAt: string;
-};
-
-export type AccountEgressPolicyStrategy = "inherit" | "node" | "direct";
-export type AccountEgressPolicyDTO = {
-  accountId: string;
-  strategy: AccountEgressPolicyStrategy;
-  egressNodeId?: string;
-  allowDirectFallback: boolean;
-  createdAt?: string;
-  updatedAt?: string;
-};
-export type AccountEgressPolicyInput = {
-  strategy: AccountEgressPolicyStrategy;
-  egressNodeId?: string;
-  allowDirectFallback: boolean;
-};
-
-export type LinkedAccountDTO = {
-  id: string;
-  provider: "grok_build" | "grok_web" | "grok_console";
-  name: string;
-  email?: string;
-  userId?: string;
-};
-
-export type AccountUpdateInput = {
-  name: string;
-  enabled: boolean;
-  priority: number;
-  maxConcurrent: number;
-  minimumRemaining: number;
-  cloudflareCookies?: string;
-  clearCloudflareCookies?: boolean;
-  buildSuperEntitled?: boolean;
-  buildRouteMode?: BuildRouteMode;
-};
-
-export type AccountSummaryDTO = {
-  total: number;
-  available: number;
-  recovering: number;
-  attention: number;
-  risk: number;
-  providers: Record<AccountProvider, { total: number; available: number }>;
-  recovery: { cooldown: number; waitingReset: number; probing: number };
-  issues: { disabled: number; reauthRequired: number };
-};
-
-export type DeviceSessionDTO = {
-  sessionId: string;
-  userCode: string;
-  verificationUri: string;
-  verificationUriComplete?: string;
-  intervalSeconds: number;
-  expiresAt: string;
-};
-
-export type DevicePollDTO = {
-  status: "pending" | "succeeded" | "syncFailed";
-  account?: AccountDTO;
-  synced?: number;
-  syncFailed?: number;
-};
+type AccountWireDTO = Omit<AccountDTO, "state"> & { state?: AccountState };
+type DevicePollWireDTO = Omit<DevicePollDTO, "account"> & { account?: AccountWireDTO };
 
 const billingHistoryValidator = hasShape({
   year: isNumber,
@@ -323,7 +161,7 @@ const accountStateEventValidator = hasShape({
   reason: isOptional(isString),
   createdAt: isString,
 });
-const accountValidator = hasShape({
+const accountWireValidator = hasShape({
   id: isString,
   provider: isOneOf("grok_build", "grok_web", "grok_console"),
   authType: isOneOf("oauth", "sso"),
@@ -337,7 +175,9 @@ const accountValidator = hasShape({
   teamId: isOptional(isString),
   enabled: isBoolean,
   authStatus: isOneOf("active", "reauthRequired"),
-  state: isOneOf("ready", "degraded", "cooldown", "quota_exhausted", "reauth_required", "disabled"),
+  state: isOptional(
+    isOneOf("ready", "degraded", "cooldown", "quota_exhausted", "reauth_required", "disabled"),
+  ),
   stateChangedAt: isOptional(isString),
   expiresAt: isOptional(isString),
   refreshable: isBoolean,
@@ -373,7 +213,8 @@ const accountValidator = hasShape({
   quotaWindows: isOptional(isArrayOf(quotaWindowValidator)),
 });
 const decodeBilling = createValidatedDecoder<BillingDTO>("billing", billingValidator);
-const decodeAccount = createValidatedDecoder<AccountDTO>("account", accountValidator);
+const decodeAccountWire = createValidatedDecoder<AccountWireDTO>("account", accountWireValidator);
+const decodeAccount = (value: unknown): AccountDTO => normalizeAccount(decodeAccountWire(value));
 const decodeAccountStateEvents = createValidatedDecoder<AccountStateEventDTO[]>(
   "account state events",
   isArrayOf(accountStateEventValidator),
@@ -382,7 +223,11 @@ const decodeAccountEgressPolicy = createValidatedDecoder<AccountEgressPolicyDTO>
   "account egress policy",
   accountEgressPolicyValidator,
 );
-const decodeAccountPage = createPaginatedDecoder<AccountDTO>(accountValidator);
+const decodeAccountPageWire = createPaginatedDecoder<AccountWireDTO>(accountWireValidator);
+const decodeAccountPage = (value: unknown): PaginatedDTO<AccountDTO> => {
+  const page = decodeAccountPageWire(value);
+  return { ...page, items: page.items.map(normalizeAccount) };
+};
 const decodeAccountSummary = createObjectDecoder<AccountSummaryDTO>("account summary", {
   total: isNumber,
   available: isNumber,
@@ -401,12 +246,36 @@ const decodeDeviceSession = createObjectDecoder<DeviceSessionDTO>("device sessio
   intervalSeconds: isNumber,
   expiresAt: isString,
 });
-const decodeDevicePoll = createObjectDecoder<DevicePollDTO>("device poll", {
+const decodeDevicePollWire = createObjectDecoder<DevicePollWireDTO>("device poll", {
   status: isOneOf("pending", "succeeded", "syncFailed"),
-  account: isOptional(accountValidator),
+  account: isOptional(accountWireValidator),
   synced: isOptional(isNumber),
   syncFailed: isOptional(isNumber),
 });
+const decodeDevicePoll = (value: unknown): DevicePollDTO => {
+  const result = decodeDevicePollWire(value);
+  const { account, ...response } = result;
+  return account === undefined ? response : { ...response, account: normalizeAccount(account) };
+};
+
+function normalizeAccount(value: AccountWireDTO): AccountDTO {
+  if (value.state !== undefined) return value as AccountDTO;
+  let state: AccountState = "ready";
+  if (!value.enabled) state = "disabled";
+  else if (value.authStatus === "reauthRequired") state = "reauth_required";
+  else if (
+    value.quota.status === "waitingReset" ||
+    value.quotaWindows?.some((window) => window.mode === "console" && window.remaining <= 0)
+  )
+    state = "quota_exhausted";
+  else if (
+    value.cooldownUntil !== undefined &&
+    Number.isFinite(Date.parse(value.cooldownUntil)) &&
+    Date.parse(value.cooldownUntil) > Date.now()
+  )
+    state = "cooldown";
+  return { ...value, state };
+}
 
 type ListAccountsInput = {
   page: number;
@@ -414,7 +283,7 @@ type ListAccountsInput = {
   search?: string;
   type?: string;
   status?: string;
-  egress?: string;
+  egress?: AccountEgressFilter;
   renewal?: string;
   risk?: string;
   agreement?: string;
@@ -423,6 +292,8 @@ type ListAccountsInput = {
   sortBy?: string;
   sortOrder?: SortOrder;
 };
+
+export type AccountEgressFilter = "" | "bound" | "unbound" | `node:${number}` | `source:${number}`;
 
 export function listAccounts(
   client: ApiClient,

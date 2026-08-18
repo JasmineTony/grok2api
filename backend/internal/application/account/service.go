@@ -52,6 +52,14 @@ var (
 	credentialRefreshPairPattern   = regexp.MustCompile(`(?i)(access_token|refresh_token|id_token|token|authorization|cookie|secret|password|credential)\s*[:=]\s*([^&\s"'<>]+)`)
 )
 
+func IsCredentialStorageError(err error) bool {
+	if errors.Is(err, security.ErrCredentialDecrypt) {
+		return true
+	}
+	var refreshErr *provider.CredentialRefreshError
+	return errors.As(err, &refreshErr) && strings.TrimSpace(refreshErr.Code) == "credential_decrypt_failed"
+}
+
 const (
 	// estimatedFreeTokenLimit is only a fallback until an upstream exhaustion
 	// response supplies the account-specific actual/limit pair.
@@ -1841,6 +1849,8 @@ func (s *Service) convertWebAccountsToBuild(ctx context.Context, ids []uint64, s
 	s.logBatchSummary("web_to_build", s.conversionPool, summary, runErr)
 	result := BuildConversionResult{BuildAccountIDs: make([]uint64, 0, len(ids))}
 	seen := make(map[uint64]struct{}, len(ids))
+	var credentialStorageErr error
+	credentialStorageFailures := 0
 	for index, execution := range results {
 		item := execution.Value
 		if execution.Err != nil {
@@ -1849,6 +1859,12 @@ func (s *Service) convertWebAccountsToBuild(ctx context.Context, ids []uint64, s
 		}
 		if item.err != nil {
 			result.Failed++
+			if IsCredentialStorageError(item.err) {
+				credentialStorageFailures++
+				if credentialStorageErr == nil {
+					credentialStorageErr = item.err
+				}
+			}
 			s.logger.Warn("web_account_build_conversion_failed", "account_id", item.accountID, "error", item.err)
 			continue
 		}
@@ -1871,6 +1887,9 @@ func (s *Service) convertWebAccountsToBuild(ctx context.Context, ids []uint64, s
 	}
 	if observerErr != nil {
 		return result, observerErr
+	}
+	if result.Failed > 0 && result.Created == 0 && result.Linked == 0 && credentialStorageFailures == result.Failed {
+		return result, credentialStorageErr
 	}
 	return result, nil
 }
@@ -2440,6 +2459,13 @@ func (s *Service) RefreshToken(ctx context.Context, id uint64) (View, error) {
 		return View{}, mapRepositoryError(err)
 	}
 	if _, err := s.ensureCredential(ctx, value, ensureCredentialOptions{force: true, bypassCooldown: true, retryPermanentOnce: true}); err != nil {
+		var refreshErr *provider.CredentialRefreshError
+		if errors.As(err, &refreshErr) && refreshErr.Permanent {
+			if code := strings.TrimSpace(refreshErr.Code); code != "" {
+				return View{}, fmt.Errorf("%w: %s", ErrCredentialRefreshPermanent, code)
+			}
+			return View{}, ErrCredentialRefreshPermanent
+		}
 		return View{}, err
 	}
 	return s.Get(ctx, id)
@@ -3932,10 +3958,11 @@ func (s *Service) detectBuildAccount(ctx context.Context, id uint64) BuildDetect
 		item.Reason = "仅 Grok Build 账号支持可用性检测"
 		return item
 	}
-	value, err = s.EnsureCredential(ctx, value, false)
+	refreshed, err := s.EnsureCredential(ctx, value, false)
 	if err != nil {
 		return s.finishBuildDetectCredentialError(ctx, value, err)
 	}
+	value = refreshed
 	billing, err := s.loadDetectBilling(ctx, id)
 	if err != nil {
 		item.Reason = err.Error()
@@ -4008,6 +4035,11 @@ func (s *Service) finishBuildDetectCredentialError(ctx context.Context, value ac
 		Email:     value.Email,
 		Outcome:   BuildDetectOutcomeFailed,
 		Reason:    err.Error(),
+	}
+	if IsCredentialStorageError(err) {
+		item.Reason = "已保存账号凭据无法解密，请恢复原 credentialEncryptionKey 或重新导入账号"
+		item.HTTPStatus = http.StatusConflict
+		return item
 	}
 	var refreshErr *provider.CredentialRefreshError
 	if errors.Is(err, ErrCredentialRefreshPermanent) || errors.As(err, &refreshErr) && refreshErr.Permanent {
@@ -4290,14 +4322,26 @@ func (s *Service) runAccountBatch(ctx context.Context, operation string, ids []u
 			}
 		}
 	})
+	var credentialStorageErr error
+	credentialStorageFailures := 0
 	for index, result := range results {
 		var panicErr *batch.PanicError
 		if errors.As(result.Err, &panicErr) {
 			s.logger.Error("account_bulk_task_panicked", "operation", operation, "account_id", ids[index], "error", panicErr, "stack", string(panicErr.Stack))
 		}
+		if IsCredentialStorageError(result.Err) {
+			credentialStorageFailures++
+			if credentialStorageErr == nil {
+				credentialStorageErr = result.Err
+			}
+		}
 	}
-	s.logBatchSummary(operation, pool, summary, err)
-	return summary.Succeeded, summary.Failed, errors.Join(err, progressErr)
+	resultErr := errors.Join(err, progressErr)
+	if resultErr == nil && summary.Succeeded == 0 && summary.Failed > 0 && credentialStorageFailures == summary.Failed {
+		resultErr = credentialStorageErr
+	}
+	s.logBatchSummary(operation, pool, summary, resultErr)
+	return summary.Succeeded, summary.Failed, resultErr
 }
 
 func (s *Service) logBatchSummary(operation string, pool *batch.Pool, summary batch.Summary, err error) {

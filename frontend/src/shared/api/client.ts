@@ -29,6 +29,7 @@ type RequestOptions = Omit<RequestInit, "body" | "signal"> & {
   signal?: AbortSignal | null | undefined;
   authenticated?: boolean;
   retryAuth?: boolean;
+  jsonFallbackEvent?: string;
 };
 
 export type PublicRequestOptions = Omit<RequestInit, "body" | "headers" | "signal"> & {
@@ -109,7 +110,7 @@ export class ApiClient {
     decode: ApiDecoder<T>,
     onEvent: (value: ApiStreamEvent<T>) => void,
   ): Promise<void> {
-    const { authenticated = true, retryAuth = true } = options;
+    const { authenticated = true, retryAuth = true, jsonFallbackEvent } = options;
     const response = await this.sendAdminRequest(path, options);
     if (response.status === 401 && authenticated && retryAuth) {
       const refreshResult = await this.refreshAccessToken();
@@ -118,10 +119,14 @@ export class ApiClient {
       if (refreshResult === "unavailable") throw sessionRefreshUnavailable();
     }
     if (!response.ok) await parseResponse(response, decodeNever);
-    if (
-      !response.body ||
-      !response.headers.get("Content-Type")?.toLowerCase().startsWith("text/event-stream")
-    ) {
+    const contentType = ((response.headers.get("Content-Type") ?? "").split(";", 1).at(0) ?? "")
+      .trim()
+      .toLowerCase();
+    if (jsonFallbackEvent && contentType === "application/json") {
+      onEvent({ event: jsonFallbackEvent, data: await parseResponse(response, decode) });
+      return;
+    }
+    if (!response.body || contentType !== "text/event-stream") {
       await response.body?.cancel().catch(() => undefined);
       throw invalidResponse(response.status);
     }
@@ -228,12 +233,14 @@ export class ApiClient {
     const {
       authenticated = true,
       retryAuth: _retryAuth,
+      jsonFallbackEvent: _jsonFallbackEvent,
       body,
       headers,
       signal,
       ...requestInit
     } = options;
     void _retryAuth;
+    void _jsonFallbackEvent;
     const requestHeaders = new Headers(headers);
     let requestBody: BodyInit | undefined;
     if (body instanceof FormData || typeof body === "string" || body instanceof Blob)
