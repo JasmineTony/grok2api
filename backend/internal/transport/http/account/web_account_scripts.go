@@ -85,7 +85,7 @@ func (h *Handler) runWebAccountScripts(c *gin.Context) {
 		succeeded, failed, err = h.service.RunWebAccountScriptsWithProgress(c.Request.Context(), ids, request.Actions.options(), stream.ProgressObserver())
 	}
 	if err != nil {
-		stream.WriteError("webAccountScriptFailed", "执行 Grok Web 账号脚本失败")
+		stream.WriteServiceError("webAccountScriptFailed", err, http.StatusBadGateway, "执行 Grok Web 账号脚本失败")
 		return
 	}
 	_ = stream.Write("complete", accountBatchResponse{Succeeded: succeeded, Failed: failed})
