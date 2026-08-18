@@ -17,6 +17,7 @@ import (
 	accountsyncapp "github.com/chenyme/grok2api/backend/internal/application/accountsync"
 	accountdomain "github.com/chenyme/grok2api/backend/internal/domain/account"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
+	"github.com/chenyme/grok2api/backend/internal/infra/security"
 	"github.com/gin-gonic/gin"
 )
 
@@ -121,6 +122,26 @@ func TestResolveServiceErrorPreservesBusinessStatus(t *testing.T) {
 	status, code, message = resolveServiceError("quotaRefreshFailed", fmt.Errorf("provider down"), http.StatusBadGateway, "failed")
 	if status != http.StatusBadGateway || code != "quotaRefreshFailed" || message != "failed" {
 		t.Fatalf("fallback error = %d, %q, %q", status, code, message)
+	}
+
+	status, code, message = resolveServiceError(
+		"tokenRefreshFailed",
+		fmt.Errorf("%w: invalid_grant", accountapp.ErrCredentialRefreshPermanent),
+		http.StatusBadGateway,
+		"failed",
+	)
+	if status != http.StatusConflict || code != "accountReauthorizationRequired" || message != "账号 OAuth 凭据已失效，请重新授权" {
+		t.Fatalf("permanent refresh error = %d, %q, %q", status, code, message)
+	}
+
+	status, code, message = resolveServiceError(
+		"quotaRefreshFailed",
+		fmt.Errorf("sync quota: %w", security.ErrCredentialDecrypt),
+		http.StatusBadGateway,
+		"failed",
+	)
+	if status != http.StatusConflict || code != "credentialDecryptionFailed" || message != "已保存账号凭据无法解密，请恢复原 credentialEncryptionKey 或重新导入账号" {
+		t.Fatalf("credential decrypt error = %d, %q, %q", status, code, message)
 	}
 }
 

@@ -89,6 +89,57 @@ func TestFinishBuildDetectCredentialErrorClassifiesPermanentRefreshAsInvalid(t *
 	if item.Outcome != BuildDetectOutcomeFailed {
 		t.Fatalf("temporary error outcome = %s, want failed", item.Outcome)
 	}
+
+	item = service.finishBuildDetectCredentialError(ctx, credential, security.ErrCredentialDecrypt)
+	if item.Outcome != BuildDetectOutcomeFailed || item.HTTPStatus != http.StatusConflict || item.Reason != "已保存账号凭据无法解密，请恢复原 credentialEncryptionKey 或重新导入账号" {
+		t.Fatalf("credential decrypt item = %#v", item)
+	}
+}
+
+func TestDetectBuildAccountPreservesIDWhenPermanentRefreshIsBlocked(t *testing.T) {
+	ctx := context.Background()
+	database, err := relational.OpenSQLite(ctx, filepath.Join(t.TempDir(), "detect-permanent-refresh.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if err := database.InitializeSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	cipher, err := security.NewCipher(base64.StdEncoding.EncodeToString(make([]byte, 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	accessToken, err := cipher.Encrypt("expired-access-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := relational.NewAccountRepository(database)
+	credential, _, err := repo.UpsertByIdentity(ctx, accountdomain.Credential{
+		Provider: accountdomain.ProviderBuild, Name: "permanent-refresh", SourceKey: "permanent-refresh",
+		EncryptedAccessToken: accessToken, Enabled: true, AuthStatus: accountdomain.AuthStatusActive,
+		RefreshPermanent: true, LastRefreshErrorCode: "invalid_grant", MaxConcurrent: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(repo, nil, nil, nil, provider.NewRegistry(&credentialRefreshAdapter{}), cipher, nil)
+
+	item := service.detectBuildAccount(ctx, credential.ID)
+
+	if item.AccountID != credential.ID {
+		t.Fatalf("account id = %d, want %d", item.AccountID, credential.ID)
+	}
+	if item.Outcome != BuildDetectOutcomeInvalid {
+		t.Fatalf("outcome = %s, want invalid: %#v", item.Outcome, item)
+	}
+	stored, err := repo.Get(ctx, credential.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.AuthStatus != accountdomain.AuthStatusReauthRequired {
+		t.Fatalf("auth status = %s, want reauthRequired", stored.AuthStatus)
+	}
 }
 
 func TestFinishBuildDetectResponseUsesScopedFailureState(t *testing.T) {

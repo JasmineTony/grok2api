@@ -1029,6 +1029,8 @@ export const zhCN = {
         accountImportLimitExceeded: "账号凭据超过 10000 个，无法单次导入",
         accountListFailed: "获取账号列表失败",
         accountNotFound: "账号不存在",
+        accountReauthorizationRequired: "账号凭据已失效，请重新授权",
+        credentialDecryptionFailed: "已保存账号凭据无法解密，请恢复原 credentialEncryptionKey 或重新导入账号",
         accountUpdateFailed: "更新账号失败",
         webAccountScriptFailed: "执行 Grok Web 账号脚本失败",
         webAccountScriptBusy: "该账号正在执行账号脚本",

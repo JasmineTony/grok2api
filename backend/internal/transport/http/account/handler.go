@@ -1400,6 +1400,10 @@ func resolveServiceError(code string, err error, fallbackStatus int, fallbackMes
 		return http.StatusConflict, code, err.Error()
 	case errors.Is(err, accountapp.ErrNotFound):
 		return http.StatusNotFound, "accountNotFound", err.Error()
+	case errors.Is(err, accountapp.ErrCredentialRefreshPermanent):
+		return http.StatusConflict, "accountReauthorizationRequired", "账号 OAuth 凭据已失效，请重新授权"
+	case accountapp.IsCredentialStorageError(err):
+		return http.StatusConflict, "credentialDecryptionFailed", "已保存账号凭据无法解密，请恢复原 credentialEncryptionKey 或重新导入账号"
 	case errors.Is(err, accountapp.ErrUnsupported):
 		return http.StatusConflict, "accountOperationUnsupported", err.Error()
 	case errors.Is(err, accountapp.ErrConversionBusy):

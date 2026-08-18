@@ -99,3 +99,4 @@ Templates are available in [`templates/`](./templates/).
 | 2026-08-17 41 - Upstream architecture and performance convergence | [Plan](./2026-08-17-41-upstream-architecture-performance/PLAN.md) | [Result](./2026-08-17-41-upstream-architecture-performance/RESULT.md) | Complete |
 | 2026-08-17 42 - Provider client versions and account action parity | [Plan](./2026-08-17-42-provider-client-account-actions/PLAN.md) | [Result](./2026-08-17-42-provider-client-account-actions/RESULT.md) | Complete |
 | 2026-08-17 43 - Live account request error diagnosis | [Plan](./2026-08-17-43-live-account-request-errors/PLAN.md) | [Result](./2026-08-17-43-live-account-request-errors/RESULT.md) | Complete |
+| 2026-08-18 44 - Live account request root-cause verification | [Plan](./2026-08-18-44-live-account-request-root-cause/PLAN.md) | [Result](./2026-08-18-44-live-account-request-root-cause/RESULT.md) | Complete |

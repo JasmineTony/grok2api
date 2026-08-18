@@ -43,7 +43,7 @@ PostgreSQL DSN 也可通过非空的 `GROK2API_DATABASE_URL` 注入；它的优�
 | 本地开发 / 单实例 | SQLite | Memory |
 | 多实例部署 | PostgreSQL | Redis |
 
-关系型数据库保存账号、凭据、模型、额度、客户端密钥、审计和媒体任务；Redis 仅承载限流、并发租约、粘滞路由、分布式锁和事件通知。敏感凭据使用 `credentialEncryptionKey` 加密，该密钥必须长期保留且不得提交到版本库。
+关系型数据库保存账号、凭据、模型、额度、客户端密钥、审计和媒体任务；Redis 仅承载限流、并发租约、粘滞路由、分布式锁和事件通知。敏感凭据使用 `credentialEncryptionKey` 加密，该密钥必须与数据库一起长期保留且不得提交到版本库；密钥不匹配时账号接口会返回 `credentialDecryptionFailed`，应恢复原密钥或重新导入账号。
 
 运行设置与代理参数由管理端设置页维护；数据库驱动、监听地址、Redis、JWT 与加密密钥仍通过 YAML 配置并在启动时生效。
 

@@ -14,6 +14,8 @@ import (
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
 	"github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/runtime/memory"
+	"github.com/chenyme/grok2api/backend/internal/infra/security"
+	"github.com/chenyme/grok2api/backend/internal/pkg/batch"
 	"github.com/chenyme/grok2api/backend/internal/repository"
 )
 
@@ -424,6 +426,13 @@ func TestCredentialRefreshFailureDistinguishesTransientAndPermanent(t *testing.T
 	if finalState.AuthStatus != accountdomain.AuthStatusReauthRequired {
 		t.Fatalf("permanent with expired token should be reauthRequired: %#v", finalState)
 	}
+	refreshTokenCount := adapter.refreshCount.Load()
+	if _, err := service.RefreshToken(ctx, finalState.ID); !errors.Is(err, ErrCredentialRefreshPermanent) {
+		t.Fatalf("manual RefreshToken error = %v, want ErrCredentialRefreshPermanent", err)
+	}
+	if adapter.refreshCount.Load() != refreshTokenCount+1 {
+		t.Fatalf("RefreshToken did not issue exactly one oauth request: before=%d after=%d", refreshTokenCount, adapter.refreshCount.Load())
+	}
 	manualCount := adapter.refreshCount.Load()
 	manualOptions := ensureCredentialOptions{force: true, bypassCooldown: true, retryPermanentOnce: true}
 	if _, err := service.ensureCredential(ctx, finalState, manualOptions); err == nil {
@@ -489,6 +498,40 @@ func TestCredentialDecryptFailedAllowsRetryAfterKeyRecovery(t *testing.T) {
 	}
 	if adapter.refreshCount.Load() != count {
 		t.Fatalf("invalid_grant forced another oauth call: before=%d after=%d", count, adapter.refreshCount.Load())
+	}
+}
+
+func TestIsCredentialStorageErrorRecognizesDirectAndRefreshErrors(t *testing.T) {
+	direct := fmt.Errorf("load account credential: %w", security.ErrCredentialDecrypt)
+	if !IsCredentialStorageError(direct) {
+		t.Fatalf("direct decrypt error was not classified: %v", direct)
+	}
+	refresh := &provider.CredentialRefreshError{
+		Code:  "credential_decrypt_failed",
+		Cause: direct,
+	}
+	if !IsCredentialStorageError(refresh) {
+		t.Fatalf("refresh decrypt error was not classified: %v", refresh)
+	}
+	if IsCredentialStorageError(errors.New("upstream unavailable")) {
+		t.Fatal("unrelated error was classified as credential storage error")
+	}
+}
+
+func TestRunAccountBatchReturnsCredentialStorageErrorWhenAllFail(t *testing.T) {
+	service := NewService(nil, nil, nil, nil, nil, nil, nil)
+	succeeded, failed, err := service.runAccountBatch(
+		context.Background(),
+		"credential_storage_test",
+		[]uint64{1, 2},
+		batch.NewPool(2),
+		nil,
+		func(context.Context, uint64) error {
+			return fmt.Errorf("load credential: %w", security.ErrCredentialDecrypt)
+		},
+	)
+	if succeeded != 0 || failed != 2 || !IsCredentialStorageError(err) {
+		t.Fatalf("batch result = %d/%d err=%v", succeeded, failed, err)
 	}
 }
 
