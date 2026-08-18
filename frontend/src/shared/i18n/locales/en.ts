@@ -737,6 +737,8 @@ export const en = {
         accountImportLimitExceeded: "More than 10,000 accounts cannot be imported at once",
         accountListFailed: "Failed to load accounts",
         accountNotFound: "Account not found",
+        accountReauthorizationRequired: "The account credential has expired. Reauthorize the account.",
+        credentialDecryptionFailed: "Stored account credentials cannot be decrypted. Restore the original credentialEncryptionKey or re-import the accounts.",
         accountUpdateFailed: "Failed to update the account",
         webAccountScriptFailed: "Failed to run Grok Web account scripts",
         webAccountScriptBusy: "Account scripts are already running for this account",
