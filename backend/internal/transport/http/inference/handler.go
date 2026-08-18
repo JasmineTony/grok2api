@@ -34,12 +34,15 @@ import (
 )
 
 type Handler struct {
-	gateway          *gateway.Service
-	models           *modelapp.Service
-	maxBodyBytes     int64
-	publicAPIBaseURL string
-	publicBaseURL    func() string
-	requestPolicies  *requestpolicyapp.Service
+	gateway                  *gateway.Service
+	models                   *modelapp.Service
+	maxBodyBytes             int64
+	publicAPIBaseURL         string
+	publicBaseURL            func() string
+	requestPolicies          *requestpolicyapp.Service
+	voiceWSIdleTimeout       time.Duration
+	voiceWSMessagesPerSecond int
+	voiceWSMessageBurst      int
 }
 
 const (
@@ -77,11 +80,28 @@ func NewHandler(gatewayService *gateway.Service, models *modelapp.Service, maxBo
 	if len(publicAPIBaseURL) > 0 {
 		baseURL = strings.TrimRight(strings.TrimSpace(publicAPIBaseURL[0]), "/")
 	}
-	return &Handler{gateway: gatewayService, models: models, maxBodyBytes: maxBodyBytes, publicAPIBaseURL: baseURL}
+	return &Handler{
+		gateway: gatewayService, models: models, maxBodyBytes: maxBodyBytes, publicAPIBaseURL: baseURL,
+		voiceWSIdleTimeout: defaultVoiceWSIdleTimeout, voiceWSMessagesPerSecond: defaultVoiceWSMessagesPerSecond,
+		voiceWSMessageBurst: defaultVoiceWSMessageBurst,
+	}
 }
 
 func (h *Handler) SetRequestPolicies(service *requestpolicyapp.Service) *Handler {
 	h.requestPolicies = service
+	return h
+}
+
+func (h *Handler) SetVoiceWebSocketPolicy(idleTimeout time.Duration, messagesPerSecond, messageBurst int) *Handler {
+	if idleTimeout > 0 {
+		h.voiceWSIdleTimeout = idleTimeout
+	}
+	if messagesPerSecond > 0 {
+		h.voiceWSMessagesPerSecond = messagesPerSecond
+	}
+	if messageBurst >= h.voiceWSMessagesPerSecond {
+		h.voiceWSMessageBurst = messageBurst
+	}
 	return h
 }
 
@@ -2061,6 +2081,7 @@ func writeGatewayError(c *gin.Context, err error) {
 	message := "上游服务暂不可用"
 	var upstreamFailure *gateway.UpstreamFailure
 	var selectionFailure *gateway.SelectionUnavailableError
+	providerCode, hasProviderCode := provider.ErrorPublicCode(err)
 	switch {
 	case errors.Is(err, gateway.ErrLedgerUnavailable):
 		status, code = http.StatusServiceUnavailable, "ledger_unavailable"
@@ -2102,6 +2123,8 @@ func writeGatewayError(c *gin.Context, err error) {
 		}
 	case errors.As(err, &selectionFailure):
 		status, code, message = selectionErrorResponse(c, selectionFailure)
+	case hasProviderCode:
+		code = providerCode
 	case errors.Is(err, gateway.ErrResponseAccountUnavailable), errors.Is(err, gateway.ErrNoAvailableAccount):
 		status, code = http.StatusServiceUnavailable, "upstream_unavailable"
 		message = "当前没有可用的上游账号"

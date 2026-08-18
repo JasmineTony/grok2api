@@ -262,10 +262,16 @@ func (s *Service) createAcknowledged(ctx context.Context, value auditdomain.Reco
 		return err
 	}
 	if !s.started.Load() || s.stopped.Load() {
+		recordBillingSettlementMetric(value, "writer_unavailable")
 		return ErrWriterUnavailable
 	}
 	request := auditWriteRequest{record: value, ack: make(chan error, 1)}
 	if err := s.enqueueAcknowledged(ctx, request); err != nil {
+		outcome := "enqueue_failed"
+		if errors.Is(err, ErrWriterUnavailable) {
+			outcome = "writer_unavailable"
+		}
+		recordBillingSettlementMetric(value, outcome)
 		return err
 	}
 	select {
@@ -277,13 +283,24 @@ func (s *Service) createAcknowledged(ctx context.Context, value auditdomain.Reco
 		labels := perfmetrics.Labels{Subsystem: "audit", Operation: string(value.Operation), Stage: "ack", Outcome: outcome}
 		perfmetrics.Default.Inc("audit_records_total", labels)
 		perfmetrics.Default.ObserveDuration("audit_ack_duration_us", labels, time.Since(startedAt))
+		recordBillingSettlementMetric(value, outcome)
 		return err
 	case <-ctx.Done():
 		labels := perfmetrics.Labels{Subsystem: "audit", Operation: string(value.Operation), Stage: "ack", Outcome: "timeout"}
 		perfmetrics.Default.Inc("audit_records_total", labels)
 		perfmetrics.Default.ObserveDuration("audit_ack_duration_us", labels, time.Since(startedAt))
+		recordBillingSettlementMetric(value, "timeout")
 		return ctx.Err()
 	}
+}
+
+func recordBillingSettlementMetric(value auditdomain.Record, outcome string) {
+	if value.EstimatedCostInUSDTicks <= 0 {
+		return
+	}
+	perfmetrics.Default.Inc("billing_reservation_total", perfmetrics.Labels{
+		Subsystem: "billing", Operation: "settle", Outcome: outcome,
+	})
 }
 
 func (s *Service) tryEnqueue(request auditWriteRequest) error {

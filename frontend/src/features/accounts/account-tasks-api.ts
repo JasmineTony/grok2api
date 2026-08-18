@@ -6,7 +6,15 @@ import {
 import { type ApiClient, ApiError } from "@/shared/api/client";
 
 export type { AccountTaskProgressDTO } from "@/features/accounts/account-task-progress";
-import { createObjectDecoder, isNumber, isOneOf, isOptional, isString } from "@/shared/api/decoder";
+import {
+  createObjectDecoder,
+  hasShape,
+  isNumber,
+  isOneOf,
+  isOptional,
+  isRecordOf,
+  isString,
+} from "@/shared/api/decoder";
 import { i18n } from "@/shared/i18n";
 
 export type AccountBatchResultDTO = { succeeded: number; failed: number };
@@ -59,14 +67,20 @@ export type WebAccountScriptsInput =
   | { all: true; ids?: never; actions: WebAccountScriptActions }
   | { all?: false; ids: string[]; actions: WebAccountScriptActions };
 
-export type AccountImportResultDTO = {
+export type AccountImportProviderSummaryDTO = {
   created: number;
   updated: number;
+  skipped: number;
   synced: number;
   syncFailed: number;
 };
 
-export type WebConsoleSyncResultDTO = AccountImportResultDTO & { skipped: number };
+export type AccountImportResultDTO = AccountImportProviderSummaryDTO & {
+  provider?: string;
+  byProvider?: Record<string, AccountImportProviderSummaryDTO>;
+};
+
+export type WebConsoleSyncResultDTO = AccountImportProviderSummaryDTO;
 
 type AccountTaskStreamPayload = Partial<
   BuildConversionResultDTO &
@@ -82,7 +96,17 @@ type AccountTaskStreamPayload = Partial<
   outcome?: BuildDetectItemDTO["outcome"];
   reason?: string;
   httpStatus?: number;
+  provider?: string;
+  byProvider?: Record<string, AccountImportProviderSummaryDTO>;
 };
+
+const isAccountImportProviderSummary = hasShape({
+  created: isNumber,
+  updated: isNumber,
+  skipped: isNumber,
+  synced: isNumber,
+  syncFailed: isNumber,
+});
 
 const decodeAccountTaskStreamPayload = createObjectDecoder<AccountTaskStreamPayload>(
   "account task event",
@@ -106,6 +130,8 @@ const decodeAccountTaskStreamPayload = createObjectDecoder<AccountTaskStreamPayl
     outcome: isOptional(isOneOf("ok", "invalid", "failed")),
     reason: isOptional(isString),
     httpStatus: isOptional(isNumber),
+    provider: isOptional(isString),
+    byProvider: isOptional(isRecordOf(isAccountImportProviderSummary)),
   },
 );
 
@@ -388,7 +414,7 @@ export function importAccounts(
     client,
     "/api/admin/v1/accounts/import",
     body,
-    ["created", "updated", "synced", "syncFailed"],
+    ["created", "updated", "skipped", "synced", "syncFailed"],
     onProgress,
     signal,
     importSyncPhases,
@@ -407,7 +433,7 @@ export function importWebAccounts(
     client,
     "/api/admin/v1/accounts/web/import",
     body,
-    ["created", "updated", "synced", "syncFailed"],
+    ["created", "updated", "skipped", "synced", "syncFailed"],
     onProgress,
     signal,
     importSyncPhases,
@@ -426,7 +452,7 @@ export function importConsoleAccounts(
     client,
     "/api/admin/v1/accounts/console/import",
     body,
-    ["created", "updated", "synced", "syncFailed"],
+    ["created", "updated", "skipped", "synced", "syncFailed"],
     onProgress,
     signal,
     importSyncPhases,

@@ -446,6 +446,33 @@ func TestCredentialRefreshFailureDistinguishesTransientAndPermanent(t *testing.T
 	}
 }
 
+func TestCredentialRefreshBackoffIsExponentialAndHonorsRetryAfter(t *testing.T) {
+	accountID := uint64(16)
+	want := []time.Duration{
+		30 * time.Second,
+		time.Minute,
+		2 * time.Minute,
+		4 * time.Minute,
+		8 * time.Minute,
+		15 * time.Minute,
+	}
+	for index, expected := range want {
+		if got := credentialRefreshBackoff(accountID, index+1, 0); got != expected {
+			t.Fatalf("failure %d backoff=%s, want %s", index+1, got, expected)
+		}
+	}
+	if got := credentialRefreshBackoff(accountID, 2, 45*time.Minute); got != 45*time.Minute {
+		t.Fatalf("Retry-After floor=%s, want 45m", got)
+	}
+}
+
+func TestCredentialRefreshErrorMessageRedactsCredentialMaterial(t *testing.T) {
+	value := normalizeCredentialRefreshErrorMessage("Bearer message-secret access_token=message-token")
+	if value != "Bearer [REDACTED] access_token=[REDACTED]" {
+		t.Fatalf("message=%q", value)
+	}
+}
+
 func TestCredentialDecryptFailedAllowsRetryAfterKeyRecovery(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()

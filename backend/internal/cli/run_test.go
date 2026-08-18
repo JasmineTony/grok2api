@@ -36,6 +36,13 @@ func TestRunCommandVersion(t *testing.T) {
 	}
 }
 
+func TestRunServeDispatchesSubcommandOptions(t *testing.T) {
+	err := Run([]string{"serve", "--listen"})
+	if err == nil || err.Error() != "--listen requires an address" {
+		t.Fatalf("Run(serve --listen) error = %v, want option parsing error", err)
+	}
+}
+
 func TestParseOptionsSupportsContainerListenOverride(t *testing.T) {
 	options, err := parseOptions([]string{"--config", "/app/config.yaml", "--listen", "0.0.0.0:8000"})
 	if err != nil {

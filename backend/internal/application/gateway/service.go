@@ -32,6 +32,7 @@ import (
 	"github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
 	neterrorpkg "github.com/chenyme/grok2api/backend/internal/pkg/neterror"
+	"github.com/chenyme/grok2api/backend/internal/pkg/perfmetrics"
 	"github.com/chenyme/grok2api/backend/internal/repository"
 )
 
@@ -209,6 +210,8 @@ type Service struct {
 	rateLimitTeams              map[uint64]teamRateLimitObservation
 	modelSyncMu                 sync.Mutex
 	modelSyncing                map[uint64]struct{}
+	voiceWebSocketMu            sync.Mutex
+	voiceWebSocketActive        map[voiceWebSocketMetricKey]int64
 	metrics                     gatewayMetrics
 }
 
@@ -250,7 +253,7 @@ func NewService(models routeResolver, audits auditRecorder, accounts *accountapp
 		models: models, audits: audits, accounts: accounts, clientKeys: clientKeys, providers: providers,
 		selector: selector, responses: responses, logger: slog.Default(),
 		rateLimits: make(map[string]teamModelRateLimit), rateLimitTeams: make(map[uint64]teamRateLimitObservation),
-		modelSyncing: make(map[uint64]struct{}),
+		modelSyncing: make(map[uint64]struct{}), voiceWebSocketActive: make(map[voiceWebSocketMetricKey]int64),
 	}
 	service.UpdateMaxAttempts(maxAttempts)
 	return service
@@ -990,6 +993,20 @@ func (s *Service) createResponseAt(ctx context.Context, input Input, path string
 		responseStartedAt = started
 		lease.markSelectorUpstreamStarted()
 		response, err := adapter.ForwardResponse(physicalCallCtx, provider.ResponseResourceRequest{Credential: credential, ForcedEgressNodeID: input.ForcedEgressNodeID, Billing: billing, Method: http.MethodPost, Path: path, Model: route.UpstreamModel, PromptCacheKey: input.PromptCacheKey, ReasoningReplayKey: reasoningReplayKey, AllowClientToolCacheRoute: input.AllowClientToolCacheRoute, GrokTurnIndex: input.GrokTurnIndex, IdempotencyID: idempotencyID, Body: input.Body, Streaming: input.Streaming, NormalizeBody: true, Operation: string(operation)})
+		statusLabel := "transport"
+		outcome := "error"
+		if response != nil {
+			outcome = "response"
+			if response.StatusCode >= 100 && response.StatusCode <= 599 {
+				statusLabel = strconv.Itoa(response.StatusCode)
+			}
+		} else if status, ok := provider.ErrorHTTPStatus(err); ok && status >= 100 && status <= 599 {
+			statusLabel = strconv.Itoa(status)
+		}
+		perfmetrics.Default.Inc("upstream_request_total", perfmetrics.Labels{
+			Subsystem: "upstream", Operation: string(operation), Provider: string(route.Provider),
+			Status: statusLabel, Outcome: outcome,
+		})
 		err = failureAttempts.captureResponse(credential, started, response, err)
 		timing.markUpstream(time.Since(started))
 		return response, err
@@ -1195,7 +1212,7 @@ attemptLoop:
 		}
 		if isTerminalRequestForbidden(credential.Provider, lastFailure) {
 			// already prepared as a terminal 403 response for the client
-		} else if isRetryableResponse(response, route.Provider) && !finalEgressForbidden {
+		} else if isRetryableResponse(response, route.Provider) && !finalEgressForbidden && canRetryOuterResponse(route.Provider, response) {
 			retryAfter := parseRetryAfter(response.Header.Get("Retry-After"), time.Now().UTC())
 			body, _ := readRetryableBody(response.Body)
 			lastFailure = newHTTPUpstreamFailure(response.StatusCode, body, credential.ID, credential.Name)
@@ -1832,6 +1849,21 @@ func isRetryableResponse(response *provider.Response, upstreamProviders ...accou
 		return true
 	}
 	return !strings.EqualFold(strings.TrimSpace(response.Header.Get("X-Should-Retry")), "false")
+}
+
+// canRetryOuterResponse separates explicit account/egress failures from an
+// indeterminate POST result. A Build request carries the generated
+// Idempotency-Key, while Web and Console do not expose an equivalent
+// idempotency contract; their 5xx responses therefore must not be replayed on
+// another account. Providers with a stronger contract can opt in explicitly.
+func canRetryOuterResponse(providerValue accountdomain.Provider, response *provider.Response) bool {
+	if response == nil {
+		return false
+	}
+	if response.StatusCode < http.StatusInternalServerError {
+		return true
+	}
+	return providerValue == accountdomain.ProviderBuild || response.ReplaySafe
 }
 
 // isBarePermissionDenied reports a 403 whose only machine signal is permission-denied

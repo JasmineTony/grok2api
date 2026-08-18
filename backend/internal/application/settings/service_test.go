@@ -257,6 +257,21 @@ func TestLoadPersistedKeepsAccountIsolationDefaultForOlderPayload(t *testing.T) 
 	}
 }
 
+func TestLoadPersistedKeepsProviderConcurrencyDefaultsForOlderPayload(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Routing.ProviderConcurrency = config.ProviderConcurrencyConfig{Build: 17, Web: 23, Console: 29}
+	value := toDomainConfig(cfg)
+	repository := &runtimeSettingsRepositoryStub{value: value, found: true}
+
+	loaded, _, _, err := LoadPersisted(context.Background(), cfg, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Routing.ProviderConcurrency != cfg.Routing.ProviderConcurrency {
+		t.Fatalf("provider concurrency = %#v, want %#v", loaded.Routing.ProviderConcurrency, cfg.Routing.ProviderConcurrency)
+	}
+}
+
 func TestLoadPersistedPreservesExplicitlyDisabledAccountIsolation(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.Routing.AccountIsolatedConnections = true

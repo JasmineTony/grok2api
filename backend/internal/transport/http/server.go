@@ -45,15 +45,19 @@ import (
 )
 
 type Dependencies struct {
-	Logger             *slog.Logger
-	Metrics            middleware.RequestMetrics
-	RequestTimeout     time.Duration
-	MaxBodyBytes       int64
-	ConcurrencyGate    *middleware.ConcurrencyGate
-	SecureCookies      bool
-	SwaggerEnabled     bool
-	PublicAPIBaseURL   string
-	FrontendStaticPath string
+	Logger                          *slog.Logger
+	Metrics                         middleware.RequestMetrics
+	RequestTimeout                  time.Duration
+	MaxBodyBytes                    int64
+	VoiceWebSocketIdleTimeout       time.Duration
+	VoiceWebSocketMessagesPerSecond int
+	VoiceWebSocketMessageBurst      int
+	ConcurrencyGate                 *middleware.ConcurrencyGate
+	SecureCookies                   bool
+	TrustedProxies                  []string
+	SwaggerEnabled                  bool
+	PublicAPIBaseURL                string
+	FrontendStaticPath              string
 	// Readiness 返回可观测的分层就绪状态。Ready 仅为旧调用方保留。
 	Readiness              func(context.Context) ReadinessSnapshot
 	Ready                  func(context.Context) bool
@@ -128,6 +132,9 @@ func New(deps Dependencies) *gin.Engine {
 		deps.Logger = slog.Default()
 	}
 	router := gin.New()
+	if err := router.SetTrustedProxies(deps.TrustedProxies); err != nil {
+		panic("httpserver: invalid trusted proxies: " + err.Error())
+	}
 	router.Use(gin.Recovery(), middleware.RequestID(), middleware.SecurityHeaders(), middleware.MaxBodyBytes(deps.MaxBodyBytes), middleware.Timeout(deps.RequestTimeout), middleware.Metrics(deps.Metrics), middleware.AccessLog(deps.Logger))
 	router.GET("/healthz", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) })
 	router.GET("/readyz", func(c *gin.Context) {
@@ -208,6 +215,11 @@ func New(deps Dependencies) *gin.Engine {
 	v1.Use(middleware.ClientAuth(deps.ClientKeys))
 	inferenceHandler := inference.NewHandler(deps.Gateway, deps.Models, deps.MaxBodyBytes, deps.PublicAPIBaseURL)
 	inferenceHandler.SetRequestPolicies(deps.RequestPolicies)
+	inferenceHandler.SetVoiceWebSocketPolicy(
+		deps.VoiceWebSocketIdleTimeout,
+		deps.VoiceWebSocketMessagesPerSecond,
+		deps.VoiceWebSocketMessageBurst,
+	)
 	if deps.Settings != nil {
 		inferenceHandler.SetPublicAPIBaseURLResolver(deps.Settings.PublicAPIBaseURL)
 	}

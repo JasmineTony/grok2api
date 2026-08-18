@@ -682,7 +682,7 @@ func TestConsoleImportAcceptsJSONPlainTextAndCookieFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(values) != 2 || values[0].AccessToken != "token-one" || values[1].AccessToken != "token-two" {
+	if len(values) != 3 || values[0].AccessToken != "token-one" || values[1].AccessToken != "token-two" || values[2].AccessToken != "token-two" {
 		t.Fatalf("plain values = %#v", values)
 	}
 	values, err = parseImportedCredentials([]byte(`{"provider":"grok_console","accounts":[{"name":"console-a","sso_token":"token-a","cloudflare_cookies":"cf_clearance=abc"}]}`))

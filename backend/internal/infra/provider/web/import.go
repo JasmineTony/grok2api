@@ -53,7 +53,6 @@ func (a *Adapter) ParseImportedCredentials(data []byte) ([]provider.CredentialSe
 	if len(entries) == 0 {
 		return nil, fmt.Errorf("账号文件中没有 Grok Web 账号")
 	}
-	seen := make(map[string]struct{}, len(entries))
 	result := make([]provider.CredentialSeed, 0, len(entries))
 	for index, entry := range entries {
 		token := sanitizeSSOToken(firstNonEmpty(entry.SSOToken, entry.Token))
@@ -63,10 +62,6 @@ func (a *Adapter) ParseImportedCredentials(data []byte) ([]provider.CredentialSe
 		if len(token) > maxSSOTokenBytes {
 			return nil, fmt.Errorf("第 %d 个账号的 sso_token 超过 16 KiB", index+1)
 		}
-		if _, exists := seen[token]; exists {
-			continue
-		}
-		seen[token] = struct{}{}
 		tier := account.WebTier(strings.ToLower(strings.TrimSpace(entry.Tier)))
 		if tier == "" {
 			tier = account.WebTierAuto
@@ -91,7 +86,6 @@ func (a *Adapter) ParseImportedCredentials(data []byte) ([]provider.CredentialSe
 
 func parsePlainTextCredentials(value string) ([]provider.CredentialSeed, error) {
 	lines := strings.Split(value, "\n")
-	seen := make(map[string]struct{}, len(lines))
 	result := make([]provider.CredentialSeed, 0, len(lines))
 	for index, line := range lines {
 		token := sanitizeSSOToken(line)
@@ -101,10 +95,6 @@ func parsePlainTextCredentials(value string) ([]provider.CredentialSeed, error) 
 		if len(token) > maxSSOTokenBytes {
 			return nil, fmt.Errorf("第 %d 行的 sso token 超过 16 KiB", index+1)
 		}
-		if _, exists := seen[token]; exists {
-			continue
-		}
-		seen[token] = struct{}{}
 		result = append(result, provider.CredentialSeed{
 			Provider: account.ProviderWeb, AuthType: account.AuthTypeSSO, WebTier: account.WebTierAuto,
 			Name: "Grok Web " + security.HashToken(token)[:8], SourceKey: "sso:" + security.HashToken(token), AccessToken: token,

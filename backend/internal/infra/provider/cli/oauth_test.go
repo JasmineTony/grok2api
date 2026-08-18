@@ -89,7 +89,10 @@ func TestOAuthRefreshClassifiesPermanentAndTransientFailures(t *testing.T) {
 		response   string
 	}{
 		{name: "transient upstream", status: http.StatusServiceUnavailable, body: `{"error":"temporarily_unavailable"}`, retryAfter: "7", code: "temporarily_unavailable"},
+		{name: "temporary code on bad request", status: http.StatusBadRequest, body: `{"error":"temporarily_unavailable","error_description":"retry later"}`, code: "temporarily_unavailable", message: "retry later"},
+		{name: "invalid grant on service unavailable", status: http.StatusServiceUnavailable, body: `{"error":"invalid_grant"}`, permanent: true, code: "invalid_grant"},
 		{name: "invalid grant", status: http.StatusBadRequest, body: `{"error":"invalid_grant","error_description":"Refresh token has expired","message":"Access denied","request_id":"req-123","refresh_token":"must-not-leak"}`, permanent: true, code: "invalid_grant", message: "Refresh token has expired · Access denied", response: `"refresh_token":"[REDACTED]"`},
+		{name: "message token redaction", status: http.StatusBadRequest, body: `{"error":"invalid_grant","error_description":"Bearer message-secret","message":"access_token=message-token"}`, permanent: true, code: "invalid_grant", message: "Bearer [REDACTED] · access_token=[REDACTED]"},
 		{name: "nested error", status: http.StatusBadRequest, body: `{"error":{"code":"invalid_client","message":"Client rejected","detail":"Application disabled"}}`, permanent: true, code: "invalid_client", message: "Client rejected · Application disabled", response: `"detail":"Application disabled"`},
 	}
 	for _, test := range tests {
@@ -119,6 +122,9 @@ func TestOAuthRefreshClassifiesPermanentAndTransientFailures(t *testing.T) {
 			}
 			if strings.Contains(refreshErr.Response, "must-not-leak") {
 				t.Fatalf("response leaked refresh token: %q", refreshErr.Response)
+			}
+			if strings.Contains(refreshErr.Message, "message-secret") || strings.Contains(refreshErr.Message, "message-token") {
+				t.Fatalf("message leaked credential material: %q", refreshErr.Message)
 			}
 			if test.retryAfter != "" && refreshErr.RetryAfter != 7*time.Second {
 				t.Fatalf("retry after = %s", refreshErr.RetryAfter)

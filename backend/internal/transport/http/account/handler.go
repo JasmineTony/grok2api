@@ -271,11 +271,33 @@ type accountTokenRefreshResponse struct {
 }
 
 type accountImportResponse struct {
+	Provider   string                                   `json:"provider"`
+	Created    int                                      `json:"created"`
+	Updated    int                                      `json:"updated"`
+	Skipped    int                                      `json:"skipped"`
+	Synced     int                                      `json:"synced"`
+	SyncFailed int                                      `json:"syncFailed"`
+	ByProvider map[string]accountImportProviderResponse `json:"byProvider"`
+}
+
+type accountImportProviderResponse struct {
 	Created    int `json:"created"`
 	Updated    int `json:"updated"`
 	Skipped    int `json:"skipped"`
 	Synced     int `json:"synced"`
 	SyncFailed int `json:"syncFailed"`
+}
+
+func newAccountImportResponse(providerValue accountdomain.Provider, result accountapp.ImportResult, syncResult accountsyncapp.Result) accountImportResponse {
+	detail := accountImportProviderResponse{
+		Created: result.Created, Updated: result.Updated, Skipped: result.Skipped,
+		Synced: syncResult.Succeeded, SyncFailed: syncResult.Failed,
+	}
+	return accountImportResponse{
+		Provider: string(providerValue), Created: detail.Created, Updated: detail.Updated,
+		Skipped: detail.Skipped, Synced: detail.Synced, SyncFailed: detail.SyncFailed,
+		ByProvider: map[string]accountImportProviderResponse{string(providerValue): detail},
+	}
 }
 
 type accountResponse struct {
@@ -946,7 +968,7 @@ func (h *Handler) streamWebToConsoleSync(c *gin.Context, all bool, ids []uint64,
 		stream.WriteError("accountConsoleSyncFailed", "Grok Web 账号同步到 Console 失败")
 		return
 	}
-	_ = stream.Write("complete", accountImportResponse{Created: result.Created, Updated: result.Updated, Skipped: result.Skipped, Synced: syncResult.Succeeded, SyncFailed: syncResult.Failed})
+	_ = stream.Write("complete", newAccountImportResponse(accountdomain.ProviderConsole, result, syncResult))
 }
 
 func (h *Handler) runWebToBuildConversion(ctx context.Context, all bool, ids []uint64, strategy accountapp.BuildConversionStrategy, progress accountapp.BatchProgressObserver, syncProgress func(completed, total int)) (accountapp.BuildConversionResult, accountsyncapp.Result, error) {
@@ -1123,7 +1145,7 @@ func (h *Handler) importFile(c *gin.Context, providerValue accountdomain.Provide
 		stream.WriteError("authImportFailed", "导入账号失败")
 		return
 	}
-	_ = stream.Write("complete", accountImportResponse{Created: result.Created, Updated: result.Updated, Synced: syncResult.Succeeded, SyncFailed: syncResult.Failed})
+	_ = stream.Write("complete", newAccountImportResponse(providerValue, result, syncResult))
 }
 
 func readAccountImportDocuments(c *gin.Context, fileDescription string) ([][]byte, bool) {

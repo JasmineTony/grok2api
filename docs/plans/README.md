@@ -95,3 +95,16 @@ Templates are available in [`templates/`](./templates/).
 | 2026-08-16 37 - Dashboard chart spacing fix and 502-vs-upstream diagnosis | [Plan](./2026-08-16-37-dashboard-spacing-502-diagnosis/PLAN.md) | [Result](./2026-08-16-37-dashboard-spacing-502-diagnosis/RESULT.md) | Complete |
 | 2026-08-16 38 - Grok 4.5/4.6 stale-capability failover restoration | [Plan](./2026-08-16-38-new-model-capability-failover/PLAN.md) | [Result](./2026-08-16-38-new-model-capability-failover/RESULT.md) | Complete |
 | 2026-08-17 39 - Gitleaks gateway test fixture correction | [Plan](./2026-08-17-39-gitleaks-test-fixture/PLAN.md) | [Result](./2026-08-17-39-gitleaks-test-fixture/RESULT.md) | Complete |
+| 2026-08-18 40 - Local account audit fixes | [Plan](./2026-08-18-40-account-audit-fixes/PLAN.md) | [Result](./2026-08-18-40-account-audit-fixes/RESULT.md) | Complete |
+| 2026-08-18 41 - Full remediation observability and CI gates | [Plan](./2026-08-18-41-full-remediation/PLAN.md) | [Result](./2026-08-18-41-full-remediation/RESULT.md) | Complete |
+| 2026-08-18 42 - Web Lite audit code consistency | [Plan](./2026-08-18-42-web-lite-audit-code/PLAN.md) | [Result](./2026-08-18-42-web-lite-audit-code/RESULT.md) | Complete |
+| 2026-08-18 43 - P1 lifecycle hardening | [Plan](./2026-08-18-43-p1-lifecycle-hardening/PLAN.md) | [Result](./2026-08-18-43-p1-lifecycle-hardening/RESULT.md) | Complete |
+| 2026-08-18 44 - Voice WebSocket traffic guards | [Plan](./2026-08-18-44-voice-websocket-traffic-guards/PLAN.md) | [Result](./2026-08-18-44-voice-websocket-traffic-guards/RESULT.md) | Complete |
+| 2026-08-18 45 - Provider concurrency guard | [Plan](./2026-08-18-45-provider-concurrency-guard/PLAN.md) | [Result](./2026-08-18-45-provider-concurrency-guard/RESULT.md) | Complete |
+| 2026-08-18 46 - Non-idempotent outer replay guard | [Plan](./2026-08-18-46-non-idempotent-replay-guard/PLAN.md) | [Result](./2026-08-18-46-non-idempotent-replay-guard/RESULT.md) | Complete |
+| 2026-08-18 47 - Browser transport pool limits | [Plan](./2026-08-18-47-browser-transport-pool-limits/PLAN.md) | [Result](./2026-08-18-47-browser-transport-pool-limits/RESULT.md) | Complete |
+| 2026-08-18 48 - Upstream observability contract | [Plan](./2026-08-18-48-upstream-observability-contract/PLAN.md) | [Result](./2026-08-18-48-upstream-observability-contract/RESULT.md) | Complete |
+| 2026-08-18 49 - Observability stack assets | [Plan](./2026-08-18-49-observability-stack-assets/PLAN.md) | [Result](./2026-08-18-49-observability-stack-assets/RESULT.md) | Complete |
+| 2026-08-18 50 - Config environment split | [Plan](./2026-08-18-50-config-environment-split/PLAN.md) | [Result](./2026-08-18-50-config-environment-split/RESULT.md) | Complete |
+| 2026-08-18 51 - Credential normalizer boundary | [Plan](./2026-08-18-51-credential-normalizer-boundary/PLAN.md) | [Result](./2026-08-18-51-credential-normalizer-boundary/RESULT.md) | Complete |
+| 2026-08-18 52 - v3.7.0 reliability and observability release | [Plan](./2026-08-18-52-v3.7.0-release/PLAN.md) | [Result](./2026-08-18-52-v3.7.0-release/RESULT.md) | In progress |

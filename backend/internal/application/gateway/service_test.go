@@ -29,6 +29,7 @@ import (
 	"github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/runtime/memory"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
+	"github.com/chenyme/grok2api/backend/internal/pkg/perfmetrics"
 	"github.com/chenyme/grok2api/backend/internal/repository"
 )
 
@@ -51,6 +52,32 @@ func TestQueueAccountModelSyncDeduplicatesConcurrentETagRefresh(t *testing.T) {
 	close(resolver.release)
 }
 
+type imagePublicCodeError string
+
+func (e imagePublicCodeError) Error() string {
+	return "provider image failure"
+}
+
+func (e imagePublicCodeError) PublicErrorCode() string {
+	return string(e)
+}
+
+func TestImageFailureAuditCodeUsesValidatedProviderCode(t *testing.T) {
+	if code := imageFailureAuditCode(errors.Join(errors.New("wrapper"), imagePublicCodeError("web_lite_image_parse_failed"))); code != "web_lite_image_parse_failed" {
+		t.Fatalf("public provider code = %q", code)
+	}
+	if code := imageFailureAuditCode(imagePublicCodeError("INVALID CODE")); code != "upstream_unavailable" {
+		t.Fatalf("invalid provider code = %q", code)
+	}
+	postProcessingErr := &provider.MediaPostProcessingError{
+		Stage: provider.MediaPostProcessingStorage,
+		Cause: imagePublicCodeError("web_lite_image_parse_failed"),
+	}
+	if code := imageFailureAuditCode(postProcessingErr); code != "media_postprocessing_failed" {
+		t.Fatalf("media post-processing code = %q", code)
+	}
+}
+
 func TestVoiceWebSocketAuditOutcomeUsesLogicalSuccessStatus(t *testing.T) {
 	if status, code := voiceWebSocketAuditOutcome(VoiceWebSocketOutcome{}); status != http.StatusOK || code != "" {
 		t.Fatalf("successful outcome = status %d code %q", status, code)
@@ -58,12 +85,90 @@ func TestVoiceWebSocketAuditOutcomeUsesLogicalSuccessStatus(t *testing.T) {
 	if status, code := voiceWebSocketAuditOutcome(VoiceWebSocketOutcome{ErrorCode: " upstream_stream_interrupted "}); status != http.StatusBadGateway || code != "upstream_stream_interrupted" {
 		t.Fatalf("failed outcome = status %d code %q", status, code)
 	}
+	if status, code := voiceWebSocketAuditOutcome(VoiceWebSocketOutcome{ErrorCode: "stt_duration_limit_exceeded"}); status != http.StatusPaymentRequired || code != "stt_duration_limit_exceeded" {
+		t.Fatalf("duration-limited outcome = status %d code %q", status, code)
+	}
+	if status, code := voiceWebSocketAuditOutcome(VoiceWebSocketOutcome{ErrorCode: "websocket_rate_limit_exceeded"}); status != http.StatusTooManyRequests || code != "websocket_rate_limit_exceeded" {
+		t.Fatalf("rate-limited outcome = status %d code %q", status, code)
+	}
+	if status, code := voiceWebSocketAuditOutcome(VoiceWebSocketOutcome{ErrorCode: "websocket_idle_timeout"}); status != http.StatusRequestTimeout || code != "websocket_idle_timeout" {
+		t.Fatalf("idle outcome = status %d code %q", status, code)
+	}
 }
 
 func TestStreamingSTTPricingUsesCompletedDuration(t *testing.T) {
 	result, ok := audit.EstimateOfficialSTTCost(3.45, true)
 	if !ok || result.Model != "grok-stt-streaming" || result.CostInUSDTicks != 1_916_667 {
 		t.Fatalf("streaming STT pricing = %#v, ok = %t", result, ok)
+	}
+}
+
+func TestStreamingSTTReservationCoversOneHour(t *testing.T) {
+	result, ok := audit.EstimateOfficialSTTCost(streamingSTTReservationDurationSeconds, true)
+	if !ok || result.Model != "grok-stt-streaming" || result.CostInUSDTicks != 2_000_000_000 {
+		t.Fatalf("streaming STT reservation = %#v, ok = %t", result, ok)
+	}
+	if limit := voiceWebSocketMaxAudioDuration(audit.OperationSTT); limit != streamingSTTReservationDurationSeconds {
+		t.Fatalf("streaming STT duration limit = %v", limit)
+	}
+	if limit := voiceWebSocketMaxAudioDuration(audit.OperationRealtime); limit != 0 {
+		t.Fatalf("realtime duration limit = %v", limit)
+	}
+}
+
+func TestVoiceWebSocketMetricsUseBoundedLifecycleOutcomes(t *testing.T) {
+	tests := []struct {
+		name    string
+		outcome VoiceWebSocketOutcome
+		want    string
+	}{
+		{name: "success", outcome: VoiceWebSocketOutcome{}, want: "success"},
+		{name: "duration limit", outcome: VoiceWebSocketOutcome{ErrorCode: "stt_duration_limit_exceeded"}, want: "duration_limit"},
+		{name: "idle timeout", outcome: VoiceWebSocketOutcome{ErrorCode: "websocket_idle_timeout"}, want: "idle_timeout"},
+		{name: "rate limited", outcome: VoiceWebSocketOutcome{ErrorCode: "websocket_rate_limit_exceeded"}, want: "rate_limited"},
+		{name: "upstream", outcome: VoiceWebSocketOutcome{ErrorCode: "private-upstream-code", UpstreamFailed: true}, want: "upstream_error"},
+		{name: "client", outcome: VoiceWebSocketOutcome{ErrorCode: "private-client-code"}, want: "client_error"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := voiceWebSocketMetricOutcome(test.outcome); got != test.want {
+				t.Fatalf("outcome=%q, want %q", got, test.want)
+			}
+		})
+	}
+
+	registry := perfmetrics.NewRegistry()
+	previous := perfmetrics.Default
+	perfmetrics.Default = registry
+	t.Cleanup(func() { perfmetrics.Default = previous })
+	recordVoiceWebSocketMetric(audit.OperationSTT, account.ProviderConsole, "close", "duration_limit")
+	samples := registry.CollectAndReset()
+	if len(samples) != 1 ||
+		samples[0].Name != "voice_websocket_sessions_total" ||
+		samples[0].Labels.Operation != string(audit.OperationSTT) ||
+		samples[0].Labels.Provider != string(account.ProviderConsole) ||
+		samples[0].Labels.Stage != "close" ||
+		samples[0].Labels.Outcome != "duration_limit" {
+		t.Fatalf("voice websocket samples = %#v", samples)
+	}
+}
+
+func TestVoiceWebSocketActiveGaugeTracksCurrentSessions(t *testing.T) {
+	registry := perfmetrics.NewRegistry()
+	previous := perfmetrics.Default
+	perfmetrics.Default = registry
+	t.Cleanup(func() { perfmetrics.Default = previous })
+
+	service := &Service{}
+	service.changeVoiceWebSocketActive(audit.OperationRealtime, account.ProviderConsole, 1)
+	samples := registry.Collect()
+	if len(samples) != 1 || samples[0].Name != "voice_websocket_active" || !samples[0].HasGauge || samples[0].Gauge != 1 {
+		t.Fatalf("active websocket samples = %#v", samples)
+	}
+	service.changeVoiceWebSocketActive(audit.OperationRealtime, account.ProviderConsole, -1)
+	samples = registry.Collect()
+	if len(samples) != 1 || samples[0].Gauge != 0 {
+		t.Fatalf("closed websocket samples = %#v", samples)
 	}
 }
 
@@ -2439,6 +2544,27 @@ func TestImageStreamPropagatesWithoutTouchingChatQuota(t *testing.T) {
 		t.Fatalf("image edit request = %#v", editRequest)
 	}
 
+	adapter.FailGenerationWith(imagePublicCodeError("web_lite_image_parse_failed"))
+	if _, err := service.GenerateImage(ctx, ImageGenerationInput{
+		RequestID: "req-image-lite-parse-failed", ClientKey: key, PublicModel: "grok-imagine-image-quality-lite",
+		Prompt: "test", Count: 1, Resolution: "1k", ResponseFormat: "url",
+	}); err == nil {
+		t.Fatal("expected Web Lite parser failure")
+	}
+	adapter.FailGenerationWith(nil)
+	logs, total, err = auditRepo.List(ctx, 0, 10)
+	if err != nil || total != 5 || len(logs) != 5 {
+		t.Fatalf("public-code audit logs=%#v total=%d err=%v", logs, total, err)
+	}
+	publicCodeAudit := logs[0]
+	if publicCodeAudit.RequestID != "req-image-lite-parse-failed" || publicCodeAudit.StatusCode != http.StatusBadGateway || publicCodeAudit.ErrorCode != "web_lite_image_parse_failed" || publicCodeAudit.MediaOutputImages != 0 || publicCodeAudit.EstimatedCostInUSDTicks != 0 {
+		t.Fatalf("public-code failure audit = %#v", publicCodeAudit)
+	}
+	keyAfterPublicFailure, err := keyRepo.Get(ctx, key.ID)
+	if err != nil || keyAfterPublicFailure.ReservedUsageUSDTicks != 0 {
+		t.Fatalf("public-code failure billing key = %#v, err = %v", keyAfterPublicFailure, err)
+	}
+
 	billingBeforeFailure, err := keyRepo.Get(ctx, key.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -2468,7 +2594,7 @@ func TestImageStreamPropagatesWithoutTouchingChatQuota(t *testing.T) {
 		t.Fatalf("image failure switched accounts after generation started: %#v", attempts)
 	}
 	logs, total, err = auditRepo.List(ctx, 0, 10)
-	if err != nil || total != 5 || len(logs) != 5 {
+	if err != nil || total != 6 || len(logs) != 6 {
 		t.Fatalf("failure audit logs=%#v total=%d err=%v", logs, total, err)
 	}
 	failureAudit := logs[0]
@@ -4045,6 +4171,7 @@ type webImageStreamAdapter struct {
 	editRequest        provider.ImageEditRequest
 	synced             chan string
 	failureEgress      *infraegress.Manager
+	generationError    error
 	attempts           []uint64
 	unauthorizedID     uint64
 	forbiddenRemaining int
@@ -4109,6 +4236,7 @@ func (a *webImageStreamAdapter) GenerateImage(ctx context.Context, request provi
 	a.streaming = request.Streaming
 	a.partialImages = request.PartialImages
 	failureEgress := a.failureEgress
+	generationError := a.generationError
 	a.attempts = append(a.attempts, request.Credential.ID)
 	unauthorizedID := a.unauthorizedID
 	forbidden := a.forbiddenRemaining > 0
@@ -4116,6 +4244,9 @@ func (a *webImageStreamAdapter) GenerateImage(ctx context.Context, request provi
 		a.forbiddenRemaining--
 	}
 	a.mu.Unlock()
+	if generationError != nil {
+		return nil, generationError
+	}
 	if forbidden {
 		return &provider.Response{
 			StatusCode: http.StatusForbidden, Status: "403 Forbidden", Header: make(http.Header),
@@ -4172,6 +4303,11 @@ func (a *webImageStreamAdapter) EditRequest() provider.ImageEditRequest {
 func (a *webImageStreamAdapter) FailWithEgress(manager *infraegress.Manager) {
 	a.mu.Lock()
 	a.failureEgress = manager
+	a.mu.Unlock()
+}
+func (a *webImageStreamAdapter) FailGenerationWith(err error) {
+	a.mu.Lock()
+	a.generationError = err
 	a.mu.Unlock()
 }
 func (a *webImageStreamAdapter) Attempts() []uint64 {
@@ -4353,6 +4489,31 @@ func TestAuditRequestSucceeded(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := auditRequestSucceeded(tc.statusCode, tc.errorCode); got != tc.want {
 				t.Fatalf("auditRequestSucceeded(%d, %q) = %t, want %t", tc.statusCode, tc.errorCode, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCanRetryOuterResponseProtectsNonIdempotentProviderPosts(t *testing.T) {
+	cases := []struct {
+		name     string
+		provider account.Provider
+		status   int
+		replay   bool
+		want     bool
+	}{
+		{name: "Build idempotency key", provider: account.ProviderBuild, status: http.StatusBadGateway, want: true},
+		{name: "Web explicit quota", provider: account.ProviderWeb, status: http.StatusTooManyRequests, want: true},
+		{name: "Console egress forbidden", provider: account.ProviderConsole, status: http.StatusForbidden, want: true},
+		{name: "Web indeterminate 5xx", provider: account.ProviderWeb, status: http.StatusBadGateway, want: false},
+		{name: "Console indeterminate 5xx", provider: account.ProviderConsole, status: http.StatusServiceUnavailable, want: false},
+		{name: "explicit provider opt in", provider: account.ProviderWeb, status: http.StatusBadGateway, replay: true, want: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			response := &provider.Response{StatusCode: tc.status, ReplaySafe: tc.replay}
+			if got := canRetryOuterResponse(tc.provider, response); got != tc.want {
+				t.Fatalf("canRetryOuterResponse(%s, %d, replay=%t) = %t, want %t", tc.provider, tc.status, tc.replay, got, tc.want)
 			}
 		})
 	}

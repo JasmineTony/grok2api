@@ -1,0 +1,2 @@
+data: {"result":{"response":{"token":"","isThinking":false,"messageTag":"final"}}}
+data: {"event":{"type":"response.done","response":{"id":"fixture-no-image","status":"completed"}}}

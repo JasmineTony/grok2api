@@ -13,6 +13,7 @@ type Labels struct {
 	Subsystem string
 	Operation string
 	Provider  string
+	Status    string
 	Plane     string
 	Stage     string
 	Ordinal   string
@@ -121,9 +122,19 @@ func (r *Registry) RegisterDynamicGauge(name string, labels Labels, read func() 
 	r.dynamicMu.Unlock()
 }
 
+// Collect returns a point-in-time snapshot without mutating counters. It is
+// intended for cumulative exporters such as Prometheus.
+func (r *Registry) Collect() []Sample {
+	return r.collect(false)
+}
+
 // CollectAndReset returns interval counters while retaining the latest gauge
 // values for the next collection window.
 func (r *Registry) CollectAndReset() []Sample {
+	return r.collect(true)
+}
+
+func (r *Registry) collect(reset bool) []Sample {
 	if r == nil {
 		return nil
 	}
@@ -137,6 +148,9 @@ func (r *Registry) CollectAndReset() []Sample {
 				Total: value.total, Maximum: value.maximum,
 				Gauge: value.gauge, HasGauge: value.hasGauge,
 			})
+			if !reset {
+				continue
+			}
 			if value.hasGauge {
 				value.count = 0
 				value.total = 0
@@ -184,6 +198,7 @@ func (r *Registry) shard(key metricKey) *registryShard {
 	hash = hashMetricString(hash, key.labels.Subsystem)
 	hash = hashMetricString(hash, key.labels.Operation)
 	hash = hashMetricString(hash, key.labels.Provider)
+	hash = hashMetricString(hash, key.labels.Status)
 	hash = hashMetricString(hash, key.labels.Plane)
 	hash = hashMetricString(hash, key.labels.Stage)
 	hash = hashMetricString(hash, key.labels.Ordinal)
@@ -201,5 +216,5 @@ func hashMetricString(hash uint64, value string) uint64 {
 }
 
 func labelsKey(value Labels) string {
-	return value.Subsystem + "\x00" + value.Operation + "\x00" + value.Provider + "\x00" + value.Plane + "\x00" + value.Stage + "\x00" + value.Ordinal + "\x00" + value.Outcome
+	return value.Subsystem + "\x00" + value.Operation + "\x00" + value.Provider + "\x00" + value.Status + "\x00" + value.Plane + "\x00" + value.Stage + "\x00" + value.Ordinal + "\x00" + value.Outcome
 }

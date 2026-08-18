@@ -126,7 +126,7 @@ func (c *oauthClient) exchange(ctx context.Context, form url.Values, fallbackRef
 		}
 		return tokenPayload{}, &provider.CredentialRefreshError{
 			Status: resp.StatusCode, Code: oauthError.Code, Message: oauthError.Message, Response: oauthError.Response,
-			Permanent:  resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnauthorized,
+			Permanent:  oauthRefreshFailurePermanent(oauthError.Code, resp.StatusCode),
 			RetryAfter: parseOAuthRetryAfter(resp.Header.Get("Retry-After")),
 		}
 	}
@@ -186,7 +186,7 @@ func parseOAuthErrorResponse(body []byte, status int) oauthErrorDetails {
 	}
 	seen := make(map[string]struct{}, len(messages))
 	for _, message := range messages {
-		message = normalizeOAuthErrorMessage(message, 512)
+		message = normalizeOAuthErrorMessage(redactOAuthDiagnosticText(message), 512)
 		if message == "" {
 			continue
 		}
@@ -204,6 +204,19 @@ func parseOAuthErrorResponse(body []byte, status int) oauthErrorDetails {
 		result.Response = truncateOAuthDiagnostic(string(redacted), 4096)
 	}
 	return result
+}
+
+func oauthRefreshFailurePermanent(code string, status int) bool {
+	switch strings.ToLower(strings.TrimSpace(code)) {
+	case "invalid_grant", "invalid_client", "unauthorized_client", "access_denied", "expired_token", "revoked_token":
+		return true
+	case "authorization_pending", "slow_down", "temporarily_unavailable", "server_error":
+		return false
+	}
+	if status == http.StatusTooManyRequests || status >= http.StatusInternalServerError {
+		return false
+	}
+	return status == http.StatusBadRequest || status == http.StatusUnauthorized
 }
 
 func jsonStringAt(value any, path ...string) string {

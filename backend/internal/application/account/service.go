@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -45,6 +46,11 @@ var (
 
 var ErrCredentialRefreshPermanent = errors.New("OAuth refresh token 已永久失效")
 var errQuotaRefreshBusy = errors.New("额度同步已由其他实例执行")
+
+var (
+	credentialRefreshBearerPattern = regexp.MustCompile(`(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+`)
+	credentialRefreshPairPattern   = regexp.MustCompile(`(?i)(access_token|refresh_token|id_token|token|authorization|cookie|secret|password|credential)\s*[:=]\s*([^&\s"'<>]+)`)
+)
 
 const (
 	// estimatedFreeTokenLimit is only a fallback until an upstream exhaustion
@@ -1405,13 +1411,18 @@ func (s *Service) ImportConsoleCredentialDocumentsWithProgress(ctx context.Conte
 	return s.importCredentialDocumentsWithProgress(ctx, adapter, documents, observer, progress)
 }
 
-func (s *Service) importCredentialDocumentsWithProgress(ctx context.Context, adapter provider.CredentialCodecAdapter, documents [][]byte, observer ImportedAccountObserver, progress BatchProgressObserver) (ImportResult, error) {
+func (s *Service) importCredentialDocumentsWithProgress(ctx context.Context, adapter provider.CredentialCodecAdapter, documents [][]byte, observer ImportedAccountObserver, progress BatchProgressObserver) (result ImportResult, resultErr error) {
+	providerValue := adapter.Provider()
+	defer func() {
+		recordCredentialImportMetrics(providerValue, result, resultErr)
+	}()
 	if len(documents) == 0 {
 		return ImportResult{}, fmt.Errorf("%w: 没有可导入的账号文件", ErrInvalidImport)
 	}
 	seeds := make([]provider.CredentialSeed, 0)
 	seen := make(map[string]struct{})
 	parsedAccounts := 0
+	skipped := 0
 	for index, document := range documents {
 		values, err := adapter.ParseImportedCredentials(document)
 		if err != nil {
@@ -1425,9 +1436,16 @@ func (s *Service) importCredentialDocumentsWithProgress(ctx context.Context, ada
 			return ImportResult{}, fmt.Errorf("%w: 单次最多导入 %d 个账号", ErrImportLimit, maxCredentialImportAccounts)
 		}
 		for _, value := range values {
+			if value.Provider == "" {
+				value.Provider = providerValue
+			}
+			if value.Provider != providerValue {
+				return ImportResult{}, fmt.Errorf("%w: 第 %d 个文件包含不匹配的 Provider %q", ErrInvalidImport, index+1, value.Provider)
+			}
 			if value.SourceKey != "" {
 				key := string(value.Provider) + "\x00" + value.SourceKey
 				if _, exists := seen[key]; exists {
+					skipped++
 					continue
 				}
 				seen[key] = struct{}{}
@@ -1435,7 +1453,9 @@ func (s *Service) importCredentialDocumentsWithProgress(ctx context.Context, ada
 			seeds = append(seeds, value)
 		}
 	}
-	return s.persistImportedSeeds(ctx, seeds, observer, progress)
+	result, resultErr = s.persistImportedSeeds(ctx, seeds, observer, progress)
+	result.Skipped += skipped
+	return result, resultErr
 }
 
 func (s *Service) persistImportedSeeds(ctx context.Context, seeds []provider.CredentialSeed, observer ImportedAccountObserver, progress BatchProgressObserver) (ImportResult, error) {
@@ -2351,6 +2371,7 @@ func (s *Service) ensureCredential(ctx context.Context, value accountdomain.Cred
 			persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), credentialRefreshStateTTL)
 			s.recordCredentialRefreshFailure(persistCtx, latest, err, !options.retryPermanentOnce)
 			cancel()
+			recordCredentialRefreshMetric(latest.Provider, credentialRefreshMetricOutcome(err))
 			return nil, err
 		}
 		riskCredential := latest
@@ -2361,8 +2382,10 @@ func (s *Service) ensureCredential(ctx context.Context, value accountdomain.Cred
 		}
 		updated, err := s.accounts.UpdateTokens(ctx, latest.ID, refreshed.EncryptedAccessToken, refreshed.EncryptedRefreshToken, refreshed.ExpiresAt, botFlagSource)
 		if err != nil {
+			recordCredentialRefreshMetric(latest.Provider, "persistence_failed")
 			return nil, err
 		}
+		recordCredentialRefreshMetric(latest.Provider, "success")
 		if err := s.accounts.TransitionHealth(ctx, repository.AccountHealthTransition{
 			AccountID: latest.ID, Event: accountdomain.EventCredentialRefreshed, FailureCount: 0, Success: true, OccurredAt: currentTime,
 		}); err != nil {
@@ -2518,6 +2541,8 @@ func (s *Service) recordCredentialRefreshFailure(ctx context.Context, credential
 }
 
 func normalizeCredentialRefreshErrorMessage(value string) string {
+	value = credentialRefreshBearerPattern.ReplaceAllString(value, "Bearer [REDACTED]")
+	value = credentialRefreshPairPattern.ReplaceAllString(value, "$1=[REDACTED]")
 	value = strings.Map(func(char rune) rune {
 		switch char {
 		case '\r', '\n', '\t':
@@ -2590,13 +2615,35 @@ func isRecoverableRefreshErrorCode(code string) bool {
 }
 
 func credentialRefreshBackoff(accountID uint64, failureCount int, retryAfter time.Duration) time.Duration {
-	delays := [...]time.Duration{30 * time.Second, 2 * time.Minute, 5 * time.Minute, 10 * time.Minute, 15 * time.Minute}
-	index := max(0, min(failureCount-1, len(delays)-1))
-	delay := delays[index]
+	exponent := max(0, min(failureCount-1, 5))
+	delay := min(30*time.Second*time.Duration(1<<exponent), 15*time.Minute)
 	if retryAfter > delay {
-		delay = min(retryAfter, 30*time.Minute)
+		delay = retryAfter
 	}
 	return delay + time.Duration((accountID*37)%16)*time.Second
+}
+
+func credentialRefreshMetricOutcome(err error) string {
+	var typed *provider.CredentialRefreshError
+	if errors.As(err, &typed) {
+		if typed.Permanent {
+			return "permanent_failure"
+		}
+		return "transient_failure"
+	}
+	if errors.Is(err, context.Canceled) {
+		return "canceled"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	return "transport_failure"
+}
+
+func recordCredentialRefreshMetric(providerValue accountdomain.Provider, outcome string) {
+	perfmetrics.Default.Inc("token_refresh_total", perfmetrics.Labels{
+		Subsystem: "account", Operation: "credential_refresh", Provider: string(providerValue), Outcome: outcome,
+	})
 }
 
 func (s *Service) RefreshBilling(ctx context.Context, id uint64) (accountdomain.Billing, error) {
@@ -4256,6 +4303,68 @@ func (s *Service) runAccountBatch(ctx context.Context, operation string, ids []u
 func (s *Service) logBatchSummary(operation string, pool *batch.Pool, summary batch.Summary, err error) {
 	snapshot := pool.Snapshot()
 	s.logger.Info("account_bulk_completed", "operation", operation, "total", summary.Total, "submitted", summary.Submitted, "succeeded", summary.Succeeded, "failed", summary.Failed, "panicked", summary.Panicked, "duration_ms", summary.Duration.Milliseconds(), "canceled", summary.Canceled, "pool_limit", snapshot.Limit, "pool_active", snapshot.Active, "pool_queued", snapshot.Queued, "pool_peak", snapshot.Peak, "error", err)
+	recordAccountBatchMetrics(operation, summary, err)
+}
+
+func recordCredentialImportMetrics(providerValue accountdomain.Provider, result ImportResult, err error) {
+	providerLabel := "unknown"
+	if providerValue.IsValid() {
+		providerLabel = string(providerValue)
+	}
+	outcome := "success"
+	switch {
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		outcome = "canceled"
+	case err != nil:
+		outcome = "failed"
+	}
+	labels := perfmetrics.Labels{Subsystem: "account", Operation: "credentials", Provider: providerLabel, Outcome: outcome}
+	perfmetrics.Default.Inc("account_import_runs_total", labels)
+	for itemOutcome, count := range map[string]int{
+		"created": result.Created,
+		"updated": result.Updated,
+		"skipped": result.Skipped,
+	} {
+		perfmetrics.Default.Add("account_import_items_total", perfmetrics.Labels{
+			Subsystem: "account", Operation: "credentials", Provider: providerLabel, Outcome: itemOutcome,
+		}, int64(count))
+	}
+}
+
+func recordAccountBatchMetrics(operation string, summary batch.Summary, err error) {
+	operation = accountBatchMetricOperation(operation)
+	outcome := "success"
+	switch {
+	case summary.Canceled || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded):
+		outcome = "canceled"
+	case err != nil || summary.Failed > 0:
+		outcome = "partial"
+	}
+	labels := perfmetrics.Labels{Subsystem: "account", Operation: operation, Outcome: outcome}
+	perfmetrics.Default.Inc("account_bulk_runs_total", labels)
+	perfmetrics.Default.ObserveDuration("account_bulk_duration_us", labels, summary.Duration)
+	for itemOutcome, count := range map[string]int{
+		"succeeded":   summary.Succeeded,
+		"failed":      max(0, summary.Failed-summary.Panicked),
+		"panicked":    summary.Panicked,
+		"unsubmitted": max(0, summary.Total-summary.Submitted),
+	} {
+		perfmetrics.Default.Add("account_bulk_items_total", perfmetrics.Labels{
+			Subsystem: "account", Operation: operation, Outcome: itemOutcome,
+		}, int64(count))
+	}
+}
+
+func accountBatchMetricOperation(operation string) string {
+	switch strings.TrimSpace(operation) {
+	case "console_usage_migration", "web_quota_sync", "console_quota_sync",
+		"web_quota_startup_catchup", "credential_refresh", "quota_sync",
+		"billing_sync", "credential_startup_recovery", "credential_auto_refresh",
+		"web_account_scripts", "web_to_build", "build_detect":
+		return strings.TrimSpace(operation)
+	default:
+		return "unknown"
+	}
 }
 
 func (s *Service) persistSeed(ctx context.Context, seed provider.CredentialSeed) (accountdomain.Credential, bool, error) {
@@ -4269,53 +4378,6 @@ func (s *Service) persistSeed(ctx context.Context, seed provider.CredentialSeed)
 		s.WakeCredentialRefresh()
 	}
 	return stored, created, err
-}
-
-func (s *Service) credentialFromSeed(seed provider.CredentialSeed) (accountdomain.Credential, error) {
-	accessEncrypted, err := s.cipher.Encrypt(seed.AccessToken)
-	if err != nil {
-		return accountdomain.Credential{}, err
-	}
-	refreshEncrypted, err := s.cipher.Encrypt(seed.RefreshToken)
-	if err != nil {
-		return accountdomain.Credential{}, err
-	}
-	cloudflareEncrypted := ""
-	if strings.TrimSpace(seed.CloudflareCookies) != "" {
-		cookies := egressapp.SanitizeCloudflareCookies(seed.CloudflareCookies)
-		if cookies == "" {
-			return accountdomain.Credential{}, invalidInput("Cloudflare Cookie 中没有有效字段")
-		}
-		cloudflareEncrypted, err = s.cipher.Encrypt(cookies)
-		if err != nil {
-			return accountdomain.Credential{}, err
-		}
-	}
-	sourceKey := seed.SourceKey
-	if sourceKey == "" {
-		sourceKey = "device:" + security.HashToken(seed.AccessToken)
-	}
-	providerValue := seed.Provider
-	if providerValue == "" {
-		providerValue = accountdomain.ProviderBuild
-	}
-	authType := seed.AuthType
-	if authType == "" {
-		if s.providers == nil {
-			return accountdomain.Credential{}, fmt.Errorf("Provider 注册表未初始化")
-		}
-		definition, ok := s.providers.Definition(providerValue)
-		if !ok {
-			return accountdomain.Credential{}, fmt.Errorf("Provider %s 未注册", providerValue)
-		}
-		authType = definition.Credential.AuthType
-	}
-	value := accountdomain.Credential{Provider: providerValue, AuthType: authType, WebTier: seed.WebTier, Name: seed.Name, Email: seed.Email, UserID: seed.UserID, TeamID: seed.TeamID, SourceKey: sourceKey, OIDCClientID: seed.OIDCClientID, EncryptedAccessToken: accessEncrypted, EncryptedRefreshToken: refreshEncrypted, EncryptedCloudflareCookie: cloudflareEncrypted, ExpiresAt: seed.ExpiresAt, Enabled: true, AuthStatus: accountdomain.AuthStatusActive, Priority: accountdomain.DefaultPriority, MaxConcurrent: accountdomain.DefaultMaxConcurrent, MinimumRemaining: accountdomain.DefaultMinimumRemaining, WebNSFWEnabledAt: seed.WebNSFWEnabledAt, WebTermsAcceptedAt: seed.WebTermsAcceptedAt, WebTermsAcceptedVersion: seed.WebTermsAcceptedVersion, WebBirthDateSetAt: seed.WebBirthDateSetAt}
-	value.BuildBotFlagSource = s.credentialMetadata(value).BuildBotFlagSource
-	if providerValue == accountdomain.ProviderWeb && strings.TrimSpace(seed.AccessToken) != "" {
-		value.EgressIdentity = "sso_" + security.HashToken(seed.AccessToken)[:32]
-	}
-	return value, nil
 }
 
 func normalizePage(page, pageSize int) (int, int) {

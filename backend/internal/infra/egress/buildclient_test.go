@@ -27,6 +27,25 @@ func TestBuildClientUsesConfiguredResponseHeaderTimeout(t *testing.T) {
 	}
 }
 
+func TestBrowserTransportPoolLimitsAreBounded(t *testing.T) {
+	options := browserTransportOptions()
+	if options.MaxIdleConns != browserMaxIdleConnections {
+		t.Fatalf("max idle connections = %d", options.MaxIdleConns)
+	}
+	if options.MaxIdleConnsPerHost != browserMaxIdleConnectionsPerHost {
+		t.Fatalf("max idle connections per host = %d", options.MaxIdleConnsPerHost)
+	}
+	if options.MaxConnsPerHost != browserMaxConnectionsPerHost {
+		t.Fatalf("max connections per host = %d", options.MaxConnsPerHost)
+	}
+	if options.IdleConnTimeout == nil || *options.IdleConnTimeout != browserIdleConnectionTimeout {
+		t.Fatalf("idle connection timeout = %v", options.IdleConnTimeout)
+	}
+	if options.MaxIdleConnsPerHost > options.MaxIdleConns || options.MaxIdleConnsPerHost > options.MaxConnsPerHost {
+		t.Fatalf("browser connection limits are inconsistent: %#v", options)
+	}
+}
+
 func TestBuildEnvironmentClientPreservesEnvironmentProxyLookup(t *testing.T) {
 	direct, err := newBuildClient("", 7*time.Minute)
 	if err != nil {

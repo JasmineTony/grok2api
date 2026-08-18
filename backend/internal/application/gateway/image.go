@@ -55,6 +55,16 @@ type imageProviderSupport func(accountdomain.Provider) bool
 
 type imageExecution func(context.Context, accountdomain.Provider, accountdomain.Credential, string) (*provider.Response, error)
 
+func imageFailureAuditCode(err error) string {
+	if provider.IsMediaPostProcessingError(err) {
+		return "media_postprocessing_failed"
+	}
+	if code, ok := provider.ErrorPublicCode(err); ok {
+		return code
+	}
+	return "upstream_unavailable"
+}
+
 // GenerateImage 选择支持图片生成的路由和账号，并返回可统一审计的上游响应。
 func (s *Service) GenerateImage(ctx context.Context, input ImageGenerationInput) (*Result, error) {
 	return s.executeImage(ctx, input.RequestID, input.ClientKey, input.PublicModel, audit.OperationImage, modeldomain.CapabilityImage, func(providerValue accountdomain.Provider) bool {
@@ -233,11 +243,7 @@ func (s *Service) executeImage(
 				s.selector.MarkFailure(ctx, credential, 0, 0)
 			}
 			lease.Release()
-			errorCode := "upstream_unavailable"
-			if provider.IsMediaPostProcessingError(err) {
-				errorCode = "media_postprocessing_failed"
-			}
-			writeFailureAudit(http.StatusBadGateway, errorCode, &credential)
+			writeFailureAudit(http.StatusBadGateway, imageFailureAuditCode(err), &credential)
 			return nil, err
 		}
 		if response.StatusCode == http.StatusUnauthorized && credential.AuthType == accountdomain.AuthTypeSSO {

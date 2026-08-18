@@ -36,6 +36,11 @@ bootstrapAdmin:
 	if cfg.Server.ReadTimeout.Value() != 15*time.Minute {
 		t.Fatalf("readTimeout = %s", cfg.Server.ReadTimeout.Value())
 	}
+	if cfg.Server.VoiceWebSocketIdleTimeout.Value() != 2*time.Minute ||
+		cfg.Server.VoiceWebSocketMessagesPerSecond != 100 ||
+		cfg.Server.VoiceWebSocketMessageBurst != 200 {
+		t.Fatalf("voice websocket defaults = %#v", cfg.Server)
+	}
 	if cfg.Secrets.JWTSecret != "12345678901234567890123456789012" {
 		t.Fatalf("jwtSecret = %q", cfg.Secrets.JWTSecret)
 	}
@@ -60,6 +65,11 @@ bootstrapAdmin:
 	if cfg.Routing.MaxAttempts != 3 || cfg.Routing.VideoMaxAttempts != 999 {
 		t.Fatalf("routing attempt defaults = %#v", cfg.Routing)
 	}
+	if cfg.Routing.ProviderConcurrency.Build != 512 ||
+		cfg.Routing.ProviderConcurrency.Web != 256 ||
+		cfg.Routing.ProviderConcurrency.Console != 256 {
+		t.Fatalf("provider concurrency defaults = %#v", cfg.Routing.ProviderConcurrency)
+	}
 	if cfg.Accounts.AutoCleanReauthEnabled || cfg.Accounts.AutoCleanIncludeDisabled {
 		t.Fatal("accounts auto-clean flags should default to false")
 	}
@@ -80,6 +90,41 @@ bootstrapAdmin:
 	expectedFrontendPath := filepath.Join(dir, "frontend", "dist")
 	if cfg.Frontend.StaticPath != expectedFrontendPath {
 		t.Fatalf("frontend static path = %q, want %q", cfg.Frontend.StaticPath, expectedFrontendPath)
+	}
+}
+
+func TestValidatePostgresEnvironmentURL(t *testing.T) {
+	for _, value := range []string{
+		"postgres://user:password@db.example/grok2api",
+		"postgresql://user:password@db.example/grok2api?sslmode=disable",
+	} {
+		if got, err := validatePostgresEnvironmentURL(value); err != nil || got != value {
+			t.Fatalf("validatePostgresEnvironmentURL(%q) = %q, %v", value, got, err)
+		}
+	}
+	for _, value := range []string{
+		"postgresql+asyncpg://user:password@db.example/grok2api",
+		"mysql://user:password@db.example/grok2api",
+		"file:///var/lib/grok2api/backend.db",
+	} {
+		if _, err := validatePostgresEnvironmentURL(value); err == nil {
+			t.Fatalf("validatePostgresEnvironmentURL(%q) unexpectedly succeeded", value)
+		}
+	}
+}
+
+func TestValidateTrustedProxies(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.Secrets.JWTSecret = "12345678901234567890123456789012"
+	cfg.Secrets.CredentialEncryptionKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+	cfg.Server.TrustedProxies = []string{"127.0.0.1", "10.0.0.0/8"}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("valid trusted proxies rejected: %v", err)
+	}
+
+	cfg.Server.TrustedProxies = []string{"not-an-ip"}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("invalid trusted proxy accepted")
 	}
 }
 
@@ -238,7 +283,19 @@ func TestValidateRejectsUnsafeRuntimeLimits(t *testing.T) {
 		"media total":  func(cfg *Config) { cfg.Media.MaxTotalBytes = 1 },
 		"batch limit":  func(cfg *Config) { cfg.Batch.SyncConcurrency = 51 },
 		"batch jitter": func(cfg *Config) { cfg.Batch.RandomDelay = Duration(6 * time.Second) },
-		"console url":  func(cfg *Config) { cfg.Provider.Console.BaseURL = "http://console.x.ai" },
+		"voice websocket idle": func(cfg *Config) {
+			cfg.Server.VoiceWebSocketIdleTimeout = Duration(500 * time.Millisecond)
+		},
+		"voice websocket rate": func(cfg *Config) {
+			cfg.Server.VoiceWebSocketMessagesPerSecond = 0
+		},
+		"voice websocket burst": func(cfg *Config) {
+			cfg.Server.VoiceWebSocketMessageBurst = cfg.Server.VoiceWebSocketMessagesPerSecond - 1
+		},
+		"provider concurrency": func(cfg *Config) {
+			cfg.Routing.ProviderConcurrency.Console = 0
+		},
+		"console url": func(cfg *Config) { cfg.Provider.Console.BaseURL = "http://console.x.ai" },
 		"console timeout": func(cfg *Config) {
 			cfg.Provider.Console.ChatTimeout = Duration(time.Second)
 		},

@@ -393,8 +393,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	auditService := auditapp.NewService(auditRepo, logger, cfg.Audit.BufferSize, cfg.Audit.BatchSize, cfg.Audit.FlushInterval.Value())
 	auditService.UpdateWriterConfig(cfg.Audit.BatchSize, cfg.Audit.FlushInterval.Value(), cfg.Audit.CommitDelay.Value())
 	auditService.UpdateLedgerConfig(auditLedgerConfig(cfg.Audit))
+	auditService.SetCommitObserver(clientKeyService.CompleteBillingBatch)
+	auditService.SetDropObserver(clientKeyService.ReleaseBillingProtectionBatch)
 	dashboardService := dashboardapp.NewService(dashboardRepo)
 	selector := gateway.NewSelector(accountRepo, concurrency, sticky, providers, cfg.Routing.StickyTTL.Value(), cfg.Routing.CooldownBase.Value(), cfg.Routing.CooldownMax.Value(), cfg.Routing.CapacityWait.Value())
+	selector.UpdateProviderConcurrency(providerConcurrencyLimits(cfg.Routing.ProviderConcurrency))
 	selector.UpdatePreferFreeBuild(cfg.Routing.PreferFreeBuild)
 	selector.UpdateSegmentedSelector(cfg.Routing.SegmentedSelectorEnabled, cfg.Routing.SegmentedMinCandidates, cfg.Routing.SegmentedWindowSize)
 	selector.SetNotifications(notificationService)
@@ -519,6 +522,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 		quotaRecoveryService.UpdateConfig(next.Provider.Web.RecoveryBackoffBase.Value(), next.Provider.Web.RecoveryBackoffMax.Value())
 		accountSyncService.UpdateConcurrency(next.Batch.ImportConcurrency)
 		selector.UpdateConfig(next.Routing.StickyTTL.Value(), next.Routing.CooldownBase.Value(), next.Routing.CooldownMax.Value(), next.Routing.CapacityWait.Value())
+		selector.UpdateProviderConcurrency(providerConcurrencyLimits(next.Routing.ProviderConcurrency))
 		selector.UpdatePreferFreeBuild(next.Routing.PreferFreeBuild)
 		selector.UpdateSegmentedSelector(next.Routing.SegmentedSelectorEnabled, next.Routing.SegmentedMinCandidates, next.Routing.SegmentedWindowSize)
 		selector.UpdateExcludeBuildBotFlaggedFromScheduling(next.Accounts.ExcludeBuildBotFlaggedFromScheduling)
@@ -551,7 +555,22 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	}
 	metrics := metricsobs.NewMetrics()
 	gatewayService.ConfigureMetrics(metrics)
-	router := httpserver.New(httpserver.Dependencies{Logger: logger, Metrics: metrics, RequestTimeout: cfg.Server.RequestTimeout.Value(), MaxBodyBytes: cfg.Server.MaxBodyBytes, ConcurrencyGate: inferenceConcurrency, SecureCookies: cfg.Auth.SecureCookies, SwaggerEnabled: cfg.Server.SwaggerEnabled, PublicAPIBaseURL: cfg.Frontend.EffectivePublicAPIBaseURL(), FrontendStaticPath: cfg.Frontend.StaticPath, Readiness: readiness, TrafficReady: startup.acceptsTraffic, AdminAuth: adminService, Accounts: accountService, AccountSync: accountSyncService, Models: modelService, ClientKeys: clientKeyService, Audits: auditService, Dashboard: dashboardService, Gateway: gatewayService, Media: mediaService, Settings: settingsService, Egress: egressService, QualityGuardStatePath: qualityGuardPath("state.json"), QualityGuardConfigPath: qualityGuardPath("runtime-config.json"), QualityGuardToken: qualityGuardToken, QualityGuardProbe: qualityGuardProbe, Updates: updateService, Notifications: notificationService, Backup: backupService, RequestPolicies: requestPolicyService, RequestSnapshots: requestSnapshotService})
+	router := httpserver.New(httpserver.Dependencies{
+		Logger: logger, Metrics: metrics, RequestTimeout: cfg.Server.RequestTimeout.Value(), MaxBodyBytes: cfg.Server.MaxBodyBytes,
+		VoiceWebSocketIdleTimeout:       cfg.Server.VoiceWebSocketIdleTimeout.Value(),
+		VoiceWebSocketMessagesPerSecond: cfg.Server.VoiceWebSocketMessagesPerSecond,
+		VoiceWebSocketMessageBurst:      cfg.Server.VoiceWebSocketMessageBurst,
+		ConcurrencyGate:                 inferenceConcurrency, SecureCookies: cfg.Auth.SecureCookies, TrustedProxies: cfg.Server.TrustedProxies,
+		SwaggerEnabled: cfg.Server.SwaggerEnabled, PublicAPIBaseURL: cfg.Frontend.EffectivePublicAPIBaseURL(),
+		FrontendStaticPath: cfg.Frontend.StaticPath, Readiness: readiness, TrafficReady: startup.acceptsTraffic,
+		AdminAuth: adminService, Accounts: accountService, AccountSync: accountSyncService, Models: modelService,
+		ClientKeys: clientKeyService, Audits: auditService, Dashboard: dashboardService, Gateway: gatewayService,
+		Media: mediaService, Settings: settingsService, Egress: egressService,
+		QualityGuardStatePath: qualityGuardPath("state.json"), QualityGuardConfigPath: qualityGuardPath("runtime-config.json"),
+		QualityGuardToken: qualityGuardToken, QualityGuardProbe: qualityGuardProbe, Updates: updateService,
+		Notifications: notificationService, Backup: backupService, RequestPolicies: requestPolicyService,
+		RequestSnapshots: requestSnapshotService,
+	})
 	server := &http.Server{Addr: cfg.Server.Listen, Handler: router, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: cfg.Server.ReadTimeout.Value(), IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
 	return &Application{
 		logger: logger, database: database, server: server,
@@ -567,6 +586,14 @@ func invalidationSourceInstance(cfg config.Config) string {
 		return value
 	}
 	return fmt.Sprintf("process-%d", time.Now().UnixNano())
+}
+
+func providerConcurrencyLimits(value config.ProviderConcurrencyConfig) map[account.Provider]int {
+	return map[account.Provider]int{
+		account.ProviderBuild:   value.Build,
+		account.ProviderWeb:     value.Web,
+		account.ProviderConsole: value.Console,
+	}
 }
 
 func maxBatchConcurrency(value config.BatchConfig) int {

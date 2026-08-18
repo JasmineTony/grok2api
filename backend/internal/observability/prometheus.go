@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/chenyme/grok2api/backend/internal/pkg/perfmetrics"
 )
 
 // PrometheusConfig keeps the listener opt-in and local-only by default.
@@ -34,6 +36,7 @@ type Metrics struct {
 	egressHealth  map[string]uint64
 	tokens        map[string]uint64
 	cost          map[string]float64
+	performance   *perfmetrics.Registry
 }
 
 type durationSummary struct {
@@ -42,7 +45,15 @@ type durationSummary struct {
 }
 
 func NewMetrics() *Metrics {
-	return &Metrics{requests: map[string]uint64{}, retries: map[string]uint64{}, durations: map[string]durationSummary{}, accountStates: map[string]uint64{}, egressHealth: map[string]uint64{}, tokens: map[string]uint64{}, cost: map[string]float64{}}
+	return &Metrics{requests: map[string]uint64{}, retries: map[string]uint64{}, durations: map[string]durationSummary{}, accountStates: map[string]uint64{}, egressHealth: map[string]uint64{}, tokens: map[string]uint64{}, cost: map[string]float64{}, performance: perfmetrics.Default}
+}
+
+// SetPerformanceRegistry replaces the process-local performance registry used
+// by the Prometheus snapshot. It is primarily useful for isolated tests.
+func (m *Metrics) SetPerformanceRegistry(registry *perfmetrics.Registry) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.performance = registry
 }
 
 func (m *Metrics) IncRequest(result, category string) {
@@ -121,7 +132,90 @@ func (m *Metrics) Snapshot() string {
 	for _, key := range sortedFloatKeys(m.cost) {
 		fmt.Fprintf(&b, "grok2api_cost_usd_total{kind=\"%s\"} %f\n", key, m.cost[key])
 	}
+	if m.performance != nil {
+		writeOperationalPerformance(&b, m.performance.Collect())
+	}
 	return b.String()
+}
+
+var operationalPerformanceNames = map[string]string{
+	"account_import_runs_total":        "grok2api_account_import_runs_total",
+	"account_import_items_total":       "grok2api_account_import_items_total",
+	"account_bulk_runs_total":          "grok2api_account_bulk_runs_total",
+	"account_bulk_items_total":         "grok2api_account_bulk_items_total",
+	"token_refresh_total":              "grok2api_token_refresh_total",
+	"upstream_request_total":           "grok2api_upstream_request_total",
+	"web_lite_parser_total":            "grok2api_web_lite_parser_total",
+	"voice_websocket_sessions_total":   "grok2api_voice_websocket_sessions_total",
+	"billing_reservation_total":        "grok2api_billing_reservation_total",
+	"billing_reservation_cleanup_rows": "grok2api_billing_reservation_cleanup_rows_total",
+}
+
+var operationalPerformanceGaugeNames = map[string]string{
+	"audit_queue_depth":               "grok2api_audit_queue_depth",
+	"audit_queue_capacity":            "grok2api_audit_queue_capacity",
+	"billing_reservation_active":      "grok2api_billing_reservation_active",
+	"billing_reservation_age_seconds": "grok2api_billing_reservation_age_seconds",
+	"voice_websocket_active":          "grok2api_voice_websocket_active",
+}
+
+func writeOperationalPerformance(b *strings.Builder, samples []perfmetrics.Sample) {
+	types := make(map[string]struct{}, len(operationalPerformanceNames)+len(operationalPerformanceGaugeNames))
+	for _, sample := range samples {
+		if name, ok := operationalPerformanceGaugeNames[sample.Name]; ok && sample.HasGauge {
+			if _, exists := types[name]; !exists {
+				fmt.Fprintf(b, "# TYPE %s gauge\n", name)
+				types[name] = struct{}{}
+			}
+			fmt.Fprintf(b, "%s%s %d\n", name, performanceLabels(sample.Labels), sample.Gauge)
+			if sample.Name == "voice_websocket_active" {
+				const alias = "grok2api_ws_active"
+				if _, exists := types[alias]; !exists {
+					fmt.Fprintf(b, "# TYPE %s gauge\n", alias)
+					types[alias] = struct{}{}
+				}
+				fmt.Fprintf(b, `%s{path="%s",provider="%s"} %d`+"\n", alias,
+					safeLabel(sample.Labels.Operation), safeLabel(sample.Labels.Provider), sample.Gauge)
+			}
+			continue
+		}
+		name, ok := operationalPerformanceNames[sample.Name]
+		if !ok || sample.Total < 0 {
+			continue
+		}
+		if _, exists := types[name]; !exists {
+			fmt.Fprintf(b, "# TYPE %s counter\n", name)
+			types[name] = struct{}{}
+		}
+		fmt.Fprintf(b, "%s%s %d\n", name, performanceLabels(sample.Labels), sample.Total)
+	}
+}
+
+func performanceLabels(labels perfmetrics.Labels) string {
+	values := []struct {
+		name  string
+		value string
+	}{
+		{name: "subsystem", value: labels.Subsystem},
+		{name: "operation", value: labels.Operation},
+		{name: "provider", value: labels.Provider},
+		{name: "status", value: labels.Status},
+		{name: "plane", value: labels.Plane},
+		{name: "stage", value: labels.Stage},
+		{name: "ordinal", value: labels.Ordinal},
+		{name: "outcome", value: labels.Outcome},
+	}
+	parts := make([]string, 0, len(values))
+	for _, value := range values {
+		if strings.TrimSpace(value.value) == "" {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf(`%s="%s"`, value.name, safeLabel(value.value)))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "{" + strings.Join(parts, ",") + "}"
 }
 
 func writeSorted1(b *strings.Builder, metric string, values map[string]uint64, label string) {

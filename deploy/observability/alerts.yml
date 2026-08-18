@@ -1,0 +1,65 @@
+groups:
+  - name: grok2api-operational
+    rules:
+      - alert: Grok2APIAccountReauthRequired
+        expr: sum(grok2api_account_states{state="reauth_required"}) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Grok2API has accounts requiring reauthentication
+          description: At least one account has remained in reauth_required for 10 minutes.
+
+      - alert: Grok2APITokenRefreshFailures
+        expr: sum by (provider, outcome) (increase(grok2api_token_refresh_total{outcome!="success"}[10m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Grok2API token refresh is failing
+          description: Token refresh failures were observed for provider {{ $labels.provider }}.
+
+      - alert: Grok2APIProviderRateLimited
+        expr: sum by (provider) (rate(grok2api_upstream_request_total{status="429"}[5m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Grok2API provider is returning sustained 429 responses
+          description: Provider {{ $labels.provider }} exceeded one logical 429 response per second for 10 minutes.
+
+      - alert: Grok2APIWebSocketPressure
+        expr: sum by (provider) (grok2api_ws_active) > 200
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Grok2API active WebSocket count is high
+          description: Provider {{ $labels.provider }} has more than 200 active voice WebSockets.
+
+      - alert: Grok2APIBillingReservationStale
+        expr: max(grok2api_billing_reservation_age_seconds) > 7200
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: Grok2API has a stale billing reservation
+          description: The oldest active reservation has exceeded two hours for 15 minutes.
+
+      - alert: Grok2APIAuditQueuePressure
+        expr: grok2api_audit_queue_capacity > 0 and grok2api_audit_queue_depth / grok2api_audit_queue_capacity > 0.8
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: Grok2API audit queue is above 80 percent
+          description: Audit queue pressure can delay settlement and trigger ledger fail-closed behavior.
+
+      - alert: Grok2APIUpstreamPhysicalCallAmplification
+        expr: sum(rate(grok2api_upstream_physical_call_total[5m])) / clamp_min(sum(rate(grok2api_upstream_request_total[5m])), 0.001) > 3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Grok2API upstream physical-call amplification is high
+          description: Provider fallback or recovery is producing more than three physical calls per logical adapter call.
