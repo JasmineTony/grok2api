@@ -112,4 +112,4 @@ Templates are available in [`templates/`](./templates/).
 | 2026-08-18 50 - Observability stack assets | [Plan](./2026-08-18-50-observability-stack-assets/PLAN.md) | [Result](./2026-08-18-50-observability-stack-assets/RESULT.md) | Complete |
 | 2026-08-18 51 - Config environment split | [Plan](./2026-08-18-51-config-environment-split/PLAN.md) | [Result](./2026-08-18-51-config-environment-split/RESULT.md) | Complete |
 | 2026-08-18 52 - Credential normalizer boundary | [Plan](./2026-08-18-52-credential-normalizer-boundary/PLAN.md) | [Result](./2026-08-18-52-credential-normalizer-boundary/RESULT.md) | Complete |
-| 2026-08-18 53 - v3.7.0 reliability and observability release | [Plan](./2026-08-18-53-v3.7.0-release/PLAN.md) | [Result](./2026-08-18-53-v3.7.0-release/RESULT.md) | In progress |
+| 2026-08-18 53 - v3.7.0 reliability and observability release | [Plan](./2026-08-18-53-v3.7.0-release/PLAN.md) | [Result](./2026-08-18-53-v3.7.0-release/RESULT.md) | Complete |

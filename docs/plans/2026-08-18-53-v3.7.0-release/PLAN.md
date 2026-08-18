@@ -3,7 +3,7 @@
 - Date: 2026-08-18
 - Sequence: 53
 - Owner: JasmineTony
-- Status: In progress
+- Status: Complete
 - Base commit: `5588f2232d035931ff1e78e7791d9f5f36b74980`
 - Working branch: `fix/new-model-capability-failover-20260816`
 - Previous release: `v3.6.1`
@@ -129,13 +129,13 @@ state.
 
 ## Acceptance criteria
 
-- [ ] Reviewed local changes and latest maintained main coexist without
+- [x] Reviewed local changes and latest maintained main coexist without
       semantic regression.
-- [ ] Release-facing metadata agrees on `v3.7.0`.
-- [ ] Required local checks pass; host limitations are isolated.
-- [ ] Delivery branch is pushed once with exact SHA parity.
-- [ ] Release PR and required CI/CodeQL checks pass and merge to `main`.
-- [ ] Annotated `v3.7.0` and stable latest GitHub Release point to the delivery
+- [x] Release-facing metadata agrees on `v3.7.0`.
+- [x] Required local checks pass; host limitations are isolated.
+- [x] Delivery branch is pushed once with exact SHA parity.
+- [x] Release PR and required CI/CodeQL checks pass and merge to `main`.
+- [x] Annotated `v3.7.0` and stable latest GitHub Release point to the delivery
       merge commit.
-- [ ] GHCR aliases/platforms/digest and published `/healthz` are verified.
-- [ ] `RESULT.md` and the plan index contain exact final evidence.
+- [x] GHCR aliases/platforms/digest and published `/healthz` are verified.
+- [x] `RESULT.md` and the plan index contain exact final evidence.
