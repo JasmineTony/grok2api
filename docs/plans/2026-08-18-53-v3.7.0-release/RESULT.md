@@ -23,6 +23,7 @@
 - Release workflow:
   [run 32151300228](https://github.com/JasmineTony/grok2api/actions/runs/32151300228)
 - Closeout branch: `docs/v3.7.0-release-closeout-20260818`
+- Closeout evidence commit: `0d4d06f21c337085c1441e26bc783dd8e443ce1b`
 
 ## Delivered
 
