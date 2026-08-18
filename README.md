@@ -15,8 +15,8 @@
 
 Grok2API 以 Go 服务端和 React 管理端组成统一网关，把 Grok Build OAuth、Grok Web SSO 与 Grok Console SSO 管理为彼此隔离的账号池，并向客户端提供 OpenAI 与 Anthropic 风格接口。项目支持多账号调度、模型路由、客户端密钥、媒体任务、请求审计以及代理出口管理。
 
-当前源码版本为 **v3.7.0**，已通过真实合并集成维护中的 `origin/main`。本版整合账号生命周期、Provider 路由与模型能力同步修复，补齐 WebSocket 语音流量保护、非幂等请求重放防护、媒体计费 reservation 生命周期、配置边界拆分、Provider 可观测性指标和管理端账号 API 契约；同时保留视频任务安全交付、模型同步 SSE、代理出口治理、Console 媒体/语音接口和 Swagger 契约。
-Release v3.7.0 integrates the maintained `origin/main` with the independently maintained split administration UI, API contracts, persistence state machine, and release governance. It adds account-lifecycle hardening, provider-aware routing and model sync, WebSocket traffic guards, non-idempotent replay protection, media billing reservation lifecycle tracking, configuration boundaries, and upstream observability metrics.
+当前源码版本为 **v3.7.1**。本版修复已保存账号凭据无法解密时推理、语音和实时语音路径误报网络 `502` 的问题：管理端额度同步继续返回可操作的 `409`，公共推理接口改为脱敏的 `503 upstream_unavailable`，审计保留 `credential_decryption_failed`，并保持 `grok-4.6` 的跨账号故障切换能力。升级不会恢复由其他 `credentialEncryptionKey` 加密的数据；复用原数据库时仍必须恢复原密钥或重新导入账号。
+Release v3.7.1 fixes credential-decryption failures being misclassified as network `502` responses across inference, voice, and realtime voice paths. Public APIs now return a sanitized `503 upstream_unavailable`, audits retain `credential_decryption_failed`, and existing `grok-4.6` account failover remains intact. This release cannot recover ciphertext created with a different `credentialEncryptionKey`.
 
 > [!IMPORTANT]
 > 本项目仅用于技术研究与学习交流。使用者应遵守上游服务条款及所在地法律法规，并自行承担账号、数据与部署风险。
@@ -125,7 +125,7 @@ http://127.0.0.1:8000
 更多部署、数据库、Redis、代理和源码运行说明见 [部署与配置参考](./docs/reference/deployment-and-configuration.md)。
 
 > [!WARNING]
-> 从旧版本升级到 v3.7.0 前，必须备份 `config.yaml`、数据库、媒体目录和持久化卷。v3.7.0 启动时会执行兼容的自动增量数据库迁移；如需回退，请使用已验证的 v3.6.1 镜像与升级前备份，切勿复用已被新版本迁移且未验证可逆的数据副本。
+> 从旧版本升级到 v3.7.1 前，必须备份 `config.yaml`、数据库、媒体目录和持久化卷，并确认复用数据库时继续使用原 `credentialEncryptionKey`。v3.7.1 启动时会执行兼容的自动增量数据库迁移；如需回退，请使用已验证的 v3.7.0 镜像与升级前备份，切勿复用已被新版本迁移且未验证可逆的数据副本。
 
 ## 首次使用
 
@@ -154,7 +154,7 @@ curl http://127.0.0.1:8000/v1/responses \
 
 ### 为什么找不到 GHCR 镜像？
 
-稳定镜像位于 `ghcr.io/jasminetony/grok2api`。v3.7.0 Release 发布并验证后可使用 `v3.7.0`、`3.7.0`、`3.7`、`3` 或 `latest` 标签；发布完成前请继续固定到已经验证的 v3.6.1 digest。若部署环境无法访问 GHCR，仍可使用 `docker compose up -d --build` 从当前源码构建。
+稳定镜像位于 `ghcr.io/jasminetony/grok2api`。v3.7.1 Release 发布并验证后可使用 `v3.7.1`、`3.7.1`、`3.7`、`3` 或 `latest` 标签；发布完成前请继续固定到已经验证的 v3.7.0 digest。若部署环境无法访问 GHCR，仍可使用 `docker compose up -d --build` 从当前源码构建。
 
 普通分支、`main` 推送或单独推送标签都不会发布镜像。只有发布符合版本要求的 GitHub Release，并通过受保护的 `release` environment 审批后，才会写入 GHCR。
 

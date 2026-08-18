@@ -350,6 +350,11 @@ func (s *Service) executeVoice(
 			lease, err = selection.Acquire(ctx, excluded, false)
 		}
 		if err != nil {
+			var credentialFailure *UpstreamFailure
+			if errors.As(lastCredentialError, &credentialFailure) && credentialFailure.Category == FailureCredential {
+				writeFailureAudit(credentialFailure.HTTPStatus, credentialFailure.AuditCode(), lastCredentialFailure)
+				return nil, credentialFailure
+			}
 			errorCode := "upstream_unavailable"
 			var selectionFailure *SelectionUnavailableError
 			if errors.As(err, &selectionFailure) {
@@ -363,7 +368,7 @@ func (s *Service) executeVoice(
 		if err != nil {
 			failedCredential := lease.Credential
 			lastCredentialFailure = &failedCredential
-			lastCredentialError = err
+			lastCredentialError = newCredentialUpstreamFailure(err, lease.Credential.ID, lease.Credential.Name)
 			lease.Release()
 			continue
 		}
@@ -383,9 +388,15 @@ func (s *Service) executeVoice(
 				lease.Release()
 				continue
 			} else {
-				failure := newTransportUpstreamFailure(err, credential.ID, credential.Name)
+				failure := newProviderRequestFailure(err, credential.ID, credential.Name)
 				lastCredentialError = failure
-				if ctx.Err() == nil && isRetryableTransportFailure(credential.Provider, err) && attemptPolicy.hasNext(attempt) {
+				if failure.Category == FailureCredential && attemptPolicy.hasNext(attempt) {
+					failedCredential := credential
+					lastCredentialFailure = &failedCredential
+					lease.Release()
+					continue
+				}
+				if failure.Category != FailureCredential && ctx.Err() == nil && isRetryableTransportFailure(credential.Provider, err) && attemptPolicy.hasNext(attempt) {
 					// Transport failures are normally tied to the selected egress. Retry the
 					// same account after the adapter has invalidated/rebuilt that transport,
 					// without cooling an otherwise healthy credential.
@@ -450,6 +461,11 @@ func (s *Service) executeVoice(
 		break
 	}
 	if response == nil {
+		var credentialFailure *UpstreamFailure
+		if errors.As(lastCredentialError, &credentialFailure) && credentialFailure.Category == FailureCredential {
+			writeFailureAudit(credentialFailure.HTTPStatus, credentialFailure.AuditCode(), lastCredentialFailure)
+			return nil, credentialFailure
+		}
 		writeFailureAudit(http.StatusServiceUnavailable, "upstream_unavailable", lastCredentialFailure)
 		if lastCredentialError == nil {
 			lastCredentialError = ErrNoAvailableAccount

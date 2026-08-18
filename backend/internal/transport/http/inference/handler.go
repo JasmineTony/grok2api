@@ -2281,7 +2281,7 @@ func isUpstreamCredentialStatus(status int) bool {
 }
 
 func isSanitizedUpstreamAvailabilityFailure(failure *gateway.UpstreamFailure) bool {
-	return failure != nil && (isUpstreamCredentialStatus(failure.HTTPStatus) || failure.QuotaExhausted || failure.FreeQuotaExhausted)
+	return failure != nil && (failure.Category == gateway.FailureCredential || isUpstreamCredentialStatus(failure.HTTPStatus) || failure.QuotaExhausted || failure.FreeQuotaExhausted)
 }
 
 func selectionErrorResponse(c *gin.Context, failure *gateway.SelectionUnavailableError) (int, string, string) {

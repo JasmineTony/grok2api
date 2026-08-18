@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode"
 
+	accountapp "github.com/chenyme/grok2api/backend/internal/application/account"
 	"github.com/chenyme/grok2api/backend/internal/infra/provider"
 	neterrorpkg "github.com/chenyme/grok2api/backend/internal/pkg/neterror"
 )
@@ -234,11 +235,24 @@ func newTransportUpstreamFailure(err error, accountID uint64, accountName string
 	}
 }
 
+func newProviderRequestFailure(err error, accountID uint64, accountName string) *UpstreamFailure {
+	if accountapp.IsCredentialStorageError(err) {
+		return newCredentialUpstreamFailure(err, accountID, accountName)
+	}
+	return newTransportUpstreamFailure(err, accountID, accountName)
+}
+
 func newCredentialUpstreamFailure(err error, accountID uint64, accountName string) *UpstreamFailure {
+	code := "upstream_credential_unavailable"
+	publicMessage := "上游账号凭据不可用"
+	if accountapp.IsCredentialStorageError(err) {
+		code = "credential_decryption_failed"
+		publicMessage = "上游账号凭据无法解密"
+	}
 	return &UpstreamFailure{
 		Category: FailureCredential, Stage: "credential", Retryable: true, AccountImpact: ImpactDegraded,
-		HTTPStatus: http.StatusBadGateway, Code: "upstream_credential_unavailable", PublicMessage: "上游账号凭据不可用",
-		AccountID: accountID, AccountName: accountName, AccountScoped: true, Fingerprint: "upstream_credential_unavailable", Cause: err,
+		HTTPStatus: http.StatusServiceUnavailable, Code: code, PublicMessage: publicMessage,
+		AccountID: accountID, AccountName: accountName, AccountScoped: true, Fingerprint: code, Cause: err,
 	}
 }
 

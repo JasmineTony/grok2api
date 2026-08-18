@@ -144,6 +144,11 @@ func (s *Service) OpenVoiceWebSocket(ctx context.Context, input VoiceWebSocketIn
 			lease, err = selection.Acquire(ctx, excluded, false)
 		}
 		if err != nil {
+			var credentialFailure *UpstreamFailure
+			if errors.As(lastErr, &credentialFailure) && credentialFailure.Category == FailureCredential {
+				writeFailureAudit(credentialFailure.HTTPStatus, credentialFailure.AuditCode(), lastCredentialFailure)
+				return nil, credentialFailure
+			}
 			errorCode := "upstream_unavailable"
 			var selectionFailure *SelectionUnavailableError
 			if errors.As(err, &selectionFailure) {
@@ -157,7 +162,7 @@ func (s *Service) OpenVoiceWebSocket(ctx context.Context, input VoiceWebSocketIn
 		if err != nil {
 			failed := lease.Credential
 			lastCredentialFailure = &failed
-			lastErr = err
+			lastErr = newCredentialUpstreamFailure(err, lease.Credential.ID, lease.Credential.Name)
 			lease.Release()
 			continue
 		}
@@ -228,9 +233,15 @@ func (s *Service) OpenVoiceWebSocket(ctx context.Context, input VoiceWebSocketIn
 				lease.Release()
 				continue
 			}
-			failure := newTransportUpstreamFailure(dialErr, credential.ID, credential.Name)
+			failure := newProviderRequestFailure(dialErr, credential.ID, credential.Name)
 			lastErr = failure
-			if ctx.Err() == nil && isRetryableTransportFailure(credential.Provider, dialErr) && attempt == 0 && attemptPolicy.hasNext(attempt) {
+			if failure.Category == FailureCredential && attemptPolicy.hasNext(attempt) {
+				failed := credential
+				lastCredentialFailure = &failed
+				lease.Release()
+				continue
+			}
+			if failure.Category != FailureCredential && ctx.Err() == nil && isRetryableTransportFailure(credential.Provider, dialErr) && attempt == 0 && attemptPolicy.hasNext(attempt) {
 				delete(excluded, credential.ID)
 				if selection != nil {
 					selection.RetryAccount(credential.ID)
@@ -311,6 +322,11 @@ func (s *Service) OpenVoiceWebSocket(ctx context.Context, input VoiceWebSocketIn
 		}, nil
 	}
 	if lastErr != nil {
+		var credentialFailure *UpstreamFailure
+		if errors.As(lastErr, &credentialFailure) && credentialFailure.Category == FailureCredential {
+			writeFailureAudit(credentialFailure.HTTPStatus, credentialFailure.AuditCode(), lastCredentialFailure)
+			return nil, credentialFailure
+		}
 		return nil, lastErr
 	}
 	return nil, ErrNoAvailableAccount
