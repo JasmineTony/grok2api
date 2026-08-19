@@ -107,11 +107,11 @@ deployment state from a remaining source defect.
 
 ## Acceptance criteria
 
-- [ ] Deployment comparison and both reported failures have a documented
+- [x] Deployment comparison and both reported failures have a documented
       evidence-based classification.
-- [ ] Any confirmed source defect is fixed with focused regression coverage.
-- [ ] Required local checks pass or environment limits are documented.
-- [ ] Release-facing metadata and notes agree on `v3.7.1`.
-- [ ] Annotated `v3.7.1`, GitHub Release, GHCR aliases/platforms, and published
+- [x] Any confirmed source defect is fixed with focused regression coverage.
+- [x] Required local checks pass or environment limits are documented.
+- [x] Release-facing metadata and notes agree on `v3.7.1`.
+- [x] Annotated `v3.7.1`, GitHub Release, GHCR aliases/platforms, and published
       image health are independently verified.
-- [ ] `RESULT.md` is complete and the plan index is current.
+- [x] `RESULT.md` is complete and the plan index is current.
