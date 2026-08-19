@@ -102,12 +102,12 @@ function createSettingsSnapshotFixture() {
 
 function createVersionFixture() {
   return {
-    currentVersion: "v3.7.0",
-    latestVersion: "v3.7.0",
+    currentVersion: "v3.7.1",
+    latestVersion: "v3.7.1",
     updateAvailable: false,
     status: "up_to_date",
     checkedAt: "2099-01-01T00:00:00Z",
-    releaseUrl: "https://github.com/JasmineTony/grok2api/releases/tag/v3.7.0",
+    releaseUrl: "https://github.com/JasmineTony/grok2api/releases/tag/v3.7.1",
     releaseNotes:
       "## Upstream main parity and bounded video failover\n\n- Preserved split settings, precise health invalidation, and safe video delivery.",
     error: "",

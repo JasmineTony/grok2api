@@ -10,6 +10,7 @@ import (
 
 	accountdomain "github.com/chenyme/grok2api/backend/internal/domain/account"
 	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	"github.com/chenyme/grok2api/backend/internal/infra/security"
 	"github.com/chenyme/grok2api/backend/internal/pkg/neterror"
 )
 
@@ -48,6 +49,31 @@ func TestTransportUpstreamFailureClassifiesResponseHeaderTimeout(t *testing.T) {
 	}
 	if !isRetryableTransportFailure(accountdomain.ProviderBuild, errors.New("connection reset by peer")) {
 		t.Fatal("ordinary pre-response transport failures must retain failover behavior")
+	}
+}
+
+func TestProviderRequestFailureClassifiesCredentialDecryptAsUnavailable(t *testing.T) {
+	for _, err := range []error{
+		security.ErrCredentialDecrypt,
+		&provider.CredentialRefreshError{
+			Code:  "credential_decrypt_failed",
+			Cause: security.ErrCredentialDecrypt,
+		},
+	} {
+		failure := newProviderRequestFailure(err, 42, "build")
+		if failure.Category != FailureCredential || failure.HTTPStatus != http.StatusServiceUnavailable || failure.Code != "credential_decryption_failed" || failure.AuditCode() != "credential_decryption_failed" {
+			t.Fatalf("failure = %#v", failure)
+		}
+		if !failure.AccountScoped || !failure.Retryable || failure.AccountImpact != ImpactDegraded {
+			t.Fatalf("credential failure policy = %#v", failure)
+		}
+	}
+}
+
+func TestCredentialUpstreamFailureUsesServiceUnavailable(t *testing.T) {
+	failure := newCredentialUpstreamFailure(errors.New("refresh unavailable"), 42, "build")
+	if failure.Category != FailureCredential || failure.HTTPStatus != http.StatusServiceUnavailable || failure.Code != "upstream_credential_unavailable" {
+		t.Fatalf("failure = %#v", failure)
 	}
 }
 

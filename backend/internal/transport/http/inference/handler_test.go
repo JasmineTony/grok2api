@@ -391,6 +391,34 @@ func TestGatewayErrorHidesUpstreamCredentialStatus(t *testing.T) {
 	if credentialRecorder.Code != http.StatusServiceUnavailable || !strings.Contains(credentialRecorder.Body.String(), `"type":"overloaded_error"`) || strings.Contains(credentialRecorder.Body.String(), "认证") {
 		t.Fatalf("Anthropic credential status=%d body=%s", credentialRecorder.Code, credentialRecorder.Body.String())
 	}
+
+	decryptRouter := gin.New()
+	decryptRouter.GET("/", func(c *gin.Context) {
+		writeGatewayError(c, &gateway.UpstreamFailure{
+			Category: gateway.FailureCredential, HTTPStatus: http.StatusServiceUnavailable,
+			Code: "credential_decryption_failed", PublicMessage: "请恢复原 credentialEncryptionKey",
+			Cause: errors.New("secret credential payload"),
+		})
+	})
+	decryptRecorder := httptest.NewRecorder()
+	decryptRouter.ServeHTTP(decryptRecorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	if decryptRecorder.Code != http.StatusServiceUnavailable || !strings.Contains(decryptRecorder.Body.String(), `"code":"upstream_unavailable"`) || strings.Contains(decryptRecorder.Body.String(), "credentialEncryptionKey") || strings.Contains(decryptRecorder.Body.String(), "secret") || strings.Contains(decryptRecorder.Body.String(), "credential_decryption_failed") {
+		t.Fatalf("OpenAI decrypt status=%d body=%s", decryptRecorder.Code, decryptRecorder.Body.String())
+	}
+
+	anthropicDecryptRouter := gin.New()
+	anthropicDecryptRouter.GET("/", func(c *gin.Context) {
+		writeGatewayAnthropicError(c, &gateway.UpstreamFailure{
+			Category: gateway.FailureCredential, HTTPStatus: http.StatusServiceUnavailable,
+			Code: "credential_decryption_failed", PublicMessage: "请恢复原 credentialEncryptionKey",
+			Cause: errors.New("secret credential payload"),
+		})
+	})
+	anthropicDecryptRecorder := httptest.NewRecorder()
+	anthropicDecryptRouter.ServeHTTP(anthropicDecryptRecorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	if anthropicDecryptRecorder.Code != http.StatusServiceUnavailable || !strings.Contains(anthropicDecryptRecorder.Body.String(), `"type":"overloaded_error"`) || strings.Contains(anthropicDecryptRecorder.Body.String(), "credentialEncryptionKey") || strings.Contains(anthropicDecryptRecorder.Body.String(), "secret") || strings.Contains(anthropicDecryptRecorder.Body.String(), "credential_decryption_failed") {
+		t.Fatalf("Anthropic decrypt status=%d body=%s", anthropicDecryptRecorder.Code, anthropicDecryptRecorder.Body.String())
+	}
 }
 
 func TestDirectUpstreamCredentialResponsesAreRewritten(t *testing.T) {

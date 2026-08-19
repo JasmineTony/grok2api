@@ -236,6 +236,9 @@ jobs:
   browser-smoke:
     name: Firefox and WebKit smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - uses: pnpm/action-setup@b0f76dfb45f55f8421693e4803ac7bb65143bd34 # v6
@@ -246,13 +249,13 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
-      - name: Install dependencies and smoke browsers
+      - name: Install dependencies
         working-directory: frontend
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm exec playwright install --with-deps firefox webkit
+        run: pnpm install --frozen-lockfile
       - name: Run Firefox and WebKit smoke
         working-directory: frontend
+        env:
+          HOME: /root
         run: pnpm test:e2e --project=firefox-smoke --project=webkit-smoke --workers=1
       - name: Upload cross-browser diagnostics on failure
         if: failure()

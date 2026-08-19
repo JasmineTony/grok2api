@@ -648,6 +648,76 @@ func TestGatewayBuildResponseHeaderTimeoutDoesNotSwitchAccounts(t *testing.T) {
 	}
 }
 
+func TestGatewayGrok46CredentialDecryptFailureReturnsServiceUnavailable(t *testing.T) {
+	ctx := context.Background()
+	database, err := relational.OpenSQLite(ctx, filepath.Join(t.TempDir(), "gateway-grok-46-credential-decrypt.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if err := database.InitializeSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	accountRepo := relational.NewAccountRepository(database)
+	modelRepo := relational.NewModelRepository(database)
+	auditRepo := relational.NewAuditRepository(database)
+	responseRepo := relational.NewResponseRepository(database)
+	credentials := make([]account.Credential, 0, 2)
+	for index, name := range []string{"observer", "stale-peer"} {
+		credential, _, createErr := accountRepo.UpsertByIdentity(ctx, account.Credential{
+			Provider: account.ProviderBuild, Name: name, SourceKey: "grok-46-" + name, EncryptedAccessToken: "encrypted-" + name,
+			ExpiresAt: time.Now().Add(time.Hour), Enabled: true, AuthStatus: account.AuthStatusActive,
+			Priority: 200 - index*100, MaxConcurrent: 1,
+		})
+		if createErr != nil {
+			t.Fatal(createErr)
+		}
+		credentials = append(credentials, credential)
+	}
+	const model = "grok-4.6"
+	if err := modelRepo.UpsertDiscovered(ctx, account.ProviderBuild, []string{model}); err != nil {
+		t.Fatal(err)
+	}
+	for _, credential := range credentials {
+		if err := modelRepo.ReplaceAccountCapabilities(ctx, credential.ID, []string{model}, time.Now().UTC()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	adapter := &failoverAdapter{transportErrorIDs: map[uint64]error{
+		credentials[0].ID: security.ErrCredentialDecrypt,
+		credentials[1].ID: security.ErrCredentialDecrypt,
+	}}
+	registry := provider.NewRegistry(adapter)
+	sticky := memory.NewStickyStore()
+	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
+	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
+	service := NewService(modelRepo, auditRepo, accountService, clientkeyapp.NewService(nil, nil, nil, 60, 4, nil), registry, selector, responseRepo, 3)
+
+	_, err = service.CreateResponse(ctx, Input{
+		RequestID: "req-grok-46-credential-decrypt", ClientKey: clientkey.Key{ID: 1, Name: "grok-46-key"}, PublicModel: model,
+		Body: []byte(`{"model":"grok-4.6","input":"hello"}`),
+	})
+	var failure *UpstreamFailure
+	if !errors.As(err, &failure) {
+		t.Fatalf("error = %v, want UpstreamFailure", err)
+	}
+	if failure.Category != FailureCredential || failure.HTTPStatus != http.StatusServiceUnavailable || failure.AuditCode() != "credential_decryption_failed" {
+		t.Fatalf("failure = %#v", failure)
+	}
+	if len(adapter.attempts) != 2 || adapter.attempts[0] != credentials[0].ID || adapter.attempts[1] != credentials[1].ID {
+		t.Fatalf("attempts = %#v, want %d then %d", adapter.attempts, credentials[0].ID, credentials[1].ID)
+	}
+	for _, credential := range credentials {
+		latest, getErr := accountRepo.Get(ctx, credential.ID)
+		if getErr != nil {
+			t.Fatal(getErr)
+		}
+		if latest.FailureCount != 0 || latest.CooldownUntil != nil {
+			t.Fatalf("credential decrypt failure changed transport health: %#v", latest)
+		}
+	}
+}
+
 type blockingHealthAccountRepository struct {
 	repository.AccountRepository
 	started chan struct{}
@@ -1379,6 +1449,125 @@ func TestUnpricedVoiceRemainsAvailableToFiniteClientKey(t *testing.T) {
 	}
 	result.Finalize(Usage{}, "", "")
 	_ = result.Body.Close()
+}
+
+func TestVoiceCredentialDecryptFailureReturnsServiceUnavailable(t *testing.T) {
+	ctx := context.Background()
+	database, err := relational.OpenSQLite(ctx, filepath.Join(t.TempDir(), "voice-credential-decrypt.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if err := database.InitializeSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	accountRepo := relational.NewAccountRepository(database)
+	modelRepo := relational.NewModelRepository(database)
+	auditRepo := relational.NewAuditRepository(database)
+	credential, _, err := accountRepo.UpsertByIdentity(ctx, account.Credential{
+		Provider: account.ProviderBuild, AuthType: account.AuthTypeOAuth,
+		Name: "voice-decrypt", SourceKey: "voice-decrypt", EncryptedAccessToken: "expired", EncryptedRefreshToken: "encrypted-refresh",
+		ExpiresAt: time.Now().Add(-time.Minute), Enabled: true, AuthStatus: account.AuthStatusActive, MaxConcurrent: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const voiceModel = "voice-credential-decrypt"
+	if err := modelRepo.UpsertRoutes(ctx, []modeldomain.Route{{
+		PublicID: voiceModel, Provider: account.ProviderBuild, UpstreamModel: voiceModel,
+		Capability: modeldomain.CapabilityTTS, Enabled: true,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := modelRepo.ReplaceAccountCapabilities(ctx, credential.ID, []string{voiceModel}, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	adapter := &credentialDecryptVoiceAdapter{}
+	registry := provider.NewRegistry(adapter)
+	sticky := memory.NewStickyStore()
+	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
+	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
+	service := NewService(modelRepo, auditRepo, accountService, clientkeyapp.NewService(nil, nil, nil, 60, 4, nil), registry, selector, nil, 1)
+	executed := false
+
+	_, err = service.executeVoice(ctx, "req-voice-credential-decrypt", clientkey.Key{ID: 1, Name: "voice-key"}, voiceModel, audit.OperationTTS, modeldomain.CapabilityTTS, false, audit.PricingResult{}, func(account.Provider) bool {
+		return true
+	}, func(context.Context, account.Provider, account.Credential, string) (voiceExecutionResult, error) {
+		executed = true
+		return voiceExecutionResult{}, errors.New("unexpected voice execution")
+	})
+	var failure *UpstreamFailure
+	if !errors.As(err, &failure) || failure.Category != FailureCredential || failure.HTTPStatus != http.StatusServiceUnavailable || failure.AuditCode() != "credential_decryption_failed" {
+		t.Fatalf("failure = %#v, err = %v", failure, err)
+	}
+	if executed {
+		t.Fatal("voice execution reached the provider after credential decrypt failure")
+	}
+	audits, total, err := auditRepo.List(ctx, 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 1 || len(audits) != 1 || audits[0].StatusCode != http.StatusServiceUnavailable || audits[0].ErrorCode != "credential_decryption_failed" {
+		t.Fatalf("audits = %#v total=%d", audits, total)
+	}
+}
+
+func TestVoiceWebSocketCredentialDecryptFailureReturnsServiceUnavailable(t *testing.T) {
+	ctx := context.Background()
+	database, err := relational.OpenSQLite(ctx, filepath.Join(t.TempDir(), "voice-websocket-credential-decrypt.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if err := database.InitializeSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	accountRepo := relational.NewAccountRepository(database)
+	modelRepo := relational.NewModelRepository(database)
+	auditRepo := relational.NewAuditRepository(database)
+	credential, _, err := accountRepo.UpsertByIdentity(ctx, account.Credential{
+		Provider: account.ProviderBuild, AuthType: account.AuthTypeOAuth,
+		Name: "voice-websocket-decrypt", SourceKey: "voice-websocket-decrypt", EncryptedAccessToken: "expired", EncryptedRefreshToken: "encrypted-refresh",
+		ExpiresAt: time.Now().Add(-time.Minute), Enabled: true, AuthStatus: account.AuthStatusActive, MaxConcurrent: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const voiceModel = "voice-websocket-credential-decrypt"
+	if err := modelRepo.UpsertRoutes(ctx, []modeldomain.Route{{
+		PublicID: voiceModel, Provider: account.ProviderBuild, UpstreamModel: voiceModel,
+		Capability: modeldomain.CapabilityRealtime, Enabled: true,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := modelRepo.ReplaceAccountCapabilities(ctx, credential.ID, []string{voiceModel}, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	adapter := &credentialDecryptVoiceAdapter{}
+	registry := provider.NewRegistry(adapter)
+	sticky := memory.NewStickyStore()
+	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
+	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
+	service := NewService(modelRepo, auditRepo, accountService, clientkeyapp.NewService(nil, nil, nil, 60, 4, nil), registry, selector, nil, 1)
+
+	_, err = service.OpenVoiceWebSocket(ctx, VoiceWebSocketInput{
+		RequestID: "req-voice-websocket-credential-decrypt", ClientKey: clientkey.Key{ID: 1, Name: "voice-key"},
+		PublicModel: voiceModel, Path: "/realtime",
+	})
+	var failure *UpstreamFailure
+	if !errors.As(err, &failure) || failure.Category != FailureCredential || failure.HTTPStatus != http.StatusServiceUnavailable || failure.AuditCode() != "credential_decryption_failed" {
+		t.Fatalf("failure = %#v, err = %v", failure, err)
+	}
+	if adapter.dialCalls.Load() != 0 {
+		t.Fatalf("websocket dial calls = %d", adapter.dialCalls.Load())
+	}
+	audits, total, err := auditRepo.List(ctx, 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 1 || len(audits) != 1 || audits[0].StatusCode != http.StatusServiceUnavailable || audits[0].ErrorCode != "credential_decryption_failed" {
+		t.Fatalf("audits = %#v total=%d", audits, total)
+	}
 }
 
 func TestVoicePricingSettlesTTSAndRESTSTTUsage(t *testing.T) {
@@ -4183,6 +4372,32 @@ type webChatQuotaAdapter struct {
 
 type credentialFailureImageAdapter struct {
 	generationCalls atomic.Int64
+}
+
+type credentialDecryptVoiceAdapter struct {
+	dialCalls atomic.Int64
+}
+
+func (a *credentialDecryptVoiceAdapter) Provider() account.Provider { return account.ProviderBuild }
+
+func (a *credentialDecryptVoiceAdapter) Definition() provider.Definition {
+	return provider.Definition{
+		Provider: account.ProviderBuild, ModelNamespace: account.ProviderBuild.ModelNamespace(),
+		Credential: provider.CredentialSurface{AuthType: account.AuthTypeOAuth, Refresh: true},
+		Media:      provider.MediaSurface{Realtime: true},
+	}
+}
+
+func (a *credentialDecryptVoiceAdapter) RefreshCredential(context.Context, account.Credential) (provider.RefreshedCredential, error) {
+	return provider.RefreshedCredential{}, &provider.CredentialRefreshError{
+		Code: "credential_decrypt_failed", Message: "Stored refresh credential could not be decrypted",
+		Cause: security.ErrCredentialDecrypt,
+	}
+}
+
+func (a *credentialDecryptVoiceAdapter) DialVoiceWebSocket(context.Context, provider.VoiceWebSocketRequest) (provider.VoiceWebSocketConn, func(), error) {
+	a.dialCalls.Add(1)
+	return nil, nil, errors.New("unexpected websocket dial")
 }
 
 func (a *credentialFailureImageAdapter) Provider() account.Provider { return account.ProviderBuild }

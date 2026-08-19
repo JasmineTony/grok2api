@@ -1099,7 +1099,10 @@ attemptLoop:
 				lastFailure = newHTTPUpstreamFailure(http.StatusUnauthorized, nil, credential.ID, credential.Name)
 				continue
 			}
-			lastFailure = newTransportUpstreamFailure(err, credential.ID, credential.Name)
+			lastFailure = newProviderRequestFailure(err, credential.ID, credential.Name)
+			if lastFailure.Category == FailureCredential {
+				continue
+			}
 			if !isRetryableTransportFailure(credential.Provider, err) {
 				break
 			}
@@ -1148,7 +1151,10 @@ attemptLoop:
 					lastFailure = newCanceledUpstreamFailure(firstError(ctx.Err(), err), credential.ID, credential.Name)
 					break
 				} else {
-					lastFailure = newTransportUpstreamFailure(err, credential.ID, credential.Name)
+					lastFailure = newProviderRequestFailure(err, credential.ID, credential.Name)
+					if lastFailure.Category == FailureCredential {
+						continue
+					}
 					if !isRetryableTransportFailure(credential.Provider, err) {
 						break attemptLoop
 					}
@@ -1267,7 +1273,10 @@ attemptLoop:
 						lastFailure = newCanceledUpstreamFailure(firstError(ctx.Err(), err), credential.ID, credential.Name)
 						break attemptLoop
 					}
-					lastFailure = newTransportUpstreamFailure(err, credential.ID, credential.Name)
+					lastFailure = newProviderRequestFailure(err, credential.ID, credential.Name)
+					if lastFailure.Category == FailureCredential {
+						continue attemptLoop
+					}
 					if !isRetryableTransportFailure(credential.Provider, err) {
 						break attemptLoop
 					}
