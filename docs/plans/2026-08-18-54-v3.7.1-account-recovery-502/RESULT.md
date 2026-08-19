@@ -1,8 +1,9 @@
 # Iteration result: v3.7.1 account recovery and Grok Build 502 verification
 
-- Date completed: 2026-08-18
+- Date updated: 2026-08-19
 - Status: Delivery Ready
 - Base commit: `73ebb446`
+- Implementation commit: `d4e68fbe6cbeb1c65f6f7d3dbdd656047b21768e`
 - Final commit: `<pending>`
 - Pull request: `<pending>`
 
@@ -31,6 +32,13 @@
   same-provider failover still attempts the observer account and its stale
   capability peer without applying transport cooldown for a local decryption
   failure.
+- Isolated the cross-browser CI cancellation to
+  `playwright install --with-deps`: the Ubuntu Noble runner spent almost six
+  hours retrying its Azure APT mirror before GitHub canceled the operation, so
+  Firefox and WebKit tests never started.
+- Replaced runtime browser/system-package installation with the version-matched
+  official Playwright `v1.62.1-noble` OCI image, pinned to its multi-platform
+  index digest, and added a 30-minute job timeout.
 
 ## Verification results
 
@@ -43,6 +51,7 @@
 | Frontend | Passed | Prettier, TypeScript, ESLint, `22` Vitest files / `81` tests, production build, bundle/chunk, icon, UI symbol, API contract, and architecture checks |
 | Repository | Passed | Release-version audit, `10` release-automation tests, Markdown audit over `155` tracked files, and `git diff --check` |
 | Security review | Passed | Independent review found and triggered remediation of the Voice WebSocket `EnsureCredential` path; client-facing credential details remain redacted |
+| Cross-browser CI preparation | Remediated locally | Firefox/WebKit now use the digest-pinned Playwright image and avoid runtime APT; workflow rerun remains pending |
 | Remote publication | Pending | Branch push, PR checks, true merge, annotated tag, Release, GHCR, and published-image smoke remain gated on final synchronization |
 
 ## Assumptions and defaults verification
@@ -67,6 +76,8 @@
   attempted.
 - The user-level pnpm tool directory was not writable. Frontend checks were run
   with repository-local `.cmd` binaries and passed.
+- Docker is not installed on the Windows validation host, so the containerized
+  Firefox/WebKit job must be proven by the protected GitHub Actions rerun.
 
 ## Unresolved and follow-up work
 
