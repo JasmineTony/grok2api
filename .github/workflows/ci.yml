@@ -254,6 +254,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Run Firefox and WebKit smoke
         working-directory: frontend
+        env:
+          HOME: /root
         run: pnpm test:e2e --project=firefox-smoke --project=webkit-smoke --workers=1
       - name: Upload cross-browser diagnostics on failure
         if: failure()

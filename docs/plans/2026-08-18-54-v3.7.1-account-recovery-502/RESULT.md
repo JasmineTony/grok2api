@@ -5,7 +5,7 @@
 - Base commit: `73ebb446`
 - Implementation commit: `d4e68fbe6cbeb1c65f6f7d3dbdd656047b21768e`
 - Final commit: `<pending>`
-- Pull request: `<pending>`
+- Pull request: `#75`
 
 ## Delivered
 
@@ -39,6 +39,10 @@
 - Replaced runtime browser/system-package installation with the version-matched
   official Playwright `v1.62.1-noble` OCI image, pinned to its multi-platform
   index digest, and added a 30-minute job timeout.
+- The first protected rerun completed browser setup instead of hanging on APT,
+  then exposed Firefox's root-session guard because GitHub left `HOME` pointing
+  at `/github/home`, which is owned by `pwuser`. The smoke step now sets
+  `HOME=/root` as required by Firefox in the Playwright container.
 
 ## Verification results
 
@@ -51,8 +55,8 @@
 | Frontend | Passed | Prettier, TypeScript, ESLint, `22` Vitest files / `81` tests, production build, bundle/chunk, icon, UI symbol, API contract, and architecture checks |
 | Repository | Passed | Actionlint, release-version audit, `10` release-automation tests, Markdown audit over `158` tracked files, clean-tree gitleaks scan, Swagger consistency, and `git diff --check` |
 | Security review | Passed | Independent review found and triggered remediation of the Voice WebSocket `EnsureCredential` path; client-facing credential details remain redacted |
-| Cross-browser CI preparation | Remediated locally | Firefox/WebKit now use the digest-pinned Playwright image and avoid runtime APT; workflow rerun remains pending |
-| Remote publication | Pending | Branch push, PR checks, true merge, annotated tag, Release, GHCR, and published-image smoke remain gated on final synchronization |
+| Cross-browser CI preparation | Follow-up ready | Run `32210065992` proved dependency setup completes without APT installation; its only browser-launch blocker was Firefox rejecting root with `HOME=/github/home`, now corrected to `/root` |
+| Remote publication | In progress | Branch and PR `#75` exist; protected checks, true merge, annotated tag, Release, GHCR, and published-image smoke remain pending |
 
 ## Assumptions and defaults verification
 
@@ -64,7 +68,7 @@
 
 ## Push gate evidence
 
-- First remote push occurred only after final local acceptance: Pending
+- First remote push occurred only after final local acceptance: Passed
 - Final synchronization base:
   `2918e08bb563a56a610d6cb0e343c7885dbf9af8`
 - Synchronization merge:
