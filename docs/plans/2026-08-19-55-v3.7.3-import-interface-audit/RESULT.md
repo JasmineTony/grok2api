@@ -119,15 +119,19 @@ current exposure.
 ## Push gate evidence
 
 - First remote push occurred only after final local acceptance: Yes
-- Final synchronization base: `b9ba1190`
+- Final synchronization base: `16eefa32` (`origin/main`, merged into the branch
+  as `140f37fb`)
 - Final verification run: `go vet ./...`, `go test ./... -count=1`, normalized
   `gofmt`, `swag` regeneration diff, `python scripts/audit-release-version.py`,
   `node scripts/audit-markdown.mjs`,
   `python -m unittest discover -s scripts/tests`, `actionlint`,
   `gitleaks dir .` over the exported tracked tree, `git diff --check`, and the
   frontend Prettier, `tsc -b`, Vitest, and ESLint runs
-- Remaining pre-push requirement: synchronize with the latest `origin/main` and
-  let CI run the full `pnpm verify` suite, which could not execute locally
+- The post-synchronization `go test ./... -count=1` run completed with no
+  failures at all, including the SOCKS5 test that flaked earlier
+- Remaining pre-release requirement: CI must run the full `pnpm verify` suite,
+  including the bundle, chunk, icon, UI-symbol, API-contract, and architecture
+  audits, which could not execute locally
 
 ## Deviations from plan
 
