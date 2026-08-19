@@ -151,7 +151,7 @@ test.describe("authenticated route boundaries @cross-browser", () => {
   }) => {
     test.setTimeout(60_000);
     await page.goto("/settings/about");
-    await expect(page.locator("main").getByText("v3.7.1").first()).toBeVisible({
+    await expect(page.locator("main").getByText("v3.7.3").first()).toBeVisible({
       timeout: 30_000,
     });
   });

@@ -15,8 +15,8 @@
 
 Grok2API 以 Go 服务端和 React 管理端组成统一网关，把 Grok Build OAuth、Grok Web SSO 与 Grok Console SSO 管理为彼此隔离的账号池，并向客户端提供 OpenAI 与 Anthropic 风格接口。项目支持多账号调度、模型路由、客户端密钥、媒体任务、请求审计以及代理出口管理。
 
-当前源码版本为 **v3.7.1**。本版修复已保存账号凭据无法解密时推理、语音和实时语音路径误报网络 `502` 的问题：管理端额度同步继续返回可操作的 `409`，公共推理接口改为脱敏的 `503 upstream_unavailable`，审计保留 `credential_decryption_failed`，并保持 `grok-4.6` 的跨账号故障切换能力。升级不会恢复由其他 `credentialEncryptionKey` 加密的数据；复用原数据库时仍必须恢复原密钥或重新导入账号。
-Release v3.7.1 fixes credential-decryption failures being misclassified as network `502` responses across inference, voice, and realtime voice paths. Public APIs now return a sanitized `503 upstream_unavailable`, audits retain `credential_decryption_failed`, and existing `grok-4.6` account failover remains intact. This release cannot recover ciphertext created with a different `credentialEncryptionKey`.
+当前源码版本为 **v3.7.3**。本版把 `grok-4.20-0309-reasoning`、`grok-4.20-0309-non-reasoning` 与 `grok-4.20-multi-agent-0309` 的上下文窗口元数据从 2,000,000 更正为官方模型表所载的 1,000,000，使 Codex 客户端目录与 `grok-4.3` 的既有取值保持一致；同时为账号凭据导出文件补充 `.gitignore` 规则，避免明文令牌被提交。本版不改变路由、计费与推理档位行为。
+Release v3.7.3 corrects the `grok-4.20` family context-window metadata from 2,000,000 to the officially documented 1,000,000 tokens, aligning the Codex client catalog with the existing `grok-4.3` entry, and adds `.gitignore` coverage so exported account credential files cannot be committed. Routing, pricing, and reasoning-effort behavior are unchanged.
 
 > [!IMPORTANT]
 > 本项目仅用于技术研究与学习交流。使用者应遵守上游服务条款及所在地法律法规，并自行承担账号、数据与部署风险。
@@ -74,8 +74,11 @@ Authorization: Bearer g2a_xxx_xxx
 | `POST` | `/v1/images/generations` | 图片生成 |
 | `POST` | `/v1/images/edits` | 图片编辑 |
 | `POST` | `/v1/videos/generations` | 创建异步视频任务 |
+| `POST` | `/v1/tts` | 文本转语音 |
+| `POST` | `/v1/stt` | 语音转文本 |
+| `GET` | `/v1/realtime` | Realtime 语音 WebSocket |
 
-Build 模型按账号真实能力动态发现，请以管理端模型页或 `GET /v1/models` 为准。完整接口、Provider 边界和媒体流程见 [架构与路由参考](./docs/reference/architecture-and-routing.md)。
+Build 模型按账号真实能力动态发现，请以管理端模型页或 `GET /v1/models` 为准。语音、音频与 Realtime 能力由 Console 账号池提供。完整接口、Provider 边界和媒体流程见 [架构与路由参考](./docs/reference/architecture-and-routing.md)。
 
 ## 快速开始
 
@@ -125,7 +128,7 @@ http://127.0.0.1:8000
 更多部署、数据库、Redis、代理和源码运行说明见 [部署与配置参考](./docs/reference/deployment-and-configuration.md)。
 
 > [!WARNING]
-> 从旧版本升级到 v3.7.1 前，必须备份 `config.yaml`、数据库、媒体目录和持久化卷，并确认复用数据库时继续使用原 `credentialEncryptionKey`。v3.7.1 启动时会执行兼容的自动增量数据库迁移；如需回退，请使用已验证的 v3.7.0 镜像与升级前备份，切勿复用已被新版本迁移且未验证可逆的数据副本。
+> 从旧版本升级到 v3.7.3 前，必须备份 `config.yaml`、数据库、媒体目录和持久化卷，并确认复用数据库时继续使用原 `credentialEncryptionKey`。v3.7.3 启动时会执行兼容的自动增量数据库迁移；如需回退，请使用已验证的 v3.7.1 镜像与升级前备份，切勿复用已被新版本迁移且未验证可逆的数据副本。
 
 ## 首次使用
 
@@ -154,7 +157,7 @@ curl http://127.0.0.1:8000/v1/responses \
 
 ### 为什么找不到 GHCR 镜像？
 
-稳定镜像位于 `ghcr.io/jasminetony/grok2api`。v3.7.1 Release 发布并验证后可使用 `v3.7.1`、`3.7.1`、`3.7`、`3` 或 `latest` 标签；发布完成前请继续固定到已经验证的 v3.7.0 digest。若部署环境无法访问 GHCR，仍可使用 `docker compose up -d --build` 从当前源码构建。
+稳定镜像位于 `ghcr.io/jasminetony/grok2api`。v3.7.3 Release 发布并验证后可使用 `v3.7.3`、`3.7.3`、`3.7`、`3` 或 `latest` 标签；发布完成前请继续固定到已经验证的 v3.7.1 digest。若部署环境无法访问 GHCR，仍可使用 `docker compose up -d --build` 从当前源码构建。
 
 普通分支、`main` 推送或单独推送标签都不会发布镜像。只有发布符合版本要求的 GitHub Release，并通过受保护的 `release` environment 审批后，才会写入 GHCR。
 

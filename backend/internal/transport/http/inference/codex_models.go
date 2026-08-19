@@ -85,14 +85,15 @@ type grokModelCapability struct {
 
 // Metadata besides reasoning levels. Reasoning levels come from domain/model so aliases and
 // Codex catalogs never diverge from the levels each model actually supports.
+// Context windows track the official model table at https://docs.x.ai/docs/models.
 var grokCapabilities = map[string]grokModelCapability{
 	"grok-4.5":                     {500000, "xAI Grok 4.5 frontier model with reasoning and vision.", true},
 	"grok-4.6":                     {500000, "xAI Grok 4.6 frontier model with reasoning and vision.", true},
 	"grok-4.3":                     {1000000, "xAI Grok 4.3 high-capacity reasoning model.", true},
 	"grok-build-0.1":               {256000, "xAI Grok Build 0.1 coding model.", false},
-	"grok-4.20-0309-reasoning":     {2000000, "xAI Grok 4.20 reasoning model.", true},
-	"grok-4.20-0309-non-reasoning": {2000000, "xAI Grok 4.20 non-reasoning model.", true},
-	"grok-4.20-multi-agent-0309":   {2000000, "xAI Grok 4.20 multi-agent model.", true},
+	"grok-4.20-0309-reasoning":     {1000000, "xAI Grok 4.20 reasoning model.", true},
+	"grok-4.20-0309-non-reasoning": {1000000, "xAI Grok 4.20 non-reasoning model.", true},
+	"grok-4.20-multi-agent-0309":   {1000000, "xAI Grok 4.20 multi-agent model.", true},
 	"grok-3-mini":                  {131072, "xAI Grok 3 Mini model.", false},
 	"grok-3-mini-fast":             {131072, "xAI Grok 3 Mini Fast model.", false},
 	"grok-composer-2.5-fast":       {200000, "xAI Grok Composer 2.5 model.", false},

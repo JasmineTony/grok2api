@@ -81,13 +81,48 @@ socks5h://Default.{account}:RESIN_PROXY_TOKEN@resin:2260
 | `POST` | `/v1/images/generations` | 图片生成 |
 | `POST` | `/v1/images/edits` | 图片编辑，支持 JSON 与 multipart |
 | `POST` | `/v1/videos/generations` | 创建异步视频任务 |
+| `POST` | `/v1/videos/edits` | 创建异步视频编辑任务 |
+| `POST` | `/v1/videos/extensions` | 创建异步视频延长任务 |
 | `GET` | `/v1/videos/{request_id}` | 查询视频任务 |
 | `GET` | `/v1/videos/{request_id}/content` | 获取视频任务内容 |
+| `POST` | `/v1/tts` | 文本转语音 |
+| `GET` | `/v1/tts/voices` | 列出可用音色 |
+| `GET` | `/v1/tts/voices/{voice_id}` | 查询单个音色 |
+| `POST` | `/v1/stt` | 语音转文本，支持 `vad_threshold` multipart 字段 |
+| `GET` | `/v1/stt` | 流式语音转文本 WebSocket，支持 `vad_threshold` 查询参数 |
+| `POST` | `/v1/audio/speech` | OpenAI 兼容文本转语音 |
+| `POST` | `/v1/audio/tasks` | OpenAI 兼容异步音频任务 |
+| `POST` | `/v1/audio/transcriptions` | OpenAI 兼容语音转文本 |
+| `GET` | `/v1/realtime` | Realtime 语音 WebSocket |
 | `GET` | `/v1/media/images/{asset_id}` | 读取归档图片 |
 | `GET` | `/v1/media/videos/{asset_id}` | 读取归档视频 |
 | `PUT` | `/v1/media/uploads/{token}` | 使用一次性票据接收视频上传 |
 
+语音、音频与 Realtime 能力只有 Console 账号池提供。`/healthz` 与 `/readyz` 不需要客户端密钥；`/v1/media/images/{asset_id}`、`/v1/media/videos/{asset_id}` 与 `/v1/media/uploads/{token}` 依赖不可猜测的 ID 或一次性票据，同样不经过客户端密钥校验。
+
 stored response、compact 和服务端 reasoning replay 的可用性取决于最终 Provider 及配置。健康检查、不可猜测 ID 的媒体读取和一次性上传票据具有独立授权边界。
+
+## 账号凭据导入与导出
+
+每个 Provider 使用独立的导入接口，Provider 由路由决定，不通过请求体或查询参数传入：
+
+| 方法 | 路径 | Provider |
+| --- | --- | --- |
+| `POST` | `/api/admin/v1/accounts/import` | `grok_build` |
+| `POST` | `/api/admin/v1/accounts/web/import` | `grok_web` |
+| `POST` | `/api/admin/v1/accounts/console/import` | `grok_console` |
+
+请求为 `multipart/form-data`，文件字段名是 `files`（可重复）或 `file`，单次最多 1000 个文件、合计 30 MiB、10000 个账号。响应是 SSE 事件流，以 `event: complete` 结束并给出 `created`、`updated`、`skipped`、`synced`、`syncFailed` 计数。文件内容可以是 `{"provider":…,"accounts":[…]}` 包装对象、顶层数组、单个对象或逐行 JSON；Web 与 Console 还接受每行一个 SSO 令牌的纯文本。若文件带有顶层 `provider` 字段，它必须与目标路由一致。
+
+`GET /api/admin/v1/accounts/export?provider=…` 与 `POST /api/admin/v1/accounts/export` 产出可直接回传给对应导入接口的文件。**导出文件包含明文 access、refresh 与 SSO 令牌**，仓库根目录的 `grok2api-*-accounts-*.json` 已被 `.gitignore` 覆盖，任何情况下都不得提交或写入计划记录。
+
+## 模型元数据来源
+
+- 上下文窗口、模型描述与图片输入能力以官方模型表 <https://docs.x.ai/docs/models> 为准，维护在 `backend/internal/transport/http/inference/codex_models.go`。
+- 推理档位以 `backend/internal/domain/model/reasoning.go` 为唯一来源，别名与 Codex 目录都从该表派生。
+- 计费费率与核对日期维护在 `backend/internal/domain/audit/pricing.go`，来源为 <https://docs.x.ai/developers/pricing>。
+- Console 使用静态目录，不具备远程模型发现能力；新增上游模型需要显式补充目录条目。Build 通过 `GET /models` 动态发现，因此其可用模型集合随账号能力变化。
+
 
 ## 代码入口
 
