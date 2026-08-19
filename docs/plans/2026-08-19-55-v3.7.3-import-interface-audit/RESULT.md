@@ -3,7 +3,7 @@
 - Date completed: 2026-08-19
 - Status: Complete
 - Base commit: `b9ba1190`
-- Final commit: `af4f282e`
+- Implementation commit: `0b6ec928`
 - Pull request: `<pending push after final acceptance>`
 
 ## Delivered
