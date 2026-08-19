@@ -47,9 +47,9 @@
 | Deployment comparison | Passed | v3.5.1 and v3.7.0 Compose/config/data/key contracts have no material difference related to this incident |
 | Live public health | Passed with production issue isolated | `/healthz` returned `200`; `/readyz` returned `200`, `ready=true`, overall `degraded`, and `grok_build=unavailable` at `2026-08-18T17:09:32Z` |
 | Focused interface regression | Passed | `grok-4.6`, REST voice, realtime voice WebSocket, OpenAI error, and Anthropic error tests all return the intended credential classification |
-| Backend | Passed | `go test ./... -count=1`, `go vet ./...`, and normalized `gofmt` checks |
+| Backend | Passed | After synchronizing remote `main`, `go test ./... -count=1`, `go vet ./...`, `govulncheck v1.6.0`, and normalized `gofmt` checks passed |
 | Frontend | Passed | Prettier, TypeScript, ESLint, `22` Vitest files / `81` tests, production build, bundle/chunk, icon, UI symbol, API contract, and architecture checks |
-| Repository | Passed | Release-version audit, `10` release-automation tests, Markdown audit over `155` tracked files, and `git diff --check` |
+| Repository | Passed | Actionlint, release-version audit, `10` release-automation tests, Markdown audit over `158` tracked files, clean-tree gitleaks scan, Swagger consistency, and `git diff --check` |
 | Security review | Passed | Independent review found and triggered remediation of the Voice WebSocket `EnsureCredential` path; client-facing credential details remain redacted |
 | Cross-browser CI preparation | Remediated locally | Firefox/WebKit now use the digest-pinned Playwright image and avoid runtime APT; workflow rerun remains pending |
 | Remote publication | Pending | Branch push, PR checks, true merge, annotated tag, Release, GHCR, and published-image smoke remain gated on final synchronization |
@@ -65,9 +65,13 @@
 ## Push gate evidence
 
 - First remote push occurred only after final local acceptance: Pending
-- Final synchronization base: `<pending>`
-- Final verification run: backend, frontend, repository, formatting, and
-  release-version checks passed before synchronization.
+- Final synchronization base:
+  `2918e08bb563a56a610d6cb0e343c7885dbf9af8`
+- Synchronization merge:
+  `b9898847d8b5036774e26063b2fd174048fc3e65`
+- Final verification run: backend, frontend, vulnerability, workflow,
+  repository, secret, Swagger, formatting, and release-version checks passed
+  after synchronization.
 
 ## Deviations from plan
 
@@ -78,6 +82,12 @@
   with repository-local `.cmd` binaries and passed.
 - Docker is not installed on the Windows validation host, so the containerized
   Firefox/WebKit job must be proven by the protected GitHub Actions rerun.
+- The Windows Go toolchain has `CGO_ENABLED=0` and no C compiler, so
+  `go test -race -p 1 ./...` remains a Linux CI gate rather than local evidence.
+- Windows Firefox reproduced the known host/runtime
+  `browserContext.newPage ... '_page'` startup failure. WebKit exercised the
+  same smoke suite, but the authoritative combined Firefox/WebKit result
+  remains the Linux container job.
 
 ## Unresolved and follow-up work
 
