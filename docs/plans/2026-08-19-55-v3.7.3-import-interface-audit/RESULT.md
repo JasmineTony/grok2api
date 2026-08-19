@@ -4,7 +4,10 @@
 - Status: Complete
 - Base commit: `b9ba1190`
 - Implementation commit: `0b6ec928`
-- Pull request: `<pending push after final acceptance>`
+- Final merge commit: `7e9a696cb9c56a2d8107e6c8a60af292ecf9888d`
+- Annotated tag: `v3.7.3` (`828958b03ec5d4ddd1160fd28b156bd04c06b510`)
+- Pull request: `#77`
+- Release: <https://github.com/JasmineTony/grok2api/releases/tag/v3.7.3>
 
 ## Delivered
 
@@ -93,18 +96,35 @@ Non-2xx results were each classified rather than assumed to be defects:
 | Gitleaks | Passed | `gitleaks dir .` over the exported tracked tree at `af4f282e` reports no leaks |
 | `git diff --check` | Passed | No whitespace defects |
 
-The frontend suite could not be driven through `pnpm`: its dependency-status
-check wanted to purge and reinstall `node_modules` and aborted for lack of a
-TTY. The individual tools were therefore invoked directly from
-`node_modules/.bin` against the existing install. A full `pnpm verify` run,
-including the bundle, chunk, icon, UI-symbol, API-contract, and architecture
-audits, still needs to run in CI.
+The frontend suite could not be driven through `pnpm` locally: its
+dependency-status check wanted to purge and reinstall `node_modules` and aborted
+for lack of a TTY. The individual tools were therefore invoked directly from
+`node_modules/.bin` against the existing install. CI's `Frontend quality` job
+subsequently ran the full `pnpm verify` suite, including the bundle, chunk,
+icon, UI-symbol, API-contract, and architecture audits, and passed.
+
+All 15 pull-request checks passed: `Analyze (actions)`, `Analyze (go)`,
+`Analyze (javascript-typescript)`, `Backend race` (20m02s), `Backend test and
+audit`, `Build image (amd64)`, `Build image (arm64)`, `CodeQL`, `Container
+configuration and health smoke`, `Firefox and WebKit smoke`, `Frontend
+quality`, `Repository code audit`, `Verify`, `Visual regression`, and `Workflow
+and secret audit`. The post-merge `CI` run on `main` also passed.
 
 A history-scanning `gitleaks detect` also reports one finding in commit
 `7e91e609` from 2026-08-16, a `SourceKey` test fixture that was already
 remediated in-tree by iteration 39. CI scans the working tree with
 `gitleaks dir .`, which is clean, so this is a historical artifact rather than a
 current exposure.
+
+## Release evidence
+
+| Step | Result |
+| --- | --- |
+| Pull request `#77` | Merged with a true merge commit at `7e9a696c` |
+| Annotated tag | `v3.7.3` object `828958b0` peels to `7e9a696c` and is contained by remote `main` |
+| `github-release.py check-tag` | Passed |
+| GitHub Release | Published as `Grok2API v3.7.3`, `draft=false`, `prerelease=false`, `make_latest=true`, target `main` |
+| Container image | The protected `Release container image` workflow is queued at its approval gates and still requires operator approval before the `v3.7.3`, `3.7.3`, `3.7`, `3`, and `latest` tags exist in GHCR |
 
 ## Assumptions and defaults verification
 
@@ -129,9 +149,6 @@ current exposure.
   frontend Prettier, `tsc -b`, Vitest, and ESLint runs
 - The post-synchronization `go test ./... -count=1` run completed with no
   failures at all, including the SOCKS5 test that flaked earlier
-- Remaining pre-release requirement: CI must run the full `pnpm verify` suite,
-  including the bundle, chunk, icon, UI-symbol, API-contract, and architecture
-  audits, which could not execute locally
 
 ## Deviations from plan
 
@@ -165,6 +182,10 @@ current exposure.
   be stabilized independently.
 - An untracked, unreferenced `dashboard.png` remains in the repository root from
   an earlier session; it was left in place rather than deleted.
+- The `Release container image` workflow is still queued at its approval gates.
+  Until an operator approves it, the GHCR `v3.7.3`, `3.7.3`, `3.7`, `3`, and
+  `latest` tags do not exist, so deployments must stay pinned to the verified
+  `v3.7.1` digest.
 
 ## Rollback
 
