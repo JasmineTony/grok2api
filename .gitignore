@@ -22,6 +22,8 @@ Thumbs.db
 !/docs/reference/
 !/docs/reference/**
 /backend/docs/goal/
+# Account credential exports produced by /accounts/export carry plaintext tokens.
+/grok2api-*-accounts-*.json
 *.har
 *.pcap
 *.pcapng
@@ -33,10 +35,15 @@ Thumbs.db
 
 # Workspace-local tool caches
 /.cache/
+/.playwright-mcp/
+__pycache__/
 
 # Go
 /.gocache/
 /.gocache-*/
+/.gomodcache/
+/.gomodcache-*/
+/.gopath/
 /backend/grok2api
 /backend/coverage.out
 *.coverprofile
