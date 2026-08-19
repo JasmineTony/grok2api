@@ -1,10 +1,10 @@
 # Iteration result: v3.7.1 account recovery and Grok Build 502 verification
 
 - Date updated: 2026-08-19
-- Status: Delivery Ready
+- Status: Complete
 - Base commit: `73ebb446`
 - Implementation commit: `d4e68fbe6cbeb1c65f6f7d3dbdd656047b21768e`
-- Final commit: `<pending>`
+- Final merge commit: `f624f934cf540d173b85d94452226f8fd6b5cfd2`
 - Pull request: `#75`
 
 ## Delivered
@@ -43,6 +43,9 @@
   then exposed Firefox's root-session guard because GitHub left `HOME` pointing
   at `/github/home`, which is owned by `pwuser`. The smoke step now sets
   `HOME=/root` as required by Firefox in the Playwright container.
+- Merged PR `#75` with a true merge commit, published annotated `v3.7.1`, and
+  released the stable GitHub Release. The protected release workflow published
+  and smoke-tested the image after its three approval gates.
 
 ## Verification results
 
@@ -55,8 +58,10 @@
 | Frontend | Passed | Prettier, TypeScript, ESLint, `22` Vitest files / `81` tests, production build, bundle/chunk, icon, UI symbol, API contract, and architecture checks |
 | Repository | Passed | Actionlint, release-version audit, `10` release-automation tests, Markdown audit over `158` tracked files, clean-tree gitleaks scan, Swagger consistency, and `git diff --check` |
 | Security review | Passed | Independent review found and triggered remediation of the Voice WebSocket `EnsureCredential` path; client-facing credential details remain redacted |
-| Cross-browser CI preparation | Follow-up ready | Run `32210065992` proved dependency setup completes without APT installation; its only browser-launch blocker was Firefox rejecting root with `HOME=/github/home`, now corrected to `/root` |
-| Remote publication | In progress | Branch and PR `#75` exist; protected checks, true merge, annotated tag, Release, GHCR, and published-image smoke remain pending |
+| Cross-browser CI | Passed | PR workflow `32210854007` completed all `15` checks, including Firefox/WebKit smoke, Linux race, verification, and amd64/arm64 build checks |
+| GitHub publication | Passed | PR `#75` merged as `f624f934cf540d173b85d94452226f8fd6b5cfd2`; annotated tag object `acf83fb04b5fd7451eba0755605b154aa5878dbc` peels to that commit; Release `v3.7.1` is published, stable, and latest |
+| GHCR publication | Passed | `ghcr.io/jasminetony/grok2api:{v3.7.1,3.7.1,3.7,3,latest}` all resolve to OCI index `sha256:1cf5bfb15b42866dcf38d53c5d0ba4428528851054ab01b3aa2e7f543148c804` with `linux/amd64` and `linux/arm64` manifests |
+| Published-image smoke | Passed | Release workflow `32212252414` completed validate, amd64 publish, arm64 publish, final tags, and `/healthz` smoke successfully |
 
 ## Assumptions and defaults verification
 
@@ -64,7 +69,7 @@
 | --- | --- | --- |
 | Previous verified rollback release is `v3.7.0` | Passed | Existing immutable Release/tag/image evidence remains recorded in iteration 53 |
 | Existing database requires its original credential key | Passed | Wrong-key ciphertext remains intentionally unrecoverable; source changes only correct error classification |
-| Delivery branch is `fix/v3.7.1-account-recovery-502-20260818` | Passed | Local branch matches the plan |
+| Delivery branch is `fix/v3.7.1-account-recovery-502-20260818` | Passed | Merged through PR `#75` and contained by remote `main` |
 
 ## Push gate evidence
 
@@ -76,6 +81,8 @@
 - Final verification run: backend, frontend, vulnerability, workflow,
   repository, secret, Swagger, formatting, and release-version checks passed
   after synchronization.
+- PR `#75` then passed all `15` GitHub checks before merging as
+  `f624f934cf540d173b85d94452226f8fd6b5cfd2`.
 
 ## Deviations from plan
 
@@ -85,7 +92,8 @@
 - The user-level pnpm tool directory was not writable. Frontend checks were run
   with repository-local `.cmd` binaries and passed.
 - Docker is not installed on the Windows validation host, so the containerized
-  Firefox/WebKit job must be proven by the protected GitHub Actions rerun.
+  Firefox/WebKit job was proven by protected GitHub Actions workflow
+  `32210854007`.
 - The Windows Go toolchain has `CGO_ENABLED=0` and no C compiler, so
   `go test -race -p 1 ./...` remains a Linux CI gate rather than local evidence.
 - Windows Firefox reproduced the known host/runtime
@@ -99,9 +107,6 @@
   access restores the exact original `credentialEncryptionKey` used for the
   mounted database or re-imports the affected accounts. Publishing v3.7.1 does
   not and must not attempt to derive that key from ciphertext.
-- Remote release evidence will replace the pending fields after protected CI
-  and release workflows complete.
-
 ## Rollback
 
 Use the verified `v3.7.0` image and the pre-upgrade configuration/database/media
@@ -113,5 +118,5 @@ backups; never move the immutable `v3.7.1` tag after publication.
 - [x] Local checks and security review are complete.
 - [x] Local-only account exports, caches, screenshots, and tool state remain
       outside Git.
-- [x] The plan index is current for the delivery-ready state.
-- [ ] Remote branch, PR, merge, tag, Release, GHCR, and image smoke are complete.
+- [x] The plan index is current for the completed release state.
+- [x] Remote branch, PR, merge, tag, Release, GHCR, and image smoke are complete.
