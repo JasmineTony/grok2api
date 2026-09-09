@@ -419,7 +419,11 @@ func restoreReasoningForCalls(calls []any, cache *ReasoningCache, scope string) 
 	if cache == nil || strings.TrimSpace(scope) == "" {
 		return calls
 	}
-	result := make([]any, 0, len(calls)+1)
+	// A cached reasoning item may be inserted before each call, so the final
+	// slice can be larger than calls. Use the input size as a safe initial
+	// capacity and let append grow it; len(calls)+1 is unnecessary and can
+	// overflow for a maximally sized input slice.
+	result := make([]any, 0, len(calls))
 	seenIDs := make(map[string]struct{})
 	seenEncrypted := make(map[string]struct{})
 	for _, raw := range calls {
