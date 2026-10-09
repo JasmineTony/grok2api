@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +19,13 @@ var (
 	ErrInvalidInput = errors.New("运行设置参数无效")
 	ErrConflict     = errors.New("运行设置已被其他会话更新")
 )
+
+// minSupportedBuildClientVersion 是上游 Grok Build 接口接受的最低客户端版本，
+// 来源：issue #1068 上游 426 文案“Please update to version 1.0.13 or later”。
+const minSupportedBuildClientVersion = "1.0.13"
+
+// minSupportedBuildClientVersionParts 是上面的版本常量解析结果；常量被写坏时在启动阶段立即失败。
+var minSupportedBuildClientVersionParts = mustParseBuildClientVersion(minSupportedBuildClientVersion)
 
 // ProviderBuildConfig 是管理接口使用的 Provider 可编辑输入。
 type ProviderBuildConfig struct {
@@ -319,6 +328,12 @@ func applyDomainConfig(base config.Config, value settingsdomain.Config) config.C
 		ResponseHeaderTimeout: config.Duration(value.ProviderBuild.ResponseHeaderTimeout),
 		StreamIdleTimeout:     config.Duration(value.ProviderBuild.StreamIdleTimeout),
 	}
+	// 旧实例持久化的 Build 客户端版本可能低于上游最低要求，升级后仍会被上游以 426 拒绝（issue #1068）；
+	// 这里回填为推荐版本，空值、无法解析的值与不低于最低要求的自定义版本保持原样。
+	if target, ok := backfillBuildClientVersion(base.Provider.Build.ClientVersion); ok {
+		slog.Warn("build_client_version_backfilled", "persisted", base.Provider.Build.ClientVersion, "recommended", target)
+		base.Provider.Build.ClientVersion = target
+	}
 	if value.ProviderBuild.ResponseHeaderTimeout <= 0 {
 		base.Provider.Build.ResponseHeaderTimeout = config.Duration(settingsdomain.DefaultBuildResponseHeaderTimeout)
 	}
@@ -440,6 +455,65 @@ func applyDomainConfig(base config.Config, value settingsdomain.Config) config.C
 	}
 	base.Accounts.ExcludeBuildBotFlaggedFromScheduling = value.Accounts.ExcludeBuildBotFlaggedFromScheduling
 	return base
+}
+
+// parseBuildClientVersion 解析 major.minor.patch 形式的客户端版本，允许 v 前缀与 -/+ 后缀。
+// 语义与 updatecheck 包的语义化版本比较保持一致（该实现未导出，无法跨包复用）。
+func parseBuildClientVersion(value string) ([3]uint64, bool) {
+	value = strings.TrimPrefix(strings.TrimSpace(value), "v")
+	if index := strings.IndexAny(value, "-+"); index >= 0 {
+		value = value[:index]
+	}
+	parts := strings.Split(value, ".")
+	if len(parts) != 3 {
+		return [3]uint64{}, false
+	}
+	var result [3]uint64
+	for index, part := range parts {
+		// 空段与带前导零的段都不是规范写法，一律视为无法解析。
+		if part == "" || (len(part) > 1 && part[0] == '0') {
+			return [3]uint64{}, false
+		}
+		number, err := strconv.ParseUint(part, 10, 64)
+		if err != nil {
+			return [3]uint64{}, false
+		}
+		result[index] = number
+	}
+	return result, true
+}
+
+func mustParseBuildClientVersion(value string) [3]uint64 {
+	parsed, ok := parseBuildClientVersion(value)
+	if !ok {
+		panic("settings: 最低 Build 客户端版本不是语义化版本: " + value)
+	}
+	return parsed
+}
+
+func compareBuildClientVersion(left, right [3]uint64) int {
+	for index := range left {
+		if left[index] < right[index] {
+			return -1
+		}
+		if left[index] > right[index] {
+			return 1
+		}
+	}
+	return 0
+}
+
+// backfillBuildClientVersion 判断持久化的 Build 客户端版本是否需要回填为推荐版本。
+// 仅当持久化值可解析且低于上游最低要求时返回推荐版本；空值、非法值与更高版本一律返回 false。
+func backfillBuildClientVersion(persisted string) (string, bool) {
+	parsed, ok := parseBuildClientVersion(persisted)
+	if !ok {
+		return "", false
+	}
+	if compareBuildClientVersion(parsed, minSupportedBuildClientVersionParts) >= 0 {
+		return "", false
+	}
+	return config.RecommendedBuildClientVersion, true
 }
 
 func toDomainConfig(value config.Config) settingsdomain.Config {
