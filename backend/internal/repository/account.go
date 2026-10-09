@@ -162,6 +162,8 @@ type AccountRepository interface {
 	MarkWebBirthDateSet(ctx context.Context, id uint64, setAt time.Time) error
 	UpsertModelQuotaBlock(ctx context.Context, value account.ModelQuotaBlock) error
 	PruneExpiredModelQuotaBlocks(ctx context.Context, now time.Time, limit int) (int64, error)
+	// GetModelQuotaBlocks 返回指定账号仍未过期的模型级额度封锁，按账号分组并按 upstream_model 升序；accountIDs 为空时返回空 map。
+	GetModelQuotaBlocks(ctx context.Context, accountIDs []uint64, now time.Time) (map[uint64][]account.ModelQuotaBlock, error)
 	SaveBilling(ctx context.Context, value account.Billing) error
 	GetBilling(ctx context.Context, accountID uint64) (account.Billing, error)
 	GetQuotaRecovery(ctx context.Context, accountID uint64) (account.QuotaRecovery, error)

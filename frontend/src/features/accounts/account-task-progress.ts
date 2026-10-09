@@ -39,7 +39,10 @@ function sameProgress(left: AccountTaskProgressDTO | undefined, right: AccountTa
   return left?.completed === right.completed && left.total === right.total && left.phase === right.phase;
 }
 
-function monotonicProgress(current: AccountTaskProgressDTO | undefined, next: AccountTaskProgressDTO): AccountTaskProgressDTO {
+function monotonicProgress(
+  current: AccountTaskProgressDTO | undefined,
+  next: AccountTaskProgressDTO,
+): AccountTaskProgressDTO {
   if (!current) return next;
   return {
     ...next,
@@ -51,7 +54,9 @@ function monotonicProgress(current: AccountTaskProgressDTO | undefined, next: Ac
 // Progress phases are produced concurrently by the backend sync pipeline. This
 // controller buffers future phases, advances the visible phase only forwards,
 // and applies one global render throttle across the whole task.
-export function createAccountTaskProgressController(options: AccountTaskProgressControllerOptions): AccountTaskProgressController {
+export function createAccountTaskProgressController(
+  options: AccountTaskProgressControllerOptions,
+): AccountTaskProgressController {
   const onProgress = options.onProgress;
   const phases = options.phases ?? [];
   const intervalMs = options.intervalMs ?? 100;

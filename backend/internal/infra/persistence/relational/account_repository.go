@@ -2633,6 +2633,25 @@ func (r *AccountRepository) GetQuotaWindows(ctx context.Context, accountIDs []ui
 	return result, nil
 }
 
+func (r *AccountRepository) GetModelQuotaBlocks(ctx context.Context, accountIDs []uint64, now time.Time) (map[uint64][]account.ModelQuotaBlock, error) {
+	result := make(map[uint64][]account.ModelQuotaBlock, len(accountIDs))
+	if len(accountIDs) == 0 {
+		return result, nil
+	}
+	// 管理端读取不 JOIN provider_accounts：已禁用账号的封锁同样需要可见。
+	var rows []accountModelQuotaBlockModel
+	if err := r.db.db.WithContext(ctx).Where("account_id IN ? AND cooldown_until > ?", accountIDs, now.UTC()).Order("account_id ASC, upstream_model ASC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		result[row.AccountID] = append(result[row.AccountID], account.ModelQuotaBlock{
+			AccountID: row.AccountID, UpstreamModel: row.UpstreamModel, Reason: row.Reason,
+			CooldownUntil: row.CooldownUntil.UTC(), UpdatedAt: row.UpdatedAt.UTC(),
+		})
+	}
+	return result, nil
+}
+
 func (r *AccountRepository) SaveQuotaWindows(ctx context.Context, accountID uint64, tier account.WebTier, syncedAt time.Time, values []account.QuotaWindow) error {
 	err := r.saveQuotaWindows(ctx, accountID, tier, syncedAt, values, false, nil)
 	if err == nil {

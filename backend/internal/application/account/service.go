@@ -193,6 +193,7 @@ type View struct {
 	Billing            *accountdomain.Billing
 	Quota              QuotaView
 	QuotaWindows       []accountdomain.QuotaWindow
+	ModelQuotaBlocks   []accountdomain.ModelQuotaBlock
 	BuildBotFlagged    bool
 	BuildBotFlagSource int
 	// EnabledChanged is request-scoped update metadata. It is not persisted or
@@ -614,6 +615,10 @@ func (s *Service) List(ctx context.Context, page, pageSize int, search string, f
 	if err != nil {
 		return nil, 0, err
 	}
+	modelQuotaBlocks, err := s.accounts.GetModelQuotaBlocks(ctx, accountIDs, s.now())
+	if err != nil {
+		return nil, 0, err
+	}
 	views := make([]View, 0, len(values))
 	for _, value := range values {
 		metadata := s.buildBotFlagMetadata(value)
@@ -627,6 +632,7 @@ func (s *Service) List(ctx context.Context, page, pageSize int, search string, f
 		}
 		view.Quota = newQuotaView(view.Billing, observedTokens[value.ID], recovery, value.ObservedModel, value.BuildSuperEntitled && value.Provider == accountdomain.ProviderBuild)
 		view.QuotaWindows = quotaWindows[value.ID]
+		view.ModelQuotaBlocks = modelQuotaBlocks[value.ID]
 		views = append(views, view)
 	}
 	return views, total, nil
@@ -1069,6 +1075,11 @@ func (s *Service) Get(ctx context.Context, id uint64) (View, error) {
 	view.Quota = newQuotaView(view.Billing, observedTokens[id], recovery, value.ObservedModel, value.BuildSuperEntitled && value.Provider == accountdomain.ProviderBuild)
 	if windows, err := s.accounts.GetQuotaWindows(ctx, []uint64{id}); err == nil {
 		view.QuotaWindows = windows[id]
+	} else {
+		return View{}, err
+	}
+	if blocks, err := s.accounts.GetModelQuotaBlocks(ctx, []uint64{id}, s.now()); err == nil {
+		view.ModelQuotaBlocks = blocks[id]
 	} else {
 		return View{}, err
 	}

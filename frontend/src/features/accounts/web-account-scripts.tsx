@@ -2,7 +2,16 @@ import { Cake, Handshake, VenusAndMars, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Spinner } from "@/components/ui/spinner";
 import type { AccountTaskProgressDTO, WebAccountScriptActions } from "@/features/accounts/accounts-api";
@@ -68,11 +77,22 @@ export function WebAccountScriptsDialog({ targets, pending, progress, onClose, o
   ];
 
   return (
-    <AlertDialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+    <AlertDialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
       <AlertDialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <AlertDialogHeader>
-          <AlertDialogTitle>{t(targets === "all" ? "webAccountScripts.allTitle" : "webAccountScripts.selectedTitle", { count: targets === "all" ? 0 : targets.length })}</AlertDialogTitle>
-          <AlertDialogDescription>{t(targets === "all" ? "webAccountScripts.allDescription" : "webAccountScripts.selectedDescription")}</AlertDialogDescription>
+          <AlertDialogTitle>
+            {t(targets === "all" ? "webAccountScripts.allTitle" : "webAccountScripts.selectedTitle", {
+              count: targets === "all" ? 0 : targets.length,
+            })}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {t(targets === "all" ? "webAccountScripts.allDescription" : "webAccountScripts.selectedDescription")}
+          </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="space-y-2">
           <p className="text-xs font-medium">{t("webAccountScripts.operations")}</p>
@@ -110,9 +130,13 @@ export function WebAccountScriptsDialog({ targets, pending, progress, onClose, o
             }}
           >
             {pending ? <Spinner /> : null}
-            {pending && progress
-              ? <span className="tabular-nums">{progress.completed} / {progress.total}</span>
-              : t("webAccountScripts.run")}
+            {pending && progress ? (
+              <span className="tabular-nums">
+                {progress.completed} / {progress.total}
+              </span>
+            ) : (
+              t("webAccountScripts.run")
+            )}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

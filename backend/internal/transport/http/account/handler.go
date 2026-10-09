@@ -280,56 +280,56 @@ type accountImportResponse struct {
 }
 
 type accountResponse struct {
-	ID                         uint64                  `json:"id,string"`
-	Provider                   string                  `json:"provider"`
-	AuthType                   string                  `json:"authType"`
-	WebTier                    string                  `json:"webTier,omitempty"`
-	WebTierSyncedAt            *time.Time              `json:"webTierSyncedAt,omitempty"`
-	WebNSFWEnabledAt           *time.Time              `json:"nsfwEnabledAt,omitempty"`
-	WebTermsAcceptedAt         *time.Time              `json:"termsAcceptedAt,omitempty"`
-	Name                       string                  `json:"name"`
-	Email                      string                  `json:"email,omitempty"`
-	UserID                     string                  `json:"userId,omitempty"`
-	TeamID                     string                  `json:"teamId,omitempty"`
-	Enabled                    bool                    `json:"enabled"`
-	AuthStatus                 string                  `json:"authStatus"`
-	ExpiresAt                  *time.Time              `json:"expiresAt,omitempty"`
-	Refreshable                bool                    `json:"refreshable"`
-	RefreshDueAt               *time.Time              `json:"refreshDueAt,omitempty"`
-	LastRefreshAt              *time.Time              `json:"lastRefreshAt,omitempty"`
-	RefreshFailures            int                     `json:"refreshFailureCount"`
-	LastRefreshErrorStatus     int                     `json:"lastRefreshErrorStatus,omitempty"`
-	LastRefreshError           string                  `json:"lastRefreshErrorCode,omitempty"`
-	LastRefreshErrorMessage    string                  `json:"lastRefreshErrorMessage,omitempty"`
-	LastRefreshErrorResponse   string                  `json:"lastRefreshErrorResponse,omitempty"`
-	Priority                   int                     `json:"priority"`
-	MaxConcurrent              int                     `json:"maxConcurrent"`
-	MinimumRemaining           float64                 `json:"minimumRemaining"`
-	FailureCount               int                     `json:"failureCount"`
-	CooldownUntil              *time.Time              `json:"cooldownUntil,omitempty"`
-	LastError                  string                  `json:"lastError,omitempty"`
+	ID                       uint64     `json:"id,string"`
+	Provider                 string     `json:"provider"`
+	AuthType                 string     `json:"authType"`
+	WebTier                  string     `json:"webTier,omitempty"`
+	WebTierSyncedAt          *time.Time `json:"webTierSyncedAt,omitempty"`
+	WebNSFWEnabledAt         *time.Time `json:"nsfwEnabledAt,omitempty"`
+	WebTermsAcceptedAt       *time.Time `json:"termsAcceptedAt,omitempty"`
+	Name                     string     `json:"name"`
+	Email                    string     `json:"email,omitempty"`
+	UserID                   string     `json:"userId,omitempty"`
+	TeamID                   string     `json:"teamId,omitempty"`
+	Enabled                  bool       `json:"enabled"`
+	AuthStatus               string     `json:"authStatus"`
+	ExpiresAt                *time.Time `json:"expiresAt,omitempty"`
+	Refreshable              bool       `json:"refreshable"`
+	RefreshDueAt             *time.Time `json:"refreshDueAt,omitempty"`
+	LastRefreshAt            *time.Time `json:"lastRefreshAt,omitempty"`
+	RefreshFailures          int        `json:"refreshFailureCount"`
+	LastRefreshErrorStatus   int        `json:"lastRefreshErrorStatus,omitempty"`
+	LastRefreshError         string     `json:"lastRefreshErrorCode,omitempty"`
+	LastRefreshErrorMessage  string     `json:"lastRefreshErrorMessage,omitempty"`
+	LastRefreshErrorResponse string     `json:"lastRefreshErrorResponse,omitempty"`
+	Priority                 int        `json:"priority"`
+	MaxConcurrent            int        `json:"maxConcurrent"`
+	MinimumRemaining         float64    `json:"minimumRemaining"`
+	FailureCount             int        `json:"failureCount"`
+	CooldownUntil            *time.Time `json:"cooldownUntil,omitempty"`
+	LastError                string     `json:"lastError,omitempty"`
 	// EnabledDoesNotClearCooldown is set on PATCH when enabled was changed
 	// while the account is still cooling. Toggling enabled is not a health reset.
-	EnabledDoesNotClearCooldown bool `json:"enabledDoesNotClearCooldown,omitempty"`
-	LastUsedAt                 *time.Time              `json:"lastUsedAt,omitempty"`
-	LinkedAccountID            uint64                  `json:"linkedAccountId,omitempty,string"`
-	LinkedName                 string                  `json:"linkedAccountName,omitempty"`
-	LinkedProvider             string                  `json:"linkedProvider,omitempty"`
-	LinkedAccounts             []linkedAccountResponse `json:"linkedAccounts,omitempty"`
-	CreatedAt                  time.Time               `json:"createdAt"`
-	ObservedModel              string                  `json:"observedModel,omitempty"`
-	ObservedModelAt            *time.Time              `json:"observedModelAt,omitempty"`
-	CloudflareCookieConfigured bool                    `json:"cloudflareCookieConfigured"`
-	BuildSuperEntitled         bool                    `json:"buildSuperEntitled"`
-	BuildRouteMode             string                  `json:"buildRouteMode"`
-	BuildBotFlagged            bool                    `json:"buildBotFlagged"`
-	BuildBotFlagSource         int                     `json:"buildBotFlagSource,omitempty"`
-	EgressNodeID               uint64                  `json:"egressNodeId,omitempty,string"`
-	EgressAssignmentMode       string                  `json:"egressAssignmentMode,omitempty"`
-	ModelSyncFailed            bool                    `json:"modelSyncFailed,omitempty"`
-	Billing                    *billingResponse        `json:"billing,omitempty"`
-	Quota                      quotaResponse           `json:"quota"`
-	QuotaWindows               []quotaWindowResponse   `json:"quotaWindows,omitempty"`
+	EnabledDoesNotClearCooldown bool                    `json:"enabledDoesNotClearCooldown,omitempty"`
+	LastUsedAt                  *time.Time              `json:"lastUsedAt,omitempty"`
+	LinkedAccountID             uint64                  `json:"linkedAccountId,omitempty,string"`
+	LinkedName                  string                  `json:"linkedAccountName,omitempty"`
+	LinkedProvider              string                  `json:"linkedProvider,omitempty"`
+	LinkedAccounts              []linkedAccountResponse `json:"linkedAccounts,omitempty"`
+	CreatedAt                   time.Time               `json:"createdAt"`
+	ObservedModel               string                  `json:"observedModel,omitempty"`
+	ObservedModelAt             *time.Time              `json:"observedModelAt,omitempty"`
+	CloudflareCookieConfigured  bool                    `json:"cloudflareCookieConfigured"`
+	BuildSuperEntitled          bool                    `json:"buildSuperEntitled"`
+	BuildRouteMode              string                  `json:"buildRouteMode"`
+	BuildBotFlagged             bool                    `json:"buildBotFlagged"`
+	BuildBotFlagSource          int                     `json:"buildBotFlagSource,omitempty"`
+	EgressNodeID                uint64                  `json:"egressNodeId,omitempty,string"`
+	EgressAssignmentMode        string                  `json:"egressAssignmentMode,omitempty"`
+	ModelSyncFailed             bool                    `json:"modelSyncFailed,omitempty"`
+	Billing                     *billingResponse        `json:"billing,omitempty"`
+	Quota                       quotaResponse           `json:"quota"`
+	QuotaWindows                []quotaWindowResponse   `json:"quotaWindows,omitempty"`
 }
 
 type linkedAccountResponse struct {
@@ -350,6 +350,13 @@ type quotaWindowResponse struct {
 	ResetAt       *time.Time               `json:"resetAt,omitempty"`
 	SyncedAt      *time.Time               `json:"syncedAt,omitempty"`
 	Source        string                   `json:"source"`
+}
+
+// modelQuotaBlockResponse 表示账号整体可用但某个模型仍处于额度封锁。
+type modelQuotaBlockResponse struct {
+	Model         string     `json:"model"`
+	Reason        string     `json:"reason"`
+	CooldownUntil *time.Time `json:"cooldownUntil,omitempty"`
 }
 
 type quotaBreakdownResponse struct {
@@ -409,6 +416,8 @@ type quotaResponse struct {
 	ExhaustedAt     *time.Time `json:"exhaustedAt,omitempty"`
 	NextProbeAt     *time.Time `json:"nextProbeAt,omitempty"`
 	LastConfirmedAt *time.Time `json:"lastConfirmedAt,omitempty"`
+	// ModelQuotaBlocks 仅在存在未过期模型级封锁时输出，保持 omitempty 语义。
+	ModelQuotaBlocks []modelQuotaBlockResponse `json:"modelQuotaBlocks,omitempty"`
 }
 
 func (h *Handler) list(c *gin.Context) {
@@ -1519,7 +1528,7 @@ func newAccountResponse(value accountapp.View) accountResponse {
 		BuildBotFlagSource:         buildBotFlagSourceResponse(c.Provider, value.BuildBotFlagged, value.BuildBotFlagSource),
 		EgressNodeID:               c.EgressNodeID,
 		EgressAssignmentMode:       string(c.EgressAssignmentMode),
-		Quota:                      newQuotaResponse(value.Quota), QuotaWindows: make([]quotaWindowResponse, 0, len(value.QuotaWindows)),
+		Quota:                      newQuotaResponse(value.Quota, value.ModelQuotaBlocks), QuotaWindows: make([]quotaWindowResponse, 0, len(value.QuotaWindows)),
 	}
 	for _, linked := range c.LinkedAccounts {
 		result.LinkedAccounts = append(result.LinkedAccounts, linkedAccountResponse{ID: linked.ID, Provider: string(linked.Provider), Name: linked.Name, Email: linked.Email, UserID: linked.UserID})
@@ -1557,8 +1566,22 @@ func buildBotFlagSourceResponse(provider accountdomain.Provider, flagged bool, s
 	return source
 }
 
-func newQuotaResponse(value accountapp.QuotaView) quotaResponse {
-	return quotaResponse{Type: string(value.Type), Source: value.Source, Confidence: value.Confidence, Unit: value.Unit, Used: value.Used, Limit: value.Limit, Remaining: value.Remaining, UsagePercent: value.UsagePercent, LimitKnown: value.LimitKnown, WindowHours: value.WindowHours, Observed: value.Observed, Confirmed: value.Confirmed, Status: string(value.Status), PeriodStart: value.PeriodStart, PeriodEnd: value.PeriodEnd, ExhaustedAt: value.ExhaustedAt, NextProbeAt: value.NextProbeAt, LastConfirmedAt: value.LastConfirmedAt}
+func newQuotaResponse(value accountapp.QuotaView, blocks []accountdomain.ModelQuotaBlock) quotaResponse {
+	result := quotaResponse{Type: string(value.Type), Source: value.Source, Confidence: value.Confidence, Unit: value.Unit, Used: value.Used, Limit: value.Limit, Remaining: value.Remaining, UsagePercent: value.UsagePercent, LimitKnown: value.LimitKnown, WindowHours: value.WindowHours, Observed: value.Observed, Confirmed: value.Confirmed, Status: string(value.Status), PeriodStart: value.PeriodStart, PeriodEnd: value.PeriodEnd, ExhaustedAt: value.ExhaustedAt, NextProbeAt: value.NextProbeAt, LastConfirmedAt: value.LastConfirmedAt}
+	// 无封锁时保持 nil，避免 omitempty 失效输出空数组。
+	if len(blocks) == 0 {
+		return result
+	}
+	result.ModelQuotaBlocks = make([]modelQuotaBlockResponse, 0, len(blocks))
+	for _, block := range blocks {
+		item := modelQuotaBlockResponse{Model: block.UpstreamModel, Reason: block.Reason}
+		if !block.CooldownUntil.IsZero() {
+			cooldownUntil := block.CooldownUntil
+			item.CooldownUntil = &cooldownUntil
+		}
+		result.ModelQuotaBlocks = append(result.ModelQuotaBlocks, item)
+	}
+	return result
 }
 
 func newBillingResponse(value accountdomain.Billing) billingResponse {

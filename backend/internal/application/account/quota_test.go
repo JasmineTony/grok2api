@@ -254,3 +254,44 @@ func TestBatchResetQuotaStateChunksMoreThanAdminPageLimit(t *testing.T) {
 		t.Fatalf("count batches = %v, reset batches = %v, want %v", repo.countBatchSizes, repo.resetBatchSizes, want)
 	}
 }
+
+func TestAccountViewsExposeOnlyActiveModelQuotaBlocks(t *testing.T) {
+	ctx := context.Background()
+	service, accounts := openAccountService(t)
+	now := time.Now().UTC()
+	created, _, err := accounts.UpsertByIdentity(ctx, accountdomain.Credential{
+		Provider: accountdomain.ProviderBuild, Name: "model-quota", SourceKey: "model-quota-view",
+		EncryptedAccessToken: "encrypted", Enabled: true, AuthStatus: accountdomain.AuthStatusActive,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := accounts.UpsertModelQuotaBlock(ctx, accountdomain.ModelQuotaBlock{
+		AccountID: created.ID, UpstreamModel: "grok-active", Reason: "model_quota_depleted", CooldownUntil: now.Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := accounts.UpsertModelQuotaBlock(ctx, accountdomain.ModelQuotaBlock{
+		AccountID: created.ID, UpstreamModel: "grok-expired", Reason: "model_quota_depleted", CooldownUntil: now.Add(-time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertBlocks := func(label string, blocks []accountdomain.ModelQuotaBlock) {
+		t.Helper()
+		if len(blocks) != 1 || blocks[0].UpstreamModel != "grok-active" || blocks[0].Reason != "model_quota_depleted" || !blocks[0].CooldownUntil.After(now) {
+			t.Fatalf("%s model quota blocks = %#v", label, blocks)
+		}
+	}
+
+	view, err := service.Get(ctx, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertBlocks("detail", view.ModelQuotaBlocks)
+
+	views, total, err := service.List(ctx, 1, 20, "", ListFilter{Provider: string(accountdomain.ProviderBuild)})
+	if err != nil || total != 1 || len(views) != 1 || views[0].Credential.ID != created.ID {
+		t.Fatalf("views = %#v, total = %d, err = %v", views, total, err)
+	}
+	assertBlocks("list", views[0].ModelQuotaBlocks)
+}

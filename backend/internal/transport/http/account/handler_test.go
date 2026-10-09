@@ -569,3 +569,59 @@ func TestAccountSyncPipelineUsesFinalQueuedTotal(t *testing.T) {
 		}
 	}
 }
+
+func TestAccountResponsesExposeActiveModelQuotaBlocks(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx := context.Background()
+	database, err := relational.OpenSQLite(ctx, filepath.Join(t.TempDir(), "model-quota-blocks.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := database.InitializeSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	repo := relational.NewAccountRepository(database)
+	create := func(sourceKey string) accountdomain.Credential {
+		t.Helper()
+		value, _, err := repo.UpsertByIdentity(ctx, accountdomain.Credential{
+			Provider: accountdomain.ProviderBuild, Name: sourceKey, SourceKey: sourceKey,
+			EncryptedAccessToken: "token", Enabled: true, AuthStatus: accountdomain.AuthStatusActive,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	blocked := create("model-quota-blocked")
+	clean := create("model-quota-clean")
+	cooldownUntil := time.Now().UTC().Add(2 * time.Hour).Truncate(time.Second)
+	if err := repo.UpsertModelQuotaBlock(ctx, accountdomain.ModelQuotaBlock{
+		AccountID: blocked.ID, UpstreamModel: "grok-4.5-build", Reason: "model_quota_depleted", CooldownUntil: cooldownUntil,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(accountapp.NewService(repo, relational.NewAuditRepository(database), nil, nil, nil, nil, nil), nil)
+	router := gin.New()
+	handler.Register(router.Group("/api/admin/v1"))
+	fetch := func(target string) string {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, target, nil))
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("GET %s status = %d, body = %s", target, recorder.Code, recorder.Body.String())
+		}
+		return recorder.Body.String()
+	}
+	expected := `"modelQuotaBlocks":[{"model":"grok-4.5-build","reason":"model_quota_depleted","cooldownUntil":"` + cooldownUntil.Format(time.RFC3339) + `"}]`
+
+	if body := fetch("/api/admin/v1/accounts?provider=grok_build"); !strings.Contains(body, expected) {
+		t.Fatalf("list body = %s", body)
+	}
+	if body := fetch("/api/admin/v1/accounts/" + strconv.FormatUint(blocked.ID, 10)); !strings.Contains(body, expected) {
+		t.Fatalf("detail body = %s", body)
+	}
+	if body := fetch("/api/admin/v1/accounts/" + strconv.FormatUint(clean.ID, 10)); strings.Contains(body, "modelQuotaBlocks") {
+		t.Fatalf("modelQuotaBlocks must be omitted without an active model quota block: %s", body)
+	}
+}
