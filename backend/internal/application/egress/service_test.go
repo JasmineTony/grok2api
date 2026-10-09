@@ -87,6 +87,66 @@ func TestNormalizeProxyURLAllowsAccountPlaceholderOnlyInUsername(t *testing.T) {
 	}
 }
 
+func TestNormalizeProxyURLAcceptsLegacyIPv4ProviderFormat(t *testing.T) {
+	for raw, want := range map[string]string{
+		"1.2.3.4:8080:user:pass":  "http://user:pass@1.2.3.4:8080",
+		"1.2.3.4:8080:user:pa:ss": "http://user:pa%3Ass@1.2.3.4:8080",
+		"1.2.3.4:65535:u:p":       "http://u:p@1.2.3.4:65535",
+	} {
+		value, err := NormalizeProxyURL(raw)
+		if err != nil || value != want {
+			t.Fatalf("legacy proxy %q = %q, err = %v", raw, value, err)
+		}
+	}
+	for _, invalid := range []string{
+		"2001:db8::1:8080",
+		"[::1]:8080:user:pass",
+		"::ffff:1.2.3.4:8080",
+		"1.2.3.4:99999:u:p",
+		"1.2.3.4:0:u:p",
+		"1.2.3.4:abc:u:p",
+		"1.2.3.4:+8080:u:p",
+		"1.2.3.4: 8080:u:p",
+		"1.2.3.4:8080::pass",
+		"1.2.3.4:8080:user:",
+		"1.2.3.4:8080",
+		"1.2.3.4:8080:user",
+		"host.example:8080:user:pass",
+	} {
+		if _, err := NormalizeProxyURL(invalid); err == nil {
+			t.Fatalf("invalid legacy proxy accepted: %q", invalid)
+		}
+	}
+}
+
+func TestNormalizeProxyURLKeepsAccountPlaceholderInLegacyFormat(t *testing.T) {
+	value, err := NormalizeProxyURL("1.2.3.4:8080:Default.{account}:token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != "http://Default.{account}:token@1.2.3.4:8080" || !strings.Contains(value, ProxyAccountPlaceholder) {
+		t.Fatalf("normalized legacy account proxy = %q", value)
+	}
+	if _, err := NormalizeProxyURL("1.2.3.4:8080:user:{account}"); err == nil {
+		t.Fatal("legacy account placeholder was accepted outside the username")
+	}
+	cipher, err := security.NewCipher("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+	if err != nil {
+		t.Fatal(err)
+	}
+	encrypted, err := cipher.Encrypt(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(nil, cipher, "")
+	if !service.accountBoundProxy(domain.Node{EncryptedProxyURL: encrypted}) {
+		t.Fatalf("legacy account placeholder proxy lost account binding: %q", value)
+	}
+	if _, _, bound := service.proxyMetadata(encrypted); !bound {
+		t.Fatalf("legacy account placeholder metadata lost account binding: %q", value)
+	}
+}
+
 func TestProxyDisplayKeepsEndpointAndRedactsCredentials(t *testing.T) {
 	standard := ProxyDisplay("socks5h://operator:super-secret@proxy.example:1080")
 	if standard != "socks5h://operator:%2A%2A%2A@proxy.example:1080" && standard != "socks5h://operator:***@proxy.example:1080" {

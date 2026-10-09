@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1349,6 +1351,16 @@ func NormalizeProxyURL(value string) (string, error) {
 		return "", errors.New("代理地址包含保留的账号占位符文本")
 	}
 	parseValue := strings.ReplaceAll(value, ProxyAccountPlaceholder, proxyAccountSentinel)
+	// 传统 "IP:Port:Username:Password" 形式没有 scheme，一律按 http 处理；
+	// 必须在 {account} 替换为 sentinel 之后解析，否则 url.UserPassword 会把占位符转义成
+	// %7Baccount%7D，导致账号级粘性代理语义丢失。
+	if username, password, host, legacy := splitLegacyProxyFormat(parseValue); legacy {
+		if hasAccountPlaceholder && !strings.Contains(username, proxyAccountSentinel) {
+			return "", errors.New("{account} 只能用于代理认证用户名")
+		}
+		normalized := (&url.URL{Scheme: "http", User: url.UserPassword(username, password), Host: host}).String()
+		return strings.ReplaceAll(normalized, proxyAccountSentinel, ProxyAccountPlaceholder), nil
+	}
 	parsed, err := url.Parse(parseValue)
 	if err != nil {
 		return "", errors.New("代理地址格式无效")
@@ -1382,6 +1394,26 @@ func NormalizeProxyURL(value string) (string, error) {
 		return strings.ReplaceAll(parsed.String(), proxyAccountSentinel, ProxyAccountPlaceholder), nil
 	}
 	return parsed.String(), nil
+}
+
+// splitLegacyProxyFormat 识别代理服务商常见的无 scheme 传统格式 "IP:Port:Username:Password"，
+// 密码允许包含冒号。为避免误判既有格式，只有严格满足以下条件时才识别：
+// 恰好 4 段、第一段是合法 IPv4（不支持 IPv6，也不支持主机名）、第二段是 1-65535 的纯十进制
+// 端口（拒绝 "+8080"、" 8080"、"0" 与越界值）、用户名与密码均非空。
+// 该格式没有 scheme，调用方一律按 http 处理。ok 为 false 表示不是该格式，应继续按标准 URL 解析。
+func splitLegacyProxyFormat(value string) (username, password, host string, ok bool) {
+	parts := strings.SplitN(value, ":", 4)
+	if len(parts) != 4 {
+		return "", "", "", false
+	}
+	if net.ParseIP(parts[0]).To4() == nil {
+		return "", "", "", false
+	}
+	port, err := strconv.ParseUint(parts[1], 10, 16)
+	if err != nil || port == 0 || parts[2] == "" || parts[3] == "" {
+		return "", "", "", false
+	}
+	return parts[2], parts[3], net.JoinHostPort(parts[0], parts[1]), true
 }
 
 func SanitizeCloudflareCookies(value string) string {

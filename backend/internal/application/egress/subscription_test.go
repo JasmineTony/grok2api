@@ -71,6 +71,48 @@ func TestParseProxySubscriptionAcceptsPlainAndBase64Lists(t *testing.T) {
 	}
 }
 
+func TestParseProxySubscriptionNormalizesLegacyIPv4ProviderFormat(t *testing.T) {
+	entries, skipped, err := parseProxySubscription(strings.Join([]string{
+		"http://user:pass@1.2.3.4:8080",
+		"1.2.3.4:8080:user:pass",
+		"1.2.3.4:8080:user:pa:ss",
+		"host.example:8080:user:pass",
+	}, "\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 || skipped != 2 {
+		t.Fatalf("legacy entries=%#v skipped=%d", entries, skipped)
+	}
+	if entries[0].ProxyURL != "http://user:pass@1.2.3.4:8080" || entries[1].ProxyURL != "http://user:pa%3Ass@1.2.3.4:8080" {
+		t.Fatalf("legacy normalized entries=%#v", entries)
+	}
+}
+
+func TestParseProxySubscriptionDeduplicatesLegacyAgainstStandardFormat(t *testing.T) {
+	entries, skipped, err := parseProxySubscription("http://user:pass@1.2.3.4:8080\n1.2.3.4:8080:user:pass\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || skipped != 1 || entries[0].ProxyURL != "http://user:pass@1.2.3.4:8080" {
+		t.Fatalf("deduplicated legacy entries=%#v skipped=%d", entries, skipped)
+	}
+}
+
+func TestParseProxySubscriptionDecodesBase64LegacyIPv4ProviderFormat(t *testing.T) {
+	encodedInput := base64.StdEncoding.EncodeToString([]byte("1.2.3.4:8080:user:pass\n5.6.7.8:3128:name:secret\n"))
+	entries, skipped, err := parseProxySubscription(encodedInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 || skipped != 0 {
+		t.Fatalf("base64 legacy entries=%#v skipped=%d", entries, skipped)
+	}
+	if entries[0].ProxyURL != "http://user:pass@1.2.3.4:8080" || entries[1].ProxyURL != "http://name:secret@5.6.7.8:3128" {
+		t.Fatalf("base64 legacy normalized entries=%#v", entries)
+	}
+}
+
 func TestParseProxySubscriptionRejectsNoUsableEntries(t *testing.T) {
 	if _, _, err := parseProxySubscription("# only comments\nfile:///tmp/proxies\n"); err == nil {
 		t.Fatal("invalid proxy subscription was accepted")
