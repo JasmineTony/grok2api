@@ -1,7 +1,9 @@
 package inference
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"math"
 	"net/http"
@@ -80,10 +82,6 @@ func (h *Handler) proxyVoiceWebSocket(c *gin.Context, pathValue string) {
 	}
 	defer closeAll()
 
-	type pumpResult struct {
-		upstreamSide bool
-		result       voiceWSPumpResult
-	}
 	errCh := make(chan pumpResult, 2)
 	go func() {
 		errCh <- pumpResult{result: proxyVoiceWSPump(func() (int, []byte, error) {
@@ -103,16 +101,41 @@ func (h *Handler) proxyVoiceWebSocket(c *gin.Context, pathValue string) {
 			return messageType, payload, readErr
 		}, clientConn.WriteMessage)}
 	}()
-	first := <-errCh
-	if !isNormalVoiceWSClose(first.result.err) {
+	errorCode, upstreamFailed, normal := waitVoiceWSOutcome(c.Request.Context(), errCh)
+	if !normal {
 		outcomeMu.Lock()
-		if (first.upstreamSide && !first.result.writeFailed) || (!first.upstreamSide && first.result.writeFailed) {
-			outcome.ErrorCode = "upstream_stream_interrupted"
-			outcome.UpstreamFailed = true
-		} else {
-			outcome.ErrorCode = "client_stream_interrupted"
-		}
+		outcome.ErrorCode = errorCode
+		outcome.UpstreamFailed = upstreamFailed
 		outcomeMu.Unlock()
+	}
+}
+
+// pumpResult 是单个代理 pump 的结束结果。
+type pumpResult struct {
+	upstreamSide bool
+	result       voiceWSPumpResult
+}
+
+// waitVoiceWSOutcome 等待任一代理 pump 结束，或请求上下文先结束。
+// 静默会话不会命中任何 pump 错误，只有这里主动观察上下文，才能让
+// server.requestTimeout 约束已建立会话的存活时间，并回到 defer closeAll
+// 释放账号租约、并发槽与上游连接。
+// 返回 normal=true 表示会话正常关闭，无需记录错误码。
+func waitVoiceWSOutcome(ctx context.Context, errCh <-chan pumpResult) (errorCode string, upstreamFailed bool, normal bool) {
+	select {
+	case first := <-errCh:
+		if isNormalVoiceWSClose(first.result.err) {
+			return "", false, true
+		}
+		if (first.upstreamSide && !first.result.writeFailed) || (!first.upstreamSide && first.result.writeFailed) {
+			return "upstream_stream_interrupted", true, false
+		}
+		return "client_stream_interrupted", false, false
+	case <-ctx.Done():
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return "request_timeout", false, false
+		}
+		return "client_stream_interrupted", false, false
 	}
 }
 

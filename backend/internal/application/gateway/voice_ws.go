@@ -230,12 +230,15 @@ func (s *Service) OpenVoiceWebSocket(ctx context.Context, input VoiceWebSocketIn
 					cleanup()
 				}
 				successful := strings.TrimSpace(outcome.ErrorCode) == ""
+				// 上游已完成并返回确认时长时用量就已产生：即使下游传输中途断开，
+				// key 计费与账号额度结算也必须按同一口径推进，避免账实不符（issue #1072）。
+				usageConfirmed := successful || (operation == audit.OperationSTT && outcome.AudioDurationSeconds > 0)
 				accountLeaseRef.completeSelectorObservation(!outcome.UpstreamFailed)
 				accountLeaseRef.Release()
 
 				budget := newFinalizationBudget(string(operation), string(route.Provider))
 				accountID := accountCredential.ID
-				if successful && quotaMode != "" && quotaMode != "weekly" {
+				if usageConfirmed && quotaMode != "" && quotaMode != "weekly" {
 					var updated bool
 					err := budget.run("quota_decrement", finalizationQuotaBudget, func(stageCtx context.Context) error {
 						var decrementErr error
@@ -248,7 +251,7 @@ func (s *Service) OpenVoiceWebSocket(ctx context.Context, input VoiceWebSocketIn
 						s.selector.ConsumeQuota(route.Provider, accountID, quotaMode, 1)
 					}
 				}
-				if successful && quotaMode != "" {
+				if usageConfirmed && quotaMode != "" {
 					if quotaKind, _ := s.providers.QuotaKind(route.Provider); quotaKind == provider.QuotaRemoteWindow {
 						s.accounts.QueueQuotaRefresh(accountID, quotaMode)
 					}
@@ -261,7 +264,10 @@ func (s *Service) OpenVoiceWebSocket(ctx context.Context, input VoiceWebSocketIn
 				record.AccountID = &accountID
 				record.AccountName = accountCredential.Name
 				applyAuditEgress(&record, egressTrace, route.Provider)
-				if successful && operation == audit.OperationSTT {
+				// 计费只看是否收到已确认的正时长：上游已经完成工作，客户端的传输
+				// 结局（干净关闭还是中途断开）不应让已确认用量消失。
+				// EstimateOfficialSTTCost 自身已对 <=0/NaN/Inf 返回未定价。
+				if operation == audit.OperationSTT {
 					if pricing, priced := audit.EstimateOfficialSTTCost(outcome.AudioDurationSeconds, true); priced {
 						record.EstimatedCostInUSDTicks = pricing.CostInUSDTicks
 						record.PricingModel = pricing.Model
