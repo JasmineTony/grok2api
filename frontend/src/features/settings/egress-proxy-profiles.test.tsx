@@ -188,6 +188,9 @@ describe("EgressProxyProfiles 新增与编辑", () => {
     await user().click(screen.getByTestId("egress-proxy-profile-actions-prof-1"));
     fireEvent.click(await screen.findByTestId("egress-proxy-profile-edit-prof-1"));
     const dialog = await screen.findByTestId("egress-proxy-profiles-dialog");
+    // 编辑态下敏感地址初始为空，必须先点击 reveal 触发按需拉取明文
+    // （组件契约见 egress-proxy-profile-form-fields.tsx 的 EgressProxyProfileURLField）。
+    await user().click(within(dialog).getByTestId("egress-proxy-profile-reveal"));
     await waitFor(() =>
       expect(within(dialog).getByTestId("egress-proxy-profile-url")).toHaveValue("socks5h://user:pass@host:1080"),
     );
