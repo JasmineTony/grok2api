@@ -12,6 +12,11 @@ export default mergeConfig(
   defineConfig({
     test: {
       environment: "jsdom",
+      // 限制并行度：默认按核心数起 worker，在 8 逻辑核机器上跑 24 个文件 + 覆盖率插桩时
+      // 会把交互型用例压到 5s 默认超时之上（实测 24 worker 18 失败、4 worker 5 失败、1 worker 全过），
+      // 属于 CPU 饱和而非逻辑缺陷。这里固定 4，使本地与 CI 结果可复现；
+      // 不通过放宽断言或删除用例来掩盖。
+      maxWorkers: 4,
       setupFiles: ["./src/test/setup.ts"],
       // 只接管 *.test.tsx（React 组件测试）；既有 *.test.ts 仍由 `pnpm test` 的 node:test 运行。
       include: ["src/**/*.test.tsx"],
