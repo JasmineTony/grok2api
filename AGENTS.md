@@ -8,7 +8,7 @@
 - 上游地址：https://github.com/chenyme/grok2api
 - 上游优先：与上游冲突时，以上游 `main` 的对外行为契约为准；本地偏离必须在 PR 描述中写明理由、影响面与回滚方式。
 - 可回馈上游的通用修复、协议对齐、能力增强，应尽量实现为可回馈上游的形态（避免只在本地 fork 成立的私有改动）。
-- 判定方式：`git remote -v` 确认目标远端。当前 `origin` 仍指向 `https://github.com/chenyme/grok2api.git`（上游）；推送前必须显式确认远端归属，禁止直接向上游仓库推送。
+- 判定方式：`git remote -v` 确认远端归属。本维护线 `origin` 指向 `https://github.com/JasmineTony/grok2api.git`，`upstream` 指向 `https://github.com/chenyme/grok2api.git`；推送前必须显式确认目标远端，禁止向上游仓库推送。
 - 技术栈现状：后端 Go（`backend/`，`go test ./...`、`go vet ./...`）；前端 React 19 + TypeScript + Vite + pnpm（`frontend/`）；CI 定义见 `.github/workflows/ghcr-image.yml`。
 
 ## 2. 开发规范（DEV）
