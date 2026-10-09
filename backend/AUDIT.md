@@ -296,3 +296,29 @@ ERROR: failed to push ghcr.io/jasminetony/grok2api:main-arm64: denied: permissio
 3. 可选：Settings → Actions → General → Workflow permissions 改为 "Read and write"，消除歧义（job 级 `packages: write` 仍然保留）。
 
 **已完成的持久修复（本分支）**：`frontend/pnpm-workspace.yaml` 显式固定 `minimumReleaseAge: 1440`（原为 pnpm 12 内置默认值，值不变、行为不变），使这条隐形策略变成可审查的仓库配置，避免同类失败再次以「不可见原因」出现。
+
+## 11. 阶段 5 成果（后端出口与设置拆分）与 CI 状态
+
+维护分支 `d5cc4597`，**CI run #12 = success**；此前 #10（`53f51d63`）、#11（`990bc954`）同为 success。
+
+- `infra/egress/manager.go` 2342 → 拆为 clearance / clearance_refresh / client_cache / fallback / health / lease / node_select / probe
+- `application/egress/service.go` 1443 → nodes / binding / proxy_profiles / proxy_url / quality_lease
+- `transport/http/egress/handler.go` 1579 → nodes / proxy_profiles / sources / quality_guard / quality_guard_lease
+- `application/settings/service.go` → config_apply / editable_config
+- 同包内分文件，公开签名零改动；`go build` / `go vet` / `go test ./... -count=1` 全部 exit 0
+
+### CI 运行语义（排障须知）
+
+`.github/workflows/ghcr-image.yml` 配置了 `concurrency.cancel-in-progress`：连续推送会让先前的运行被判为 `cancelled`（不是失败），只有最后一次推送的运行代表当前状态。
+
+### main 分支的持久阻塞（需人工在 GitHub 操作）
+
+`Publish image (amd64/arm64)` 始终失败：
+
+`ERROR: failed to push ghcr.io/jasminetony/grok2api:main-amd64: denied: permission_denied: write_package`
+
+根因：`JasmineTony/grok2api` 于 2026-10-09T10:34:12Z 重建，而 GHCR 包由旧仓库实例创建、成为孤立包，新仓库的 `GITHUB_TOKEN` 无写权限；仓库 `default_workflow_permissions = read`。工作流 YAML 正确（`packages: write` 已声明），改代码无法修复。
+
+先前观察到的 `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` 是第一层**瞬时**原因（pnpm 12 内置 24h 供应链策略），重跑后已自愈；本分支已在 `frontend/pnpm-workspace.yaml` 显式固定 `minimumReleaseAge: 1440`（值不变）使该策略可审查。
+
+修复方式：Packages → grok2api → Package settings → Connect repository → 选 `JasmineTony/grok2api`；或删除孤立包；然后重跑 main 的失败任务。

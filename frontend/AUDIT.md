@@ -233,3 +233,24 @@
 - `client-keys` 有 2 个用例显式放宽超时到 20s（真实 300ms 防抖 + Radix 交互在覆盖率插桩下超 5s），未弱化断言，但属测试成本问题。
 - 受限模型查询现在随弹窗卸载释放缓存（原实现以 `enabled:false` 保留），UI 可见结果一致，重开弹窗会重新请求。
 - `src/features/*/…test-support.ts(x)` 测试脚手架位于 `src` 内，会被 `tsc -b` 检查；未纳入 coverage include。
+
+## 10. 阶段 5 成果（设置 / 出口 / Quality Guard）
+
+维护分支 d5cc4597，**CI run #12 = success**（后端隔离服务 + race + Swagger + 前端门禁 + 全栈 E2E + amd64/arm64 镜像构建）。
+
+- 后端：`infra/egress/manager.go` 2342、`application/egress/service.go` 1443、`transport/http/egress/handler.go` 1579 按职责拆开；`application/settings/service.go` → config_apply / editable_config
+- 前端：设置核心（settings-page 1604 拆分）、出口节点（egress-nodes 1560、egress-operations 1004）、Quality Guard（quality-guard-page 1579）三方向拆分并补齐集成测试
+- **超限文件 18 → 7**、**超限函数 80 → 63**，基线已收紧
+- `pnpm verify` exit 0；Vitest **24 文件 / 245 用例全过**；覆盖率 96.41 / 88.91 / 97.18 / 97.43；依赖 0 违规（275 模块 / 1234 依赖）；E2E 6/6；首屏闭包 249.92 KiB
+
+### 阶段 5 中修复的真实缺陷
+
+1. **blocked-delete 未生效**：Radix `DropdownMenuItem` 的 `disabled` 只拦截其 `onSelect`，不阻止原生 `onClick` → 「已绑定节点禁止删除」只是文案，点击仍会弹出删除确认。改为显式判空后才真正封锁（`egress-proxy-profiles.tsx`，修复后该文件 9/9）
+2. **测试并行度饱和**：默认 24 worker 下 18 个失败、4 worker 下 5 个、1 worker 全过 → 属 CPU 饱和而非逻辑缺陷；在 `vitest.config.ts` 固定 `maxWorkers: 4`（确定性修复，未放宽断言、未删除用例）
+3. 子代理留下的语法错误拼接、未使用参数、引用不存在的辅助函数（均已修正）
+
+### 阶段 5 遗留
+
+- accounts 新模块覆盖率仍 0–45%，未纳入 include（TEST-1 对 accounts 尚未满足）
+- `infra/persistence/relational/account_links.go` 776 行、若干测试文件 >600 行属存量债务
+- 阶段 6（创作台/媒体/Gateway）与阶段 7（性能对比与总验收）未开始
