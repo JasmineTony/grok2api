@@ -413,6 +413,64 @@ func TestLoadPersistedKeepsClearanceDefaultsForOlderPayload(t *testing.T) {
 	}
 }
 
+func TestLoadPersistedBackfillsOutdatedBuildClientVersion(t *testing.T) {
+	cfg := testConfig(t)
+	value := toDomainConfig(cfg)
+	value.ProviderBuild.ClientVersion = "1.0.4"
+	repository := &runtimeSettingsRepositoryStub{value: value, found: true}
+
+	loaded, _, _, err := LoadPersisted(context.Background(), cfg, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Provider.Build.ClientVersion != config.RecommendedBuildClientVersion {
+		t.Fatalf("clientVersion = %q, want %q", loaded.Provider.Build.ClientVersion, config.RecommendedBuildClientVersion)
+	}
+}
+
+func TestApplyDomainConfigBackfillsBuildClientVersionBelowUpstreamMinimum(t *testing.T) {
+	base := testConfig(t)
+	for _, version := range []string{"0.2.99", "1.0.4", "1.0.12", "1.0.4-beta"} {
+		t.Run(version, func(t *testing.T) {
+			value := toDomainConfig(base)
+			value.ProviderBuild.ClientVersion = version
+			if got := applyDomainConfig(base, value).Provider.Build.ClientVersion; got != config.RecommendedBuildClientVersion {
+				t.Fatalf("clientVersion = %q, want %q", got, config.RecommendedBuildClientVersion)
+			}
+		})
+	}
+}
+
+func TestApplyDomainConfigKeepsBuildClientVersionAtOrAboveUpstreamMinimum(t *testing.T) {
+	base := testConfig(t)
+	cases := []struct {
+		name    string
+		version string
+	}{
+		{name: "empty", version: ""},
+		{name: "unparsable", version: "abc"},
+		{name: "upstream minimum", version: "1.0.13"},
+		{name: "upstream minimum with prerelease", version: "1.0.13-rc1"},
+		{name: "recommended", version: config.RecommendedBuildClientVersion},
+		{name: "newer custom", version: "2.0.0"},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			value := toDomainConfig(base)
+			value.ProviderBuild.ClientVersion = testCase.version
+			if got := applyDomainConfig(base, value).Provider.Build.ClientVersion; got != testCase.version {
+				t.Fatalf("clientVersion = %q, want %q", got, testCase.version)
+			}
+		})
+	}
+}
+
+func TestMinSupportedBuildClientVersionIsSemanticVersion(t *testing.T) {
+	if _, ok := parseBuildClientVersion(minSupportedBuildClientVersion); !ok {
+		t.Fatalf("最低 Build 客户端版本 %q 不是语义化版本", minSupportedBuildClientVersion)
+	}
+}
+
 func TestSnapshotIncludesRecommendedBuildBaseline(t *testing.T) {
 	service := NewService(testConfig(t), time.Time{}, 0, &runtimeSettingsRepositoryStub{}, nil, nil)
 	recommended := service.Get().RecommendedProviderBuild
