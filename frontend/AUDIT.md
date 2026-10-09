@@ -170,3 +170,18 @@
 - 阶段顺序与文件范围见 `.pi/plan/前后端全量审计与分阶段模块化升级计划-20261009-1947.md`。
 - 阶段 1 之后仍待完成：E2E（阶段 2）、公共契约与 i18n 拆分（阶段 3）、账号/密钥/审计/模型（阶段 4）、设置/出口/守护（阶段 5）、创作台/媒体/Gateway（阶段 6）、性能与文档总验收（阶段 7）。
 - 回滚：按阶段提交回滚源码、配置、文档与锁文件；门禁基线与豁免清单随对应阶段提交一起回滚。本文件在每阶段结束时更新状态与证据，不覆盖历史结论。
+
+## 7. CI 真实验证（阶段 2）
+
+草稿 PR #1（`maint/modular-quality-audit`）触发真实 GitHub Actions，GHCR Image run #4（sha `6f762fb7`）**conclusion=success**：
+
+| 步骤                                                                                          | 结果    |
+| --------------------------------------------------------------------------------------------- | ------- |
+| Verify frontend（`pnpm verify`：格式/类型/Oxlint/ESLint/架构/结构/门禁自测/覆盖率/构建/预算） | success |
+| Install Playwright browser（`playwright install --with-deps chromium`）                       | success |
+| Run full-stack E2E（`pnpm test:e2e`）                                                         | success |
+| Build image (amd64 / arm64)                                                                   | success |
+
+首轮 run #3（sha `5541238b`）失败于后端 `Test backend`，原因是 CI 首次真实运行 PostgreSQL 集成用例并暴露 1 个用例缺陷（详见 `backend/AUDIT.md` §8）；修复后 run #4 全绿。该失败与前端门禁无关。
+
+尚未在 CI 验证：`main` 分支的镜像**推送**（`Publish image`）——该步骤在 `main` @ `7c0493a2` 起就因 pnpm 供应链策略失败，属既有问题，登记为 `backend/AUDIT.md` 的 CI-01；PR 模式镜像构建已通过。

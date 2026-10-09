@@ -16,14 +16,14 @@
 | BE-A1 | 单元/集成测试 | `go test ./... -count=1` | Passed（63 包，2820 用例，0 失败，20 跳过） |
 | BE-A2 | 静态检查 | `go vet ./...` | Passed |
 | BE-A3 | 编译 | `go build ./...` | Passed |
-| BE-A4 | 竞态检测 | `go test -race ./...` | **Blocked**：`-race requires cgo`，本机无 C 编译器 |
-| BE-A5 | PostgreSQL 集成 | 隔离 CI 服务 | **Skipped**（本机缺环境，17 个用例跳过） |
-| BE-A6 | Redis 集成 | 隔离 CI 服务 | **Skipped**（本机缺环境，3 个用例跳过） |
+| BE-A4 | 竞态检测 | `go test -race ./...` | Passed（CI，见 §8）；本机 **Blocked**（`-race requires cgo`，无 C 编译器） |
+| BE-A5 | PostgreSQL 集成 | 隔离 CI 服务 | Passed（CI，17 个用例真实执行） |
+| BE-A6 | Redis 集成 | 隔离 CI 服务 | Passed（CI，3 个用例真实执行） |
 | BE-A7 | 性能基准 | `-bench . -benchmem -count=5` | **Pending**（本轮测量中） |
 | BE-A8 | 账号分页聚合基准 | 新增 benchmark | **Pending**（当前不存在，见 §3） |
 | BE-A9 | Swagger 精确 diff | `make swagger` + `git diff --exit-code` | **Pending**（阶段 7 复核） |
 
-`Blocked` 与 `Skipped` 均不记为通过。BE-A4 必须在 Linux CI 补齐；BE-A5/BE-A6 必须在隔离 service container 中真实执行。
+`Blocked` 与 `Skipped` 均不记为通过。BE-A4/BE-A5/BE-A6 已由 CI 隔离服务补齐，证据见 §8；本机仍不具备 race 与外部存储条件。
 
 ## 2. 测试基线明细
 
@@ -38,7 +38,7 @@
 | `internal/infra/runtime/redis` | 2 | `TEST_REDIS_ADDRESS` |
 | `internal/application/account` | 1 | `TEST_REDIS_ADDRESS` |
 
-其中包含并发与一致性关键用例（如 `TestPostgresBillingReservationAndAuditSettlementConcurrency`、`TestPostgresAuditBatchUsesStableClientKeyLockOrder`、`TestPostgresAccountLinkMutationLockSerializesTransactions`、`TestRedisQuotaRefreshCrossInstanceTrailing`）。**这些不变量目前在本机没有任何证据**，是 QA-01 的核心风险。
+其中包含并发与一致性关键用例（如 `TestPostgresBillingReservationAndAuditSettlementConcurrency`、`TestPostgresAuditBatchUsesStableClientKeyLockOrder`、`TestPostgresAccountLinkMutationLockSerializesTransactions`、`TestRedisQuotaRefreshCrossInstanceTrailing`）。本机无证据；**阶段 2 已在 CI 隔离服务中真实执行**，见 §8。
 
 已有可复用的隔离机制：`postgres_integration_test.go` 的 `TestMain` 支持用 `TEST_POSTGRES_ADMIN_DSN` 自动创建并回收临时数据库（`grok2api_phase0_<纳秒>`），CI 应直接复用而不是另建一套。
 
@@ -166,8 +166,8 @@ go test ./internal/infra/egress ./internal/infra/runtime/memory ./internal/pkg/p
 | BE-01 | `application/account/service.go` 4717 行等 16 个 >1000 行文件 | 现有 | 可维护性、审查成本 | P2 | 4–6 | 按用例/读写/调度拆分 | Pending |
 | BE-02 | 28 处 application → infra 依赖（§4.1） | 现有 | 分层模糊，契约与实现同包 | P2 | 3 | 契约迁 ports + 边界测试 | Pending |
 | BE-03 | 账号列表已按页批量（6 次查询），非 N+1 | 现有 | 不应虚构缺陷 | P2 | 4 | 补查询次数断言与基准 | Pending |
-| QA-01 | 20 个 PostgreSQL/Redis 集成用例在本机跳过，含并发/锁/账本不变量 | 现有 | 关键一致性无本地证据 | P1 | 1、7 | CI 隔离 service 真实执行 | Pending |
-| QA-02 | `go test -race` 本机 Blocked（无 cgo） | 现有 | 竞态检测缺失 | P1 | 7 | Linux CI 执行 | Pending |
+| QA-01 | 20 个 PostgreSQL/Redis 集成用例在本机跳过，含并发/锁/账本不变量 | 现有 | 关键一致性无本地证据 | P1 | 1、7 | CI 隔离 service 真实执行 | **Passed**（CI 0 跳过 / 2842 通过，并暴露并修复 1 个用例缺陷） |
+| QA-02 | `go test -race` 本机 Blocked（无 cgo） | 现有 | 竞态检测缺失 | P1 | 7 | Linux CI 执行 | **Passed**（CI `go test -race ./... -count=1` success） |
 | QA-03 | `internal/application/account` 无 benchmark | 现有 | 最重读路径无可比基线 | P2 | 4 | 新增分页聚合基准 | Pending |
 | BE-04 | `app.New()`/`Run()` 单函数过长，装配与生命周期混合 | 现有 | 变更风险集中 | P2 | 3 | 拆分后回归装配与关闭顺序 | Pending |
 | BE-05 | `infra/provider/provider.go` 1468 行含约 30 个能力接口 | 现有 | 契约与实现同包 | P2 | 3 | 迁至 ports 并同步调用方 | Pending |
@@ -189,3 +189,34 @@ go test ./internal/infra/egress ./internal/infra/runtime/memory ./internal/pkg/p
 
 - 阶段顺序与文件范围见 `.pi/plan/前后端全量审计与分阶段模块化升级计划-20261009-1947.md`。
 - 回滚：按阶段提交回滚源码与文档；本阶段不涉及生产数据迁移，无需数据回滚。公开协议（路由、DTO、Swagger）必须保持，若确需变更则单独确认。
+
+## 8. CI 真实验证（阶段 2）
+
+`maint/modular-quality-audit` 的草稿 PR #1 触发真实 GitHub Actions（GHCR Image run #4，sha `6f762fb7`），工作流 **conclusion=success**，`Verify` job 全部步骤 success：
+
+| 步骤 | 结果 | 说明 |
+| --- | --- | --- |
+| Test backend | success | `go test ./... -count=1 -json`，**0 跳过**，2842 通过 |
+| Assert required integration tests ran | success | 20 个外部依赖集成用例全部真实执行（断言未被跳过） |
+| Race backend | success | `go test -race ./... -count=1`，补齐本机 Blocked 的 BE-A4 |
+| Vet backend | success | `go vet ./...` |
+| Verify Swagger document | success | `make swagger` + 精确 diff |
+| Verify frontend | success | `pnpm verify`（含依赖边界、结构、门禁自测、覆盖率、体积预算） |
+| Install Playwright browser / Run full-stack E2E | success | 真实全栈 E2E |
+| Build image (amd64 / arm64) | success | PR 模式镜像构建 |
+
+隔离服务：`postgres:17-alpine`（`pg_isready` 健康检查）、`redis:7-alpine`（`redis-cli ping`），`TEST_POSTGRES_ADMIN_DSN` / `TEST_REDIS_ADDRESS` / `TEST_REDIS_DATABASE=9` 只指向本 job 容器，不触碰任何真实服务。
+
+### 首次运行即暴露的用例缺陷（已修复）
+
+`TestPostgresRoutingProjectionAndCredentialHydration` 此前从未在 CI 运行。首次真实执行即失败：用例创建 **Web** 账号，却用 **Build** 池调用 `UpdateMany` 并把返回的 `ErrAccountPoolMismatch` 当作失败。
+
+`UpdateMany` 在 provider 不匹配时返回该错误是**有意的守卫**（`account_repository.go:1625-1632`），另有 `TestAccountRepositoryUpdateManyRejectsMixedProviderBeforeWriting` 专门断言。因此这是**测试期望写错，不是产品缺陷**。修复方式：显式断言跨池更新被拒绝（为 PostgreSQL 侧新增该守卫覆盖），再用正确的 Web 池禁用账号并验证凭据不可用——原意图保留且覆盖增强。
+
+### CI-01：main 的镜像发布因 pnpm 供应链策略失败（既有问题，非本分支引入）
+
+- 现象：`main` @ `7c0493a2` 的 `Publish image (amd64/arm64)` 在 `Build and publish` 失败；同一 commit 的 `Verify` job 通过。该失败自 run #1（`51acd5da`）起持续存在。
+- 根因（Docker 内日志）：`pnpm fetch` 触发 `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`，`1 lockfile entries failed verification (433 entries in 2.9s)`。
+- 策略来源：仓库未显式配置 `minimumReleaseAge`（`pnpm config get minimumReleaseAge` 返回 `undefined`），约束来自 pnpm 12 的内置默认值；`frontend/pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude: [vite@8.3.4]` 说明此前已命中过一次。
+- 时间依赖：本地与 CI 的 `pnpm install` 会缓存校验结果（"verified 1h ago"），Docker 内为全新校验；本分支 PR 模式的镜像构建（同一 Dockerfile、`push: false`）**通过**，说明当前 lockfile 在本次校验时满足策略。
+- 处置：**不通过降低安全约束绕过**。登记为 P2 待处理项；push 模式无法在未合并 `main` 的前提下验证，因此不声称已修复。
