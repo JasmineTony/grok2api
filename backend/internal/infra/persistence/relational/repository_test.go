@@ -297,6 +297,57 @@ func TestAccountRepositoryReplacesQuotaGroupWithoutTouchingOtherModes(t *testing
 	}
 }
 
+func TestAccountRepositoryListsOnlyActiveModelQuotaBlocks(t *testing.T) {
+	ctx := context.Background()
+	repo := NewAccountRepository(openTestDatabase(t))
+	create := func(sourceKey string) account.Credential {
+		value, _, err := repo.UpsertByIdentity(ctx, account.Credential{
+			Provider: account.ProviderBuild, Name: sourceKey, SourceKey: sourceKey,
+			EncryptedAccessToken: testEncryptedToken, AuthStatus: account.AuthStatusActive,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	now := time.Now().UTC()
+	first := create("model-quota-block-first")
+	second := create("model-quota-block-second")
+	block := func(accountID uint64, model, reason string, cooldownUntil time.Time) {
+		t.Helper()
+		if err := repo.UpsertModelQuotaBlock(ctx, account.ModelQuotaBlock{
+			AccountID: accountID, UpstreamModel: model, Reason: reason, CooldownUntil: cooldownUntil,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	block(first.ID, "grok-expired", "model_quota_depleted", now.Add(-time.Hour))
+	block(first.ID, "grok-zeta", "model_quota_depleted", now.Add(time.Hour))
+	block(first.ID, "grok-alpha", "model_access_denied", now.Add(2*time.Hour))
+	block(second.ID, "grok-beta", "model_quota_depleted", now.Add(time.Hour))
+
+	blocks, err := repo.GetModelQuotaBlocks(ctx, []uint64{first.ID, second.ID}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 2 || len(blocks[first.ID]) != 2 || len(blocks[second.ID]) != 1 {
+		t.Fatalf("model quota blocks = %#v", blocks)
+	}
+	if blocks[first.ID][0].UpstreamModel != "grok-alpha" || blocks[first.ID][1].UpstreamModel != "grok-zeta" {
+		t.Fatalf("model quota blocks must be ordered by upstream model: %#v", blocks[first.ID])
+	}
+	if blocks[first.ID][0].AccountID != first.ID || blocks[first.ID][0].Reason != "model_access_denied" || blocks[first.ID][0].CooldownUntil.IsZero() || blocks[first.ID][0].UpdatedAt.IsZero() {
+		t.Fatalf("model quota block = %#v", blocks[first.ID][0])
+	}
+	if blocks[second.ID][0].AccountID != second.ID || blocks[second.ID][0].UpstreamModel != "grok-beta" || blocks[second.ID][0].Reason != "model_quota_depleted" {
+		t.Fatalf("second account model quota blocks = %#v", blocks[second.ID])
+	}
+	empty, err := repo.GetModelQuotaBlocks(ctx, nil, now)
+	if err != nil || len(empty) != 0 {
+		t.Fatalf("empty account ids = %#v, err = %v", empty, err)
+	}
+}
+
 func TestAccountRepositorySummarizesOperationalStates(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
