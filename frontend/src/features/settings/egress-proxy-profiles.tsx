@@ -422,11 +422,9 @@ function EgressProxyProfileActionsCell({
           <DropdownMenuItem
             className="text-destructive focus:text-destructive"
             disabled={profile.boundNodeCount > 0}
-            // Radix 的 disabled 只拦截它自己的 onSelect 语义，不会阻止原生 onClick，
-            // 因此这里必须显式判空，否则「已绑定节点」的封锁只是文案、点击仍会打开删除确认。
+            // Radix 的 disabled 不阻止原生 onClick：必须显式判空才能真正封锁已绑定节点的删除。
             onClick={() => {
-              if (profile.boundNodeCount > 0) return;
-              onDelete(profile);
+              if (profile.boundNodeCount <= 0) onDelete(profile);
             }}
             data-testid={`egress-proxy-profile-delete-${profile.id}`}
           >
