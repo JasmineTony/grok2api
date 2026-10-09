@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -18,15 +17,7 @@ import (
 
 func openAccountService(t *testing.T) (*Service, *relational.AccountRepository) {
 	t.Helper()
-	ctx := context.Background()
-	database, err := relational.OpenSQLite(ctx, filepath.Join(t.TempDir(), "build-super.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if err := database.InitializeSchema(ctx); err != nil {
-		t.Fatal(err)
-	}
+	_, database := openAccountTestDatabase(t, "build-super.db")
 	accounts := relational.NewAccountRepository(database)
 	audits := relational.NewAuditRepository(database)
 	cipher, err := security.NewCipher(base64.StdEncoding.EncodeToString(make([]byte, 32)))

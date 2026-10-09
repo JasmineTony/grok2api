@@ -18,12 +18,13 @@ export default mergeConfig(
       coverage: {
         provider: "v8",
         reporter: ["text", "lcov"],
-        // 覆盖率门槛按 ratchet 只约束本轮新增/修改的组件文件：
-        // - accounts-page.tsx（3864 行、依赖大量 hooks/查询/弹窗）无法在不引入大量无关 mock 的前提下单测，故不纳入；
-        //   其中本轮新增的模型级封锁分支复用 ModelQuotaBlockTooltip，由 account-quota.tsx 的用例覆盖。
-        // - 其余存量文件同样不在本轮达标范围内。
+        // 覆盖率门槛按 ratchet 逐阶段扩大：只纳入已达 76% 的文件；未达标文件必须显式登记，不得静默排除。
+        // 阶段 4 现状：client-keys 与 models 的新模块均已达标并纳入；
+        // accounts 拆分出的多数新模块（各弹窗、批量任务、导出等）实测仅 0–45%，
+        // 因此**未**纳入门槛，属已登记的未达标项（见 frontend/AUDIT.md 阶段 4 小节），
+        // 其行为由账号集成测试覆盖，但不能据此声称满足 TEST-1。
         include: [
-          "src/components/ui/use-chart.tsx",
+          "src/shared/hooks/use-chart.ts",
           "src/features/accounts/account-quota.tsx",
           "src/features/settings/use-settings.ts",
           "src/features/system/use-version-update.ts",
@@ -32,20 +33,57 @@ export default mergeConfig(
           "src/shared/auth/use-auth.ts",
           "src/shared/components/virtual-table-body.tsx",
           "src/shared/hooks/use-debounced-value.ts",
+          "src/features/models/use-model-bulk-mutations.ts",
+          "src/features/models/use-model-dialogs.ts",
+          "src/features/models/use-model-form.ts",
+          "src/features/models/use-model-list.ts",
+          "src/features/models/use-model-save-mutation.ts",
+          "src/features/models/use-model-selection.ts",
+          "src/features/client-keys/client-key-billing-usage.tsx",
+          "src/features/client-keys/client-key-delete-dialogs.tsx",
+          "src/features/client-keys/client-key-form-dialog.tsx",
+          "src/features/client-keys/client-key-form-fields.tsx",
+          "src/features/client-keys/client-key-form-schema.ts",
+          "src/features/client-keys/client-key-model-options.tsx",
+          "src/features/client-keys/client-key-scope-fields.tsx",
+          "src/features/client-keys/client-key-scope-select.tsx",
+          "src/features/client-keys/client-key-scope-summary.ts",
+          "src/features/client-keys/client-key-secret-dialog.tsx",
+          "src/features/client-keys/client-key-status.tsx",
+          "src/features/client-keys/client-keys-api.ts",
+          "src/features/client-keys/client-keys-page.tsx",
+          "src/features/client-keys/client-keys-table.tsx",
+          "src/features/client-keys/client-keys-toolbar.tsx",
         ],
         // 业务 UI 门槛 76%（AGENTS.md TEST-1）；自定义 hook 按 AGENTS.md TEST-2 单独收紧到 100%。
-        // hook 与展示组件已拆分（use-chart.tsx / use-version-update.ts），
+        // hook 与展示组件已拆分（shared/hooks/use-chart.ts / use-version-update.ts），
         // 否则文件级阈值会把无关的渲染分支一并纳入 100% 要求。
         thresholds: {
           lines: 76,
           functions: 76,
           branches: 76,
           statements: 76,
-          "src/components/ui/use-chart.tsx": { lines: 100, functions: 100, branches: 100, statements: 100 },
+          "src/shared/hooks/use-chart.ts": { lines: 100, functions: 100, branches: 100, statements: 100 },
           "src/features/settings/use-settings.ts": { lines: 100, functions: 100, branches: 100, statements: 100 },
           "src/features/system/use-version-update.ts": { lines: 100, functions: 100, branches: 100, statements: 100 },
           "src/shared/auth/use-auth.ts": { lines: 100, functions: 100, branches: 100, statements: 100 },
           "src/shared/hooks/use-debounced-value.ts": { lines: 100, functions: 100, branches: 100, statements: 100 },
+          "src/features/models/use-model-bulk-mutations.ts": {
+            lines: 100,
+            functions: 100,
+            branches: 100,
+            statements: 100,
+          },
+          "src/features/models/use-model-dialogs.ts": { lines: 100, functions: 100, branches: 100, statements: 100 },
+          "src/features/models/use-model-form.ts": { lines: 100, functions: 100, branches: 100, statements: 100 },
+          "src/features/models/use-model-list.ts": { lines: 100, functions: 100, branches: 100, statements: 100 },
+          "src/features/models/use-model-save-mutation.ts": {
+            lines: 100,
+            functions: 100,
+            branches: 100,
+            statements: 100,
+          },
+          "src/features/models/use-model-selection.ts": { lines: 100, functions: 100, branches: 100, statements: 100 },
         },
       },
     },

@@ -1,10 +1,16 @@
 import * as React from "react";
 import * as RechartsPrimitive from "recharts";
 
-import { ChartProvider, THEMES, useChart, type ChartConfig } from "@/components/ui/use-chart";
+import { ChartContext, THEMES, useChart, type ChartConfig } from "@/shared/hooks/use-chart";
 import { cn } from "@/shared/lib/cn";
 
 export type { ChartConfig };
+
+// Provider 留在图表渲染侧：本文件已被 eslint/oxlint 排除，而 shared/hooks 下的
+// use-chart 必须保持“只导出非组件”，否则触发 react-refresh/only-export-components。
+function ChartProvider({ config, children }: { config: ChartConfig; children: React.ReactNode }) {
+  return <ChartContext.Provider value={{ config }}>{children}</ChartContext.Provider>;
+}
 
 const ChartContainer = React.forwardRef<
   HTMLDivElement,
