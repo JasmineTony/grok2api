@@ -47,15 +47,15 @@
 ### TEST-1 UI 组件测试覆盖率 > 75%
 
 - 规则：`frontend/src/**/*.tsx` 中被测试覆盖的语句与分支覆盖率必须 **> 75%**；`frontend/src/components/ui/`（shadcn 原语，已在 `frontend/eslint.config.js` 中 ignore）不计入。
-- 度量方式与门槛位置：使用 vitest coverage（provider 采用 `@vitest/coverage-v8`），门槛写入 `frontend/vitest.config.ts` 的 `test.coverage.thresholds`，通过 `coverage.include` 限定到 `src/**/*.tsx`。
+- 度量方式与门槛位置：使用 vitest coverage（provider 采用 `@vitest/coverage-v8`），门槛写入 `frontend/vitest.config.ts` 的 `test.coverage.thresholds`，通过 `coverage.include` 限定到纳入 ratchet 的文件（`src/**/*.ts(x)`；当前为 `src/features/accounts/account-quota.tsx`、`src/shared/auth/auth-store.ts`、`src/shared/auth/use-auth.ts`）。
  - 判定方式：`frontend/` 下 `pnpm test:ui:coverage`（`vitest run --coverage`）产出报表并强制门槛；未达标时 vitest 以非零退出码失败。该命令已由 `pnpm verify` 串联。
- - 现状（ratchet 已落地）：`frontend/vitest.config.ts` 已配置 v8 coverage 与 75 门槛，但 `coverage.include` 目前只收窄到本轮新增/修改的 `src/features/accounts/account-quota.tsx`（实测 statements 99.06% / branches 83.6% / functions 100% / lines 100%）。`accounts-page.tsx` 等存量文件尚未纳入门槛（该文件格式化后 3752 行，属 §5 存量债务），需按 feature 逐块补齐后再扩大 `coverage.include`。
+ - 现状（ratchet 已落地）：`frontend/vitest.config.ts` 已配置 v8 coverage 与全局 75 门槛，`coverage.include` 见上一条。实测：`account-quota.tsx` statements 99.06% / branches 83.6% / functions 100% / lines 100%；`auth-store.ts`（zustand 认证 store）statements 100% / branches 100% / functions 100% / lines 100%。`accounts-page.tsx` 等存量文件尚未纳入门槛（该文件格式化后 3752 行，属 §5 存量债务），需按 feature 逐块补齐后再扩大 `coverage.include`。
 
 ### TEST-2 Hooks 测试覆盖率 100%
 
 - 规则：自定义 hook（`frontend/src/**/use*.ts(x)` 以及组件文件内定义/导出的 `use*` 函数）必须达到 **100%** 语句与分支覆盖，并覆盖副作用清理（定时器、订阅、请求取消）与边界入参。
  - 判定方式：coverage 报表中 hook 文件为 100%；hook 达标后应在 `frontend/vitest.config.ts` 中对其单独设置 `thresholds` 为 100%。
- - 现状（未落地）：hook 共 6 个（3 个独立文件 `frontend/src/shared/hooks/use-debounced-value.ts`、`frontend/src/shared/auth/use-auth.ts`、`frontend/src/features/settings/use-settings.ts`；3 个组件内 hook 见 `frontend/src/features/system/version-update.tsx`、`frontend/src/components/ui/chart.tsx`），当前覆盖率仍为 0。本轮未新增 hook，故该项作为独立迭代推进。
+ - 现状（部分落地）：hook 共 6 个（3 个独立文件 `frontend/src/shared/hooks/use-debounced-value.ts`、`frontend/src/shared/auth/use-auth.ts`、`frontend/src/features/settings/use-settings.ts`；3 个组件内 hook 见 `frontend/src/features/system/version-update.tsx`、`frontend/src/components/ui/chart.tsx`）。`use-auth.ts` 已随认证全局状态迁移到 zustand store 达标（100% 语句/分支/函数/行），并在 `frontend/vitest.config.ts` 中对其单独设置 100 门槛；其余 5 个 hook 覆盖率仍为 0，作为独立迭代推进。
 
 ### TEST-3 关键路径必须有集成测试
 
