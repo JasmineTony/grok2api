@@ -68,8 +68,10 @@ jobs:
 
       - name: Assert required integration tests ran
         run: |
+          # 按用例名匹配外部依赖集成测试（Postgres/Redis）；按包路径匹配会漏掉
+          # internal/application/account 中的 Redis 用例。
           skipped=$(jq -r 'select(.Action == "skip" and .Test != null) | "\(.Package) \(.Test)"' "$RUNNER_TEMP/backend-test.json" \
-            | grep -E 'persistence/relational|runtime/redis' || true)
+            | grep -E 'Postgres|Redis' || true)
           if [ -n "$skipped" ]; then
             echo "必需集成用例被跳过（服务不可达或环境变量缺失），不得记为通过："
             echo "$skipped"
