@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -18,7 +19,9 @@ import (
 	egressdomain "github.com/chenyme/grok2api/backend/internal/domain/egress"
 	infraegress "github.com/chenyme/grok2api/backend/internal/infra/egress"
 	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	"github.com/chenyme/grok2api/backend/internal/infra/provider/browserheaders"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
+	"golang.org/x/net/html"
 )
 
 const (
@@ -102,8 +105,8 @@ func (f *ssoBuildFlow) convert(ctx context.Context, credential accountdomain.Cre
 	}
 
 	// verify/approve 已在 auth.x.ai 完成状态变更。重定向目标只是结果页，
-	// 因此不访问 accounts.x.ai，直接解析首个 3xx Location 的状态路径。
-	status, finalURL, _, err := f.doWithFollow(ctx, http.MethodPost, ssoVerifyURL, url.Values{"user_code": {device.UserCode}}, false)
+	// 因此不跟随 3xx，直接解析首个 3xx Location 的状态路径。
+	status, finalURL, _, err := f.doWithFollow(ctx, http.MethodPost, ssoVerifyURL, url.Values{"user_code": {device.UserCode}}, false, nil)
 	if err != nil {
 		return provider.CredentialSeed{}, err
 	}
@@ -119,9 +122,22 @@ func (f *ssoBuildFlow) convert(ctx context.Context, credential accountdomain.Cre
 		}
 		return provider.CredentialSeed{}, fmt.Errorf("SSO 自动验证 Device Flow 失败")
 	}
+	// approve 必须回传 consent 页里的一次性防伪令牌 consent_token；verify 的 3xx 分支不返回正文，
+	// 因此这里按浏览器文档导航再取一次 consent 页正文。
+	consentURL := finalURL
+	consentBody, err := f.fetchConsentPage(ctx, consentURL)
+	if err != nil {
+		return provider.CredentialSeed{}, err
+	}
+	consentToken := parseConsentToken(consentBody)
+	if consentToken == "" {
+		return provider.CredentialSeed{}, fmt.Errorf("SSO 自动批准 Device Flow 失败: 未获取到 consent_token")
+	}
+	// Origin 必须与 consent 页同源（accounts.x.ai 或 auth.x.ai），Referer 为 consent 页完整 URL。
 	status, finalURL, _, err = f.doWithFollow(ctx, http.MethodPost, ssoApproveURL, url.Values{
 		"user_code": {device.UserCode}, "action": {"allow"}, "principal_type": {"User"}, "principal_id": {""},
-	}, false)
+		"consent_token": {consentToken},
+	}, false, http.Header{"Origin": {ssoOrigin(consentURL)}, "Referer": {consentURL}})
 	if err != nil {
 		return provider.CredentialSeed{}, err
 	}
@@ -217,12 +233,13 @@ func (f *ssoBuildFlow) pollToken(ctx context.Context, deviceCode string, interva
 }
 
 func (f *ssoBuildFlow) do(ctx context.Context, method, endpoint string, form url.Values) (int, string, []byte, error) {
-	return f.doWithFollow(ctx, method, endpoint, form, true)
+	return f.doWithFollow(ctx, method, endpoint, form, true, nil)
 }
 
 // doWithFollow 在 follow=false 时遇到 3xx 直接返回状态码与解析后的 Location 作为 finalURL，
 // 用于重定向目标域会被 Cloudflare 拦截（accounts.x.ai）的请求。
-func (f *ssoBuildFlow) doWithFollow(ctx context.Context, method, endpoint string, form url.Values, follow bool) (int, string, []byte, error) {
+// extra 是额外请求头（如浏览器表单提交的 Origin/Referer），会覆盖同名默认头。
+func (f *ssoBuildFlow) doWithFollow(ctx context.Context, method, endpoint string, form url.Values, follow bool, extra http.Header) (int, string, []byte, error) {
 	if !safeXAIURL(endpoint) {
 		return 0, "", nil, fmt.Errorf("xAI OAuth URL 不安全")
 	}
@@ -244,6 +261,11 @@ func (f *ssoBuildFlow) doWithFollow(ctx context.Context, method, endpoint string
 		request.Header.Set("Cookie", f.cookieHeader())
 		if currentForm != nil {
 			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		for key, values := range extra {
+			for _, value := range values {
+				request.Header.Set(key, value)
+			}
 		}
 		response, err := f.client.Do(request)
 		if err != nil {
@@ -285,6 +307,46 @@ func (f *ssoBuildFlow) doWithFollow(ctx context.Context, method, endpoint string
 	return 0, currentURL, nil, fmt.Errorf("xAI OAuth 重定向次数过多")
 }
 
+// fetchConsentPage 以浏览器文档导航方式读取 consent 页正文，用于提取一次性防伪令牌 consent_token。
+func (f *ssoBuildFlow) fetchConsentPage(ctx context.Context, consentURL string) ([]byte, error) {
+	if !safeXAIURL(consentURL) {
+		return nil, fmt.Errorf("xAI OAuth consent 页 URL 不安全")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, consentURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	request.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+	request.Header.Set("Cache-Control", "no-cache")
+	request.Header.Set("Pragma", "no-cache")
+	request.Header.Set("Sec-Fetch-Dest", "document")
+	request.Header.Set("Sec-Fetch-Mode", "navigate")
+	request.Header.Set("Sec-Fetch-Site", "same-origin")
+	request.Header.Set("Upgrade-Insecure-Requests", "1")
+	request.Header.Set("User-Agent", f.userAgent)
+	request.Header.Set("Cookie", f.cookieHeader())
+	browserheaders.ApplyChromiumClientHints(request.Header, f.userAgent)
+	response, err := f.client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	f.captureCookies(response)
+	body, readErr := io.ReadAll(io.LimitReader(response.Body, maxAuthBody+1))
+	_ = response.Body.Close()
+	if readErr != nil {
+		return nil, readErr
+	}
+	if len(body) > maxAuthBody {
+		return nil, fmt.Errorf("xAI OAuth 响应超过 2 MiB")
+	}
+	// 必须保留状态码：出口层依赖 conversionHTTPError 的状态码区分上游拒绝与节点反爬失败。
+	if response.StatusCode < 200 || response.StatusCode >= 400 {
+		return nil, fmt.Errorf("SSO 自动批准 Device Flow 读取 consent 页失败: %w", conversionHTTPError{status: response.StatusCode})
+	}
+	return body, nil
+}
+
 func (f *ssoBuildFlow) captureCookies(response *http.Response) {
 	for _, cookie := range response.Cookies() {
 		name := strings.TrimSpace(cookie.Name)
@@ -316,6 +378,91 @@ func ssoDeviceRedirectState(raw string) string {
 	default:
 		return ""
 	}
+}
+
+// parseConsentToken 提取 consent 页里的一次性防伪令牌。优先解析表单 input，
+// 未命中时再严格匹配页面内嵌 JSON（RSC 数据流）中的 consentToken，解析不到返回空串。
+func parseConsentToken(body []byte) string {
+	if token := consentTokenFromInput(body); token != "" {
+		return token
+	}
+	return consentTokenFromJSON(body)
+}
+
+// consentTokenFromInput 用 HTML tokenizer 解析 <input name="consent_token" value="...">，
+// 容忍属性顺序颠倒、单/双引号、自闭合标签以及 name 与 value 之间夹杂其它属性。
+func consentTokenFromInput(body []byte) string {
+	tokenizer := html.NewTokenizer(bytes.NewReader(body))
+	for {
+		switch tokenizer.Next() {
+		case html.ErrorToken:
+			return ""
+		case html.StartTagToken, html.SelfClosingTagToken:
+			name, hasAttrs := tokenizer.TagName()
+			if !strings.EqualFold(string(name), "input") || !hasAttrs {
+				continue
+			}
+			fieldName := ""
+			value := ""
+			for {
+				key, attrValue, more := tokenizer.TagAttr()
+				switch strings.ToLower(string(key)) {
+				case "name":
+					fieldName = strings.TrimSpace(string(attrValue))
+				case "value":
+					value = strings.TrimSpace(string(attrValue))
+				}
+				if !more {
+					break
+				}
+			}
+			if strings.EqualFold(fieldName, "consent_token") && value != "" {
+				return value
+			}
+		}
+	}
+}
+
+// consentTokenFromJSON 严格定界匹配 consentToken 之后紧跟的 JSON 字符串值（允许 RSC 流里的 \" 转义），
+// 不使用宽泛正则，避免在 RSC 数据流中误匹配其它字段。
+func consentTokenFromJSON(body []byte) string {
+	const key = "consentToken"
+	for offset := 0; offset < len(body); {
+		index := bytes.Index(body[offset:], []byte(key))
+		if index < 0 {
+			return ""
+		}
+		start := offset + index + len(key)
+		offset = start
+		rest := bytes.TrimLeft(body[start:], " \t\r\n\\\"")
+		if len(rest) == 0 || rest[0] != ':' {
+			continue
+		}
+		rest = bytes.TrimLeft(rest[1:], " \t\r\n\\\"")
+		end := bytes.IndexByte(rest, '"')
+		if end < 0 {
+			continue
+		}
+		// RSC 流里的引号带反斜杠转义，值末尾可能残留一个反斜杠。
+		if value := strings.TrimRight(string(rest[:end]), "\\"); isConsentTokenValue(value) {
+			return value
+		}
+	}
+	return ""
+}
+
+// isConsentTokenValue 只接受 base64url 编码的 JWT 形状，缩小 JSON 回退的误匹配面。
+func isConsentTokenValue(value string) bool {
+	return strings.HasPrefix(value, "eyJ") && strings.Count(value, ".") == 2 && !strings.ContainsRune(value, '\\') && len(value) <= 8192
+}
+
+// ssoOrigin 从 URL 派生 Origin（scheme://host）；consent 页可能位于 accounts.x.ai 或 auth.x.ai，不能硬编码。
+func ssoOrigin(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	return parsed.Scheme + "://" + parsed.Host
 }
 
 func (f *ssoBuildFlow) cookieHeader() string {
