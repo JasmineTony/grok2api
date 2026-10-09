@@ -1,14 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import {
-  CheckCircle2,
-  FileText,
-  Globe2,
-  KeyRound,
-  ListTree,
-  Network,
-  Server,
-  TriangleAlert,
-} from "lucide-react";
+import { CheckCircle2, FileText, Globe2, KeyRound, ListTree, Network, Server, TriangleAlert } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -91,7 +82,9 @@ export function RequestAuditDetailDialog({
               ) : null}
               {activeAudit ? (
                 <>
-                  {activeAudit.requestId || activeAudit.clientIp || activeAudit.operation ? <span aria-hidden="true">·</span> : null}
+                  {activeAudit.requestId || activeAudit.clientIp || activeAudit.operation ? (
+                    <span aria-hidden="true">·</span>
+                  ) : null}
                   <span>{formatDateTime(activeAudit.createdAt, i18n.language)}</span>
                 </>
               ) : null}
@@ -128,11 +121,17 @@ export function RequestAuditDetailDialog({
               </TabsList>
             </div>
 
-            <TabsContent value="overview" className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 focus-visible:outline-none sm:p-5">
+            <TabsContent
+              value="overview"
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 focus-visible:outline-none sm:p-5"
+            >
               <RequestOverviewPanel audit={activeAudit} />
             </TabsContent>
 
-            <TabsContent value="requestMetadata" className="min-h-0 flex-1 overflow-hidden px-4 pb-4 pt-3 focus-visible:outline-none sm:px-5 sm:pb-5">
+            <TabsContent
+              value="requestMetadata"
+              className="min-h-0 flex-1 overflow-hidden px-4 pb-4 pt-3 focus-visible:outline-none sm:px-5 sm:pb-5"
+            >
               <RequestMetadataPanel audit={activeAudit} />
             </TabsContent>
 
@@ -151,9 +150,7 @@ function RequestOverviewPanel({ audit }: { audit: AuditDTO }) {
 
   const tokenSummary = useMemo(() => {
     if (!audit.totalTokens && !audit.inputTokens && !audit.outputTokens) return null;
-    const parts = [
-      `${t("audits.input")} ${formatNumber(audit.inputTokens, i18n.language)}`,
-    ];
+    const parts = [`${t("audits.input")} ${formatNumber(audit.inputTokens, i18n.language)}`];
     if (audit.cachedInputTokens > 0) {
       parts.push(`(${t("audits.cached")} ${formatNumber(audit.cachedInputTokens, i18n.language)})`);
     }
@@ -166,11 +163,7 @@ function RequestOverviewPanel({ audit }: { audit: AuditDTO }) {
   }, [audit, t, i18n.language]);
 
   const costDisplay = useMemo(() => {
-    return formatUSDTicksWithEstimate(
-      audit.costInUsdTicks,
-      audit.estimatedCostInUsdTicks,
-      t("audits.estimated"),
-    );
+    return formatUSDTicksWithEstimate(audit.costInUsdTicks, audit.estimatedCostInUsdTicks, t("audits.estimated"));
   }, [audit, t]);
 
   const durationDisplay = useMemo(() => {
@@ -192,54 +185,39 @@ function RequestOverviewPanel({ audit }: { audit: AuditDTO }) {
         value={audit.modelPublicId || "-"}
         copy={Boolean(audit.modelPublicId)}
       />
-      <OverviewField
-        label={t("audits.upstreamModel")}
-        value={audit.modelUpstreamModel || "-"}
-      />
+      <OverviewField label={t("audits.upstreamModel")} value={audit.modelUpstreamModel || "-"} />
       <OverviewField
         label={t("audits.clientApiKey")}
         value={audit.clientKeyName || (audit.clientKeyId ? `#${audit.clientKeyId}` : "-")}
       />
-      <OverviewField
-        label={t("audits.clientIp")}
-        value={audit.clientIp || "-"}
-      />
+      <OverviewField label={t("audits.clientIp")} value={audit.clientIp || "-"} />
       <OverviewField
         label={t("audits.egressNode")}
         value={audit.egressNodeName || (audit.egressNodeId ? `#${audit.egressNodeId}` : "-")}
       />
-      <OverviewField
-        label={t("audits.duration")}
-        value={durationDisplay}
-      />
-      <OverviewField
-        label={t("audits.cost")}
-        value={costDisplay}
-      />
+      <OverviewField label={t("audits.duration")} value={durationDisplay} />
+      <OverviewField label={t("audits.cost")} value={costDisplay} />
       {audit.errorCode ? (
-        <OverviewField
-          className="sm:col-span-2"
-          label={t("audits.errorLabel")}
-          value={audit.errorCode}
-          copy
-        />
+        <OverviewField className="sm:col-span-2" label={t("audits.errorLabel")} value={audit.errorCode} copy />
       ) : null}
       {tokenSummary ? (
-        <OverviewField
-          className="sm:col-span-2"
-          label={t("audits.tokenUsage")}
-          value={tokenSummary}
-        />
+        <OverviewField className="sm:col-span-2" label={t("audits.tokenUsage")} value={tokenSummary} />
       ) : null}
       {audit.mediaInputImages > 0 || audit.mediaOutputImages > 0 || audit.mediaOutputSeconds > 0 ? (
         <OverviewField
           className="sm:col-span-2"
           label={t("audits.mediaInput")}
           value={[
-            audit.mediaInputImages > 0 ? `${t("audits.mediaInput")}: ${t("audits.imageCount", { count: audit.mediaInputImages })}` : "",
-            audit.mediaOutputImages > 0 ? `${t("audits.mediaOutput")}: ${t("audits.imageCount", { count: audit.mediaOutputImages })}` : "",
+            audit.mediaInputImages > 0
+              ? `${t("audits.mediaInput")}: ${t("audits.imageCount", { count: audit.mediaInputImages })}`
+              : "",
+            audit.mediaOutputImages > 0
+              ? `${t("audits.mediaOutput")}: ${t("audits.imageCount", { count: audit.mediaOutputImages })}`
+              : "",
             audit.mediaOutputSeconds > 0 ? t("audits.secondsCount", { count: audit.mediaOutputSeconds }) : "",
-          ].filter(Boolean).join(" · ")}
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         />
       ) : null}
     </div>
@@ -259,9 +237,7 @@ function RequestMetadataPanel({ audit }: { audit: AuditDTO }) {
       <section className="shrink-0">
         <p className="mb-2 px-1 text-[11px] font-medium text-muted-foreground">{t("audits.requestPath")}</p>
         <div className="flex h-10 min-w-0 items-center gap-3 rounded-lg bg-muted/15 px-3">
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {audit.requestMethod || "-"}
-          </span>
+          <span className="shrink-0 text-xs text-muted-foreground">{audit.requestMethod || "-"}</span>
           <span className="min-w-0 flex-1 truncate text-xs" title={audit.requestPath}>
             {audit.requestPath || "-"}
           </span>
@@ -269,19 +245,17 @@ function RequestMetadataPanel({ audit }: { audit: AuditDTO }) {
         </div>
       </section>
       <section className="min-h-0 flex-1">
-        <HeadersPanel title={t("audits.requestHeaders")} headers={headers} emptyMessage={t("audits.noRequestHeaders")} />
+        <HeadersPanel
+          title={t("audits.requestHeaders")}
+          headers={headers}
+          emptyMessage={t("audits.noRequestHeaders")}
+        />
       </section>
     </div>
   );
 }
 
-function UpstreamAttemptsPanel({
-  audit,
-  attempts,
-}: {
-  audit: AuditDTO;
-  attempts: AuditAttemptDTO[];
-}) {
+function UpstreamAttemptsPanel({ audit, attempts }: { audit: AuditDTO; attempts: AuditAttemptDTO[] }) {
   const { t } = useTranslation();
   const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
 
@@ -304,7 +278,7 @@ function UpstreamAttemptsPanel({
           {t(
             audit.errorCode && PRE_UPSTREAM_ERROR_CODES.has(audit.errorCode)
               ? "audits.noUpstreamAttempt"
-              : "audits.noFailureAttempts"
+              : "audits.noFailureAttempts",
           )}
         </p>
         {audit.errorCode ? (
@@ -327,7 +301,9 @@ function UpstreamAttemptsPanel({
             <AttemptButton
               key={attempt.id}
               attempt={attempt}
-              statusCode={attempt.upstreamStatusCode || (attempt.number === terminalAttemptNumber ? audit.statusCode : 0)}
+              statusCode={
+                attempt.upstreamStatusCode || (attempt.number === terminalAttemptNumber ? audit.statusCode : 0)
+              }
               selected={attempt.number === selectedAttempt.number}
               onClick={() => setSelectedNumber(attempt.number)}
             />
@@ -339,15 +315,26 @@ function UpstreamAttemptsPanel({
   );
 }
 
-function AttemptButton({ attempt, statusCode, selected, onClick }: { attempt: AuditAttemptDTO; statusCode: number; selected: boolean; onClick: () => void }) {
+function AttemptButton({
+  attempt,
+  statusCode,
+  selected,
+  onClick,
+}: {
+  attempt: AuditAttemptDTO;
+  statusCode: number;
+  selected: boolean;
+  onClick: () => void;
+}) {
   const { t } = useTranslation();
-  const Icon = attempt.source === "upstream_http" ? Server : attempt.source === "gateway_transport" ? Network : KeyRound;
+  const Icon =
+    attempt.source === "upstream_http" ? Server : attempt.source === "gateway_transport" ? Network : KeyRound;
   return (
     <button
       type="button"
       className={cn(
         "flex h-8 w-36 shrink-0 items-center justify-between gap-2 rounded-lg px-2.5 text-left text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 lg:w-full",
-        selected ? "bg-accent text-accent-foreground" : "hover:bg-accent/60"
+        selected ? "bg-accent text-accent-foreground" : "hover:bg-accent/60",
       )}
       aria-pressed={selected}
       onClick={onClick}
@@ -377,25 +364,45 @@ function AttemptDetail({ attempt }: { attempt: AuditAttemptDTO }) {
           <AttemptSummary attempt={attempt} />
           <div className="ml-auto max-w-full shrink-0 overflow-x-auto pb-0.5">
             <TabsList className="h-7 w-max">
-              <TabsTrigger value="overview" className="h-6 px-2.5 text-xs">{t("audits.overview")}</TabsTrigger>
-              {hasBody ? <TabsTrigger value="body" className="h-6 px-2.5 text-xs">{t("audits.responseBody")}</TabsTrigger> : null}
-              {hasHeaders ? <TabsTrigger value="headers" className="h-6 px-2.5 text-xs">{t("audits.responseHeaders")}</TabsTrigger> : null}
-              {hasErrors ? <TabsTrigger value="errors" className="h-6 px-2.5 text-xs">{t("audits.errorChain")}</TabsTrigger> : null}
+              <TabsTrigger value="overview" className="h-6 px-2.5 text-xs">
+                {t("audits.overview")}
+              </TabsTrigger>
+              {hasBody ? (
+                <TabsTrigger value="body" className="h-6 px-2.5 text-xs">
+                  {t("audits.responseBody")}
+                </TabsTrigger>
+              ) : null}
+              {hasHeaders ? (
+                <TabsTrigger value="headers" className="h-6 px-2.5 text-xs">
+                  {t("audits.responseHeaders")}
+                </TabsTrigger>
+              ) : null}
+              {hasErrors ? (
+                <TabsTrigger value="errors" className="h-6 px-2.5 text-xs">
+                  {t("audits.errorChain")}
+                </TabsTrigger>
+              ) : null}
             </TabsList>
           </div>
         </div>
         <TabsContent value="overview" className="min-h-0 flex-1 overflow-y-auto">
           <AttemptOverview attempt={attempt} />
         </TabsContent>
-        {hasBody ? <TabsContent value="body" className="min-h-0 flex-1 overflow-hidden pt-2">
-          <AttemptResponseBody attempt={attempt} />
-        </TabsContent> : null}
-        {hasHeaders ? <TabsContent value="headers" className="min-h-0 flex-1 overflow-hidden pt-2">
-          <HeadersPanel title={t("audits.responseHeaders")} headers={attempt.responseHeaders} />
-        </TabsContent> : null}
-        {hasErrors ? <TabsContent value="errors" className="min-h-0 flex-1 overflow-hidden pt-2">
-          <ErrorChainPanel attempt={attempt} />
-        </TabsContent> : null}
+        {hasBody ? (
+          <TabsContent value="body" className="min-h-0 flex-1 overflow-hidden pt-2">
+            <AttemptResponseBody attempt={attempt} />
+          </TabsContent>
+        ) : null}
+        {hasHeaders ? (
+          <TabsContent value="headers" className="min-h-0 flex-1 overflow-hidden pt-2">
+            <HeadersPanel title={t("audits.responseHeaders")} headers={attempt.responseHeaders} />
+          </TabsContent>
+        ) : null}
+        {hasErrors ? (
+          <TabsContent value="errors" className="min-h-0 flex-1 overflow-hidden pt-2">
+            <ErrorChainPanel attempt={attempt} />
+          </TabsContent>
+        ) : null}
       </Tabs>
     </main>
   );
@@ -423,10 +430,10 @@ function AttemptSummary({ attempt }: { attempt: AuditAttemptDTO }) {
   const title = isStreamFailure
     ? t("audits.upstreamStreamFailure", { status: attempt.upstreamStatusCode ?? "-" })
     : isHTTP
-    ? t("audits.upstreamHttpFailure", { status: attempt.upstreamStatusCode ?? "-" })
-    : attempt.source === "gateway_transport"
-    ? t("audits.gatewayTransportFailure")
-    : t("audits.credentialFailure");
+      ? t("audits.upstreamHttpFailure", { status: attempt.upstreamStatusCode ?? "-" })
+      : attempt.source === "gateway_transport"
+        ? t("audits.gatewayTransportFailure")
+        : t("audits.credentialFailure");
   return (
     <div className="flex min-w-0 items-center gap-2">
       <Icon className="size-4 shrink-0 text-destructive" />
@@ -441,11 +448,22 @@ function AttemptOverview({ attempt }: { attempt: AuditAttemptDTO }) {
     <div className="grid gap-x-10 gap-y-4 px-1 py-3 sm:grid-cols-2">
       <OverviewField label={t("audits.attemptStartedAt")} value={formatDateTime(attempt.startedAt, i18n.language)} />
       <OverviewField label={t("audits.duration")} value={`${formatNumber(attempt.durationMs, i18n.language)} ms`} />
-      <OverviewField label={t("audits.targetAccount")} value={attempt.accountName || (attempt.accountId ? `#${attempt.accountId}` : "-")} />
+      <OverviewField
+        label={t("audits.targetAccount")}
+        value={attempt.accountName || (attempt.accountId ? `#${attempt.accountId}` : "-")}
+      />
       <OverviewField label={t("audits.requestMethod")} value={attempt.method || "-"} />
       <OverviewField label={t("audits.requestPath")} value={attempt.requestPath || "-"} />
-      <OverviewField label={t("audits.upstreamStatus")} value={attempt.upstreamStatus || (attempt.upstreamStatusCode ? String(attempt.upstreamStatusCode) : "-")} />
-      <OverviewField className="sm:col-span-2" label={t("audits.upstreamUrl")} value={attempt.upstreamUrl || t("audits.upstreamUrlUnavailable")} copy={Boolean(attempt.upstreamUrl)} />
+      <OverviewField
+        label={t("audits.upstreamStatus")}
+        value={attempt.upstreamStatus || (attempt.upstreamStatusCode ? String(attempt.upstreamStatusCode) : "-")}
+      />
+      <OverviewField
+        className="sm:col-span-2"
+        label={t("audits.upstreamUrl")}
+        value={attempt.upstreamUrl || t("audits.upstreamUrlUnavailable")}
+        copy={Boolean(attempt.upstreamUrl)}
+      />
       {attempt.transportError ? (
         <OverviewField
           className="sm:col-span-2"
@@ -458,7 +476,17 @@ function AttemptOverview({ attempt }: { attempt: AuditAttemptDTO }) {
   );
 }
 
-function OverviewField({ className, label, value, copy }: { className?: string; label: string; value: string; copy?: boolean }) {
+function OverviewField({
+  className,
+  label,
+  value,
+  copy,
+}: {
+  className?: string;
+  label: string;
+  value: string;
+  copy?: boolean;
+}) {
   return (
     <div className={cn("flex min-w-0 items-start gap-3 rounded-lg bg-muted/25 p-3", className)}>
       <div className="min-w-0 flex-1">
@@ -496,7 +524,11 @@ function CodePanel({
       <div className="flex h-10 shrink-0 items-center justify-between px-3">
         <span className="flex min-w-0 items-center gap-2 text-muted-foreground text-[11px]">
           <span>{t("audits.bodyEncoding", { encoding })}</span>
-          {truncated ? <Badge variant="outline" className="text-[10px]">{t("audits.bodyTruncated")}</Badge> : null}
+          {truncated ? (
+            <Badge variant="outline" className="text-[10px]">
+              {t("audits.bodyTruncated")}
+            </Badge>
+          ) : null}
         </span>
         <CopyButton value={value} />
       </div>
@@ -509,11 +541,23 @@ function CodePanel({
   );
 }
 
-function HeadersPanel({ title, headers, emptyMessage }: { title?: string; headers: Record<string, string[]>; emptyMessage?: string }) {
+function HeadersPanel({
+  title,
+  headers,
+  emptyMessage,
+}: {
+  title?: string;
+  headers: Record<string, string[]>;
+  emptyMessage?: string;
+}) {
   const { t } = useTranslation();
-  const entries = useMemo(() => Object.entries(headers).sort(([left], [right]) => left.localeCompare(right)), [headers]);
+  const entries = useMemo(
+    () => Object.entries(headers).sort(([left], [right]) => left.localeCompare(right)),
+    [headers],
+  );
   const copyValue = useMemo(() => JSON.stringify(headers, null, 2), [headers]);
-  if (entries.length === 0) return <EmptyPanel icon={<FileText />} message={emptyMessage ?? t("audits.emptyResponseHeaders")} />;
+  if (entries.length === 0)
+    return <EmptyPanel icon={<FileText />} message={emptyMessage ?? t("audits.emptyResponseHeaders")} />;
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg bg-muted/15">
       <div className="flex h-10 shrink-0 items-center justify-between px-3">
@@ -525,11 +569,25 @@ function HeadersPanel({ title, headers, emptyMessage }: { title?: string; header
       </div>
       <div className="min-h-0 flex-1 space-y-0.5 overflow-auto px-2 pb-2">
         {entries.map(([name, values], entryIndex) => (
-          <div key={name} className={cn("grid gap-1 rounded-md px-2.5 py-2 transition-colors hover:bg-background/70 sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-4", entryIndex % 2 === 0 && "bg-background/35")}>
+          <div
+            key={name}
+            className={cn(
+              "grid gap-1 rounded-md px-2.5 py-2 transition-colors hover:bg-background/70 sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-4",
+              entryIndex % 2 === 0 && "bg-background/35",
+            )}
+          >
             <span className="break-all font-mono text-[11px] text-muted-foreground">{name}</span>
             <div className="min-w-0 space-y-1">
               {values.map((value, index) => (
-                <span key={`${name}-${index}`} className={cn("block break-all font-mono text-[11px]", value === "[REDACTED]" && "font-semibold text-amber-700 dark:text-amber-300")}>{value}</span>
+                <span
+                  key={`${name}-${index}`}
+                  className={cn(
+                    "block break-all font-mono text-[11px]",
+                    value === "[REDACTED]" && "font-semibold text-amber-700 dark:text-amber-300",
+                  )}
+                >
+                  {value}
+                </span>
               ))}
             </div>
           </div>
@@ -546,7 +604,9 @@ function ErrorChainPanel({ attempt }: { attempt: AuditAttemptDTO }) {
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg bg-muted/15">
       <div className="flex h-10 shrink-0 items-center justify-between px-3">
-        <span className="text-muted-foreground text-[11px]">{t("audits.errorFrameCount", { count: attempt.errorChain.length })}</span>
+        <span className="text-muted-foreground text-[11px]">
+          {t("audits.errorFrameCount", { count: attempt.errorChain.length })}
+        </span>
         <CopyButton value={copyValue} />
       </div>
       <ol className="min-h-0 flex-1 space-y-3 overflow-auto p-3">
@@ -575,7 +635,10 @@ function EmptyPanel({ icon, message }: { icon: ReactNode; message: string }) {
 
 function formattedResponseBody(attempt: AuditAttemptDTO): string {
   if (attempt.responseBodyEncoding !== "utf8") return attempt.responseBody;
-  const contentType = Object.entries(attempt.responseHeaders).find(([name]) => name.toLowerCase() === "content-type")?.[1].join(";") ?? "";
+  const contentType =
+    Object.entries(attempt.responseHeaders)
+      .find(([name]) => name.toLowerCase() === "content-type")?.[1]
+      .join(";") ?? "";
   if (attempt.stage !== "response_stream" && !contentType.toLowerCase().includes("json")) return attempt.responseBody;
   return formatJSONBody(attempt.responseBody);
 }
@@ -589,15 +652,16 @@ function formatJSONBody(value: string): string {
 }
 
 function StatusBadge({ statusCode, failed = false }: { statusCode: number; failed?: boolean }) {
-  const className = statusCode >= 500
-    ? "bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/30"
-    : statusCode >= 400
-    ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30"
-    : failed
-    ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30"
-    : statusCode >= 200 && statusCode < 300
-    ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
-    : "bg-muted text-muted-foreground";
+  const className =
+    statusCode >= 500
+      ? "bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/30"
+      : statusCode >= 400
+        ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30"
+        : failed
+          ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30"
+          : statusCode >= 200 && statusCode < 300
+            ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+            : "bg-muted text-muted-foreground";
   return (
     <Badge variant="outline" className={cn("h-5 min-w-8 justify-center px-1.5 text-xs font-normal", className)}>
       {statusCode}

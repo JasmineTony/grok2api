@@ -2,7 +2,19 @@ import { Check, ListFilter, Search, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 
 // Groups turn an option into a third menu level: the option itself stays
@@ -80,7 +92,9 @@ export function DataTableFilters({ filters }: { filters: DataTableFilter[] }) {
         <Button variant="secondary" size="sm" className="text-muted-foreground">
           <ListFilter />
           {t("common.filter")}
-          {activeCount > 0 ? <span className="min-w-4 text-center text-[11px] tabular-nums text-foreground">{activeCount}</span> : null}
+          {activeCount > 0 ? (
+            <span className="min-w-4 text-center text-[11px] tabular-nums text-foreground">{activeCount}</span>
+          ) : null}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-52">
@@ -90,7 +104,9 @@ export function DataTableFilters({ filters }: { filters: DataTableFilter[] }) {
               <DropdownMenuSub key={filter.id}>
                 <DropdownMenuSubTrigger>
                   <span>{filter.label}</span>
-                  {filter.value ? <span className="max-w-20 truncate text-xs text-muted-foreground">{filter.value}</span> : null}
+                  {filter.value ? (
+                    <span className="max-w-20 truncate text-xs text-muted-foreground">{filter.value}</span>
+                  ) : null}
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent className="w-64 p-2" onKeyDown={(event) => event.stopPropagation()}>
                   <Input
@@ -110,26 +126,46 @@ export function DataTableFilters({ filters }: { filters: DataTableFilter[] }) {
             <DropdownMenuSub key={filter.id}>
               <DropdownMenuSubTrigger>
                 <span>{filter.label}</span>
-                {selectedLabel ? <span className="max-w-20 truncate text-xs text-muted-foreground">{selectedLabel}</span> : null}
+                {selectedLabel ? (
+                  <span className="max-w-20 truncate text-xs text-muted-foreground">{selectedLabel}</span>
+                ) : null}
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="w-52">
-                <DropdownMenuRadioGroup value={filter.value || "__all"} onValueChange={(value) => filter.onChange(value === "__all" ? "" : value)}>
+                <DropdownMenuRadioGroup
+                  value={filter.value || "__all"}
+                  onValueChange={(value) => filter.onChange(value === "__all" ? "" : value)}
+                >
                   <DropdownMenuRadioItem value="__all">{t("common.all")}</DropdownMenuRadioItem>
                   {filter.options.map((option) => {
                     if (!option.groups || option.groups.length === 0) {
-                      return <DropdownMenuRadioItem key={option.value} value={option.value}>{option.label}</DropdownMenuRadioItem>;
+                      return (
+                        <DropdownMenuRadioItem key={option.value} value={option.value}>
+                          {option.label}
+                        </DropdownMenuRadioItem>
+                      );
                     }
-                    const narrowedLabel = option.value === filter.value ? null : findGroupLabel(option.groups, filter.value);
+                    const narrowedLabel =
+                      option.value === filter.value ? null : findGroupLabel(option.groups, filter.value);
                     return (
                       <DropdownMenuSub key={option.value} onOpenChange={option.onGroupsOpenChange}>
                         <DropdownMenuSubTrigger className="pr-2">
                           <span className="shrink-0 whitespace-nowrap">{option.label}</span>
-                          {narrowedLabel ? <span className="ml-auto max-w-16 truncate text-xs text-muted-foreground">{narrowedLabel}</span> : null}
+                          {narrowedLabel ? (
+                            <span className="ml-auto max-w-16 truncate text-xs text-muted-foreground">
+                              {narrowedLabel}
+                            </span>
+                          ) : null}
                           {option.value === filter.value ? <Check className="ml-auto" /> : null}
                         </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent sideOffset={6} className="max-h-[min(26rem,calc(100vh-2rem))] w-72 max-w-[calc(100vw-1rem)] overflow-y-auto p-0 shadow-lg shadow-black/5">
+                        <DropdownMenuSubContent
+                          sideOffset={6}
+                          className="max-h-[min(26rem,calc(100vh-2rem))] w-72 max-w-[calc(100vw-1rem)] overflow-y-auto p-0 shadow-lg shadow-black/5"
+                        >
                           {option.groupSearch ? (
-                            <div className="sticky top-0 z-20 border-b bg-popover/95 px-2 py-1.5 backdrop-blur-sm" onKeyDown={(event) => event.stopPropagation()}>
+                            <div
+                              className="sticky top-0 z-20 border-b bg-popover/95 px-2 py-1.5 backdrop-blur-sm"
+                              onKeyDown={(event) => event.stopPropagation()}
+                            >
                               <div className="relative">
                                 <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/70" />
                                 <Input
@@ -143,34 +179,63 @@ export function DataTableFilters({ filters }: { filters: DataTableFilter[] }) {
                             </div>
                           ) : null}
                           <DropdownMenuRadioGroup value={filter.value} onValueChange={filter.onChange}>
-                            <DropdownMenuRadioItem value={option.value} className="mx-1 my-1 min-h-8 text-xs focus:bg-muted/50">{t("common.all")}</DropdownMenuRadioItem>
+                            <DropdownMenuRadioItem
+                              value={option.value}
+                              className="mx-1 my-1 min-h-8 text-xs focus:bg-muted/50"
+                            >
+                              {t("common.all")}
+                            </DropdownMenuRadioItem>
                             {option.groups.map((group) => (
                               <div key={group.id}>
                                 <DropdownMenuSeparator />
-                                {!group.hideLabel ? <DropdownMenuLabel className="px-3 py-1 text-[10px] font-normal text-muted-foreground">{group.label}</DropdownMenuLabel> : null}
+                                {!group.hideLabel ? (
+                                  <DropdownMenuLabel className="px-3 py-1 text-[10px] font-normal text-muted-foreground">
+                                    {group.label}
+                                  </DropdownMenuLabel>
+                                ) : null}
                                 <div className={group.maxHeightClassName}>
-                                  {group.options.length === 0
-                                    ? <DropdownMenuItem disabled className="text-xs text-muted-foreground">{group.emptyLabel ?? t("common.noData")}</DropdownMenuItem>
-                                    : group.options.map((entry) => (
+                                  {group.options.length === 0 ? (
+                                    <DropdownMenuItem disabled className="text-xs text-muted-foreground">
+                                      {group.emptyLabel ?? t("common.noData")}
+                                    </DropdownMenuItem>
+                                  ) : (
+                                    group.options.map((entry) => (
                                       <DropdownMenuRadioItem
                                         key={entry.value}
                                         value={entry.value}
-                                        className={entry.description || entry.badge ? "mx-1 min-w-0 items-start py-1.5 pr-7 focus:bg-muted/50 data-[state=checked]:bg-muted/30" : "mx-1"}
+                                        className={
+                                          entry.description || entry.badge
+                                            ? "mx-1 min-w-0 items-start py-1.5 pr-7 focus:bg-muted/50 data-[state=checked]:bg-muted/30"
+                                            : "mx-1"
+                                        }
                                       >
                                         {entry.description || entry.badge ? (
                                           <span className="min-w-0 flex-1">
-                                            <span className="block truncate text-[13px] font-normal text-foreground">{entry.label}</span>
+                                            <span className="block truncate text-[13px] font-normal text-foreground">
+                                              {entry.label}
+                                            </span>
                                             <span className="mt-px flex min-w-0 items-center gap-1 text-[10px] leading-4 text-muted-foreground/80">
-                                              {entry.description ? <span className="truncate tabular-nums">{entry.description}</span> : null}
-                                              {entry.description && entry.badge ? <span aria-hidden="true">·</span> : null}
+                                              {entry.description ? (
+                                                <span className="truncate tabular-nums">{entry.description}</span>
+                                              ) : null}
+                                              {entry.description && entry.badge ? (
+                                                <span aria-hidden="true">·</span>
+                                              ) : null}
                                               {entry.badge ? <span className="shrink-0">{entry.badge}</span> : null}
                                             </span>
                                           </span>
-                                        ) : entry.label}
+                                        ) : (
+                                          entry.label
+                                        )}
                                       </DropdownMenuRadioItem>
-                                    ))}
+                                    ))
+                                  )}
                                 </div>
-                                {group.noteLabel ? <div className="border-t px-3 py-1.5 text-[10px] leading-4 text-muted-foreground/80">{group.noteLabel}</div> : null}
+                                {group.noteLabel ? (
+                                  <div className="border-t px-3 py-1.5 text-[10px] leading-4 text-muted-foreground/80">
+                                    {group.noteLabel}
+                                  </div>
+                                ) : null}
                                 {group.hasMore && group.onAction ? (
                                   <DropdownMenuItem
                                     disabled={group.loading}
@@ -197,7 +262,10 @@ export function DataTableFilters({ filters }: { filters: DataTableFilter[] }) {
         {activeCount > 0 ? (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => filters.forEach((filter) => filter.onChange(""))}><X />{t("common.clearFilters")}</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => filters.forEach((filter) => filter.onChange(""))}>
+              <X />
+              {t("common.clearFilters")}
+            </DropdownMenuItem>
           </>
         ) : null}
       </DropdownMenuContent>

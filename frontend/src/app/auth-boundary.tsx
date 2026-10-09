@@ -49,7 +49,9 @@ function SessionUnavailableScreen({ onRetry }: { onRetry: () => Promise<void> })
       <div className="max-w-sm text-center">
         <h1 className="text-lg font-medium">{t("auth.sessionUnavailable")}</h1>
         <p className="mt-2 text-sm text-muted-foreground">{t("auth.sessionUnavailableDescription")}</p>
-        <Button size="sm" className="mt-5" onClick={() => void onRetry()}>{t("auth.retrySession")}</Button>
+        <Button size="sm" className="mt-5" onClick={() => void onRetry()}>
+          {t("auth.retrySession")}
+        </Button>
       </div>
     </div>
   );

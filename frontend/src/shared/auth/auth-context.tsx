@@ -58,12 +58,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [restoreSession]);
 
   async function login(username: string, password: string): Promise<void> {
-    const response = await apiRequest("/api/admin/v1/auth/login", {
-      method: "POST",
-      body: { username, password },
-      authenticated: false,
-      retryAuth: false,
-    }, decodeLoginResponseDTO);
+    const response = await apiRequest(
+      "/api/admin/v1/auth/login",
+      {
+        method: "POST",
+        body: { username, password },
+        authenticated: false,
+        retryAuth: false,
+      },
+      decodeLoginResponseDTO,
+    );
     setAccessToken(response.tokens.accessToken);
     setAdmin(response.admin);
     setStatus("authenticated");
@@ -71,12 +75,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function logout(): Promise<void> {
     try {
-      await apiRequest("/api/admin/v1/auth/logout", {
-        method: "POST",
-        body: {},
-        authenticated: false,
-        retryAuth: false,
-      }, decodeLoggedOut);
+      await apiRequest(
+        "/api/admin/v1/auth/logout",
+        {
+          method: "POST",
+          body: {},
+          authenticated: false,
+          retryAuth: false,
+        },
+        decodeLoggedOut,
+      );
     } finally {
       setAccessToken(null);
       setAdmin(null);
@@ -85,10 +93,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
-    await apiRequest("/api/admin/v1/me/password", {
-      method: "PUT",
-      body: { currentPassword, newPassword },
-    }, () => undefined);
+    await apiRequest(
+      "/api/admin/v1/me/password",
+      {
+        method: "PUT",
+        body: { currentPassword, newPassword },
+      },
+      () => undefined,
+    );
   }
 
   return (

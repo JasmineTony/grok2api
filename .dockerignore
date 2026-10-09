@@ -16,6 +16,7 @@ backend/**/*_test.go
 !frontend/
 !frontend/package.json
 !frontend/pnpm-lock.yaml
+!frontend/pnpm-workspace.yaml
 !frontend/index.html
 !frontend/vite.config.ts
 !frontend/tsconfig.json

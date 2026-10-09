@@ -71,13 +71,7 @@ export function DashboardPage() {
               onChange={(value) => setPreferences((current) => ({ ...current, periodDays: value }))}
               ariaLabel={t("dashboard.usage")}
             />
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={refreshAll}
-              disabled={refreshing}
-            >
+            <Button type="button" variant="secondary" size="sm" onClick={refreshAll} disabled={refreshing}>
               <RefreshCw className={manualRefreshing ? "animate-spin" : undefined} />
               {t("common.refresh")}
             </Button>
@@ -90,11 +84,7 @@ export function DashboardPage() {
       <DashboardOverview dashboard={dashboard} locale={i18n.language} loading={loading} />
 
       <div className="grid items-stretch gap-2 xl:grid-cols-[minmax(0,3fr)_minmax(360px,2fr)]">
-        <DashboardTrend
-          dashboard={dashboard}
-          locale={i18n.language}
-          loading={loading}
-        />
+        <DashboardTrend dashboard={dashboard} locale={i18n.language} loading={loading} />
         <DashboardProviderDistribution dashboard={dashboard} locale={i18n.language} loading={loading} />
       </div>
 

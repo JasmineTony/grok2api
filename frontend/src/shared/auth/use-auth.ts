@@ -9,4 +9,3 @@ export function useAuth(): AuthContextValue {
   }
   return value;
 }
-

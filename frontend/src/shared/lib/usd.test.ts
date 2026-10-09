@@ -1,12 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import {
-  formatUSDTicks,
-  formatUSDTicksWithEstimate,
-  USD_TICKS_PER_DOLLAR,
-  usdTicksToValue,
-} from "./usd.ts";
+import { formatUSDTicks, formatUSDTicksWithEstimate, USD_TICKS_PER_DOLLAR, usdTicksToValue } from "./usd.ts";
 
 describe("USD tick formatting", () => {
   it("uses ten billion ticks per US dollar", () => {
@@ -16,17 +11,11 @@ describe("USD tick formatting", () => {
   });
 
   it("prefers reported cost over an estimate", () => {
-    assert.equal(
-      formatUSDTicksWithEstimate(200_000_000, 900_000_000, "estimated"),
-      "$0.020000",
-    );
+    assert.equal(formatUSDTicksWithEstimate(200_000_000, 900_000_000, "estimated"), "$0.020000");
   });
 
   it("labels estimate-only costs", () => {
-    assert.equal(
-      formatUSDTicksWithEstimate(0, 200_000_000, "estimated"),
-      "$0.020000 (estimated)",
-    );
+    assert.equal(formatUSDTicksWithEstimate(0, 200_000_000, "estimated"), "$0.020000 (estimated)");
   });
 
   it("normalizes missing and invalid costs to zero", () => {

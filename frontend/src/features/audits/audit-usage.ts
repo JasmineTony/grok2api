@@ -58,7 +58,11 @@ export function auditTokenUsageAvailable(audit: Pick<AuditUsageInput, "usageSour
   return audit.usageSource !== "none";
 }
 
-export function formatAuditTokenValue(value: number, available: boolean, formatNumber: (value: number) => string): string {
+export function formatAuditTokenValue(
+  value: number,
+  available: boolean,
+  formatNumber: (value: number) => string,
+): string {
   if (!available) {
     return MISSING_AUDIT_USAGE_PLACEHOLDER;
   }
@@ -72,7 +76,12 @@ function mediaItems(audit: AuditUsageInput, labels: AuditUsageLabels): AuditUsag
       { key: "mediaOutput", label: labels.mediaOutput, value: labels.secondsCount(audit.mediaOutputSeconds) },
     ];
   }
-  if (audit.operation === "image" || audit.operation === "image_edit" || audit.mediaInputImages > 0 || audit.mediaOutputImages > 0) {
+  if (
+    audit.operation === "image" ||
+    audit.operation === "image_edit" ||
+    audit.mediaInputImages > 0 ||
+    audit.mediaOutputImages > 0
+  ) {
     return [
       { key: "mediaInput", label: labels.mediaInput, value: labels.imageCount(audit.mediaInputImages) },
       { key: "mediaOutput", label: labels.mediaOutput, value: labels.imageCount(audit.mediaOutputImages) },
@@ -81,13 +90,25 @@ function mediaItems(audit: AuditUsageInput, labels: AuditUsageLabels): AuditUsag
   return undefined;
 }
 
-function tokenItems(audit: AuditUsageInput, formatNumber: (value: number) => string, labels: AuditUsageLabels): AuditUsageItem[] {
+function tokenItems(
+  audit: AuditUsageInput,
+  formatNumber: (value: number) => string,
+  labels: AuditUsageLabels,
+): AuditUsageItem[] {
   const available = auditTokenUsageAvailable(audit);
   return [
     { key: "input", label: labels.input, value: formatAuditTokenValue(audit.inputTokens, available, formatNumber) },
     { key: "output", label: labels.output, value: formatAuditTokenValue(audit.outputTokens, available, formatNumber) },
-    { key: "cached", label: labels.cached, value: formatAuditTokenValue(audit.cachedInputTokens, available, formatNumber) },
-    { key: "reasoning", label: labels.reasoning, value: formatAuditTokenValue(audit.reasoningTokens, available, formatNumber) },
+    {
+      key: "cached",
+      label: labels.cached,
+      value: formatAuditTokenValue(audit.cachedInputTokens, available, formatNumber),
+    },
+    {
+      key: "reasoning",
+      label: labels.reasoning,
+      value: formatAuditTokenValue(audit.reasoningTokens, available, formatNumber),
+    },
   ];
 }
 
@@ -108,8 +129,9 @@ export function buildAuditUsageView(
     // Dedicated media endpoints commonly report image/second usage without token
     // usage. Avoid filling the audit row with four meaningless dashes, while
     // retaining token details whenever the upstream actually provides them.
-    tokenItems: MEDIA_OPERATIONS.has(audit.operation) && !auditTokenUsageAvailable(audit)
-      ? undefined
-      : tokenItems(audit, formatNumber, labels),
+    tokenItems:
+      MEDIA_OPERATIONS.has(audit.operation) && !auditTokenUsageAvailable(audit)
+        ? undefined
+        : tokenItems(audit, formatNumber, labels),
   };
 }

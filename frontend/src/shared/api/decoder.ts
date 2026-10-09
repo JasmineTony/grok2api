@@ -53,7 +53,9 @@ export function decodeCountResult<T>(field: string): ApiDecoder<T> {
   return createObjectDecoder<T>("count result", { [field]: isNumber });
 }
 
-export function createPaginatedDecoder<T>(itemValidator: ValueValidator): ApiDecoder<{ items: T[]; page: number; pageSize: number; total: number }> {
+export function createPaginatedDecoder<T>(
+  itemValidator: ValueValidator,
+): ApiDecoder<{ items: T[]; page: number; pageSize: number; total: number }> {
   return createObjectDecoder("paginated result", {
     items: isArrayOf(itemValidator),
     page: isNumber,

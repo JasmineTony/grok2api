@@ -46,17 +46,34 @@ export function VersionUpdateBanner() {
     <section className="flex flex-col gap-3 rounded-lg bg-amber-500/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
         <p className="text-sm font-medium">{t("updates.available", { version: version.latestVersion })}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">{t("updates.currentSummary", { version: version.currentVersion })}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {t("updates.currentSummary", { version: version.currentVersion })}
+        </p>
       </div>
       <div className="flex shrink-0 items-center gap-0.5">
         {version.releaseUrl ? (
-          <Button variant="ghost" size="sm" className="h-7 px-2.5 text-xs font-normal text-muted-foreground hover:text-foreground" asChild>
-            <a href={version.releaseUrl} target="_blank" rel="noreferrer">{t("updates.viewRelease")}<ArrowUpRight className="size-3.5" /></a>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2.5 text-xs font-normal text-muted-foreground hover:text-foreground"
+            asChild
+          >
+            <a href={version.releaseUrl} target="_blank" rel="noreferrer">
+              {t("updates.viewRelease")}
+              <ArrowUpRight className="size-3.5" />
+            </a>
           </Button>
         ) : null}
         {version.releaseUrl ? <span className="mx-1 h-3 w-px bg-border/70" /> : null}
-        <Button variant="ghost" size="sm" className="h-7 px-2.5 text-xs font-normal text-muted-foreground hover:text-foreground" disabled={checkMutation.isPending} onClick={() => checkMutation.mutate()}>
-          {checkMutation.isPending ? <Spinner /> : <RefreshCw className="size-3.5" />}{t("updates.checkNow")}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2.5 text-xs font-normal text-muted-foreground hover:text-foreground"
+          disabled={checkMutation.isPending}
+          onClick={() => checkMutation.mutate()}
+        >
+          {checkMutation.isPending ? <Spinner /> : <RefreshCw className="size-3.5" />}
+          {t("updates.checkNow")}
         </Button>
       </div>
     </section>
@@ -88,9 +105,19 @@ export function VersionUpdateSection() {
         <div className="space-y-0">
           <VersionField label={t("updates.currentVersion")} description={t("updates.currentVersionHelp")}>
             <div className="flex min-w-0 items-center gap-2">
-              <div className="min-w-0 flex-1"><VersionValue>{version?.currentVersion || "-"}</VersionValue></div>
-              <Button type="button" variant="secondary" size="sm" className="shrink-0" disabled={versionQuery.isPending || checkMutation.isPending} onClick={() => checkMutation.mutate()}>
-                {versionQuery.isPending || checkMutation.isPending ? <Spinner /> : <RefreshCw />}{t("updates.checkNow")}
+              <div className="min-w-0 flex-1">
+                <VersionValue>{version?.currentVersion || "-"}</VersionValue>
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="shrink-0"
+                disabled={versionQuery.isPending || checkMutation.isPending}
+                onClick={() => checkMutation.mutate()}
+              >
+                {versionQuery.isPending || checkMutation.isPending ? <Spinner /> : <RefreshCw />}
+                {t("updates.checkNow")}
               </Button>
             </div>
           </VersionField>
@@ -99,12 +126,23 @@ export function VersionUpdateSection() {
           </VersionField>
           <VersionField label={t("updates.statusLabel")} description={t("updates.statusLabelHelp")}>
             <VersionValue>
-              {version?.status ? <span className={cn("size-1.5 shrink-0 rounded-full bg-muted-foreground", version.status === "up_to_date" && "bg-emerald-500", version.status === "update_available" && "bg-amber-500", version.status === "check_failed" && "bg-destructive")} /> : null}
+              {version?.status ? (
+                <span
+                  className={cn(
+                    "size-1.5 shrink-0 rounded-full bg-muted-foreground",
+                    version.status === "up_to_date" && "bg-emerald-500",
+                    version.status === "update_available" && "bg-amber-500",
+                    version.status === "check_failed" && "bg-destructive",
+                  )}
+                />
+              ) : null}
               <span>{version ? t(`updates.status.${version.status}`) : t("common.loading")}</span>
             </VersionValue>
           </VersionField>
           <VersionField label={t("updates.checkedAt")} description={t("updates.checkedAtHelp")}>
-            <VersionValue>{version?.checkedAt ? formatDateTime(version.checkedAt, i18n.language) : t("updates.neverChecked")}</VersionValue>
+            <VersionValue>
+              {version?.checkedAt ? formatDateTime(version.checkedAt, i18n.language) : t("updates.neverChecked")}
+            </VersionValue>
           </VersionField>
         </div>
         {error ? <p className="text-xs leading-5 text-destructive">{error}</p> : null}
@@ -119,7 +157,10 @@ export function VersionUpdateSection() {
             </div>
             {version.releaseUrl ? (
               <Button type="button" variant="secondary" size="sm" asChild>
-                <a href={version.releaseUrl} target="_blank" rel="noreferrer">{t("updates.openRelease")}<ArrowUpRight /></a>
+                <a href={version.releaseUrl} target="_blank" rel="noreferrer">
+                  {t("updates.openRelease")}
+                  <ArrowUpRight />
+                </a>
               </Button>
             ) : null}
           </div>
@@ -149,5 +190,9 @@ function VersionField({ label, description, children }: { label: string; descrip
 }
 
 function VersionValue({ children }: { children: ReactNode }) {
-  return <div className="flex min-h-8 min-w-0 items-center gap-2 rounded-md bg-secondary/55 px-3 py-1 text-xs font-medium">{children}</div>;
+  return (
+    <div className="flex min-h-8 min-w-0 items-center gap-2 rounded-md bg-secondary/55 px-3 py-1 text-xs font-medium">
+      {children}
+    </div>
+  );
 }

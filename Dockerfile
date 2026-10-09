@@ -10,7 +10,7 @@ RUN corepack enable
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
 RUN --mount=type=cache,id=grok2api-pnpm,target=/pnpm/store \
     pnpm config set store-dir /pnpm/store && \
-    pnpm fetch --frozen-lockfile
+    pnpm fetch
 
 RUN --mount=type=cache,id=grok2api-pnpm,target=/pnpm/store \
     pnpm config set store-dir /pnpm/store && \

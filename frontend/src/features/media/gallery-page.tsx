@@ -4,7 +4,16 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -91,35 +100,56 @@ export function GalleryPage() {
       <PageHeader
         title={t("media.images.title")}
         description={t("media.images.description")}
-        actions={(
+        actions={
           <Button variant="secondary" size="sm" onClick={refreshAll} disabled={refreshing}>
             <RefreshCw className={refreshing ? "animate-spin" : undefined} />
             {t("common.refresh")}
           </Button>
-        )}
+        }
       />
 
       <DataTableShell
-        toolbar={(
+        toolbar={
           <>
             <div className="flex w-full min-w-0 items-center gap-3 sm:w-auto">
-              <Checkbox checked={allPageSelected ? true : selectedOnPage.length > 0 ? "indeterminate" : false} onCheckedChange={(checked) => togglePage(checked === true)} aria-label={t("common.selectPage")} />
+              <Checkbox
+                checked={allPageSelected ? true : selectedOnPage.length > 0 ? "indeterminate" : false}
+                onCheckedChange={(checked) => togglePage(checked === true)}
+                aria-label={t("common.selectPage")}
+              />
               <div className="relative min-w-0 flex-1 sm:w-72 sm:flex-none">
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   className="h-8 pl-9 text-xs"
                   value={search}
-                  onChange={(event) => { setSearch(event.target.value); setPage(1); }}
+                  onChange={(event) => {
+                    setSearch(event.target.value);
+                    setPage(1);
+                  }}
                   placeholder={t("media.images.search")}
                   aria-label={t("media.images.search")}
                 />
               </div>
-              {normalizedSearch && result ? <span className="hidden whitespace-nowrap text-xs tabular-nums text-muted-foreground md:inline">{t("media.images.pageSummary", { count: result.items.length, total: result.total })}</span> : null}
+              {normalizedSearch && result ? (
+                <span className="hidden whitespace-nowrap text-xs tabular-nums text-muted-foreground md:inline">
+                  {t("media.images.pageSummary", { count: result.items.length, total: result.total })}
+                </span>
+              ) : null}
             </div>
             {selected.size > 0 ? (
               <div className="flex h-8 items-center gap-2">
-                <span className="text-xs text-muted-foreground">{t("common.selectedCount", { count: selected.size })}</span>
-                <Button variant="secondary" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteOpen(true)}><Trash2 />{t("common.delete")}</Button>
+                <span className="text-xs text-muted-foreground">
+                  {t("common.selectedCount", { count: selected.size })}
+                </span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  <Trash2 />
+                  {t("common.delete")}
+                </Button>
               </div>
             ) : (
               <GallerySummary
@@ -131,24 +161,42 @@ export function GalleryPage() {
               />
             )}
           </>
-        )}
-        footer={result && result.total > 0 ? (
-          <Pagination
-            page={result.page}
-            pageSize={result.pageSize}
-            total={result.total}
-            onPageChange={setPage}
-            onPageSizeChange={(value) => { setPageSize(value); setPage(1); }}
-          />
-        ) : undefined}
+        }
+        footer={
+          result && result.total > 0 ? (
+            <Pagination
+              page={result.page}
+              pageSize={result.pageSize}
+              total={result.total}
+              onPageChange={setPage}
+              onPageSizeChange={(value) => {
+                setPageSize(value);
+                setPage(1);
+              }}
+            />
+          ) : undefined
+        }
       >
-        {imagesQuery.isError ? <ErrorState message={imagesQuery.error.message} onRetry={() => void imagesQuery.refetch()} /> : null}
+        {imagesQuery.isError ? (
+          <ErrorState message={imagesQuery.error.message} onRetry={() => void imagesQuery.refetch()} />
+        ) : null}
         {imagesQuery.isPending ? <ImageGridLoading /> : null}
-        {!imagesQuery.isPending && result && result.items.length === 0 ? <GalleryEmptyState message={t(normalizedSearch ? "media.images.noMatches" : "media.images.empty")} /> : null}
+        {!imagesQuery.isPending && result && result.items.length === 0 ? (
+          <GalleryEmptyState message={t(normalizedSearch ? "media.images.noMatches" : "media.images.empty")} />
+        ) : null}
 
         {!imagesQuery.isPending && result && result.items.length > 0 ? (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-            {result.items.map((image) => <ImageCard key={image.id} image={image} locale={i18n.language} selectionMode={selected.size > 0} selected={selected.has(image.id)} onSelectedChange={(checked) => toggleImage(image.id, checked)} />)}
+            {result.items.map((image) => (
+              <ImageCard
+                key={image.id}
+                image={image}
+                locale={i18n.language}
+                selectionMode={selected.size > 0}
+                selected={selected.has(image.id)}
+                onSelectedChange={(checked) => toggleImage(image.id, checked)}
+              />
+            ))}
           </div>
         ) : null}
       </DataTableShell>
@@ -161,7 +209,11 @@ export function GalleryPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate()}>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              disabled={deleteMutation.isPending}
+              onClick={() => deleteMutation.mutate()}
+            >
               {deleteMutation.isPending ? <Spinner /> : <Trash2 />}
               {t("common.delete")}
             </AlertDialogAction>
@@ -172,7 +224,19 @@ export function GalleryPage() {
   );
 }
 
-function ImageCard({ image, locale, selectionMode, selected, onSelectedChange }: { image: MediaAssetDTO; locale: string; selectionMode: boolean; selected: boolean; onSelectedChange: (checked: boolean) => void }) {
+function ImageCard({
+  image,
+  locale,
+  selectionMode,
+  selected,
+  onSelectedChange,
+}: {
+  image: MediaAssetDTO;
+  locale: string;
+  selectionMode: boolean;
+  selected: boolean;
+  onSelectedChange: (checked: boolean) => void;
+}) {
   const { t } = useTranslation();
   // 管理端图库与 API 同源，使用相对路径避免依赖未配置或仅对外可用的公共地址。
   const imageURL = `/v1/media/images/${encodeURIComponent(image.id)}`;
@@ -182,14 +246,22 @@ function ImageCard({ image, locale, selectionMode, selected, onSelectedChange }:
         checked={selected}
         onCheckedChange={(checked) => onSelectedChange(checked === true)}
         aria-label={t("common.selectItem", { name: image.id })}
-        className={cn("absolute left-2 top-2 z-10 bg-background/90 shadow-sm backdrop-blur-sm transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100", selected && "md:opacity-100")}
+        className={cn(
+          "absolute left-2 top-2 z-10 bg-background/90 shadow-sm backdrop-blur-sm transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100",
+          selected && "md:opacity-100",
+        )}
       />
       <a
         href={imageURL}
         target="_blank"
         rel="noreferrer"
-        aria-label={selectionMode ? t("common.selectItem", { name: image.id }) : t("media.images.openImage", { id: image.id })}
-        className={cn("block min-w-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40", selectionMode && "cursor-pointer")}
+        aria-label={
+          selectionMode ? t("common.selectItem", { name: image.id }) : t("media.images.openImage", { id: image.id })
+        }
+        className={cn(
+          "block min-w-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+          selectionMode && "cursor-pointer",
+        )}
         onClick={(event) => {
           if (!selectionMode) return;
           event.preventDefault();
@@ -197,8 +269,19 @@ function ImageCard({ image, locale, selectionMode, selected, onSelectedChange }:
         }}
       >
         <div className="relative aspect-square overflow-hidden rounded-lg bg-muted">
-          <img src={imageURL} alt={image.id} loading="lazy" decoding="async" className="size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.025]" />
-          {selected ? <span className="pointer-events-none absolute inset-0 rounded-lg ring-1 ring-inset ring-primary/70" aria-hidden="true" /> : null}
+          <img
+            src={imageURL}
+            alt={image.id}
+            loading="lazy"
+            decoding="async"
+            className="size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.025]"
+          />
+          {selected ? (
+            <span
+              className="pointer-events-none absolute inset-0 rounded-lg ring-1 ring-inset ring-primary/70"
+              aria-hidden="true"
+            />
+          ) : null}
           {!selectionMode ? (
             <span className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-full bg-background/85 text-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
               <ArrowUpRight className="size-3.5" />
@@ -207,11 +290,17 @@ function ImageCard({ image, locale, selectionMode, selected, onSelectedChange }:
         </div>
         <div className="space-y-1 px-0.5 pt-2.5 text-xs">
           <div className="flex min-w-0 items-center justify-between gap-2">
-            <span className="min-w-0 flex-1 truncate font-medium" title={image.id}>{image.id}</span>
-            <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{formatBytes(image.sizeBytes, locale)}</span>
+            <span className="min-w-0 flex-1 truncate font-medium" title={image.id}>
+              {image.id}
+            </span>
+            <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+              {formatBytes(image.sizeBytes, locale)}
+            </span>
           </div>
           <div className="flex min-w-0 items-center justify-between gap-2 text-[11px] text-muted-foreground">
-            <span className="min-w-0 truncate uppercase" title={image.mimeType}>{formatMediaType(image)}</span>
+            <span className="min-w-0 truncate uppercase" title={image.mimeType}>
+              {formatMediaType(image)}
+            </span>
             <span className="shrink-0 whitespace-nowrap">{formatDateTime(image.createdAt, locale)}</span>
           </div>
         </div>
@@ -220,20 +309,36 @@ function ImageCard({ image, locale, selectionMode, selected, onSelectedChange }:
   );
 }
 
-function GallerySummary({ loading, unavailable, totalImages, totalBytes, locale }: { loading: boolean; unavailable: boolean; totalImages: number; totalBytes: number; locale: string }) {
+function GallerySummary({
+  loading,
+  unavailable,
+  totalImages,
+  totalBytes,
+  locale,
+}: {
+  loading: boolean;
+  unavailable: boolean;
+  totalImages: number;
+  totalBytes: number;
+  locale: string;
+}) {
   const { t } = useTranslation();
   return (
     <div className="flex h-8 items-center gap-4 whitespace-nowrap text-xs" aria-busy={loading}>
       <span className="inline-flex items-center gap-1.5">
         <ImageIcon className="size-3.5 text-emerald-600 dark:text-emerald-400" />
         <span className="text-muted-foreground">{t("media.images.totalImages")}</span>
-        <strong className="font-medium tabular-nums">{loading ? <Spinner className="size-3" /> : unavailable ? "-" : formatNumber(totalImages, locale, 0)}</strong>
+        <strong className="font-medium tabular-nums">
+          {loading ? <Spinner className="size-3" /> : unavailable ? "-" : formatNumber(totalImages, locale, 0)}
+        </strong>
       </span>
       <span className="h-3 w-px bg-border" aria-hidden="true" />
       <span className="inline-flex items-center gap-1.5">
         <Database className="size-3.5 text-sky-600 dark:text-sky-400" />
         <span className="text-muted-foreground">{t("media.images.totalBytes")}</span>
-        <strong className="font-medium tabular-nums">{loading ? <Spinner className="size-3" /> : unavailable ? "-" : formatBytes(totalBytes, locale)}</strong>
+        <strong className="font-medium tabular-nums">
+          {loading ? <Spinner className="size-3" /> : unavailable ? "-" : formatBytes(totalBytes, locale)}
+        </strong>
       </span>
     </div>
   );

@@ -42,8 +42,13 @@ const exampleLanguages: ExampleLanguage[] = ["curl", "python", "javascript"];
 
 const endpoints: Record<string, EndpointDefinition> = {
   "chat/completions": {
-    key: "chat/completions", category: "Chat", title: "Chat completions", method: "POST", path: "/chat/completions",
-    descriptionKey: "docs.endpointChat", capabilities: ["chat", "responses"],
+    key: "chat/completions",
+    category: "Chat",
+    title: "Chat completions",
+    method: "POST",
+    path: "/chat/completions",
+    descriptionKey: "docs.endpointChat",
+    capabilities: ["chat", "responses"],
     fields: [
       { name: "model", required: true, descriptionKey: "docs.reference.fieldModel" },
       { name: "messages", required: true, descriptionKey: "docs.reference.fieldChatMessages" },
@@ -53,12 +58,36 @@ const endpoints: Record<string, EndpointDefinition> = {
       { name: "tool_choice", descriptionKey: "docs.reference.fieldToolChoice" },
     ],
     noteKeys: ["docs.reference.noteChatImages", "docs.reference.noteChatTools"],
-    request: (model) => ({ model, messages: [{ role: "system", content: "You are a concise assistant." }, { role: "user", content: "Explain HTTP streaming." }], stream: false }),
-    response: { id: "chatcmpl_example", object: "chat.completion", model: "grok-chat-fast", choices: [{ index: 0, message: { role: "assistant", content: "HTTP streaming sends response data incrementally." }, finish_reason: "stop" }], usage: { prompt_tokens: 24, completion_tokens: 12, total_tokens: 36 } },
+    request: (model) => ({
+      model,
+      messages: [
+        { role: "system", content: "You are a concise assistant." },
+        { role: "user", content: "Explain HTTP streaming." },
+      ],
+      stream: false,
+    }),
+    response: {
+      id: "chatcmpl_example",
+      object: "chat.completion",
+      model: "grok-chat-fast",
+      choices: [
+        {
+          index: 0,
+          message: { role: "assistant", content: "HTTP streaming sends response data incrementally." },
+          finish_reason: "stop",
+        },
+      ],
+      usage: { prompt_tokens: 24, completion_tokens: 12, total_tokens: 36 },
+    },
   },
   "chat/responses": {
-    key: "chat/responses", category: "Chat", title: "Responses", method: "POST", path: "/responses",
-    descriptionKey: "docs.endpointResponses", capabilities: ["chat", "responses"],
+    key: "chat/responses",
+    category: "Chat",
+    title: "Responses",
+    method: "POST",
+    path: "/responses",
+    descriptionKey: "docs.endpointResponses",
+    capabilities: ["chat", "responses"],
     fields: [
       { name: "model", required: true, descriptionKey: "docs.reference.fieldModel" },
       { name: "input", required: true, descriptionKey: "docs.reference.fieldInput" },
@@ -70,11 +99,30 @@ const endpoints: Record<string, EndpointDefinition> = {
     ],
     noteKeys: ["docs.reference.noteResponsesState", "docs.reference.noteResponsesCompact"],
     request: (model) => ({ model, input: "Explain HTTP streaming.", store: false, stream: false }),
-    response: { id: "resp_example", object: "response", status: "completed", model: "grok-chat-fast", output: [{ type: "message", role: "assistant", status: "completed", content: [{ type: "output_text", text: "HTTP streaming sends response data incrementally." }] }], usage: { input_tokens: 18, output_tokens: 12, total_tokens: 30 } },
+    response: {
+      id: "resp_example",
+      object: "response",
+      status: "completed",
+      model: "grok-chat-fast",
+      output: [
+        {
+          type: "message",
+          role: "assistant",
+          status: "completed",
+          content: [{ type: "output_text", text: "HTTP streaming sends response data incrementally." }],
+        },
+      ],
+      usage: { input_tokens: 18, output_tokens: 12, total_tokens: 30 },
+    },
   },
   "chat/messages": {
-    key: "chat/messages", category: "Chat", title: "Messages", method: "POST", path: "/messages",
-    descriptionKey: "docs.endpointMessages", capabilities: ["chat", "responses"],
+    key: "chat/messages",
+    category: "Chat",
+    title: "Messages",
+    method: "POST",
+    path: "/messages",
+    descriptionKey: "docs.endpointMessages",
+    capabilities: ["chat", "responses"],
     fields: [
       { name: "model", required: true, descriptionKey: "docs.reference.fieldModel" },
       { name: "max_tokens", required: true, descriptionKey: "docs.reference.fieldMaxTokens" },
@@ -85,12 +133,32 @@ const endpoints: Record<string, EndpointDefinition> = {
       { name: "tool_choice", descriptionKey: "docs.reference.fieldToolChoice" },
     ],
     noteKeys: ["docs.reference.noteMessagesEvents", "docs.reference.noteMessagesLimits"],
-    request: (model) => ({ model, max_tokens: 1024, system: "You are a concise assistant.", messages: [{ role: "user", content: "Explain HTTP streaming." }], stream: false }),
-    response: { id: "msg_example", type: "message", role: "assistant", model: "grok-chat-fast", content: [{ type: "text", text: "HTTP streaming sends response data incrementally." }], stop_reason: "end_turn", stop_sequence: null, usage: { input_tokens: 18, output_tokens: 12 } },
+    request: (model) => ({
+      model,
+      max_tokens: 1024,
+      system: "You are a concise assistant.",
+      messages: [{ role: "user", content: "Explain HTTP streaming." }],
+      stream: false,
+    }),
+    response: {
+      id: "msg_example",
+      type: "message",
+      role: "assistant",
+      model: "grok-chat-fast",
+      content: [{ type: "text", text: "HTTP streaming sends response data incrementally." }],
+      stop_reason: "end_turn",
+      stop_sequence: null,
+      usage: { input_tokens: 18, output_tokens: 12 },
+    },
   },
   "image/generations": {
-    key: "image/generations", category: "Image", title: "Image generations", method: "POST", path: "/images/generations",
-    descriptionKey: "docs.endpointImageGeneration", capabilities: ["image"],
+    key: "image/generations",
+    category: "Image",
+    title: "Image generations",
+    method: "POST",
+    path: "/images/generations",
+    descriptionKey: "docs.endpointImageGeneration",
+    capabilities: ["image"],
     fields: [
       { name: "model", required: true, descriptionKey: "docs.reference.fieldModel" },
       { name: "prompt", required: true, descriptionKey: "docs.reference.fieldPrompt" },
@@ -106,8 +174,13 @@ const endpoints: Record<string, EndpointDefinition> = {
     response: { created: 1783860000, data: [{ url: "http://127.0.0.1:8000/v1/media/images/example" }] },
   },
   "image/edits": {
-    key: "image/edits", category: "Image", title: "Image edits", method: "POST", path: "/images/edits",
-    descriptionKey: "docs.endpointImageEdit", capabilities: ["image_edit"],
+    key: "image/edits",
+    category: "Image",
+    title: "Image edits",
+    method: "POST",
+    path: "/images/edits",
+    descriptionKey: "docs.endpointImageEdit",
+    capabilities: ["image_edit"],
     fields: [
       { name: "model", required: true, descriptionKey: "docs.reference.fieldModel" },
       { name: "prompt", required: true, descriptionKey: "docs.reference.fieldPrompt" },
@@ -117,12 +190,23 @@ const endpoints: Record<string, EndpointDefinition> = {
       { name: "response_format", descriptionKey: "docs.reference.fieldResponseFormat" },
     ],
     noteKeys: ["docs.reference.noteEditJSON", "docs.reference.noteEditSources", "docs.reference.noteImageStorage"],
-    request: (model) => ({ model, prompt: "Change the chair to black", image: { url: "https://example.com/chair.png" }, n: 1, response_format: "url" }),
+    request: (model) => ({
+      model,
+      prompt: "Change the chair to black",
+      image: { url: "https://example.com/chair.png" },
+      n: 1,
+      response_format: "url",
+    }),
     response: { created: 1783860000, data: [{ url: "http://127.0.0.1:8000/v1/media/images/example" }] },
   },
   "video/generations": {
-    key: "video/generations", category: "Video", title: "Video generations", method: "POST", path: "/videos/generations",
-    descriptionKey: "docs.endpointVideoCreate", capabilities: ["video"],
+    key: "video/generations",
+    category: "Video",
+    title: "Video generations",
+    method: "POST",
+    path: "/videos/generations",
+    descriptionKey: "docs.endpointVideoCreate",
+    capabilities: ["video"],
     fields: [
       { name: "model", required: true, descriptionKey: "docs.reference.fieldModel" },
       { name: "prompt", descriptionKey: "docs.reference.fieldVideoPrompt" },
@@ -134,45 +218,95 @@ const endpoints: Record<string, EndpointDefinition> = {
       { name: "reference_audios", descriptionKey: "docs.reference.fieldReferenceAudios" },
     ],
     noteKeys: ["docs.reference.noteVideoAsync", "docs.reference.noteVideoReference", "docs.reference.noteVideoStrict"],
-    request: (model) => ({ model, prompt: "A paper airplane flying over a city", duration: 8, aspect_ratio: "16:9", resolution: "720p" }),
+    request: (model) => ({
+      model,
+      prompt: "A paper airplane flying over a city",
+      duration: 8,
+      aspect_ratio: "16:9",
+      resolution: "720p",
+    }),
     response: { request_id: "video_example" },
   },
   "video/edits": {
-    key: "video/edits", category: "Video", title: "Video edits", method: "POST", path: "/videos/edits",
-    descriptionKey: "docs.endpointVideoEdit", capabilities: ["video"],
+    key: "video/edits",
+    category: "Video",
+    title: "Video edits",
+    method: "POST",
+    path: "/videos/edits",
+    descriptionKey: "docs.endpointVideoEdit",
+    capabilities: ["video"],
     fields: [
       { name: "model", required: true, descriptionKey: "docs.reference.fieldModel" },
       { name: "prompt", required: true, descriptionKey: "docs.reference.fieldVideoEditPrompt" },
       { name: "video", required: true, descriptionKey: "docs.reference.fieldVideoInput" },
     ],
-    noteKeys: ["docs.reference.noteVideoAsync", "docs.reference.noteVideoEditModel", "docs.reference.noteVideoBilling", "docs.reference.noteVideoStrict"],
-    request: () => ({ model: "grok-imagine-video", prompt: "Give the woman a silver necklace", video: { url: "https://example.com/source.mp4" } }),
+    noteKeys: [
+      "docs.reference.noteVideoAsync",
+      "docs.reference.noteVideoEditModel",
+      "docs.reference.noteVideoBilling",
+      "docs.reference.noteVideoStrict",
+    ],
+    request: () => ({
+      model: "grok-imagine-video",
+      prompt: "Give the woman a silver necklace",
+      video: { url: "https://example.com/source.mp4" },
+    }),
     response: { request_id: "video_edit_example" },
   },
   "video/extensions": {
-    key: "video/extensions", category: "Video", title: "Video extensions", method: "POST", path: "/videos/extensions",
-    descriptionKey: "docs.endpointVideoExtend", capabilities: ["video"],
+    key: "video/extensions",
+    category: "Video",
+    title: "Video extensions",
+    method: "POST",
+    path: "/videos/extensions",
+    descriptionKey: "docs.endpointVideoExtend",
+    capabilities: ["video"],
     fields: [
       { name: "model", required: true, descriptionKey: "docs.reference.fieldModel" },
       { name: "prompt", required: true, descriptionKey: "docs.reference.fieldVideoExtendPrompt" },
       { name: "video", required: true, descriptionKey: "docs.reference.fieldVideoInput" },
       { name: "duration", descriptionKey: "docs.reference.fieldVideoExtendDuration" },
     ],
-    noteKeys: ["docs.reference.noteVideoAsync", "docs.reference.noteVideoEditModel", "docs.reference.noteVideoBilling", "docs.reference.noteVideoStrict"],
-    request: () => ({ model: "grok-imagine-video", prompt: "The shot pans to an over the shoulder perspective.", duration: 6, video: { url: "https://example.com/source.mp4" } }),
+    noteKeys: [
+      "docs.reference.noteVideoAsync",
+      "docs.reference.noteVideoEditModel",
+      "docs.reference.noteVideoBilling",
+      "docs.reference.noteVideoStrict",
+    ],
+    request: () => ({
+      model: "grok-imagine-video",
+      prompt: "The shot pans to an over the shoulder perspective.",
+      duration: 6,
+      video: { url: "https://example.com/source.mp4" },
+    }),
     response: { request_id: "video_extend_example" },
   },
   "video/get": {
-    key: "video/get", category: "Video", title: "Get video", method: "GET", path: "/videos/{request_id}",
-    descriptionKey: "docs.endpointVideoGet", capabilities: ["video"],
+    key: "video/get",
+    category: "Video",
+    title: "Get video",
+    method: "GET",
+    path: "/videos/{request_id}",
+    descriptionKey: "docs.endpointVideoGet",
+    capabilities: ["video"],
     fields: [{ name: "request_id", required: true, descriptionKey: "docs.reference.fieldRequestId" }],
     noteKeys: ["docs.reference.noteVideoPolling", "docs.reference.noteVideoStatus"],
     request: () => undefined,
-    response: { status: "done", model: "grok-imagine-video", progress: 100, video: { url: "https://example.com/generated.mp4", duration: 8, respect_moderation: true } },
+    response: {
+      status: "done",
+      model: "grok-imagine-video",
+      progress: 100,
+      video: { url: "https://example.com/generated.mp4", duration: 8, respect_moderation: true },
+    },
   },
   "voice/tts": {
-    key: "voice/tts", category: "Voice", title: "Text to speech", method: "POST", path: "/tts",
-    descriptionKey: "docs.endpointTTS", capabilities: ["tts"],
+    key: "voice/tts",
+    category: "Voice",
+    title: "Text to speech",
+    method: "POST",
+    path: "/tts",
+    descriptionKey: "docs.endpointTTS",
+    capabilities: ["tts"],
     fields: [
       { name: "model", descriptionKey: "docs.reference.fieldVoiceModel" },
       { name: "text", required: true, descriptionKey: "docs.reference.fieldTTSText" },
@@ -183,12 +317,26 @@ const endpoints: Record<string, EndpointDefinition> = {
       { name: "with_timestamps", descriptionKey: "docs.reference.fieldTTSTimestamps" },
     ],
     noteKeys: ["docs.reference.noteTTSModels", "docs.reference.noteTTSBinary", "docs.reference.noteVoiceBilling"],
-    request: (model) => ({ model, text: "Hello from Grok voice.", voice_id: "eve", language: "en", output_format: { codec: "mp3" } }),
-    response: { content_type: "audio/mpeg", note: "Default responses return raw audio bytes. with_timestamps=true returns a JSON envelope." },
+    request: (model) => ({
+      model,
+      text: "Hello from Grok voice.",
+      voice_id: "eve",
+      language: "en",
+      output_format: { codec: "mp3" },
+    }),
+    response: {
+      content_type: "audio/mpeg",
+      note: "Default responses return raw audio bytes. with_timestamps=true returns a JSON envelope.",
+    },
   },
   "voice/audio-speech": {
-    key: "voice/audio-speech", category: "Voice", title: "OpenAI speech", method: "POST", path: "/audio/speech",
-    descriptionKey: "docs.endpointAudioSpeech", capabilities: ["tts"],
+    key: "voice/audio-speech",
+    category: "Voice",
+    title: "OpenAI speech",
+    method: "POST",
+    path: "/audio/speech",
+    descriptionKey: "docs.endpointAudioSpeech",
+    capabilities: ["tts"],
     fields: [
       { name: "model", descriptionKey: "docs.reference.fieldVoiceModel" },
       { name: "input", required: true, descriptionKey: "docs.reference.fieldAudioInput" },
@@ -197,13 +345,30 @@ const endpoints: Record<string, EndpointDefinition> = {
       { name: "speed", descriptionKey: "docs.reference.fieldTTSSpeed" },
       { name: "language", descriptionKey: "docs.reference.fieldVoiceLanguageOptional" },
     ],
-    noteKeys: ["docs.reference.noteAudioSpeechCompat", "docs.reference.noteTTSModels", "docs.reference.noteTTSBinary", "docs.reference.noteVoiceBilling"],
-    request: (model) => ({ model, input: "Hello from Grok voice.", voice: "alloy", response_format: "mp3", speed: 1.0, language: "en" }),
+    noteKeys: [
+      "docs.reference.noteAudioSpeechCompat",
+      "docs.reference.noteTTSModels",
+      "docs.reference.noteTTSBinary",
+      "docs.reference.noteVoiceBilling",
+    ],
+    request: (model) => ({
+      model,
+      input: "Hello from Grok voice.",
+      voice: "alloy",
+      response_format: "mp3",
+      speed: 1.0,
+      language: "en",
+    }),
     response: { content_type: "audio/mpeg", note: "Returns raw audio bytes compatible with OpenAI speech clients." },
   },
   "voice/audio-tasks": {
-    key: "voice/audio-tasks", category: "Voice", title: "OpenAI audio tasks", method: "POST", path: "/audio/tasks",
-    descriptionKey: "docs.endpointAudioTasks", capabilities: ["tts"],
+    key: "voice/audio-tasks",
+    category: "Voice",
+    title: "OpenAI audio tasks",
+    method: "POST",
+    path: "/audio/tasks",
+    descriptionKey: "docs.endpointAudioTasks",
+    capabilities: ["tts"],
     fields: [
       { name: "model", descriptionKey: "docs.reference.fieldVoiceModel" },
       { name: "input", required: true, descriptionKey: "docs.reference.fieldAudioInput" },
@@ -212,13 +377,28 @@ const endpoints: Record<string, EndpointDefinition> = {
       { name: "speed", descriptionKey: "docs.reference.fieldTTSSpeed" },
       { name: "language", descriptionKey: "docs.reference.fieldVoiceLanguageOptional" },
     ],
-    noteKeys: ["docs.reference.noteAudioTasksCompat", "docs.reference.noteTTSModels", "docs.reference.noteVoiceBilling"],
-    request: (model) => ({ model, input: "Hello from Grok voice.", voice: "alloy", response_format: "mp3", language: "en" }),
+    noteKeys: [
+      "docs.reference.noteAudioTasksCompat",
+      "docs.reference.noteTTSModels",
+      "docs.reference.noteVoiceBilling",
+    ],
+    request: (model) => ({
+      model,
+      input: "Hello from Grok voice.",
+      voice: "alloy",
+      response_format: "mp3",
+      language: "en",
+    }),
     response: { content_type: "audio/mpeg", note: "Compatibility path that returns raw audio bytes by default." },
   },
   "voice/audio-transcriptions": {
-    key: "voice/audio-transcriptions", category: "Voice", title: "OpenAI transcriptions", method: "POST", path: "/audio/transcriptions",
-    descriptionKey: "docs.endpointAudioTranscriptions", capabilities: ["stt"],
+    key: "voice/audio-transcriptions",
+    category: "Voice",
+    title: "OpenAI transcriptions",
+    method: "POST",
+    path: "/audio/transcriptions",
+    descriptionKey: "docs.endpointAudioTranscriptions",
+    capabilities: ["stt"],
     fields: [
       { name: "model", descriptionKey: "docs.reference.fieldSTTModel" },
       { name: "file", descriptionKey: "docs.reference.fieldSTTFile" },
@@ -226,23 +406,41 @@ const endpoints: Record<string, EndpointDefinition> = {
       { name: "language", descriptionKey: "docs.reference.fieldVoiceLanguage" },
       { name: "response_format", descriptionKey: "docs.reference.fieldSTTResponseFormat" },
     ],
-    noteKeys: ["docs.reference.noteAudioTranscriptionsCompat", "docs.reference.noteSTTInput", "docs.reference.noteSTTModels", "docs.reference.noteVoiceBilling"],
+    noteKeys: [
+      "docs.reference.noteAudioTranscriptionsCompat",
+      "docs.reference.noteSTTInput",
+      "docs.reference.noteSTTModels",
+      "docs.reference.noteVoiceBilling",
+    ],
     request: (model) => ({ model, url: "https://example.com/sample.wav", language: "en" }),
     response: { text: "Hello from Grok voice." },
   },
   "voice/voices": {
-    key: "voice/voices", category: "Voice", title: "List voices", method: "GET", path: "/tts/voices",
-    descriptionKey: "docs.endpointTTSVoices", capabilities: ["tts"],
-    fields: [
-      { name: "model", descriptionKey: "docs.reference.fieldVoiceModelQuery" },
-    ],
+    key: "voice/voices",
+    category: "Voice",
+    title: "List voices",
+    method: "GET",
+    path: "/tts/voices",
+    descriptionKey: "docs.endpointTTSVoices",
+    capabilities: ["tts"],
+    fields: [{ name: "model", descriptionKey: "docs.reference.fieldVoiceModelQuery" }],
     noteKeys: ["docs.reference.noteTTSVoices"],
     request: () => undefined,
-    response: { voices: [{ voice_id: "eve", name: "Eve", language: "en" }, { voice_id: "ara", name: "Ara", language: "en" }] },
+    response: {
+      voices: [
+        { voice_id: "eve", name: "Eve", language: "en" },
+        { voice_id: "ara", name: "Ara", language: "en" },
+      ],
+    },
   },
   "voice/stt": {
-    key: "voice/stt", category: "Voice", title: "Speech to text", method: "POST", path: "/stt",
-    descriptionKey: "docs.endpointSTT", capabilities: ["stt"],
+    key: "voice/stt",
+    category: "Voice",
+    title: "Speech to text",
+    method: "POST",
+    path: "/stt",
+    descriptionKey: "docs.endpointSTT",
+    capabilities: ["stt"],
     fields: [
       { name: "model", descriptionKey: "docs.reference.fieldSTTModel" },
       { name: "file", descriptionKey: "docs.reference.fieldSTTFile" },
@@ -252,18 +450,38 @@ const endpoints: Record<string, EndpointDefinition> = {
       { name: "diarize", descriptionKey: "docs.reference.fieldSTTDiarize" },
       { name: "keyterm", descriptionKey: "docs.reference.fieldSTTKeyterm" },
     ],
-    noteKeys: ["docs.reference.noteSTTInput", "docs.reference.noteSTTStream", "docs.reference.noteSTTModels", "docs.reference.noteVoiceBilling"],
+    noteKeys: [
+      "docs.reference.noteSTTInput",
+      "docs.reference.noteSTTStream",
+      "docs.reference.noteSTTModels",
+      "docs.reference.noteVoiceBilling",
+    ],
     request: (model) => ({ model, url: "https://example.com/sample.wav", language: "en", format: true }),
-    response: { text: "Hello from Grok voice.", language: "en", duration: 1.84, words: [{ text: "Hello", start: 0.0, end: 0.42 }] },
+    response: {
+      text: "Hello from Grok voice.",
+      language: "en",
+      duration: 1.84,
+      words: [{ text: "Hello", start: 0.0, end: 0.42 }],
+    },
   },
   "voice/realtime": {
-    key: "voice/realtime", category: "Voice", title: "Realtime websocket", method: "GET", path: "/realtime",
-    descriptionKey: "docs.endpointRealtime", capabilities: ["realtime"],
+    key: "voice/realtime",
+    category: "Voice",
+    title: "Realtime websocket",
+    method: "GET",
+    path: "/realtime",
+    descriptionKey: "docs.endpointRealtime",
+    capabilities: ["realtime"],
     fields: [
       { name: "model", descriptionKey: "docs.reference.fieldRealtimeModelQuery" },
       { name: "Upgrade", required: true, descriptionKey: "docs.reference.fieldWSUpgrade" },
     ],
-    noteKeys: ["docs.reference.noteRealtimeEvents", "docs.reference.noteRealtimeProxy", "docs.reference.noteRealtimeAuth", "docs.reference.noteVoiceBilling"],
+    noteKeys: [
+      "docs.reference.noteRealtimeEvents",
+      "docs.reference.noteRealtimeProxy",
+      "docs.reference.noteRealtimeAuth",
+      "docs.reference.noteVoiceBilling",
+    ],
     request: () => undefined,
     response: { type: "session.created", session: { model: "grok-voice-latest" } },
   },
@@ -277,16 +495,30 @@ export function ApiDocsPage() {
   const [exampleView, setExampleView] = useState<ExampleView>("request");
   const [selectedModel, setSelectedModel] = useState("");
 
-  const systemQuery = useQuery({ queryKey: ["system-info"], queryFn: getSystemInfo, staleTime: Number.POSITIVE_INFINITY, retry: 1 });
-  const modelsQuery = useQuery({ queryKey: ["docs", "available-models"], queryFn: () => listModels({ page: 1, pageSize: 100 }), staleTime: 30_000 });
+  const systemQuery = useQuery({
+    queryKey: ["system-info"],
+    queryFn: getSystemInfo,
+    staleTime: Number.POSITIVE_INFINITY,
+    retry: 1,
+  });
+  const modelsQuery = useQuery({
+    queryKey: ["docs", "available-models"],
+    queryFn: () => listModels({ page: 1, pageSize: 100 }),
+    staleTime: 30_000,
+  });
 
   if (!definition) return <Navigate to="/docs/chat/completions" replace />;
 
   const publicApiBaseUrl = systemQuery.data?.publicApiBaseURL || runtimeConfig.publicApiBaseUrl;
   const baseUrl = `${publicApiBaseUrl.replace(/\/$/, "")}/v1`;
-  const availableModels = uniqueModelsByPublicID((modelsQuery.data?.items ?? []).filter((model) => model.enabled && model.available && definition.capabilities.includes(model.capability)));
+  const availableModels = uniqueModelsByPublicID(
+    (modelsQuery.data?.items ?? []).filter(
+      (model) => model.enabled && model.available && definition.capabilities.includes(model.capability),
+    ),
+  );
   const selectedModelAvailable = availableModels.some((model) => model.publicId === selectedModel);
-  const exampleModel = (selectedModelAvailable ? selectedModel : availableModels[0]?.publicId) || fallbackModel(definition.key);
+  const exampleModel =
+    (selectedModelAvailable ? selectedModel : availableModels[0]?.publicId) || fallbackModel(definition.key);
   const examples = createExamples(definition, baseUrl, exampleModel);
   const responseExample = JSON.stringify(withExampleModel(definition.response, exampleModel), null, 2);
 
@@ -304,18 +536,30 @@ export function ApiDocsPage() {
         <DocsSection icon={<Link2 />} title={t("docs.reference.connection")}>
           <div className="grid gap-4 sm:grid-cols-2">
             <ConnectionItem label={t("docs.baseUrl")} value={baseUrl} />
-            <ConnectionItem label={t("docs.authentication")} value={definition.key === "chat/messages" ? "x-api-key: g2a_..." : "Authorization: Bearer g2a_..."} />
-            {definition.key === "chat/messages" ? <ConnectionItem label="anthropic-version" value="2023-06-01" /> : null}
+            <ConnectionItem
+              label={t("docs.authentication")}
+              value={definition.key === "chat/messages" ? "x-api-key: g2a_..." : "Authorization: Bearer g2a_..."}
+            />
+            {definition.key === "chat/messages" ? (
+              <ConnectionItem label="anthropic-version" value="2023-06-01" />
+            ) : null}
           </div>
         </DocsSection>
 
-        <DocsSection icon={<Braces />} title={definition.method === "GET" ? t("docs.reference.pathParameters") : t("docs.reference.requestBody")}>
+        <DocsSection
+          icon={<Braces />}
+          title={definition.method === "GET" ? t("docs.reference.pathParameters") : t("docs.reference.requestBody")}
+        >
           <div className="overflow-hidden rounded-md bg-card">
             <div className="hidden grid-cols-[minmax(120px,180px)_minmax(0,1fr)] gap-5 bg-secondary/35 px-4 py-2 text-xs text-muted-foreground sm:grid">
               <span>{t("docs.reference.parameter")}</span>
               <span>{t("docs.reference.description")}</span>
             </div>
-            <div>{definition.fields.map((field, index) => <ParameterItem key={field.name} field={field} muted={index % 2 === 1} />)}</div>
+            <div>
+              {definition.fields.map((field, index) => (
+                <ParameterItem key={field.name} field={field} muted={index % 2 === 1} />
+              ))}
+            </div>
           </div>
         </DocsSection>
 
@@ -335,7 +579,14 @@ export function ApiDocsPage() {
         {definition.noteKeys.length > 0 ? (
           <DocsSection icon={<Info />} title={t("docs.reference.notes")}>
             <ul className="space-y-2 rounded-md bg-secondary/35 px-4 py-3 text-xs leading-5 text-muted-foreground">
-              {definition.noteKeys.map((key) => <li key={key} className="relative pl-3 before:absolute before:left-0 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-muted-foreground/55">{t(key)}</li>)}
+              {definition.noteKeys.map((key) => (
+                <li
+                  key={key}
+                  className="relative pl-3 before:absolute before:left-0 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-muted-foreground/55"
+                >
+                  {t(key)}
+                </li>
+              ))}
             </ul>
           </DocsSection>
         ) : null}
@@ -367,15 +618,19 @@ function fallbackModel(key: string): string {
   return "your-enabled-model";
 }
 
-function createExamples(definition: EndpointDefinition, baseUrl: string, model: string): Record<ExampleLanguage, string> {
+function createExamples(
+  definition: EndpointDefinition,
+  baseUrl: string,
+  model: string,
+): Record<ExampleLanguage, string> {
   const request = definition.request(model);
-  const path = definition.path
-    .replace("{request_id}", "video_example");
-  const url = definition.key === "voice/realtime"
-    ? `${baseUrl}${path}?model=${encodeURIComponent(model)}`
-    : definition.key === "voice/voices"
+  const path = definition.path.replace("{request_id}", "video_example");
+  const url =
+    definition.key === "voice/realtime"
       ? `${baseUrl}${path}?model=${encodeURIComponent(model)}`
-      : `${baseUrl}${path}`;
+      : definition.key === "voice/voices"
+        ? `${baseUrl}${path}?model=${encodeURIComponent(model)}`
+        : `${baseUrl}${path}`;
   const messageHeaders = definition.key === "chat/messages";
   const curlHeaders = messageHeaders
     ? [
@@ -383,10 +638,7 @@ function createExamples(definition: EndpointDefinition, baseUrl: string, model: 
         '  -H "anthropic-version: 2023-06-01"',
         '  -H "Content-Type: application/json"',
       ].join(" \\\n")
-    : [
-        '  -H "Authorization: Bearer $GROK2API_API_KEY"',
-        '  -H "Content-Type: application/json"',
-      ].join(" \\\n");
+    : ['  -H "Authorization: Bearer $GROK2API_API_KEY"', '  -H "Content-Type: application/json"'].join(" \\\n");
   const curlBody = request ? ` \\\n  -d '${JSON.stringify(request, null, 2)}'` : "";
   const headers = messageHeaders
     ? { "x-api-key": "g2a_your_api_key", "anthropic-version": "2023-06-01", "Content-Type": "application/json" }
@@ -403,14 +655,25 @@ function createExamples(definition: EndpointDefinition, baseUrl: string, model: 
 }
 
 function MethodLabel({ method }: { method: Method }) {
-  return <span className={cn("font-mono text-xs font-semibold", method === "GET" ? "text-emerald-600 dark:text-emerald-400" : "text-sky-600 dark:text-sky-400")}>{method}</span>;
+  return (
+    <span
+      className={cn(
+        "font-mono text-xs font-semibold",
+        method === "GET" ? "text-emerald-600 dark:text-emerald-400" : "text-sky-600 dark:text-sky-400",
+      )}
+    >
+      {method}
+    </span>
+  );
 }
 
 function EndpointSignature({ method, path }: { method: Method; path: string }) {
   return (
     <div className="flex h-8 w-fit max-w-full items-center gap-2 rounded-md bg-card px-3">
       <MethodLabel method={method} />
-      <code className="min-w-0 truncate text-xs" title={path}>{path}</code>
+      <code className="min-w-0 truncate text-xs" title={path}>
+        {path}
+      </code>
       <CopyButton value={path} />
     </div>
   );
@@ -419,7 +682,10 @@ function EndpointSignature({ method, path }: { method: Method; path: string }) {
 function DocsSection({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
   return (
     <section className="space-y-3.5">
-      <div className="flex items-center gap-2 text-sm font-medium [&_svg]:size-4 [&_svg]:text-muted-foreground">{icon}{title}</div>
+      <div className="flex items-center gap-2 text-sm font-medium [&_svg]:size-4 [&_svg]:text-muted-foreground">
+        {icon}
+        {title}
+      </div>
       <div className="min-w-0">{children}</div>
     </section>
   );
@@ -430,7 +696,9 @@ function ConnectionItem({ label, value }: { label: string; value: string }) {
     <div className="min-w-0">
       <div className="mb-1.5 text-xs text-muted-foreground">{label}</div>
       <div className="flex h-8 min-w-0 items-center rounded-md bg-secondary/55 pl-3 pr-0.5">
-        <code className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={value}>{value}</code>
+        <code className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={value}>
+          {value}
+        </code>
         <CopyButton value={value} />
       </div>
     </div>
@@ -440,11 +708,20 @@ function ConnectionItem({ label, value }: { label: string; value: string }) {
 function ParameterItem({ field, muted }: { field: FieldDefinition; muted: boolean }) {
   const { t } = useTranslation();
   return (
-    <div className={cn("grid grid-cols-1 gap-1.5 px-4 py-3 sm:grid-cols-[minmax(120px,180px)_minmax(0,1fr)] sm:gap-5", muted && "bg-secondary/20")}>
+    <div
+      className={cn(
+        "grid grid-cols-1 gap-1.5 px-4 py-3 sm:grid-cols-[minmax(120px,180px)_minmax(0,1fr)] sm:gap-5",
+        muted && "bg-secondary/20",
+      )}
+    >
       <div className="min-w-0">
         <code className="break-all text-xs font-medium text-foreground">
-        {field.name}
-        {field.required ? <span className="ml-1 text-destructive" title={t("docs.reference.required")}>*</span> : null}
+          {field.name}
+          {field.required ? (
+            <span className="ml-1 text-destructive" title={t("docs.reference.required")}>
+              *
+            </span>
+          ) : null}
         </code>
       </div>
       <div className="min-w-0 text-xs leading-5 text-muted-foreground">{t(field.descriptionKey)}</div>
@@ -485,23 +762,42 @@ function ExamplePanel({
         <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
           {view === "request" ? (
             <Select value={language} onValueChange={(value) => onLanguageChange(value as ExampleLanguage)}>
-              <SelectTrigger className="h-8 w-28 bg-background text-xs" aria-label={t("docs.exampleLanguage")}><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-8 w-28 bg-background text-xs" aria-label={t("docs.exampleLanguage")}>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
-                {exampleLanguages.map((item) => <SelectItem key={item} value={item}>{item === "javascript" ? "JavaScript" : item === "python" ? "Python" : "cURL"}</SelectItem>)}
+                {exampleLanguages.map((item) => (
+                  <SelectItem key={item} value={item}>
+                    {item === "javascript" ? "JavaScript" : item === "python" ? "Python" : "cURL"}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           ) : null}
           {models.length > 0 ? (
             <Select value={selectedModel} onValueChange={onModelChange}>
-              <SelectTrigger className="h-8 w-[190px] max-w-full bg-background text-xs" aria-label={t("docs.reference.exampleModel")}><SelectValue /></SelectTrigger>
-              <SelectContent>{models.map((model) => <SelectItem key={model.id} value={model.publicId}>{model.publicId}</SelectItem>)}</SelectContent>
+              <SelectTrigger
+                className="h-8 w-[190px] max-w-full bg-background text-xs"
+                aria-label={t("docs.reference.exampleModel")}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {models.map((model) => (
+                  <SelectItem key={model.id} value={model.publicId}>
+                    {model.publicId}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           ) : null}
           <CopyButton value={code} />
         </div>
       </div>
 
-      <pre className="max-h-[480px] overflow-auto bg-secondary/45 p-4 text-xs leading-5 text-foreground"><code>{code}</code></pre>
+      <pre className="max-h-[480px] overflow-auto bg-secondary/45 p-4 text-xs leading-5 text-foreground">
+        <code>{code}</code>
+      </pre>
     </div>
   );
 }

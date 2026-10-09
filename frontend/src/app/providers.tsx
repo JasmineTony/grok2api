@@ -7,12 +7,15 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/shared/auth/auth-context";
 
 export function AppProviders({ children }: { children: ReactNode }) {
-  const [queryClient] = useState(() => new QueryClient({
-    defaultOptions: {
-      queries: { retry: 1, staleTime: 15_000, refetchOnWindowFocus: false },
-      mutations: { retry: 0 },
-    },
-  }));
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: { retry: 1, staleTime: 15_000, refetchOnWindowFocus: false },
+          mutations: { retry: 0 },
+        },
+      }),
+  );
 
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
@@ -27,4 +30,3 @@ export function AppProviders({ children }: { children: ReactNode }) {
     </ThemeProvider>
   );
 }
-

@@ -1,0 +1,27 @@
+import { defineConfig, mergeConfig } from "vitest/config";
+
+import viteConfig from "./vite.config.ts";
+
+// 复用 vite.config.ts（plugins / resolve.alias / define）作为唯一来源，
+// 避免再维护第二套 "@" -> ./src 别名与构建期常量。
+export default mergeConfig(
+  viteConfig,
+  defineConfig({
+    test: {
+      environment: "jsdom",
+      setupFiles: ["./src/test/setup.ts"],
+      // 只接管 *.test.tsx（React 组件测试）；既有 4 个 *.test.ts 仍由 `pnpm test` 的 node:test 运行。
+      include: ["src/**/*.test.tsx"],
+      coverage: {
+        provider: "v8",
+        reporter: ["text", "lcov"],
+        // 覆盖率门槛按 ratchet 只约束本轮新增/修改的组件文件：
+        // - accounts-page.tsx（3752 行、依赖大量 hooks/查询/弹窗）无法在不引入大量无关 mock 的前提下单测，故不纳入；
+        //   其中本轮新增的模型级封锁分支复用 ModelQuotaBlockTooltip，由 account-quota.tsx 的用例覆盖。
+        // - 其余存量文件同样不在本轮达标范围内。
+        include: ["src/features/accounts/account-quota.tsx"],
+        thresholds: { lines: 75, functions: 75, branches: 75, statements: 75 },
+      },
+    },
+  }),
+);
