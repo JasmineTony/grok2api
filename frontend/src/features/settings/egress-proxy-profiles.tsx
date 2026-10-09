@@ -1,5 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Eye, EyeOff, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
+import { ArrowLeft, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -31,7 +31,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import {
   Table,
@@ -44,37 +43,46 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  EgressProxyProfileFields,
+  type EgressProxyProfileFieldsProps,
+  type EgressProxyProfileFormValues,
+} from "@/features/settings/egress-proxy-profile-form-fields";
+import { showEgressError } from "@/features/settings/egress-feedback";
+import {
   createEgressProxyProfile,
   deleteEgressProxyProfile,
   getEgressProxyProfileURL,
   listEgressProxyProfiles,
   updateEgressProxyProfile,
   type EgressProxyProfileDTO,
+  type EgressProxyProfileListDTO,
 } from "@/features/settings/settings-api";
 import { ErrorState, TableLoadingRow } from "@/shared/components/data-state";
 import { Pagination } from "@/shared/components/pagination";
 import { useDebouncedValue } from "@/shared/hooks/use-debounced-value";
 import { cn } from "@/shared/lib/cn";
 
-type ProfileForm = { name: string; proxyURL: string };
-const emptyForm: ProfileForm = { name: "", proxyURL: "" };
+const emptyForm: EgressProxyProfileFormValues = { name: "", proxyURL: "" };
 
+type EgressProxyProfilesProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  startCreating?: boolean;
+  onCreated?: (profile: EgressProxyProfileDTO) => void;
+};
+
+/** 代理配置库：列表分页与新增/编辑/删除弹窗，列表、表单与确认弹窗各自独立。 */
 export function EgressProxyProfiles({
   open,
   onOpenChange,
   startCreating = false,
   onCreated,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  startCreating?: boolean;
-  onCreated?: (profile: EgressProxyProfileDTO) => void;
-}) {
+}: EgressProxyProfilesProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<EgressProxyProfileDTO | null | undefined>(startCreating ? null : undefined);
   const [deleting, setDeleting] = useState<EgressProxyProfileDTO | undefined>();
-  const [form, setForm] = useState<ProfileForm>(emptyForm);
+  const [form, setForm] = useState<EgressProxyProfileFormValues>(emptyForm);
   const [proxyVisible, setProxyVisible] = useState(false);
   const [revealedProxyURL, setRevealedProxyURL] = useState("");
   const [page, setPage] = useState(1);
@@ -104,7 +112,7 @@ export function EgressProxyProfiles({
       toast.success(t("egressProxyProfiles.saved"));
       if (created) onCreated?.(profile);
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : t("settings.egress.operationFailed")),
+    onError: (error) => showEgressError(error, t("settings.egress.operationFailed")),
   });
   const reveal = useMutation({
     mutationFn: () => {
@@ -116,7 +124,7 @@ export function EgressProxyProfiles({
       setProxyVisible(true);
       setForm((current) => ({ ...current, proxyURL }));
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : t("settings.egress.operationFailed")),
+    onError: (error) => showEgressError(error, t("settings.egress.operationFailed")),
   });
   const remove = useMutation({
     mutationFn: (id: string) => deleteEgressProxyProfile(id),
@@ -126,7 +134,7 @@ export function EgressProxyProfiles({
       setDeleting(undefined);
       toast.success(t("egressProxyProfiles.deleted"));
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : t("settings.egress.operationFailed")),
+    onError: (error) => showEgressError(error, t("settings.egress.operationFailed")),
   });
 
   function openCreate() {
@@ -162,6 +170,7 @@ export function EgressProxyProfiles({
               ? "flex min-h-0 flex-col overflow-hidden sm:max-w-[720px]"
               : "overflow-y-auto sm:max-w-[520px]",
           )}
+          data-testid="egress-proxy-profiles-dialog"
         >
           <DialogHeader className="shrink-0 pr-8">
             <DialogTitle>{title}</DialogTitle>
@@ -169,251 +178,359 @@ export function EgressProxyProfiles({
           </DialogHeader>
 
           {editing === undefined ? (
-            <div className="flex min-h-0 flex-col gap-3">
-              <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center">
-                <div className="relative min-w-0 flex-1 sm:max-w-72">
-                  <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    type="search"
-                    autoComplete="off"
-                    data-1p-ignore
-                    data-lpignore="true"
-                    data-form-type="other"
-                    className="h-8 pl-8 text-xs"
-                    value={search}
-                    onChange={(event) => {
-                      setSearch(event.target.value);
-                      setPage(1);
-                    }}
-                    placeholder={t("egressProxyProfiles.search")}
-                    aria-label={t("egressProxyProfiles.search")}
-                  />
-                </div>
-                <Button type="button" size="sm" variant="secondary" className="sm:ml-auto" onClick={openCreate}>
-                  <Plus />
-                  {t("egressProxyProfiles.add")}
-                </Button>
-              </div>
-              <div className="max-h-[360px] min-h-0 overflow-auto rounded-md border">
-                {query.isError ? (
-                  <ErrorState message={query.error.message} onRetry={() => void query.refetch()} />
-                ) : null}
-                {!query.isError ? (
-                  <Table className="table-fixed">
-                    <TableHeader>
-                      <TableRow className="hover:bg-transparent">
-                        <TableHead className="w-[32%]">{t("egressProxyProfiles.name")}</TableHead>
-                        <TableHead>{t("egressProxyProfiles.endpoint")}</TableHead>
-                        <TableHead className="w-20 text-center">{t("egressProxyProfiles.nodes")}</TableHead>
-                        <TableActionHead />
-                      </TableRow>
-                    </TableHeader>
-                    {query.isPending ? (
-                      <TableBody>
-                        <TableLoadingRow colSpan={4} />
-                      </TableBody>
-                    ) : null}
-                    {!query.isPending && query.data.items.length === 0 ? (
-                      <TableBody>
-                        <TableRow>
-                          <TableCell colSpan={4} className="h-24 text-center text-xs text-muted-foreground">
-                            {t(search ? "egressProxyProfiles.noMatches" : "egressProxyProfiles.emptyLibrary")}
-                          </TableCell>
-                        </TableRow>
-                      </TableBody>
-                    ) : null}
-                    {!query.isPending ? (
-                      <TableBody>
-                        {query.data.items.map((profile) => (
-                          <TableRow key={profile.id}>
-                            <TableCell>
-                              <span className="block truncate text-xs font-medium" title={profile.name}>
-                                {profile.name}
-                              </span>
-                            </TableCell>
-                            <TableCell>
-                              <div
-                                className="min-w-0"
-                                title={`${profile.proxyDisplay || ""} · ${profile.proxyFingerprint || ""}`}
-                              >
-                                <p className="truncate text-xs font-medium">{profile.proxyDisplay}</p>
-                                {profile.proxyFingerprint ? (
-                                  <p className="font-mono text-[10px] text-muted-foreground">
-                                    #{profile.proxyFingerprint}
-                                  </p>
-                                ) : null}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-center text-xs tabular-nums">{profile.boundNodeCount}</TableCell>
-                            <TableActionCell>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="size-8"
-                                    aria-label={t("common.actions")}
-                                  >
-                                    <MoreHorizontal />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem onClick={() => openEdit(profile)}>
-                                    <Pencil />
-                                    {t("common.edit")}
-                                  </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem
-                                    className="text-destructive focus:text-destructive"
-                                    disabled={profile.boundNodeCount > 0}
-                                    onClick={() => setDeleting(profile)}
-                                  >
-                                    <Trash2 />
-                                    {profile.boundNodeCount > 0
-                                      ? t("egressProxyProfiles.deleteBlocked", { count: profile.boundNodeCount })
-                                      : t("common.delete")}
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </TableActionCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    ) : null}
-                  </Table>
-                ) : null}
-              </div>
-              {query.data && query.data.total > 0 ? (
-                <div className="shrink-0">
-                  <Pagination
-                    page={query.data.page}
-                    pageSize={query.data.pageSize}
-                    total={query.data.total}
-                    onPageChange={setPage}
-                    onPageSizeChange={(value) => {
-                      setPageSize(value);
-                      setPage(1);
-                    }}
-                  />
-                </div>
-              ) : null}
-            </div>
+            <EgressProxyProfileLibrary
+              query={query}
+              search={search}
+              onSearchChange={(value) => {
+                setSearch(value);
+                setPage(1);
+              }}
+              onPageChange={setPage}
+              onPageSizeChange={(value) => {
+                setPageSize(value);
+                setPage(1);
+              }}
+              onCreate={openCreate}
+              onEdit={openEdit}
+              onDelete={setDeleting}
+            />
           ) : (
-            <div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="mb-3 -ml-2 text-muted-foreground"
-                onClick={() => setEditing(undefined)}
-              >
-                <ArrowLeft />
-                {t("egressProxyProfiles.backToLibrary")}
-              </Button>
-              <form
-                className="space-y-3.5"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  save.mutate();
-                }}
-              >
-                <div className="space-y-2">
-                  <Label htmlFor="proxy-profile-name">{t("egressProxyProfiles.name")}</Label>
-                  <Input
-                    id="proxy-profile-name"
-                    autoComplete="off"
-                    data-1p-ignore
-                    data-lpignore="true"
-                    data-form-type="other"
-                    value={form.name}
-                    onChange={(event) => setForm({ ...form, name: event.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="proxy-profile-url">{t("settings.egress.proxyURL")}</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      id="proxy-profile-url"
-                      type={proxyVisible ? "text" : "password"}
-                      autoComplete="off"
-                      data-1p-ignore
-                      data-lpignore="true"
-                      data-form-type="other"
-                      placeholder={editing ? t("settings.egress.keepConfigured") : "socks5h://user:pass@host:port"}
-                      value={form.proxyURL}
-                      onChange={(event) => setForm({ ...form, proxyURL: event.target.value })}
-                    />
-                    {editing ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="shrink-0"
-                        disabled={reveal.isPending}
-                        aria-label={t(proxyVisible ? "egressProxyProfiles.hide" : "egressProxyProfiles.reveal")}
-                        onClick={() => {
-                          if (revealedProxyURL) setProxyVisible((visible) => !visible);
-                          else reveal.mutate();
-                        }}
-                      >
-                        {reveal.isPending ? <Spinner /> : proxyVisible ? <EyeOff /> : <Eye />}
-                      </Button>
-                    ) : null}
-                  </div>
-                  <p className="whitespace-pre-line text-xs leading-5 text-muted-foreground">
-                    {t("settings.egress.proxyProtocols")}
-                  </p>
-                </div>
-                <DialogFooter>
-                  <Button type="button" variant="secondary" size="sm" onClick={() => setEditing(undefined)}>
-                    {t("common.cancel")}
-                  </Button>
-                  <Button
-                    type="submit"
-                    size="sm"
-                    disabled={save.isPending || !form.name.trim() || (!editing && !form.proxyURL.trim())}
-                  >
-                    {save.isPending ? <Spinner /> : null}
-                    {t("common.save")}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </div>
+            <EgressProxyProfileForm
+              editing={editing}
+              form={form}
+              proxyVisible={proxyVisible}
+              revealPending={reveal.isPending}
+              savePending={save.isPending}
+              onFormChange={(changes) => setForm((current) => ({ ...current, ...changes }))}
+              onToggleProxyVisible={() => {
+                if (revealedProxyURL) setProxyVisible((visible) => !visible);
+                else reveal.mutate();
+              }}
+              onBack={() => setEditing(undefined)}
+              onSave={() => save.mutate()}
+            />
           )}
         </DialogContent>
       </Dialog>
 
-      <AlertDialog
-        open={Boolean(deleting)}
+      <EgressProxyProfileDeleteDialog
+        deleting={deleting}
+        pending={remove.isPending}
         onOpenChange={(next) => {
           if (!next) setDeleting(undefined);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("egressProxyProfiles.deleteTitle")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("egressProxyProfiles.deleteDescription", { name: deleting?.name })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={remove.isPending}>{t("common.cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-white hover:bg-destructive/90"
-              disabled={remove.isPending}
-              onClick={(event) => {
-                event.preventDefault();
-                if (deleting) remove.mutate(deleting.id);
-              }}
-            >
-              {remove.isPending ? <Spinner /> : null}
-              {t("common.delete")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        onConfirm={() => {
+          if (deleting) remove.mutate(deleting.id);
+        }}
+      />
     </>
+  );
+}
+
+type EgressProxyProfileLibraryProps = {
+  query: UseQueryResult<EgressProxyProfileListDTO>;
+  search: string;
+  onSearchChange: (value: string) => void;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
+  onCreate: () => void;
+  onEdit: (profile: EgressProxyProfileDTO) => void;
+  onDelete: (profile: EgressProxyProfileDTO) => void;
+};
+
+function EgressProxyProfileLibrary(props: EgressProxyProfileLibraryProps) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex min-h-0 flex-col gap-3">
+      <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center">
+        <EgressProxyProfileSearch value={props.search} onChange={props.onSearchChange} />
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          className="sm:ml-auto"
+          onClick={props.onCreate}
+          data-testid="egress-proxy-profiles-add"
+        >
+          <Plus />
+          {t("egressProxyProfiles.add")}
+        </Button>
+      </div>
+      <div className="max-h-[360px] min-h-0 overflow-auto rounded-md border">
+        {props.query.isError ? (
+          <ErrorState message={props.query.error.message} onRetry={() => void props.query.refetch()} />
+        ) : null}
+        {!props.query.isError ? (
+          <EgressProxyProfileTable
+            query={props.query}
+            search={props.search}
+            onEdit={props.onEdit}
+            onDelete={props.onDelete}
+          />
+        ) : null}
+      </div>
+      {props.query.data && props.query.data.total > 0 ? (
+        <div className="shrink-0">
+          <Pagination
+            page={props.query.data.page}
+            pageSize={props.query.data.pageSize}
+            total={props.query.data.total}
+            onPageChange={props.onPageChange}
+            onPageSizeChange={props.onPageSizeChange}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function EgressProxyProfileSearch({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const { t } = useTranslation();
+  return (
+    <div className="relative min-w-0 flex-1 sm:max-w-72">
+      <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        type="search"
+        autoComplete="off"
+        data-1p-ignore
+        data-lpignore="true"
+        data-form-type="other"
+        className="h-8 pl-8 text-xs"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={t("egressProxyProfiles.search")}
+        aria-label={t("egressProxyProfiles.search")}
+        data-testid="egress-proxy-profiles-search"
+      />
+    </div>
+  );
+}
+
+function EgressProxyProfileTable({
+  query,
+  search,
+  onEdit,
+  onDelete,
+}: Pick<EgressProxyProfileLibraryProps, "query" | "search" | "onEdit" | "onDelete">) {
+  const { t } = useTranslation();
+  if (query.isError) return null;
+  return (
+    <Table className="table-fixed" data-testid="egress-proxy-profiles-table">
+      <TableHeader>
+        <TableRow className="hover:bg-transparent">
+          <TableHead className="w-[32%]">{t("egressProxyProfiles.name")}</TableHead>
+          <TableHead>{t("egressProxyProfiles.endpoint")}</TableHead>
+          <TableHead className="w-20 text-center">{t("egressProxyProfiles.nodes")}</TableHead>
+          <TableActionHead />
+        </TableRow>
+      </TableHeader>
+      {query.isPending ? (
+        <TableBody>
+          <TableLoadingRow colSpan={4} />
+        </TableBody>
+      ) : null}
+      {!query.isPending && query.data.items.length === 0 ? (
+        <EgressProxyProfilesEmptyRow filtered={Boolean(search)} />
+      ) : null}
+      {!query.isPending ? (
+        <TableBody>
+          {query.data.items.map((profile) => (
+            <EgressProxyProfileRow key={profile.id} profile={profile} onEdit={onEdit} onDelete={onDelete} />
+          ))}
+        </TableBody>
+      ) : null}
+    </Table>
+  );
+}
+
+function EgressProxyProfilesEmptyRow({ filtered }: { filtered: boolean }) {
+  const { t } = useTranslation();
+  return (
+    <TableBody>
+      <TableRow>
+        <TableCell colSpan={4} className="h-24 text-center text-xs text-muted-foreground">
+          {t(filtered ? "egressProxyProfiles.noMatches" : "egressProxyProfiles.emptyLibrary")}
+        </TableCell>
+      </TableRow>
+    </TableBody>
+  );
+}
+
+function EgressProxyProfileRow({
+  profile,
+  onEdit,
+  onDelete,
+}: {
+  profile: EgressProxyProfileDTO;
+  onEdit: (profile: EgressProxyProfileDTO) => void;
+  onDelete: (profile: EgressProxyProfileDTO) => void;
+}) {
+  return (
+    <TableRow data-testid={`egress-proxy-profile-row-${profile.id}`}>
+      <TableCell>
+        <span className="block truncate text-xs font-medium" title={profile.name}>
+          {profile.name}
+        </span>
+      </TableCell>
+      <TableCell>
+        <div className="min-w-0" title={`${profile.proxyDisplay || ""} · ${profile.proxyFingerprint || ""}`}>
+          <p className="truncate text-xs font-medium">{profile.proxyDisplay}</p>
+          {profile.proxyFingerprint ? (
+            <p className="font-mono text-[10px] text-muted-foreground">#{profile.proxyFingerprint}</p>
+          ) : null}
+        </div>
+      </TableCell>
+      <TableCell className="text-center text-xs tabular-nums" data-testid={`egress-proxy-profile-nodes-${profile.id}`}>
+        {profile.boundNodeCount}
+      </TableCell>
+      <EgressProxyProfileActionsCell profile={profile} onEdit={onEdit} onDelete={onDelete} />
+    </TableRow>
+  );
+}
+
+function EgressProxyProfileActionsCell({
+  profile,
+  onEdit,
+  onDelete,
+}: {
+  profile: EgressProxyProfileDTO;
+  onEdit: (profile: EgressProxyProfileDTO) => void;
+  onDelete: (profile: EgressProxyProfileDTO) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <TableActionCell>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            aria-label={t("common.actions")}
+            data-testid={`egress-proxy-profile-actions-${profile.id}`}
+          >
+            <MoreHorizontal />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => onEdit(profile)} data-testid={`egress-proxy-profile-edit-${profile.id}`}>
+            <Pencil />
+            {t("common.edit")}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            className="text-destructive focus:text-destructive"
+            disabled={profile.boundNodeCount > 0}
+            onClick={() => onDelete(profile)}
+            data-testid={`egress-proxy-profile-delete-${profile.id}`}
+          >
+            <Trash2 />
+            {profile.boundNodeCount > 0
+              ? t("egressProxyProfiles.deleteBlocked", { count: profile.boundNodeCount })
+              : t("common.delete")}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </TableActionCell>
+  );
+}
+
+type EgressProxyProfileFormProps = EgressProxyProfileFieldsProps & {
+  savePending: boolean;
+  onBack: () => void;
+  onSave: () => void;
+};
+
+function EgressProxyProfileForm(props: EgressProxyProfileFormProps) {
+  const { t } = useTranslation();
+  const { editing, form, savePending, onBack, onSave } = props;
+  return (
+    <div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="mb-3 -ml-2 text-muted-foreground"
+        onClick={onBack}
+        data-testid="egress-proxy-profiles-back"
+      >
+        <ArrowLeft />
+        {t("egressProxyProfiles.backToLibrary")}
+      </Button>
+      <form
+        className="space-y-3.5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onSave();
+        }}
+      >
+        <EgressProxyProfileFields {...props} />
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={onBack}
+            data-testid="egress-proxy-profile-form-cancel"
+          >
+            {t("common.cancel")}
+          </Button>
+          <Button
+            type="submit"
+            size="sm"
+            disabled={savePending || !form.name.trim() || (!editing && !form.proxyURL.trim())}
+            data-testid="egress-proxy-profile-form-save"
+          >
+            {savePending ? <Spinner /> : null}
+            {t("common.save")}
+          </Button>
+        </DialogFooter>
+      </form>
+    </div>
+  );
+}
+
+function EgressProxyProfileDeleteDialog({
+  deleting,
+  pending,
+  onOpenChange,
+  onConfirm,
+}: {
+  deleting: EgressProxyProfileDTO | undefined;
+  pending: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <AlertDialog open={Boolean(deleting)} onOpenChange={onOpenChange}>
+      <AlertDialogContent data-testid="egress-proxy-profile-delete-dialog">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t("egressProxyProfiles.deleteTitle")}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {t("egressProxyProfiles.deleteDescription", { name: deleting?.name })}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={pending} data-testid="egress-proxy-profile-delete-cancel">
+            {t("common.cancel")}
+          </AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive text-white hover:bg-destructive/90"
+            disabled={pending}
+            onClick={(event) => {
+              event.preventDefault();
+              onConfirm();
+            }}
+            data-testid="egress-proxy-profile-delete-confirm"
+          >
+            {pending ? <Spinner /> : null}
+            {t("common.delete")}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
