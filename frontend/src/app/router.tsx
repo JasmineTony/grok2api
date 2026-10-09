@@ -1,7 +1,20 @@
 import { Navigate, createBrowserRouter } from "react-router-dom";
 
 import { AnonymousBoundary, AuthBoundary } from "@/app/auth-boundary";
-import { DeferredAccountsPage, DeferredApiDocsPage, DeferredAppShell, DeferredClientKeysPage, DeferredCreativeConsolePage, DeferredDashboardPage, DeferredGalleryPage, DeferredModelsPage, DeferredQualityGuardPage, DeferredRequestAuditsPage, DeferredSettingsPage, DeferredVideoGalleryPage } from "@/app/deferred-pages";
+import {
+  DeferredAccountsPage,
+  DeferredApiDocsPage,
+  DeferredAppShell,
+  DeferredClientKeysPage,
+  DeferredCreativeConsolePage,
+  DeferredDashboardPage,
+  DeferredGalleryPage,
+  DeferredModelsPage,
+  DeferredQualityGuardPage,
+  DeferredRequestAuditsPage,
+  DeferredSettingsPage,
+  DeferredVideoGalleryPage,
+} from "@/app/deferred-pages";
 import { LoginPage } from "@/features/auth/login-page";
 
 export const router = createBrowserRouter([

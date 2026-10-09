@@ -46,14 +46,18 @@ function values(items: Array<{ key: string; value: string }> | undefined, key: s
 
 describe("buildAuditUsageView", () => {
   it("keeps the token grid when a chat request has media input", () => {
-    const view = buildAuditUsageView(audit({
-      mediaInputImages: 10,
-      inputTokens: 39229,
-      cachedInputTokens: 128,
-      outputTokens: 275,
-      reasoningTokens: 269,
-      totalTokens: 39832,
-    }), formatNumber, labels);
+    const view = buildAuditUsageView(
+      audit({
+        mediaInputImages: 10,
+        inputTokens: 39229,
+        cachedInputTokens: 128,
+        outputTokens: 275,
+        reasoningTokens: 269,
+        totalTokens: 39832,
+      }),
+      formatNumber,
+      labels,
+    );
 
     assert.equal(view.mode, "metrics");
     assert.equal(values(view.mediaItems, "mediaInput"), "10 张");
@@ -66,10 +70,14 @@ describe("buildAuditUsageView", () => {
   });
 
   it("uses a dash when token usage is missing on a media request", () => {
-    const view = buildAuditUsageView(audit({
-      mediaInputImages: 10,
-      usageSource: "none",
-    }), formatNumber, labels);
+    const view = buildAuditUsageView(
+      audit({
+        mediaInputImages: 10,
+        usageSource: "none",
+      }),
+      formatNumber,
+      labels,
+    );
 
     assert.equal(view.mode, "metrics");
     assert.equal(values(view.mediaItems, "mediaInput"), "10 张");
@@ -81,12 +89,16 @@ describe("buildAuditUsageView", () => {
 
   it("omits unavailable token rows for dedicated image and video operations", () => {
     for (const operation of ["image", "image_edit", "video"] as const) {
-      const view = buildAuditUsageView(audit({
-        operation,
-        usageSource: "none",
-        mediaOutputImages: operation === "video" ? 0 : 1,
-        mediaOutputSeconds: operation === "video" ? 6 : 0,
-      }), formatNumber, labels);
+      const view = buildAuditUsageView(
+        audit({
+          operation,
+          usageSource: "none",
+          mediaOutputImages: operation === "video" ? 0 : 1,
+          mediaOutputSeconds: operation === "video" ? 6 : 0,
+        }),
+        formatNumber,
+        labels,
+      );
 
       assert.equal(view.mode, "metrics");
       assert.equal(view.mediaItems?.length, 2);
@@ -95,24 +107,32 @@ describe("buildAuditUsageView", () => {
   });
 
   it("still shows zero token counts when usage was reported", () => {
-    const view = buildAuditUsageView(audit({
-      mediaInputImages: 2,
-      usageSource: "estimated",
-    }), formatNumber, labels);
+    const view = buildAuditUsageView(
+      audit({
+        mediaInputImages: 2,
+        usageSource: "estimated",
+      }),
+      formatNumber,
+      labels,
+    );
 
     assert.equal(values(view.tokenItems, "input"), "0");
     assert.equal(values(view.tokenItems, "output"), "0");
   });
 
   it("keeps tokens next to video media counts", () => {
-    const view = buildAuditUsageView(audit({
-      operation: "video",
-      mediaInputImages: 3,
-      mediaOutputSeconds: 12,
-      inputTokens: 80,
-      outputTokens: 16,
-      totalTokens: 96,
-    }), formatNumber, labels);
+    const view = buildAuditUsageView(
+      audit({
+        operation: "video",
+        mediaInputImages: 3,
+        mediaOutputSeconds: 12,
+        inputTokens: 80,
+        outputTokens: 16,
+        totalTokens: 96,
+      }),
+      formatNumber,
+      labels,
+    );
 
     assert.equal(values(view.mediaItems, "mediaOutput"), "12 秒");
     assert.equal(values(view.tokenItems, "input"), "80");
@@ -120,13 +140,17 @@ describe("buildAuditUsageView", () => {
   });
 
   it("does not invent media rows for plain chat", () => {
-    const view = buildAuditUsageView(audit({
-      inputTokens: 41332,
-      cachedInputTokens: 39552,
-      outputTokens: 267,
-      reasoningTokens: 195,
-      totalTokens: 41332,
-    }), formatNumber, labels);
+    const view = buildAuditUsageView(
+      audit({
+        inputTokens: 41332,
+        cachedInputTokens: 39552,
+        outputTokens: 267,
+        reasoningTokens: 195,
+        totalTokens: 41332,
+      }),
+      formatNumber,
+      labels,
+    );
 
     assert.equal(view.mediaItems, undefined);
     assert.equal(values(view.tokenItems, "input"), "41,332");
@@ -135,6 +159,9 @@ describe("buildAuditUsageView", () => {
 
   it("keeps compaction and voice-style rows without a token grid", () => {
     assert.equal(buildAuditUsageView(audit({ operation: "compaction" }), formatNumber, labels).mode, "compaction");
-    assert.equal(buildAuditUsageView(audit({ operation: "tts", durationMs: 1540 }), formatNumber, labels).mode, "duration");
+    assert.equal(
+      buildAuditUsageView(audit({ operation: "tts", durationMs: 1540 }), formatNumber, labels).mode,
+      "duration",
+    );
   });
 });

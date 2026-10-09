@@ -2,7 +2,13 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Area, Bar, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts";
 
-import { ChartContainer, ChartLegend, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
+import {
+  ChartContainer,
+  ChartLegend,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 import { Spinner } from "@/components/ui/spinner";
 import type { DashboardDTO, DashboardPeriod } from "@/features/dashboard/dashboard-api";
 import { formatCompactNumber, formatCompactUSD, formatUSDValue } from "@/features/dashboard/dashboard-format";
@@ -26,31 +32,44 @@ const TREND_SERIES: TrendSeries[] = ["billing", "tokens", "requests"];
 export function DashboardTrend({ dashboard, locale, loading }: DashboardTrendProps) {
   const { t } = useTranslation();
   const [hiddenSeries, setHiddenSeries] = useState<Set<TrendSeries>>(() => new Set());
-  const chartData = useMemo(() => dashboard?.series.map((bucket) => ({
-    requests: bucket.requests,
-    tokens: bucket.tokens,
-    billing: usdTicksToValue(bucket.billedCostUsdTicks),
-    start: bucket.start,
-    tooltipLabel: formatBucketRange(bucket.start, bucket.end, dashboard.period, locale),
-  })) ?? [], [dashboard, locale]);
-  const xTicks = useMemo(() => chartData
-    .filter((_point, index) => shouldShowTick(index, chartData.length, dashboard?.period ?? "24h"))
-    .map((point) => point.start), [chartData, dashboard?.period]);
-  const chartConfig = useMemo<ChartConfig>(() => ({
-    tokens: {
-      label: t("dashboard.trendTokens"),
-      theme: { light: "oklch(0.68 0.15 245)", dark: "oklch(0.74 0.13 245)" },
-    },
-    billing: {
-      label: t("dashboard.billing"),
-      theme: { light: "oklch(0.7 0.11 160)", dark: "oklch(0.73 0.1 160)" },
-    },
-    requests: {
-      label: t("dashboard.trendRequests"),
-      theme: { light: "oklch(0.76 0.06 245)", dark: "oklch(0.56 0.07 245)" },
-    },
-  }), [t]);
-  const hasData = dashboard?.series.some((bucket) => bucket.requests > 0 || bucket.tokens > 0 || bucket.billedCostUsdTicks > 0) ?? false;
+  const chartData = useMemo(
+    () =>
+      dashboard?.series.map((bucket) => ({
+        requests: bucket.requests,
+        tokens: bucket.tokens,
+        billing: usdTicksToValue(bucket.billedCostUsdTicks),
+        start: bucket.start,
+        tooltipLabel: formatBucketRange(bucket.start, bucket.end, dashboard.period, locale),
+      })) ?? [],
+    [dashboard, locale],
+  );
+  const xTicks = useMemo(
+    () =>
+      chartData
+        .filter((_point, index) => shouldShowTick(index, chartData.length, dashboard?.period ?? "24h"))
+        .map((point) => point.start),
+    [chartData, dashboard?.period],
+  );
+  const chartConfig = useMemo<ChartConfig>(
+    () => ({
+      tokens: {
+        label: t("dashboard.trendTokens"),
+        theme: { light: "oklch(0.68 0.15 245)", dark: "oklch(0.74 0.13 245)" },
+      },
+      billing: {
+        label: t("dashboard.billing"),
+        theme: { light: "oklch(0.7 0.11 160)", dark: "oklch(0.73 0.1 160)" },
+      },
+      requests: {
+        label: t("dashboard.trendRequests"),
+        theme: { light: "oklch(0.76 0.06 245)", dark: "oklch(0.56 0.07 245)" },
+      },
+    }),
+    [t],
+  );
+  const hasData =
+    dashboard?.series.some((bucket) => bucket.requests > 0 || bucket.tokens > 0 || bucket.billedCostUsdTicks > 0) ??
+    false;
   const axisSides = resolveTrendAxes(hiddenSeries);
 
   function toggleSeries(series: TrendSeries): void {
@@ -124,7 +143,7 @@ export function DashboardTrend({ dashboard, locale, loading }: DashboardTrendPro
               />
               <ChartTooltip
                 cursor={false}
-                content={(
+                content={
                   <ChartTooltipContent
                     className="w-64 max-w-[calc(100vw-2rem)]"
                     indicator="dot"
@@ -132,16 +151,21 @@ export function DashboardTrend({ dashboard, locale, loading }: DashboardTrendPro
                     formatter={(value, name, item) => (
                       <div className="flex w-full items-center justify-between gap-4">
                         <span className="flex min-w-0 items-center gap-2 text-xs font-normal text-muted-foreground">
-                          <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: item.color || `var(--color-${String(name)})` }} />
+                          <span
+                            className="size-2 shrink-0 rounded-full"
+                            style={{ backgroundColor: item.color || `var(--color-${String(name)})` }}
+                          />
                           <span className="truncate">{chartConfig[String(name)]?.label ?? name}</span>
                         </span>
                         <span className="shrink-0 font-mono text-xs font-normal tabular-nums text-muted-foreground">
-                          {name === "billing" ? formatUSDValue(Number(value), locale) : formatNumber(Number(value), locale)}
+                          {name === "billing"
+                            ? formatUSDValue(Number(value), locale)
+                            : formatNumber(Number(value), locale)}
                         </span>
                       </div>
                     )}
                   />
-                )}
+                }
               />
               <Bar
                 yAxisId="billing"
@@ -182,17 +206,33 @@ export function DashboardTrend({ dashboard, locale, loading }: DashboardTrendPro
                 animationDuration={700}
                 animationEasing="ease-out"
               />
-              <ChartLegend content={<DashboardTrendLegend config={chartConfig} hiddenSeries={hiddenSeries} onToggle={toggleSeries} />} />
+              <ChartLegend
+                content={
+                  <DashboardTrendLegend config={chartConfig} hiddenSeries={hiddenSeries} onToggle={toggleSeries} />
+                }
+              />
             </ComposedChart>
           </ChartContainer>
-          {loading ? <div className="absolute inset-0 flex items-center justify-center"><Spinner className="size-5" /></div> : null}
+          {loading ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Spinner className="size-5" />
+            </div>
+          ) : null}
         </div>
       )}
     </DashboardPanel>
   );
 }
 
-function DashboardTrendLegend({ config, hiddenSeries, onToggle }: { config: ChartConfig; hiddenSeries: Set<TrendSeries>; onToggle: (series: TrendSeries) => void }) {
+function DashboardTrendLegend({
+  config,
+  hiddenSeries,
+  onToggle,
+}: {
+  config: ChartConfig;
+  hiddenSeries: Set<TrendSeries>;
+  onToggle: (series: TrendSeries) => void;
+}) {
   const { t } = useTranslation();
   return (
     <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 pt-3 text-xs text-muted-foreground">
@@ -203,7 +243,10 @@ function DashboardTrendLegend({ config, hiddenSeries, onToggle }: { config: Char
           <button
             key={series}
             type="button"
-            className={cn("flex items-center gap-1.5 rounded-md px-2 py-1 transition-[background-color,color,opacity] hover:bg-accent hover:opacity-100", hidden && "opacity-35")}
+            className={cn(
+              "flex items-center gap-1.5 rounded-md px-2 py-1 transition-[background-color,color,opacity] hover:bg-accent hover:opacity-100",
+              hidden && "opacity-35",
+            )}
             onClick={() => onToggle(series)}
             aria-pressed={!hidden}
             aria-label={`${t(hidden ? "common.enable" : "common.disable")} ${String(label)}`}
@@ -241,7 +284,12 @@ function resolveTrendAxes(hiddenSeries: ReadonlySet<TrendSeries>): Partial<Recor
   return visible.length === 1 ? { [visible[0]]: "left" } : {};
 }
 
-function formatBucketRange(startValue: string | undefined, endValue: string | undefined, period: DashboardPeriod, locale: string): string {
+function formatBucketRange(
+  startValue: string | undefined,
+  endValue: string | undefined,
+  period: DashboardPeriod,
+  locale: string,
+): string {
   if (!startValue || !endValue) return "-";
   const start = new Date(startValue);
   const end = new Date(endValue);
@@ -261,8 +309,7 @@ function shouldShowTick(index: number, count: number, period: DashboardPeriod): 
 }
 
 function formatBucketTick(value: string, period: DashboardPeriod, locale: string): string {
-  const options: Intl.DateTimeFormatOptions = period === "24h"
-    ? { hour: "2-digit", minute: "2-digit" }
-    : { month: "numeric", day: "numeric" };
+  const options: Intl.DateTimeFormatOptions =
+    period === "24h" ? { hour: "2-digit", minute: "2-digit" } : { month: "numeric", day: "numeric" };
   return new Intl.DateTimeFormat(locale, options).format(new Date(value));
 }

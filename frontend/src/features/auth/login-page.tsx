@@ -70,23 +70,37 @@ export function LoginPage() {
           <div className="hidden h-64 bg-border lg:block" aria-hidden="true" />
 
           <section className="w-full max-w-[336px] justify-self-center lg:justify-self-auto">
-          <div className="mb-6">
-            <h1 className="text-xl font-medium">{t("auth.title")}</h1>
-            <p className="mt-2 text-xs leading-5 text-muted-foreground lg:hidden">{t("auth.subtitle")}</p>
-          </div>
-          <form className="space-y-4" onSubmit={form.handleSubmit(submit, invalid)}>
-            <div className="space-y-2">
-              <Label htmlFor="username">{t("auth.username")}</Label>
-              <Input id="username" className="h-9 bg-card" autoComplete="username" autoFocus aria-invalid={Boolean(form.formState.errors.username)} {...form.register("username")} />
+            <div className="mb-6">
+              <h1 className="text-xl font-medium">{t("auth.title")}</h1>
+              <p className="mt-2 text-xs leading-5 text-muted-foreground lg:hidden">{t("auth.subtitle")}</p>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">{t("auth.password")}</Label>
-              <Input id="password" className="h-9 bg-card" type="password" autoComplete="current-password" aria-invalid={Boolean(form.formState.errors.password)} {...form.register("password")} />
-            </div>
-            <Button type="submit" size="sm" className="w-full" disabled={form.formState.isSubmitting}>
-              {form.formState.isSubmitting ? t("auth.signingIn") : t("auth.signIn")}
-            </Button>
-          </form>
+            <form className="space-y-4" onSubmit={form.handleSubmit(submit, invalid)}>
+              <div className="space-y-2">
+                <Label htmlFor="username">{t("auth.username")}</Label>
+                <Input
+                  id="username"
+                  className="h-9 bg-card"
+                  autoComplete="username"
+                  autoFocus
+                  aria-invalid={Boolean(form.formState.errors.username)}
+                  {...form.register("username")}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">{t("auth.password")}</Label>
+                <Input
+                  id="password"
+                  className="h-9 bg-card"
+                  type="password"
+                  autoComplete="current-password"
+                  aria-invalid={Boolean(form.formState.errors.password)}
+                  {...form.register("password")}
+                />
+              </div>
+              <Button type="submit" size="sm" className="w-full" disabled={form.formState.isSubmitting}>
+                {form.formState.isSubmitting ? t("auth.signingIn") : t("auth.signIn")}
+              </Button>
+            </form>
           </section>
         </div>
       </main>

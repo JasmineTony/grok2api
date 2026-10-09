@@ -5,7 +5,11 @@ export type TableSort<Field extends string = string> = {
   order: SortOrder;
 };
 
-export function nextTableSort<Field extends string>(current: TableSort<Field>, field: Field, initialOrder: SortOrder = "asc"): TableSort<Field> {
+export function nextTableSort<Field extends string>(
+  current: TableSort<Field>,
+  field: Field,
+  initialOrder: SortOrder = "asc",
+): TableSort<Field> {
   if (current.field !== field) {
     return { field, order: initialOrder };
   }

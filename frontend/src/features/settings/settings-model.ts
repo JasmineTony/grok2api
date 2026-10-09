@@ -77,49 +77,62 @@ export const settingsSchema = z.object({
     responseHeaderTimeout: buildResponseHeaderDuration,
     streamIdleTimeout: buildStreamIdleDuration,
   }),
-  providerWeb: z.object({
-    baseURL: z.url().refine((value) => value.startsWith("https://")),
-    statsigMode: z.enum(["manual", "url"]),
-    statsigManualValue: z.string().trim().max(4096),
-    statsigManualConfigured: z.boolean(),
-    statsigSignerURL: z.string().trim().max(2048),
-    clearanceMode: z.enum(["manual", "flaresolverr", "on_demand"]),
-    flareSolverrURL: z.string().trim().max(2048),
-    clearanceTimeout: durationSchema.refine((value) => durationSeconds(value) >= 10 && durationSeconds(value) <= 300),
-    clearanceRefresh: durationSchema.refine((value) => durationSeconds(value) >= 60 && durationSeconds(value) <= 86_400),
-    quotaTimeout: durationSchema, chatTimeout: durationSchema, streamIdleTimeout: providerStreamIdleDuration, imageTimeout: durationSchema, videoTimeout: durationSchema,
-    mediaConcurrency: positiveInteger.max(64), allowNSFW: z.boolean(),
-    freeVideoDurationCap: z.number().int().min(1).max(15),
-    recoveryBackoffBase: durationSchema, recoveryBackoffMax: durationSchema,
-  }).superRefine((value, context) => {
-    if (durationSeconds(value.streamIdleTimeout) > durationSeconds(value.chatTimeout)) {
-      context.addIssue({ code: "custom", path: ["streamIdleTimeout"], message: "invalid" });
-    }
-    if (durationSeconds(value.recoveryBackoffMax) < durationSeconds(value.recoveryBackoffBase)) {
-      context.addIssue({ code: "custom", path: ["recoveryBackoffMax"], message: "invalid" });
-    }
-    if (value.statsigMode === "manual" && !value.statsigManualConfigured && value.statsigManualValue.length === 0) {
-      context.addIssue({ code: "custom", path: ["statsigManualValue"], message: "required" });
-    }
-    if (value.statsigManualValue.length > 0 && !validStatsigID(value.statsigManualValue)) {
-      context.addIssue({ code: "custom", path: ["statsigManualValue"], message: "invalid" });
-    }
-    if (value.statsigMode === "url") {
-      if (!validStatsigSignerURL(value.statsigSignerURL)) {
-        context.addIssue({ code: "custom", path: ["statsigSignerURL"], message: "invalid" });
+  providerWeb: z
+    .object({
+      baseURL: z.url().refine((value) => value.startsWith("https://")),
+      statsigMode: z.enum(["manual", "url"]),
+      statsigManualValue: z.string().trim().max(4096),
+      statsigManualConfigured: z.boolean(),
+      statsigSignerURL: z.string().trim().max(2048),
+      clearanceMode: z.enum(["manual", "flaresolverr", "on_demand"]),
+      flareSolverrURL: z.string().trim().max(2048),
+      clearanceTimeout: durationSchema.refine((value) => durationSeconds(value) >= 10 && durationSeconds(value) <= 300),
+      clearanceRefresh: durationSchema.refine(
+        (value) => durationSeconds(value) >= 60 && durationSeconds(value) <= 86_400,
+      ),
+      quotaTimeout: durationSchema,
+      chatTimeout: durationSchema,
+      streamIdleTimeout: providerStreamIdleDuration,
+      imageTimeout: durationSchema,
+      videoTimeout: durationSchema,
+      mediaConcurrency: positiveInteger.max(64),
+      allowNSFW: z.boolean(),
+      freeVideoDurationCap: z.number().int().min(1).max(15),
+      recoveryBackoffBase: durationSchema,
+      recoveryBackoffMax: durationSchema,
+    })
+    .superRefine((value, context) => {
+      if (durationSeconds(value.streamIdleTimeout) > durationSeconds(value.chatTimeout)) {
+        context.addIssue({ code: "custom", path: ["streamIdleTimeout"], message: "invalid" });
       }
-    }
-    if (value.clearanceMode !== "manual" && !validHTTPURL(value.flareSolverrURL)) {
-      context.addIssue({ code: "custom", path: ["flareSolverrURL"], message: "invalid" });
-    }
-  }),
-  providerConsole: z.object({
-    baseURL: z.url().refine((value) => value.startsWith("https://")),
-    chatTimeout: consoleChatDuration,
-    streamIdleTimeout: providerStreamIdleDuration,
-  }).refine((value) => durationSeconds(value.streamIdleTimeout) <= durationSeconds(value.chatTimeout), {
-    path: ["streamIdleTimeout"], message: "invalid",
-  }),
+      if (durationSeconds(value.recoveryBackoffMax) < durationSeconds(value.recoveryBackoffBase)) {
+        context.addIssue({ code: "custom", path: ["recoveryBackoffMax"], message: "invalid" });
+      }
+      if (value.statsigMode === "manual" && !value.statsigManualConfigured && value.statsigManualValue.length === 0) {
+        context.addIssue({ code: "custom", path: ["statsigManualValue"], message: "required" });
+      }
+      if (value.statsigManualValue.length > 0 && !validStatsigID(value.statsigManualValue)) {
+        context.addIssue({ code: "custom", path: ["statsigManualValue"], message: "invalid" });
+      }
+      if (value.statsigMode === "url") {
+        if (!validStatsigSignerURL(value.statsigSignerURL)) {
+          context.addIssue({ code: "custom", path: ["statsigSignerURL"], message: "invalid" });
+        }
+      }
+      if (value.clearanceMode !== "manual" && !validHTTPURL(value.flareSolverrURL)) {
+        context.addIssue({ code: "custom", path: ["flareSolverrURL"], message: "invalid" });
+      }
+    }),
+  providerConsole: z
+    .object({
+      baseURL: z.url().refine((value) => value.startsWith("https://")),
+      chatTimeout: consoleChatDuration,
+      streamIdleTimeout: providerStreamIdleDuration,
+    })
+    .refine((value) => durationSeconds(value.streamIdleTimeout) <= durationSeconds(value.chatTimeout), {
+      path: ["streamIdleTimeout"],
+      message: "invalid",
+    }),
   batch: z.object({
     importConcurrency: positiveInteger.max(50),
     conversionConcurrency: positiveInteger.max(50),
@@ -127,39 +140,58 @@ export const settingsSchema = z.object({
     refreshConcurrency: positiveInteger.max(50),
     randomDelay: z.number().int().min(0).max(5_000),
   }),
-  media: z.object({
-    maxImageSize: byteSizeSchema.refine((value) => byteSizeBytes(value) >= 1 << 20 && byteSizeBytes(value) <= 32 << 20),
-    maxTotalSize: byteSizeSchema.refine((value) => byteSizeBytes(value) <= 2 ** 40),
-    cleanupThresholdPercent: z.number().int().min(50).max(95),
-    cleanupInterval: durationSchema.refine((value) => durationSeconds(value) >= 60 && durationSeconds(value) <= 86_400),
-  }).refine((value) => byteSizeBytes(value.maxTotalSize) >= byteSizeBytes(value.maxImageSize), { path: ["maxTotalSize"] }),
-  frontend: z.object({
-    publicApiBaseURL: z.string().trim().max(2048).refine((value) => validPublicAPIBaseURL(value), { message: "invalid" }),
-  }),
-  routing: z.object({
-    stickyTTL: routingTTLDuration,
-    cooldownBase: routingCooldownDuration,
-    cooldownMax: routingCooldownDuration,
-    capacityWait: routingCapacityWaitDuration,
-    maxAttempts: z.union([z.literal(UNLIMITED_ROUTING_ATTEMPTS), positiveInteger.max(65535)]),
-    videoMaxAttempts: z.union([z.literal(UNLIMITED_ROUTING_ATTEMPTS), positiveInteger.max(65535)]),
-    preferFreeBuild: z.boolean(),
-    markBuildChatDeniedAsReauth: z.boolean(),
-    accountIsolatedConnections: z.boolean(),
-    segmentedSelector: z.object({
-      enabled: z.boolean(),
-      minCandidates: z.number().int().min(100).max(1_000_000),
-      windowSize: z.number().int().min(8).max(256),
+  media: z
+    .object({
+      maxImageSize: byteSizeSchema.refine(
+        (value) => byteSizeBytes(value) >= 1 << 20 && byteSizeBytes(value) <= 32 << 20,
+      ),
+      maxTotalSize: byteSizeSchema.refine((value) => byteSizeBytes(value) <= 2 ** 40),
+      cleanupThresholdPercent: z.number().int().min(50).max(95),
+      cleanupInterval: durationSchema.refine(
+        (value) => durationSeconds(value) >= 60 && durationSeconds(value) <= 86_400,
+      ),
+    })
+    .refine((value) => byteSizeBytes(value.maxTotalSize) >= byteSizeBytes(value.maxImageSize), {
+      path: ["maxTotalSize"],
     }),
-  }).refine((value) => durationSeconds(value.cooldownMax) >= durationSeconds(value.cooldownBase), { path: ["cooldownMax"] })
-    .refine((value) => value.segmentedSelector.windowSize <= value.segmentedSelector.minCandidates, { path: ["segmentedSelector", "windowSize"] }),
-  audit: z.object({
-    bufferSize: positiveInteger.max(262_144),
-    batchSize: positiveInteger.max(4_096),
-    flushInterval: auditFlushDuration,
-    commitDelayMS: positiveInteger.max(50),
-    retentionDays: z.number().int().min(0).max(365),
-  })
+  frontend: z.object({
+    publicApiBaseURL: z
+      .string()
+      .trim()
+      .max(2048)
+      .refine((value) => validPublicAPIBaseURL(value), { message: "invalid" }),
+  }),
+  routing: z
+    .object({
+      stickyTTL: routingTTLDuration,
+      cooldownBase: routingCooldownDuration,
+      cooldownMax: routingCooldownDuration,
+      capacityWait: routingCapacityWaitDuration,
+      maxAttempts: z.union([z.literal(UNLIMITED_ROUTING_ATTEMPTS), positiveInteger.max(65535)]),
+      videoMaxAttempts: z.union([z.literal(UNLIMITED_ROUTING_ATTEMPTS), positiveInteger.max(65535)]),
+      preferFreeBuild: z.boolean(),
+      markBuildChatDeniedAsReauth: z.boolean(),
+      accountIsolatedConnections: z.boolean(),
+      segmentedSelector: z.object({
+        enabled: z.boolean(),
+        minCandidates: z.number().int().min(100).max(1_000_000),
+        windowSize: z.number().int().min(8).max(256),
+      }),
+    })
+    .refine((value) => durationSeconds(value.cooldownMax) >= durationSeconds(value.cooldownBase), {
+      path: ["cooldownMax"],
+    })
+    .refine((value) => value.segmentedSelector.windowSize <= value.segmentedSelector.minCandidates, {
+      path: ["segmentedSelector", "windowSize"],
+    }),
+  audit: z
+    .object({
+      bufferSize: positiveInteger.max(262_144),
+      batchSize: positiveInteger.max(4_096),
+      flushInterval: auditFlushDuration,
+      commitDelayMS: positiveInteger.max(50),
+      retentionDays: z.number().int().min(0).max(365),
+    })
     .refine((value) => value.batchSize <= value.bufferSize, { path: ["batchSize"] }),
   clientKeyDefaults: z.object({ rpmLimit: positiveInteger.max(100_000), maxConcurrent: positiveInteger.max(1_024) }),
   accounts: z.object({
@@ -189,20 +221,34 @@ export type SettingsForm = z.infer<typeof settingsSchema>;
 export function toSettingsForm(config: SettingsConfigDTO): SettingsForm {
   return {
     server: config.server,
-    providerBuild: { ...config.providerBuild, responseHeaderTimeout: parseDuration(config.providerBuild.responseHeaderTimeout), streamIdleTimeout: parseDuration(config.providerBuild.streamIdleTimeout) },
+    providerBuild: {
+      ...config.providerBuild,
+      responseHeaderTimeout: parseDuration(config.providerBuild.responseHeaderTimeout),
+      streamIdleTimeout: parseDuration(config.providerBuild.streamIdleTimeout),
+    },
     providerWeb: {
       ...config.providerWeb,
       statsigManualValue: "",
-      clearanceTimeout: parseDuration(config.providerWeb.clearanceTimeout), clearanceRefresh: parseDuration(config.providerWeb.clearanceRefresh),
-      quotaTimeout: parseDuration(config.providerWeb.quotaTimeout), chatTimeout: parseDuration(config.providerWeb.chatTimeout), streamIdleTimeout: parseDuration(config.providerWeb.streamIdleTimeout),
-      imageTimeout: parseDuration(config.providerWeb.imageTimeout), videoTimeout: parseDuration(config.providerWeb.videoTimeout),
+      clearanceTimeout: parseDuration(config.providerWeb.clearanceTimeout),
+      clearanceRefresh: parseDuration(config.providerWeb.clearanceRefresh),
+      quotaTimeout: parseDuration(config.providerWeb.quotaTimeout),
+      chatTimeout: parseDuration(config.providerWeb.chatTimeout),
+      streamIdleTimeout: parseDuration(config.providerWeb.streamIdleTimeout),
+      imageTimeout: parseDuration(config.providerWeb.imageTimeout),
+      videoTimeout: parseDuration(config.providerWeb.videoTimeout),
       freeVideoDurationCap: config.providerWeb.freeVideoDurationCap || 6,
-      recoveryBackoffBase: parseDuration(config.providerWeb.recoveryBackoffBase), recoveryBackoffMax: parseDuration(config.providerWeb.recoveryBackoffMax),
+      recoveryBackoffBase: parseDuration(config.providerWeb.recoveryBackoffBase),
+      recoveryBackoffMax: parseDuration(config.providerWeb.recoveryBackoffMax),
     },
-    providerConsole: { ...config.providerConsole, chatTimeout: parseDuration(config.providerConsole.chatTimeout), streamIdleTimeout: parseDuration(config.providerConsole.streamIdleTimeout) },
+    providerConsole: {
+      ...config.providerConsole,
+      chatTimeout: parseDuration(config.providerConsole.chatTimeout),
+      streamIdleTimeout: parseDuration(config.providerConsole.streamIdleTimeout),
+    },
     batch: { ...config.batch, randomDelay: parseDurationMilliseconds(config.batch.randomDelay) },
     media: {
-      maxImageSize: parseByteSize(config.media.maxImageBytes), maxTotalSize: parseByteSize(config.media.maxTotalBytes),
+      maxImageSize: parseByteSize(config.media.maxImageBytes),
+      maxTotalSize: parseByteSize(config.media.maxTotalBytes),
       cleanupThresholdPercent: config.media.cleanupThresholdPercent,
       cleanupInterval: parseDuration(config.media.cleanupInterval),
     },
@@ -210,8 +256,15 @@ export function toSettingsForm(config: SettingsConfigDTO): SettingsForm {
       publicApiBaseURL: config.frontend.publicApiBaseURL,
     },
     routing: {
-      stickyTTL: parseDuration(config.routing.stickyTTL), cooldownBase: parseDuration(config.routing.cooldownBase),
-      cooldownMax: parseDuration(config.routing.cooldownMax), capacityWait: parseDuration(config.routing.capacityWait), maxAttempts: config.routing.maxAttempts, videoMaxAttempts: !config.routing.videoMaxAttempts || config.routing.videoMaxAttempts === 0 ? 999 : config.routing.videoMaxAttempts,
+      stickyTTL: parseDuration(config.routing.stickyTTL),
+      cooldownBase: parseDuration(config.routing.cooldownBase),
+      cooldownMax: parseDuration(config.routing.cooldownMax),
+      capacityWait: parseDuration(config.routing.capacityWait),
+      maxAttempts: config.routing.maxAttempts,
+      videoMaxAttempts:
+        !config.routing.videoMaxAttempts || config.routing.videoMaxAttempts === 0
+          ? 999
+          : config.routing.videoMaxAttempts,
       preferFreeBuild: config.routing.preferFreeBuild,
       markBuildChatDeniedAsReauth: config.routing.markBuildChatDeniedAsReauth,
       accountIsolatedConnections: config.routing.accountIsolatedConnections,
@@ -240,18 +293,32 @@ export function toSettingsForm(config: SettingsConfigDTO): SettingsForm {
 export function toSettingsDTO(config: SettingsForm): SettingsConfigDTO {
   return {
     server: config.server,
-    providerBuild: { ...config.providerBuild, responseHeaderTimeout: formatDuration(config.providerBuild.responseHeaderTimeout), streamIdleTimeout: formatDuration(config.providerBuild.streamIdleTimeout) },
+    providerBuild: {
+      ...config.providerBuild,
+      responseHeaderTimeout: formatDuration(config.providerBuild.responseHeaderTimeout),
+      streamIdleTimeout: formatDuration(config.providerBuild.streamIdleTimeout),
+    },
     providerWeb: {
       ...config.providerWeb,
-      quotaTimeout: formatDuration(config.providerWeb.quotaTimeout), chatTimeout: formatDuration(config.providerWeb.chatTimeout), streamIdleTimeout: formatDuration(config.providerWeb.streamIdleTimeout),
-      imageTimeout: formatDuration(config.providerWeb.imageTimeout), videoTimeout: formatDuration(config.providerWeb.videoTimeout),
-      clearanceTimeout: formatDuration(config.providerWeb.clearanceTimeout), clearanceRefresh: formatDuration(config.providerWeb.clearanceRefresh),
-      recoveryBackoffBase: formatDuration(config.providerWeb.recoveryBackoffBase), recoveryBackoffMax: formatDuration(config.providerWeb.recoveryBackoffMax),
+      quotaTimeout: formatDuration(config.providerWeb.quotaTimeout),
+      chatTimeout: formatDuration(config.providerWeb.chatTimeout),
+      streamIdleTimeout: formatDuration(config.providerWeb.streamIdleTimeout),
+      imageTimeout: formatDuration(config.providerWeb.imageTimeout),
+      videoTimeout: formatDuration(config.providerWeb.videoTimeout),
+      clearanceTimeout: formatDuration(config.providerWeb.clearanceTimeout),
+      clearanceRefresh: formatDuration(config.providerWeb.clearanceRefresh),
+      recoveryBackoffBase: formatDuration(config.providerWeb.recoveryBackoffBase),
+      recoveryBackoffMax: formatDuration(config.providerWeb.recoveryBackoffMax),
     },
-    providerConsole: { ...config.providerConsole, chatTimeout: formatDuration(config.providerConsole.chatTimeout), streamIdleTimeout: formatDuration(config.providerConsole.streamIdleTimeout) },
+    providerConsole: {
+      ...config.providerConsole,
+      chatTimeout: formatDuration(config.providerConsole.chatTimeout),
+      streamIdleTimeout: formatDuration(config.providerConsole.streamIdleTimeout),
+    },
     batch: { ...config.batch, randomDelay: `${config.batch.randomDelay}ms` },
     media: {
-      maxImageBytes: byteSizeBytes(config.media.maxImageSize), maxTotalBytes: byteSizeBytes(config.media.maxTotalSize),
+      maxImageBytes: byteSizeBytes(config.media.maxImageSize),
+      maxTotalBytes: byteSizeBytes(config.media.maxTotalSize),
       cleanupThresholdPercent: config.media.cleanupThresholdPercent,
       cleanupInterval: formatDuration(config.media.cleanupInterval),
     },
@@ -259,8 +326,15 @@ export function toSettingsDTO(config: SettingsForm): SettingsConfigDTO {
       publicApiBaseURL: config.frontend.publicApiBaseURL.trim(),
     },
     routing: {
-      stickyTTL: formatDuration(config.routing.stickyTTL), cooldownBase: formatDuration(config.routing.cooldownBase),
-      cooldownMax: formatDuration(config.routing.cooldownMax), capacityWait: formatDuration(config.routing.capacityWait), maxAttempts: config.routing.maxAttempts, videoMaxAttempts: !config.routing.videoMaxAttempts || config.routing.videoMaxAttempts === 0 ? 999 : config.routing.videoMaxAttempts,
+      stickyTTL: formatDuration(config.routing.stickyTTL),
+      cooldownBase: formatDuration(config.routing.cooldownBase),
+      cooldownMax: formatDuration(config.routing.cooldownMax),
+      capacityWait: formatDuration(config.routing.capacityWait),
+      maxAttempts: config.routing.maxAttempts,
+      videoMaxAttempts:
+        !config.routing.videoMaxAttempts || config.routing.videoMaxAttempts === 0
+          ? 999
+          : config.routing.videoMaxAttempts,
       preferFreeBuild: config.routing.preferFreeBuild,
       markBuildChatDeniedAsReauth: config.routing.markBuildChatDeniedAsReauth,
       accountIsolatedConnections: config.routing.accountIsolatedConnections,
@@ -322,11 +396,24 @@ function parseDuration(value: string): DurationValue {
     if (isDurationUnit(simple[2])) return { value: amount, unit: simple[2] };
   }
 
-  const factors: Record<string, number> = { ns: 0.000001, us: 0.001, "µs": 0.001, ms: 1, s: 1000, m: 60_000, h: 3_600_000 };
+  const factors: Record<string, number> = {
+    ns: 0.000001,
+    us: 0.001,
+    µs: 0.001,
+    ms: 1,
+    s: 1000,
+    m: 60_000,
+    h: 3_600_000,
+  };
   const parts = [...value.matchAll(/(\d+(?:\.\d+)?)(ns|us|µs|ms|s|m|h)/g)];
   if (parts.map((part) => part[0]).join("") !== value || parts.length === 0) return { value: 1, unit: "s" };
   const milliseconds = parts.reduce((total, part) => total + Number(part[1]) * factors[part[2]], 0);
-  const units: Array<[DurationUnit, number]> = [["d", 86_400_000], ["h", 3_600_000], ["m", 60_000], ["s", 1000]];
+  const units: Array<[DurationUnit, number]> = [
+    ["d", 86_400_000],
+    ["h", 3_600_000],
+    ["m", 60_000],
+    ["s", 1000],
+  ];
   for (const [unit, factor] of units) {
     const amount = milliseconds / factor;
     if (amount >= 1 && Number.isInteger(amount)) return { value: amount, unit };
@@ -376,10 +463,14 @@ function validHTTPURL(value: string): boolean {
 function validProxyURL(value: string): boolean {
   const trimmed = value.trim();
   if (trimmed.length === 0) return true;
-  if (trimmed.length > 8192 || [...trimmed].some((char) => {
-    const code = char.charCodeAt(0);
-    return code <= 0x1f || code === 0x7f;
-  })) return false;
+  if (
+    trimmed.length > 8192 ||
+    [...trimmed].some((char) => {
+      const code = char.charCodeAt(0);
+      return code <= 0x1f || code === 0x7f;
+    })
+  )
+    return false;
   if ((trimmed.match(/\{account\}/g) ?? []).length > 1) return false;
   const scheme = trimmed.slice(0, trimmed.indexOf(":")).toLowerCase();
   if (["trojan", "vless", "ss", "vmess"].includes(scheme) && trimmed.includes("{account}")) return false;
@@ -397,15 +488,24 @@ function validProxyURL(value: string): boolean {
       const security = (parsed.searchParams.get("security") ?? "").toLowerCase();
       if (!["", "none", "tls"].includes(security)) return false;
       if (parsed.searchParams.get("flow")) return false;
-      if (parsedScheme === "vless" && !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(parsed.username)) return false;
-      if (parsedScheme === "vless" && !["", "none"].includes((parsed.searchParams.get("encryption") ?? "").toLowerCase())) return false;
+      if (parsedScheme === "vless" && !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(parsed.username))
+        return false;
+      if (
+        parsedScheme === "vless" &&
+        !["", "none"].includes((parsed.searchParams.get("encryption") ?? "").toLowerCase())
+      )
+        return false;
       if (!["", "none"].includes((parsed.searchParams.get("headerType") ?? "").toLowerCase())) return false;
       if (!validTunnelBoolean(parsed.searchParams, ["allowInsecure", "insecure", "skip-cert-verify"])) return false;
       if (parsed.pathname !== "" && parsed.pathname !== "/") return false;
       const webSocket = transport === "ws" || transport === "websocket";
       if (!webSocket && (parsed.searchParams.has("host") || parsed.searchParams.has("path"))) return false;
       if (webSocket) {
-        const host = parsed.searchParams.get("host") ?? parsed.searchParams.get("sni") ?? parsed.searchParams.get("peer") ?? parsed.hostname;
+        const host =
+          parsed.searchParams.get("host") ??
+          parsed.searchParams.get("sni") ??
+          parsed.searchParams.get("peer") ??
+          parsed.hostname;
         if (!validWebSocketHost(host)) return false;
       }
       return true;
@@ -448,8 +548,15 @@ function validShadowsocksURL(value: string): boolean {
     const method = credentials.slice(0, credentialSeparator).trim().toLowerCase();
     if (!["aes-128-gcm", "aes-256-gcm", "chacha20-ietf-poly1305"].includes(method)) return false;
     const parsed = new URL(`ss://${server}`);
-    return parsed.username === "" && parsed.password === "" && parsed.hostname !== "" && parsed.port !== ""
-      && (parsed.pathname === "" || parsed.pathname === "/") && parsed.search === "" && parsed.hash === "";
+    return (
+      parsed.username === "" &&
+      parsed.password === "" &&
+      parsed.hostname !== "" &&
+      parsed.port !== "" &&
+      (parsed.pathname === "" || parsed.pathname === "/") &&
+      parsed.search === "" &&
+      parsed.hash === ""
+    );
   } catch {
     return false;
   }
@@ -473,8 +580,14 @@ function validTunnelBoolean(query: URLSearchParams, names: string[]): boolean {
 function validWebSocketHost(value: string): boolean {
   try {
     const parsed = new URL(`http://${value.trim()}`);
-    return parsed.hostname !== "" && parsed.username === "" && parsed.password === ""
-      && (parsed.pathname === "" || parsed.pathname === "/") && parsed.search === "" && parsed.hash === "";
+    return (
+      parsed.hostname !== "" &&
+      parsed.username === "" &&
+      parsed.password === "" &&
+      (parsed.pathname === "" || parsed.pathname === "/") &&
+      parsed.search === "" &&
+      parsed.hash === ""
+    );
   } catch {
     return false;
   }
@@ -495,14 +608,23 @@ function validVMessURL(value: string): boolean {
     const alterID = Number(config.aid ?? 0);
     const webSocket = network === "ws" || network === "websocket";
     const host = String(config.host ?? config.sni ?? config.add ?? "");
-    return typeof config.add === "string" && config.add.trim() !== "" && Number.isInteger(port) && port > 0 && port <= 65535
-      && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id)
-      && Number.isInteger(alterID) && alterID >= 0 && alterID <= 65535
-      && ["tcp", "ws", "websocket"].includes(network) && ["", "none", "tls"].includes(tls)
-      && ["auto", "aes-128-gcm", "chacha20-poly1305", "none"].includes(cipher)
-      && ["", "none"].includes(headerType)
-      && validJSONTunnelBoolean(config.allowInsecure)
-      && (webSocket ? validWebSocketHost(host) : String(config.path ?? "") === "" && String(config.host ?? "") === "");
+    return (
+      typeof config.add === "string" &&
+      config.add.trim() !== "" &&
+      Number.isInteger(port) &&
+      port > 0 &&
+      port <= 65535 &&
+      /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id) &&
+      Number.isInteger(alterID) &&
+      alterID >= 0 &&
+      alterID <= 65535 &&
+      ["tcp", "ws", "websocket"].includes(network) &&
+      ["", "none", "tls"].includes(tls) &&
+      ["auto", "aes-128-gcm", "chacha20-poly1305", "none"].includes(cipher) &&
+      ["", "none"].includes(headerType) &&
+      validJSONTunnelBoolean(config.allowInsecure) &&
+      (webSocket ? validWebSocketHost(host) : String(config.path ?? "") === "" && String(config.host ?? "") === "")
+    );
   } catch {
     return false;
   }
@@ -511,7 +633,8 @@ function validVMessURL(value: string): boolean {
 function validJSONTunnelBoolean(value: unknown): boolean {
   if (value == null || typeof value === "boolean") return true;
   if (typeof value === "number") return value === 0 || value === 1;
-  if (typeof value === "string") return ["", "0", "1", "false", "true", "no", "yes"].includes(value.trim().toLowerCase());
+  if (typeof value === "string")
+    return ["", "0", "1", "false", "true", "no", "yes"].includes(value.trim().toLowerCase());
   return false;
 }
 
@@ -521,13 +644,23 @@ export function validSubscriptionProxyURL(value: string): boolean {
 }
 
 function internalSignerHostname(value: string): boolean {
-  const host = value.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
-  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) return true;
+  const host = value
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "")
+    .replace(/\.$/, "");
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal"))
+    return true;
   if (!host.includes(".")) {
     if (host.includes(":")) return host === "::1" || /^(?:fc|fd|fe[89ab])/i.test(host);
     return /^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$/i.test(host);
   }
   const octets = host.split(".").map(Number);
   if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
-  return octets[0] === 10 || octets[0] === 127 || octets[0] === 169 && octets[1] === 254 || octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31 || octets[0] === 192 && octets[1] === 168;
+  return (
+    octets[0] === 10 ||
+    octets[0] === 127 ||
+    (octets[0] === 169 && octets[1] === 254) ||
+    (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+    (octets[0] === 192 && octets[1] === 168)
+  );
 }

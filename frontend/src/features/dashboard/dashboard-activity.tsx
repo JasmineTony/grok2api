@@ -25,7 +25,11 @@ const INTENSITY_CLASSES = [
 export function DashboardActivity({ dashboard, locale, loading }: DashboardActivityProps) {
   const { t } = useTranslation();
   const activity = useMemo(() => dashboard?.activity ?? [], [dashboard?.activity]);
-  const activityWeeks = useMemo(() => Array.from({ length: Math.ceil(activity.length / 7) }, (_, index) => activity.slice(index * 7, index * 7 + 7)), [activity]);
+  const activityWeeks = useMemo(
+    () =>
+      Array.from({ length: Math.ceil(activity.length / 7) }, (_, index) => activity.slice(index * 7, index * 7 + 7)),
+    [activity],
+  );
   const maxRequests = Math.max(0, ...activity.map((point) => point.requests));
   const totalRequests = activity.reduce((total, point) => total + point.requests, 0);
   const generatedAt = dashboard?.generatedAt ? new Date(dashboard.generatedAt).getTime() : Number.POSITIVE_INFINITY;
@@ -39,7 +43,9 @@ export function DashboardActivity({ dashboard, locale, loading }: DashboardActiv
       className="min-h-[210px]"
     >
       {loading ? (
-        <div className="flex min-h-32 items-center justify-center"><Spinner className="size-5" /></div>
+        <div className="flex min-h-32 items-center justify-center">
+          <Spinner className="size-5" />
+        </div>
       ) : (
         <div>
           <div className="flex items-baseline justify-between gap-3">
@@ -64,7 +70,12 @@ export function DashboardActivity({ dashboard, locale, loading }: DashboardActiv
                             aria-hidden="true"
                           />
                         </TooltipTrigger>
-                        <TooltipContent>{t("dashboard.activityDay", { date: formatActivityDate(point.start, locale), requests: formatNumber(point.requests, locale) })}</TooltipContent>
+                        <TooltipContent>
+                          {t("dashboard.activityDay", {
+                            date: formatActivityDate(point.start, locale),
+                            requests: formatNumber(point.requests, locale),
+                          })}
+                        </TooltipContent>
                       </Tooltip>
                     );
                   })}
@@ -75,7 +86,9 @@ export function DashboardActivity({ dashboard, locale, loading }: DashboardActiv
 
           <div className="mt-3 flex items-center justify-end gap-1.5 text-[10px] text-muted-foreground">
             <span>{t("dashboard.activityLess")}</span>
-            {INTENSITY_CLASSES.map((className) => <span key={className} className={cn("size-2.5 rounded-[2px]", className)} />)}
+            {INTENSITY_CLASSES.map((className) => (
+              <span key={className} className={cn("size-2.5 rounded-[2px]", className)} />
+            ))}
             <span>{t("dashboard.activityMore")}</span>
           </div>
         </div>

@@ -6,6 +6,7 @@
     "types": ["node"],
     "allowImportingTsExtensions": true
   },
-  "include": ["src/**/*.test.ts", "src/**/*.test.tsx"],
+  // 全局声明（src/types/*.d.ts）必须一并纳入，否则测试文件经由业务模块引用运行时配置常量时会报 TS2304/TS2339。
+  "include": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test/**/*.ts", "src/types/**/*.d.ts"],
   "exclude": []
 }

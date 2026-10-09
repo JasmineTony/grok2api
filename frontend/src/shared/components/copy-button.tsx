@@ -27,9 +27,12 @@ export function CopyButton({
   const [copiedValue, setCopiedValue] = useState<string | null>(null);
   const resetTimerRef = useRef<number | null>(null);
 
-  useEffect(() => () => {
-    if (resetTimerRef.current !== null) window.clearTimeout(resetTimerRef.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (resetTimerRef.current !== null) window.clearTimeout(resetTimerRef.current);
+    },
+    [],
+  );
 
   async function handleClick() {
     const ok = await copyToClipboard(value);
@@ -49,11 +52,19 @@ export function CopyButton({
   }
 
   const copied = copiedValue === value;
-  const label = copied ? t("common.copied") : copyLabel ?? t("common.copy");
+  const label = copied ? t("common.copied") : (copyLabel ?? t("common.copy"));
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button type="button" variant="ghost" size="icon" className={cn("size-7 shrink-0 text-muted-foreground", className)} aria-label={label} disabled={disabled} onClick={handleClick}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className={cn("size-7 shrink-0 text-muted-foreground", className)}
+          aria-label={label}
+          disabled={disabled}
+          onClick={handleClick}
+        >
           {copied ? <Check /> : <Copy />}
         </Button>
       </TooltipTrigger>

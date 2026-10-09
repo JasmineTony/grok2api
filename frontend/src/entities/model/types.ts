@@ -16,7 +16,8 @@ export type ModelRouteDTO = {
   lastSyncedAt?: string;
 };
 
-export type ModelEndpointCapability = "completions" | "responses" | "messages" | "image" | "image_edit" | "video" | "tts" | "stt" | "realtime";
+export type ModelEndpointCapability =
+  "completions" | "responses" | "messages" | "image" | "image_edit" | "video" | "tts" | "stt" | "realtime";
 
 export type ModelRouteGroupDTO = {
   key: string;

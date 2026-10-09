@@ -19,15 +19,26 @@ type VisibleRange = { start: number; end: number };
 // viewport while mounting only the visible rows. Fixed-height management tables
 // are a good fit and keep large page sizes from creating thousands of Radix
 // controls, tooltips, and menu triggers at once.
-export function VirtualTableBody<T>({ items, colSpan, rowHeight, renderRow, overscan = DEFAULT_OVERSCAN }: VirtualTableBodyProps<T>) {
+export function VirtualTableBody<T>({
+  items,
+  colSpan,
+  rowHeight,
+  renderRow,
+  overscan = DEFAULT_OVERSCAN,
+}: VirtualTableBodyProps<T>) {
   const bodyRef = useRef<HTMLTableSectionElement>(null);
   const frameRef = useRef<number | null>(null);
   const enabled = items.length > MIN_VIRTUALIZED_ROWS;
-  const [range, setRange] = useState<VisibleRange>(() => ({ start: 0, end: enabled ? Math.min(items.length, 50) : items.length }));
+  const [range, setRange] = useState<VisibleRange>(() => ({
+    start: 0,
+    end: enabled ? Math.min(items.length, 50) : items.length,
+  }));
 
   const updateRange = useCallback(() => {
     if (!enabled || !bodyRef.current) {
-      setRange((current) => current.start === 0 && current.end === items.length ? current : { start: 0, end: items.length });
+      setRange((current) =>
+        current.start === 0 && current.end === items.length ? current : { start: 0, end: items.length },
+      );
       return;
     }
     const rect = bodyRef.current.getBoundingClientRect();
@@ -39,7 +50,7 @@ export function VirtualTableBody<T>({ items, colSpan, rowHeight, renderRow, over
     const relativeBottom = Math.min(rect.height, viewportBottom - rect.top);
     const start = Math.max(0, Math.floor(relativeTop / rowHeight) - overscan);
     const end = Math.min(items.length, Math.ceil(Math.max(relativeTop, relativeBottom) / rowHeight) + overscan);
-    setRange((current) => current.start === start && current.end === end ? current : { start, end });
+    setRange((current) => (current.start === start && current.end === end ? current : { start, end }));
   }, [enabled, items.length, overscan, rowHeight]);
 
   useLayoutEffect(() => {

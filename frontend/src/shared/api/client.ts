@@ -49,15 +49,28 @@ async function parseResponse<T>(response: Response, decode: ApiDecoder<T>): Prom
   if (!response.ok) {
     const error = readErrorEnvelope(payload);
     const code = error.code ?? "requestFailed";
-    throw new ApiError(response.status, code, localizedErrorMessage(code, error.message ?? `HTTP ${response.status}`), error.requestId);
+    throw new ApiError(
+      response.status,
+      code,
+      localizedErrorMessage(code, error.message ?? `HTTP ${response.status}`),
+      error.requestId,
+    );
   }
   if (!isRecord(payload) || !("data" in payload)) {
-    throw new ApiError(response.status, "invalidResponse", localizedErrorMessage("invalidResponse", "Server returned an invalid response"));
+    throw new ApiError(
+      response.status,
+      "invalidResponse",
+      localizedErrorMessage("invalidResponse", "Server returned an invalid response"),
+    );
   }
   try {
     return decode(payload.data);
   } catch {
-    throw new ApiError(response.status, "invalidResponse", localizedErrorMessage("invalidResponse", "Server returned an invalid response"));
+    throw new ApiError(
+      response.status,
+      "invalidResponse",
+      localizedErrorMessage("invalidResponse", "Server returned an invalid response"),
+    );
   }
 }
 
@@ -107,10 +120,9 @@ async function requestRefreshWithBrowserLock(): Promise<RefreshResult> {
 
 export async function refreshAccessToken(): Promise<RefreshResult> {
   if (!refreshPromise) {
-    refreshPromise = requestRefreshWithBrowserLock()
-      .finally(() => {
-        refreshPromise = null;
-      });
+    refreshPromise = requestRefreshWithBrowserLock().finally(() => {
+      refreshPromise = null;
+    });
   }
   return refreshPromise;
 }
@@ -155,7 +167,11 @@ export async function apiRequest<T>(path: string, options: RequestOptions, decod
       return apiRequest<T>(path, { ...options, retryAuth: false }, decode);
     }
     if (refreshResult === "unavailable") {
-      throw new ApiError(503, "sessionRefreshUnavailable", localizedErrorMessage("sessionRefreshUnavailable", "Unable to refresh the session. Please retry."));
+      throw new ApiError(
+        503,
+        "sessionRefreshUnavailable",
+        localizedErrorMessage("sessionRefreshUnavailable", "Unable to refresh the session. Please retry."),
+      );
     }
   }
 
@@ -168,7 +184,12 @@ export type ApiStreamEvent<T> = {
 };
 
 // apiEventStream 使用现有管理员鉴权发起 POST SSE，并正确处理任意分块边界。
-export async function apiEventStream<T>(path: string, options: RequestOptions, decode: ApiDecoder<T>, onEvent: (value: ApiStreamEvent<T>) => void): Promise<void> {
+export async function apiEventStream<T>(
+  path: string,
+  options: RequestOptions,
+  decode: ApiDecoder<T>,
+  onEvent: (value: ApiStreamEvent<T>) => void,
+): Promise<void> {
   const { authenticated = true, retryAuth = true } = options;
   const response = await sendApiRequest(path, options);
   if (response.status === 401 && authenticated && retryAuth) {
@@ -177,19 +198,31 @@ export async function apiEventStream<T>(path: string, options: RequestOptions, d
       return apiEventStream(path, { ...options, retryAuth: false }, decode, onEvent);
     }
     if (refreshResult === "unavailable") {
-      throw new ApiError(503, "sessionRefreshUnavailable", localizedErrorMessage("sessionRefreshUnavailable", "Unable to refresh the session. Please retry."));
+      throw new ApiError(
+        503,
+        "sessionRefreshUnavailable",
+        localizedErrorMessage("sessionRefreshUnavailable", "Unable to refresh the session. Please retry."),
+      );
     }
   }
   if (!response.ok) {
     await parseResponse(response, decodeNever);
   }
   if (!response.body) {
-    throw new ApiError(response.status, "invalidResponse", localizedErrorMessage("invalidResponse", "Server returned an invalid response"));
+    throw new ApiError(
+      response.status,
+      "invalidResponse",
+      localizedErrorMessage("invalidResponse", "Server returned an invalid response"),
+    );
   }
   const contentType = response.headers.get("Content-Type")?.toLowerCase() ?? "";
   if (!contentType.startsWith("text/event-stream")) {
     await response.body.cancel().catch(() => undefined);
-    throw new ApiError(response.status, "invalidResponse", localizedErrorMessage("invalidResponse", "Server returned an invalid response"));
+    throw new ApiError(
+      response.status,
+      "invalidResponse",
+      localizedErrorMessage("invalidResponse", "Server returned an invalid response"),
+    );
   }
 
   const reader = response.body.getReader();
@@ -208,7 +241,11 @@ export async function apiEventStream<T>(path: string, options: RequestOptions, d
     try {
       payload = decode(JSON.parse(data.join("\n")) as unknown);
     } catch {
-      throw new ApiError(response.status, "invalidResponse", localizedErrorMessage("invalidResponse", "Server returned an invalid response"));
+      throw new ApiError(
+        response.status,
+        "invalidResponse",
+        localizedErrorMessage("invalidResponse", "Server returned an invalid response"),
+      );
     }
     onEvent({ event, data: payload });
   };
@@ -221,14 +258,22 @@ export async function apiEventStream<T>(path: string, options: RequestOptions, d
       let boundary = buffer.indexOf("\n\n");
       while (boundary >= 0) {
         if (boundary > maxEventStreamBufferCharacters) {
-          throw new ApiError(response.status, "invalidResponse", localizedErrorMessage("invalidResponse", "Server returned an invalid response"));
+          throw new ApiError(
+            response.status,
+            "invalidResponse",
+            localizedErrorMessage("invalidResponse", "Server returned an invalid response"),
+          );
         }
         dispatch(buffer.slice(0, boundary));
         buffer = buffer.slice(boundary + 2);
         boundary = buffer.indexOf("\n\n");
       }
       if (buffer.length > maxEventStreamBufferCharacters) {
-        throw new ApiError(response.status, "invalidResponse", localizedErrorMessage("invalidResponse", "Server returned an invalid response"));
+        throw new ApiError(
+          response.status,
+          "invalidResponse",
+          localizedErrorMessage("invalidResponse", "Server returned an invalid response"),
+        );
       }
       if (done) break;
     }
@@ -241,11 +286,20 @@ export async function apiEventStream<T>(path: string, options: RequestOptions, d
   }
 }
 
-async function readEventStreamChunk(reader: ReadableStreamDefaultReader<Uint8Array>, status: number): Promise<ReadableStreamReadResult<Uint8Array>> {
+async function readEventStreamChunk(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  status: number,
+): Promise<ReadableStreamReadResult<Uint8Array>> {
   let timeout = 0;
   const inactivity = new Promise<never>((_, reject) => {
     timeout = window.setTimeout(() => {
-      reject(new ApiError(status, "streamTimeout", localizedErrorMessage("streamTimeout", "The progress stream stopped responding")));
+      reject(
+        new ApiError(
+          status,
+          "streamTimeout",
+          localizedErrorMessage("streamTimeout", "The progress stream stopped responding"),
+        ),
+      );
     }, eventStreamInactivityTimeoutMs);
   });
   try {
@@ -267,7 +321,11 @@ export async function apiDownloadResponse(path: string, options: RequestOptions 
     const refreshResult = await refreshAccessToken();
     if (refreshResult === "refreshed") return apiDownloadResponse(path, { ...options, retryAuth: false });
     if (refreshResult === "unavailable") {
-      throw new ApiError(503, "sessionRefreshUnavailable", localizedErrorMessage("sessionRefreshUnavailable", "Unable to refresh the session. Please retry."));
+      throw new ApiError(
+        503,
+        "sessionRefreshUnavailable",
+        localizedErrorMessage("sessionRefreshUnavailable", "Unable to refresh the session. Please retry."),
+      );
     }
   }
   if (!response.ok) {
@@ -298,7 +356,11 @@ export type LoginResponseDTO = {
 };
 
 const adminValidator = hasShape({ id: isString, username: isString });
-const authTokensValidator = hasShape({ accessToken: isString, accessTokenExpiresAt: isString, refreshTokenExpiresAt: isString });
+const authTokensValidator = hasShape({
+  accessToken: isString,
+  accessTokenExpiresAt: isString,
+  refreshTokenExpiresAt: isString,
+});
 
 export const decodeAdminDTO = createObjectDecoder<AdminDTO>("admin", { id: isString, username: isString });
 export const decodeAuthTokensDTO = createObjectDecoder<AuthTokensDTO>("auth tokens", {
@@ -306,8 +368,13 @@ export const decodeAuthTokensDTO = createObjectDecoder<AuthTokensDTO>("auth toke
   accessTokenExpiresAt: isString,
   refreshTokenExpiresAt: isString,
 });
-export const decodeLoginResponseDTO = createObjectDecoder<LoginResponseDTO>("login", { admin: adminValidator, tokens: authTokensValidator });
-export const decodeLoggedOut = createObjectDecoder<{ loggedOut: boolean }>("logout", { loggedOut: (value) => typeof value === "boolean" });
+export const decodeLoginResponseDTO = createObjectDecoder<LoginResponseDTO>("login", {
+  admin: adminValidator,
+  tokens: authTokensValidator,
+});
+export const decodeLoggedOut = createObjectDecoder<{ loggedOut: boolean }>("logout", {
+  loggedOut: (value) => typeof value === "boolean",
+});
 
 function decodeNever(): never {
   throw new Error("unexpected successful response");

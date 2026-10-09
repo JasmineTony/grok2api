@@ -32,6 +32,8 @@ export function useSettings() {
     form,
     settingsQuery,
     updateMutation,
-    reset: () => { if (settingsQuery.data) form.reset(toSettingsForm(settingsQuery.data.config)); },
+    reset: () => {
+      if (settingsQuery.data) form.reset(toSettingsForm(settingsQuery.data.config));
+    },
   };
 }

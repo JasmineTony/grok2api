@@ -1,6 +1,14 @@
 import type { ReactNode } from "react";
 
-export function PageHeader({ title, description, actions }: { title: string; description: string; actions?: ReactNode }) {
+export function PageHeader({
+  title,
+  description,
+  actions,
+}: {
+  title: string;
+  description: string;
+  actions?: ReactNode;
+}) {
   return (
     <header className="flex min-h-8 shrink-0 flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">

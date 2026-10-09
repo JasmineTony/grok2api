@@ -77,7 +77,11 @@ export function getImageStats(): Promise<ImageStatsDTO> {
 }
 
 export function deleteImages(ids: string[]): Promise<{ deleted: number }> {
-  return apiRequest("/api/admin/v1/media/images", { method: "DELETE", body: { ids } }, decodeCountResult<{ deleted: number }>("deleted"));
+  return apiRequest(
+    "/api/admin/v1/media/images",
+    { method: "DELETE", body: { ids } },
+    decodeCountResult<{ deleted: number }>("deleted"),
+  );
 }
 
 export function listVideos(input: ListVideosInput): Promise<PaginatedDTO<MediaJobDTO>> {
@@ -96,7 +100,11 @@ export function getVideoStats(): Promise<VideoStatsDTO> {
 }
 
 export function deleteVideos(ids: string[]): Promise<{ deleted: number }> {
-  return apiRequest("/api/admin/v1/media/videos", { method: "DELETE", body: { ids } }, decodeCountResult<{ deleted: number }>("deleted"));
+  return apiRequest(
+    "/api/admin/v1/media/videos",
+    { method: "DELETE", body: { ids } },
+    decodeCountResult<{ deleted: number }>("deleted"),
+  );
 }
 
 // 临时输入不会进入图库，也不会生成公开 URL；任务只持久化短 file_id。
@@ -108,13 +116,16 @@ export type MediaInputDTO = {
   expiresAt: string;
 };
 
-const decodeMediaInput = createValidatedDecoder<MediaInputDTO>("media input", hasShape({
-  fileId: isString,
-  kind: isString,
-  mimeType: isString,
-  sizeBytes: isNumber,
-  expiresAt: isString,
-}));
+const decodeMediaInput = createValidatedDecoder<MediaInputDTO>(
+  "media input",
+  hasShape({
+    fileId: isString,
+    kind: isString,
+    mimeType: isString,
+    sizeBytes: isNumber,
+    expiresAt: isString,
+  }),
+);
 
 export function importVideoInputFromURL(url: string): Promise<MediaInputDTO> {
   return apiRequest("/api/admin/v1/media/inputs/import", { method: "POST", body: { url } }, decodeMediaInput);

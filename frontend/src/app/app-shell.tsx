@@ -1,5 +1,26 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AudioLines, Box, ChevronDown, Eye, Image, KeyRound, Languages, LayoutDashboard, LogOut, Menu, MessageSquareText, Monitor, Moon, MoreHorizontal, Settings, ShieldCheck, Sparkles, Sun, Users, Video } from "lucide-react";
+import {
+  AudioLines,
+  Box,
+  ChevronDown,
+  Eye,
+  Image,
+  KeyRound,
+  Languages,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  MessageSquareText,
+  Monitor,
+  Moon,
+  MoreHorizontal,
+  Settings,
+  ShieldCheck,
+  Sparkles,
+  Sun,
+  Users,
+  Video,
+} from "lucide-react";
 import { useTheme } from "next-themes";
 import { useState, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
@@ -9,8 +30,24 @@ import { toast } from "sonner";
 import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -113,15 +150,22 @@ export function AppShell() {
         key={href}
         to={href}
         onClick={() => setMobileOpen(false)}
-        className={({ isActive }) => cn(
-          "group flex h-8 items-center gap-2 rounded-md px-2.5 text-xs font-normal text-muted-foreground transition-colors hover:bg-secondary/55 hover:text-foreground",
-          isActive && "bg-secondary/60 text-foreground",
-        )}
+        className={({ isActive }) =>
+          cn(
+            "group flex h-8 items-center gap-2 rounded-md px-2.5 text-xs font-normal text-muted-foreground transition-colors hover:bg-secondary/55 hover:text-foreground",
+            isActive && "bg-secondary/60 text-foreground",
+          )
+        }
       >
         {({ isActive }) => (
           <>
             <span className="flex size-5 shrink-0 items-center justify-center">
-              <Icon className={cn("size-4 text-muted-foreground", isActive && "text-foreground")} fill={isActive ? "currentColor" : "none"} fillOpacity={isActive ? 0.14 : 0} strokeWidth={1.8} />
+              <Icon
+                className={cn("size-4 text-muted-foreground", isActive && "text-foreground")}
+                fill={isActive ? "currentColor" : "none"}
+                fillOpacity={isActive ? 0.14 : 0}
+                strokeWidth={1.8}
+              />
             </span>
             {t(label)}
           </>
@@ -147,10 +191,13 @@ export function AppShell() {
             <span className="flex-1 text-left">{label}</span>
             <ChevronDown className={cn("size-3 text-muted-foreground transition-transform", !open && "-rotate-90")} />
           </button>
-          <div className={cn(
-            "grid transition-[grid-template-rows,opacity] duration-200 ease-out",
-            open ? "grid-rows-[1fr] opacity-100" : "pointer-events-none grid-rows-[0fr] opacity-0",
-          )} aria-hidden={!open}>
+          <div
+            className={cn(
+              "grid transition-[grid-template-rows,opacity] duration-200 ease-out",
+              open ? "grid-rows-[1fr] opacity-100" : "pointer-events-none grid-rows-[0fr] opacity-0",
+            )}
+            aria-hidden={!open}
+          >
             <div className="overflow-hidden">
               <div className="space-y-1 pt-1">
                 {items.map((item) => (
@@ -158,17 +205,21 @@ export function AppShell() {
                     key={item.href}
                     to={item.href}
                     onClick={() => setMobileOpen(false)}
-                    className={({ isActive }) => cn(
-                      "group flex h-7 min-w-0 items-center gap-2 rounded-md pl-[38px] pr-2.5 text-xs text-muted-foreground transition-colors hover:bg-secondary/55 hover:text-foreground",
-                      isActive && "bg-secondary/60 text-foreground",
-                    )}
+                    className={({ isActive }) =>
+                      cn(
+                        "group flex h-7 min-w-0 items-center gap-2 rounded-md pl-[38px] pr-2.5 text-xs text-muted-foreground transition-colors hover:bg-secondary/55 hover:text-foreground",
+                        isActive && "bg-secondary/60 text-foreground",
+                      )
+                    }
                   >
                     <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                    <span className={cn(
-                      "shrink-0 font-mono text-[9px] font-medium text-muted-foreground/70",
-                      item.method === "GET" && "text-emerald-600 dark:text-emerald-400",
-                      item.method === "POST" && "text-sky-600 dark:text-sky-400",
-                    )}>
+                    <span
+                      className={cn(
+                        "shrink-0 font-mono text-[9px] font-medium text-muted-foreground/70",
+                        item.method === "GET" && "text-emerald-600 dark:text-emerald-400",
+                        item.method === "POST" && "text-sky-600 dark:text-sky-400",
+                      )}
+                    >
                       {item.method}
                     </span>
                   </NavLink>
@@ -182,7 +233,10 @@ export function AppShell() {
   }
 
   const navigationContent = (
-    <nav className="mt-7 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2 pb-2" aria-label={t("shell.navigation")}>
+    <nav
+      className="mt-7 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2 pb-2"
+      aria-label={t("shell.navigation")}
+    >
       <div className="space-y-1">{navigationLinks()}</div>
       <div className="mt-7">
         <div className="px-2.5 pb-2 text-xs font-normal text-foreground">{t("nav.docs")}</div>
@@ -193,36 +247,71 @@ export function AppShell() {
 
   const accountControl = (
     <div className="flex h-9 items-center gap-1 px-2.5">
-      <span className="min-w-0 flex-1 truncate text-xs font-normal capitalize text-muted-foreground">{admin?.username}</span>
+      <span className="min-w-0 flex-1 truncate text-xs font-normal capitalize text-muted-foreground">
+        {admin?.username}
+      </span>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="size-7 shrink-0 text-muted-foreground hover:text-foreground" aria-label={t("common.actions")}><MoreHorizontal /></Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7 shrink-0 text-muted-foreground hover:text-foreground"
+            aria-label={t("common.actions")}
+          >
+            <MoreHorizontal />
+          </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" side="top" sideOffset={8} className="w-56 p-1.5">
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger className="h-8"><Sun />{t("shell.appearance")}</DropdownMenuSubTrigger>
+            <DropdownMenuSubTrigger className="h-8">
+              <Sun />
+              {t("shell.appearance")}
+            </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
-              <DropdownMenuItem onClick={() => setTheme("light")}><Sun />{t("shell.light")}</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setTheme("dark")}><Moon />{t("shell.dark")}</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setTheme("system")}><Monitor />{t("shell.system")}</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTheme("light")}>
+                <Sun />
+                {t("shell.light")}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTheme("dark")}>
+                <Moon />
+                {t("shell.dark")}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTheme("system")}>
+                <Monitor />
+                {t("shell.system")}
+              </DropdownMenuItem>
             </DropdownMenuSubContent>
           </DropdownMenuSub>
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger className="h-8"><Languages />{t("shell.language")}</DropdownMenuSubTrigger>
+            <DropdownMenuSubTrigger className="h-8">
+              <Languages />
+              {t("shell.language")}
+            </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
               <DropdownMenuItem onClick={() => void i18n.changeLanguage("zh-CN")}>简体中文</DropdownMenuItem>
               <DropdownMenuItem onClick={() => void i18n.changeLanguage("en")}>English</DropdownMenuItem>
             </DropdownMenuSubContent>
           </DropdownMenuSub>
-          <DropdownMenuItem className="h-8" onClick={() => setPasswordOpen(true)}><KeyRound />{t("auth.changePassword")}</DropdownMenuItem>
+          <DropdownMenuItem className="h-8" onClick={() => setPasswordOpen(true)}>
+            <KeyRound />
+            {t("auth.changePassword")}
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem className="h-8" onClick={() => void logout()}><LogOut />{t("auth.signOut")}</DropdownMenuItem>
+          <DropdownMenuItem className="h-8" onClick={() => void logout()}>
+            <LogOut />
+            {t("auth.signOut")}
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
       <NavLink
         to="/settings"
         onClick={() => setMobileOpen(false)}
-        className={({ isActive }) => cn("flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary/55 hover:text-foreground", isActive && "bg-secondary/60 text-foreground")}
+        className={({ isActive }) =>
+          cn(
+            "flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary/55 hover:text-foreground",
+            isActive && "bg-secondary/60 text-foreground",
+          )
+        }
         aria-label={t("nav.settings")}
       >
         <Settings className="size-4" strokeWidth={1.8} />
@@ -232,62 +321,114 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen bg-background">
-        <aside className="fixed inset-y-0 left-0 z-30 hidden h-screen w-[288px] flex-col overflow-hidden bg-sidebar px-4 py-6 lg:flex">
-          <div className="flex h-7 shrink-0 items-center justify-between px-2.5">
-            <Link to="/dashboard" className="flex h-7 items-baseline gap-2 text-base font-semibold text-foreground">
-              <span>{t("appName")}</span>
-              <CurrentVersionLabel />
-            </Link>
-            <Button variant="ghost" size="icon" className="size-7 text-muted-foreground [&_svg]:size-[15px]" asChild>
-              <a href="https://github.com/chenyme/grok2api" target="_blank" rel="noreferrer" aria-label="GitHub">
-                <GitHubMark />
-              </a>
-            </Button>
-          </div>
-          {navigationContent}
-          <div className="relative z-10 mt-4 shrink-0 bg-sidebar pt-4">{accountControl}</div>
-        </aside>
-
-        <div className="flex min-h-screen flex-col lg:pl-[288px]">
-          <header className="sticky top-0 z-40 flex h-12 items-center justify-between border-b bg-background px-4 lg:hidden">
-            <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-              <SheetTrigger asChild><Button variant="ghost" size="icon" className="size-8" aria-label={t("shell.openNavigation")}><Menu className="size-4" /></Button></SheetTrigger>
-              <SheetContent side="left" className="flex h-dvh max-h-dvh w-72 flex-col gap-0 overflow-hidden bg-sidebar px-3 py-4 [&>button]:right-2 [&>button]:top-3.5 [&>button]:flex [&>button]:size-7 [&>button]:items-center [&>button]:justify-center">
-                <SheetHeader className="h-7 shrink-0 px-2.5 text-left">
-                  <SheetTitle className="flex h-7 items-center text-base">{t("appName")}</SheetTitle>
-                  <SheetDescription className="sr-only">{t("shell.navigation")}</SheetDescription>
-                </SheetHeader>
-                <nav className="mt-5 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 pb-2" aria-label={t("shell.navigation")}>
-                  <div className="space-y-1">{navigationLinks()}</div>
-                  <div className="mt-7">
-                    <div className="px-2.5 pb-2 text-xs font-normal text-foreground">{t("nav.docs")}</div>
-                    <div className="space-y-1">{documentationLinks()}</div>
-                  </div>
-                </nav>
-                <div className="relative z-10 mt-3 shrink-0 border-t border-sidebar-border/60 bg-sidebar pt-3">{accountControl}</div>
-              </SheetContent>
-            </Sheet>
-            <span className="flex items-baseline gap-2 text-sm font-semibold"><span>{t("appName")}</span><CurrentVersionLabel /></span>
-            <Button variant="ghost" size="icon" className="size-8 text-muted-foreground hover:text-foreground" asChild>
-              <a href="https://github.com/chenyme/grok2api" target="_blank" rel="noreferrer" aria-label="GitHub">
-                <GitHubMark />
-              </a>
-            </Button>
-          </header>
-
-          <main className={cn("mx-auto w-full max-w-[1280px] flex-1 px-5 sm:px-8", isMediaWorkspace ? "pt-8 pb-0 lg:pt-20" : "py-8 lg:py-20")}>
-            <Outlet />
-          </main>
-          {!isMediaWorkspace ? <SiteFooter /> : null}
+      <aside className="fixed inset-y-0 left-0 z-30 hidden h-screen w-[288px] flex-col overflow-hidden bg-sidebar px-4 py-6 lg:flex">
+        <div className="flex h-7 shrink-0 items-center justify-between px-2.5">
+          <Link to="/dashboard" className="flex h-7 items-baseline gap-2 text-base font-semibold text-foreground">
+            <span>{t("appName")}</span>
+            <CurrentVersionLabel />
+          </Link>
+          <Button variant="ghost" size="icon" className="size-7 text-muted-foreground [&_svg]:size-[15px]" asChild>
+            <a href="https://github.com/chenyme/grok2api" target="_blank" rel="noreferrer" aria-label="GitHub">
+              <GitHubMark />
+            </a>
+          </Button>
         </div>
+        {navigationContent}
+        <div className="relative z-10 mt-4 shrink-0 bg-sidebar pt-4">{accountControl}</div>
+      </aside>
+
+      <div className="flex min-h-screen flex-col lg:pl-[288px]">
+        <header className="sticky top-0 z-40 flex h-12 items-center justify-between border-b bg-background px-4 lg:hidden">
+          <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon" className="size-8" aria-label={t("shell.openNavigation")}>
+                <Menu className="size-4" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent
+              side="left"
+              className="flex h-dvh max-h-dvh w-72 flex-col gap-0 overflow-hidden bg-sidebar px-3 py-4 [&>button]:right-2 [&>button]:top-3.5 [&>button]:flex [&>button]:size-7 [&>button]:items-center [&>button]:justify-center"
+            >
+              <SheetHeader className="h-7 shrink-0 px-2.5 text-left">
+                <SheetTitle className="flex h-7 items-center text-base">{t("appName")}</SheetTitle>
+                <SheetDescription className="sr-only">{t("shell.navigation")}</SheetDescription>
+              </SheetHeader>
+              <nav
+                className="mt-5 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 pb-2"
+                aria-label={t("shell.navigation")}
+              >
+                <div className="space-y-1">{navigationLinks()}</div>
+                <div className="mt-7">
+                  <div className="px-2.5 pb-2 text-xs font-normal text-foreground">{t("nav.docs")}</div>
+                  <div className="space-y-1">{documentationLinks()}</div>
+                </div>
+              </nav>
+              <div className="relative z-10 mt-3 shrink-0 border-t border-sidebar-border/60 bg-sidebar pt-3">
+                {accountControl}
+              </div>
+            </SheetContent>
+          </Sheet>
+          <span className="flex items-baseline gap-2 text-sm font-semibold">
+            <span>{t("appName")}</span>
+            <CurrentVersionLabel />
+          </span>
+          <Button variant="ghost" size="icon" className="size-8 text-muted-foreground hover:text-foreground" asChild>
+            <a href="https://github.com/chenyme/grok2api" target="_blank" rel="noreferrer" aria-label="GitHub">
+              <GitHubMark />
+            </a>
+          </Button>
+        </header>
+
+        <main
+          className={cn(
+            "mx-auto w-full max-w-[1280px] flex-1 px-5 sm:px-8",
+            isMediaWorkspace ? "pt-8 pb-0 lg:pt-20" : "py-8 lg:py-20",
+          )}
+        >
+          <Outlet />
+        </main>
+        {!isMediaWorkspace ? <SiteFooter /> : null}
+      </div>
 
       <Dialog open={passwordOpen} onOpenChange={setPasswordOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>{t("auth.changePassword")}</DialogTitle><DialogDescription>{admin?.username}</DialogDescription></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>{t("auth.changePassword")}</DialogTitle>
+            <DialogDescription>{admin?.username}</DialogDescription>
+          </DialogHeader>
           <form className="space-y-4" onSubmit={passwordForm.handleSubmit(submitPassword)}>
-            <div className="space-y-2"><Label htmlFor="current-password">{t("auth.currentPassword")}</Label><Input id="current-password" type="password" autoComplete="current-password" {...passwordForm.register("currentPassword")} />{passwordForm.formState.errors.currentPassword ? <p className="text-xs text-destructive">{passwordForm.formState.errors.currentPassword.message}</p> : null}</div>
-            <div className="space-y-2"><Label htmlFor="new-password">{t("auth.newPassword")}</Label><Input id="new-password" type="password" autoComplete="new-password" {...passwordForm.register("newPassword")} />{passwordForm.formState.errors.newPassword ? <p className="text-xs text-destructive">{passwordForm.formState.errors.newPassword.message}</p> : null}</div>
-            <DialogFooter><Button type="button" variant="secondary" size="sm" onClick={() => setPasswordOpen(false)}>{t("common.cancel")}</Button><Button type="submit" size="sm" disabled={passwordForm.formState.isSubmitting}>{t("common.save")}</Button></DialogFooter>
+            <div className="space-y-2">
+              <Label htmlFor="current-password">{t("auth.currentPassword")}</Label>
+              <Input
+                id="current-password"
+                type="password"
+                autoComplete="current-password"
+                {...passwordForm.register("currentPassword")}
+              />
+              {passwordForm.formState.errors.currentPassword ? (
+                <p className="text-xs text-destructive">{passwordForm.formState.errors.currentPassword.message}</p>
+              ) : null}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-password">{t("auth.newPassword")}</Label>
+              <Input
+                id="new-password"
+                type="password"
+                autoComplete="new-password"
+                {...passwordForm.register("newPassword")}
+              />
+              {passwordForm.formState.errors.newPassword ? (
+                <p className="text-xs text-destructive">{passwordForm.formState.errors.newPassword.message}</p>
+              ) : null}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="secondary" size="sm" onClick={() => setPasswordOpen(false)}>
+                {t("common.cancel")}
+              </Button>
+              <Button type="submit" size="sm" disabled={passwordForm.formState.isSubmitting}>
+                {t("common.save")}
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
