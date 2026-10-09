@@ -15,6 +15,8 @@ server:
   # [通常不要修改] 仅限制客户端上传完整请求体的时间，不限制推理或流式响应。
   readTimeout: 15m
   # [通常不要修改] 管理 API 和非流式请求的最长生命周期。
+  # 同时约束已建立的 voice/STT WebSocket 会话：静默会话到点会被主动收敛，
+  # 记录 request_timeout 并释放账号租约与上游连接。
   requestTimeout: 2h
   # [按需修改] 仅在本地或受信任环境开启，生产环境保持 false。
   swaggerEnabled: false
@@ -162,6 +164,12 @@ qualityGuard:
   # Replay-safe missing-thinking requests try another account (up to
   # maxAttempts). fail_closed returns 503 instead of the held body. Sidecar
   # qualityGuard.enabled stays false until you start the quality-guard profile.
+  # Request-path withhold/retry only applies to Grok Build routes: Console
+  # structurally returns encrypted reasoning ciphertext, which the ciphertext
+  # detectors would misread as a degraded stream. qualityGuard.enabled and
+  # qualityGuard.requestRetry.enabled are independent switches; disabling the
+  # sidecar (or qualityGuard.enabled) does not disable request-path
+  # withhold/retry.
   # Non-empty encrypted_content stubs are not thinking. The ciphertext floor
   # is max(minEncryptedBytes, reasoning_tokens * encryptedBytesPerReasoningToken).
   requestRetry:

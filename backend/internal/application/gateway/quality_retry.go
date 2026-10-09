@@ -439,7 +439,11 @@ func shouldHoldQualityStream(input Input, ownership *inferencedomain.ResponseOwn
 	if isResponsesCompactionRequest(input.Body) {
 		return false
 	}
-	if route.Provider != accountdomain.ProviderBuild && route.Provider != accountdomain.ProviderConsole {
+	// 请求路径的扣住/换号只服务 Grok Build。Console 结构上只回加密 reasoning 密文
+	// （console/normalize.go 无条件请求 reasoning.encrypted_content），密文类检测器会把
+	// 正常流误判为降智并扣住响应、进而给账号加惩罚，导致 Console 请求失败（issue #1058）。
+	// 若将来要覆盖 Console，应在检测器层跳过密文派生判定，而不是整段纳入本判定。
+	if route.Provider != accountdomain.ProviderBuild {
 		return false
 	}
 	// TUI commonly declares tools and follow-ups carry previous_response_id.

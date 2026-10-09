@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1314,6 +1315,14 @@ func TestShouldHoldQualityStreamGates(t *testing.T) {
 	if !shouldHoldQualityStream(input, nil, route, audit.OperationChat, cfg) {
 		t.Fatal("expected hold on thinking build chat")
 	}
+
+	// Console 结构上只回加密 reasoning 密文，密文类检测器会把正常流误判为降智，
+	// 因此请求路径的扣住/换号必须只作用于 Grok Build（issue #1058）。
+	consoleRoute := route
+	consoleRoute.Provider = accountdomain.ProviderConsole
+	if shouldHoldQualityStream(input, nil, consoleRoute, audit.OperationChat, cfg) {
+		t.Fatal("Console 路由不得进入请求路径扣住")
+	}
 	off := cfg
 	off.Enabled = false
 	if shouldHoldQualityStream(input, nil, route, audit.OperationChat, off) {
@@ -1944,5 +1953,143 @@ func TestNormalizeQualityRetryDefaults(t *testing.T) {
 	got := normalizeQualityRetry(QualityRetryRuntime{Enabled: true})
 	if !got.Enabled || got.MaxAttempts != 6 || got.MinOutputTokens != 8 || got.OnExhausted != qualityRetryFailClosed || got.HoldTimeout != 30*time.Second || got.AccountCooldown != 12*time.Hour || got.IdleAccountCooldown != 15*time.Minute || got.MinEncryptedBytes != defaultMinEncryptedBytes || got.EncryptedBytesPerReasoningToken != defaultEncryptedBytesPerReasoningToken {
 		t.Fatalf("defaults = %#v", got)
+	}
+}
+
+// scriptedConsoleAdapter 是 ProviderConsole 版本的脚本化响应适配器，
+// 用于验证 Console 请求路径不会被质量守护扣住（issue #1058）。
+type scriptedConsoleAdapter struct {
+	mu        sync.Mutex
+	attempts  []uint64
+	responses map[uint64][]scriptedBuildResponse
+}
+
+func (a *scriptedConsoleAdapter) Provider() accountdomain.Provider {
+	return accountdomain.ProviderConsole
+}
+
+func (a *scriptedConsoleAdapter) Definition() provider.Definition {
+	return testConversationDefinition(accountdomain.ProviderConsole)
+}
+
+func (a *scriptedConsoleAdapter) ForwardResponse(_ context.Context, request provider.ResponseResourceRequest) (*provider.Response, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.attempts = append(a.attempts, request.Credential.ID)
+	queue := a.responses[request.Credential.ID]
+	if len(queue) == 0 {
+		return &provider.Response{
+			StatusCode: http.StatusOK, Status: "200 OK", Header: make(http.Header),
+			Body: io.NopCloser(strings.NewReader(`{"id":"resp-console-default"}`)),
+		}, nil
+	}
+	next := queue[0]
+	a.responses[request.Credential.ID] = queue[1:]
+	return &provider.Response{
+		StatusCode: next.status, Status: http.StatusText(next.status), Header: make(http.Header),
+		Body: io.NopCloser(strings.NewReader(next.body)),
+	}, nil
+}
+
+func (a *scriptedConsoleAdapter) Attempts() []uint64 {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]uint64(nil), a.attempts...)
+}
+
+// TestAttemptLoopDoesNotHoldConsoleQualityStream 是 issue #1058 的端到端负例：
+// requestRetry 打开时，同样的缺 thinking 流在 Console 账号上必须原样交付，
+// 不得扣住、换号、惩罚账号或写入质量扣住审计。
+func TestAttemptLoopDoesNotHoldConsoleQualityStream(t *testing.T) {
+	ctx := context.Background()
+	database, err := relational.OpenSQLite(ctx, filepath.Join(t.TempDir(), "quality-console-hold.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if err := database.InitializeSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	accountRepo := relational.NewAccountRepository(database)
+	modelRepo := relational.NewModelRepository(database)
+	auditRepo := relational.NewAuditRepository(database)
+	responseRepo := relational.NewResponseRepository(database)
+	keyRepo := relational.NewClientKeyRepository(database)
+
+	const consoleModel = "grok-4.5" // 必须是 Console 侧真实存在的推理模型，否则负例会因不触达判定而假通过
+	credential, _, err := accountRepo.UpsertByIdentity(ctx, accountdomain.Credential{
+		Provider: accountdomain.ProviderConsole, AuthType: accountdomain.AuthTypeSSO,
+		Name: "quality-console", SourceKey: "quality-console", EncryptedAccessToken: "quality-console",
+		Enabled: true, AuthStatus: accountdomain.AuthStatusActive, Priority: 200, MaxConcurrent: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := modelRepo.UpsertDiscovered(ctx, accountdomain.ProviderConsole, []string{consoleModel}); err != nil {
+		t.Fatal(err)
+	}
+	if err := modelRepo.ReplaceAccountCapabilities(ctx, credential.ID, []string{consoleModel}, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	clientKey, err := keyRepo.Create(ctx, clientkey.Key{
+		Name: "quality-console-key", Prefix: "qconsole", SecretHash: strings.Repeat("9", 64), EncryptedSecret: "encrypted",
+		Enabled: true, RPMLimit: 120, MaxConcurrent: 8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content := strings.Repeat("abcd", 40)
+	noThink := sse(
+		`data: {"choices":[{"delta":{"content":"`+content+`"}}]}`,
+		`data: {"usage":{"completion_tokens":40,"completion_tokens_details":{"reasoning_tokens":0}}}`,
+		"data: [DONE]",
+	)
+	adapter := &scriptedConsoleAdapter{responses: map[uint64][]scriptedBuildResponse{
+		credential.ID: {{status: http.StatusOK, body: noThink}},
+	}}
+	registry := provider.NewRegistry(adapter)
+	sticky := memory.NewStickyStore()
+	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
+	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
+	service := NewService(modelRepo, auditRepo, accountService, clientkeyapp.NewService(nil, nil, nil, 60, 4, nil), registry, selector, responseRepo, 999)
+	service.UpdateQualityRetry(QualityRetryRuntime{
+		Enabled: true, MaxAttempts: 6, MinOutputTokens: 32, OnExhausted: qualityRetryFailOpen, HoldTimeout: time.Second,
+	})
+
+	result, err := service.CreateChatCompletion(ctx, Input{
+		RequestID: "req-quality-console", ClientKey: clientKey, PublicModel: consoleModel, Streaming: true,
+		Body: []byte(`{"model":"` + consoleModel + `","messages":[{"role":"user","content":"write a game"}],"stream":true}`),
+	})
+	if err != nil {
+		t.Fatalf("Console 请求必须直接交付: %v", err)
+	}
+	body, err := io.ReadAll(result.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result.Finalize(Usage{Reported: true, OutputTokens: 40}, "chat-console", "")
+	_ = result.Body.Close()
+	if !strings.Contains(string(body), content) {
+		t.Fatalf("Console 流被扣住或改写: %s", body)
+	}
+	if attempts := adapter.Attempts(); len(attempts) != 1 || attempts[0] != credential.ID {
+		t.Fatalf("Console 请求不得换号重试, attempts=%#v", attempts)
+	}
+	logs, _, err := auditRepo.List(ctx, 0, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range logs {
+		if record.ErrorCode == ErrorQualityDegraded {
+			t.Fatalf("Console 请求不得写入质量扣住审计: %#v", record)
+		}
+	}
+	accountAfter, err := accountRepo.Get(ctx, credential.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if accountAfter.LastError == lastErrorMissingThinking || accountAfter.CooldownUntil != nil {
+		t.Fatalf("Console 账号不得因加密密文被惩罚: %#v", accountAfter)
 	}
 }
