@@ -220,3 +220,21 @@ go test ./internal/infra/egress ./internal/infra/runtime/memory ./internal/pkg/p
 - 策略来源：仓库未显式配置 `minimumReleaseAge`（`pnpm config get minimumReleaseAge` 返回 `undefined`），约束来自 pnpm 12 的内置默认值；`frontend/pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude: [vite@8.3.4]` 说明此前已命中过一次。
 - 时间依赖：本地与 CI 的 `pnpm install` 会缓存校验结果（"verified 1h ago"），Docker 内为全新校验；本分支 PR 模式的镜像构建（同一 Dockerfile、`push: false`）**通过**，说明当前 lockfile 在本次校验时满足策略。
 - 处置：**不通过降低安全约束绕过**。登记为 P2 待处理项；push 模式无法在未合并 `main` 的前提下验证，因此不声称已修复。
+
+## 9. 阶段 3 成果（后端契约分层）
+
+- 新增 `internal/ports/provider`：12 个非测试文件 / 1554 行，35 个接口 + 值类型 + 错误类型 + `Registry` 契约接口
+- `internal/infra/provider/provider.go`：1468 → **466 行**（仅剩 Registry 实现与编译期断言 `var _ ports.Registry = (*Registry)(nil)`）
+- 删除已整体迁移的 `infra/provider/{definition,rate_limit,account_block}.go`
+- `internal/application/**` **生产代码**对 `infra/provider` 的依赖：12 个文件 / 206 处 → **0**；94 个消费者文件同步更新
+- 新增标准库边界测试 `internal/ports/provider/import_boundary_test.go`：domain / repository / ports 不得 import `internal/infra/`，application 生产代码不得 import `infra/provider`；已用注入违规反证其会失败
+
+验证：`go build ./...`、`go vet ./...`、`go test ./... -count=1` 全部 exit 0（64 包，0 FAIL，20 个外部存储集成用例按预期跳过）；24 个 benchmark 全部编译；`pnpm verify:full` exit 0（6 个 E2E 使用迁移后的后端二进制）。
+
+### 阶段 3 遗留（已登记，非隐藏）
+
+- 22 个 `internal/application/**` **测试**文件仍 import `infra/provider`（仅用 `NewRegistry`），边界测试显式允许；生产代码已为 0。
+- 未消除的存量依赖：`infra/security`（7 文件）、`infra/egress`（8 文件）、`infra/config`（1 文件）。本轮只处理确属公共能力契约的 provider，其余逐项判断见阶段报告。
+- `Registry.Validate` 仍为 86 行（REV-2 超限），本轮未改动。
+- `internal/infra/provider/web/sso_build_test.go` 存在与 HEAD 逐字一致的 gofmt 对齐偏差（存量，未夹带修复）。
+- 观察到一个与本改动无关的偶发失败（`infra/egress` 的 `TestPinnedHTTPSClientSOCKS5HReceivesPinnedIP`，Windows loopback reset），单独重跑 3 次通过，该包不在 diff 内。

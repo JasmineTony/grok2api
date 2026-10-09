@@ -185,3 +185,20 @@
 首轮 run #3（sha `5541238b`）失败于后端 `Test backend`，原因是 CI 首次真实运行 PostgreSQL 集成用例并暴露 1 个用例缺陷（详见 `backend/AUDIT.md` §8）；修复后 run #4 全绿。该失败与前端门禁无关。
 
 尚未在 CI 验证：`main` 分支的镜像**推送**（`Publish image`）——该步骤在 `main` @ `7c0493a2` 起就因 pnpm 供应链策略失败，属既有问题，登记为 `backend/AUDIT.md` 的 CI-01；PR 模式镜像构建已通过。
+
+## 8. 阶段 3 成果（前端）
+
+- `shared/i18n/index.ts`：**4150 → 40 行**；按「语言 × 领域」拆为 33 个资源模块（最大 401 行）；16 处 `Object.assign` 全部收敛，37 个被覆盖 key 一律取最终生效值；拆分前后 key 与文案 SHA-256 逐字节一致
+- 超限文件 18 → **17**（i18n 已整改）；超限函数 80（持平）
+- 自定义 hooks 全部达 100%：`use-debounced-value`、`use-settings`、`use-version-update`、`use-chart`（原在 `chart.tsx` 内）；`use-auth` 保持 100%
+- `useVersionInfo` / `useCheckForUpdates` / `useChart` 从展示组件拆出，避免文件级 100% 阈值波及无关渲染分支
+- 新增 `shared/api/client.test.tsx`（26 用例）：401 刷新重试、并发去重、浏览器锁、SSE 分块与边界、下载错误路径；`client.ts` 覆盖 **89.24 / 82.69 / 82.75 / 92.46**，已纳入 `coverage.include`
+- 覆盖率 include 扩至 9 个文件，全局 **95.54 / 87.07 / 95.14 / 96.96**
+- 体积：首屏闭包 252.07 → **249.91 KiB**（余量 10.09 KiB，此前 7.93）；全部 JS 593.25 → **591.16 KiB**；最大 chunk 458.31 KiB 不变
+- 门禁全绿：Vitest 10 文件 / 104 用例、依赖 0 违规（163 模块 / 695 依赖）、结构门禁通过、门禁自测 9 例、`pnpm verify:full` exit 0（含 6 个 E2E）
+
+### 阶段 3 遗留（已登记，非隐藏）
+
+- `src/components/ui/use-chart.tsx` 位于 `components/ui`，该目录按既有约定被 eslint/oxlint 排除，因此这个**我们自己的新 hook 不参与 lint**（拆分前的 `chart.tsx` 同样不参与）。修复路径：移到 `src/shared/hooks/use-chart.ts` 并同步 `chart.tsx` 与 `vitest.config.ts`；登记为阶段 4 处理项。
+- `shared/api/client.ts` 的 `decodeNever` 实际不可达（`parseResponse` 在 `!response.ok` 分支已抛错），属存量死代码；本轮未改动，登记为 P3。
+- i18n 资源模块为纯数据对象，未纳入 `coverage.include`（无分支，风险低）。
