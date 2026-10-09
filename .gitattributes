@@ -1,0 +1,42 @@
+# 仓库存储换行统一为 LF，避免 Windows/macOS/Linux 贡献者产生无意义 diff。
+# 说明：本仓库当前 git 配置为 core.autocrlf=true，工作区检出的 CRLF 属于本地表现，
+# 仓库内实际存储始终为 LF；前端 Prettier 的 endOfLine 保持 "auto" 以匹配工作区。
+* text=auto eol=lf
+
+# 明确按文本处理、参与 diff 与行数统计的文件类型
+*.go     text eol=lf
+*.ts     text eol=lf
+*.tsx    text eol=lf
+*.js     text eol=lf
+*.cjs    text eol=lf
+*.mjs    text eol=lf
+*.json   text eol=lf
+*.css    text eol=lf
+*.md     text eol=lf
+*.yaml   text eol=lf
+*.yml    text eol=lf
+*.html   text eol=lf
+*.sh     text eol=lf
+*.py     text eol=lf
+Dockerfile text eol=lf
+VERSION    text eol=lf
+
+# 二进制与生成物：不做换行转换，也不参与文本 diff
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.webp   binary
+*.woff   binary
+*.woff2  binary
+*.pdf    binary
+*.zip    binary
+*.bundle binary
+
+# 生成物与报告不参与语言统计与文本 diff
+frontend/dist/**          linguist-generated=true
+frontend/coverage/**      linguist-generated=true
+backend/docs/swagger.json linguist-generated=true
+backend/docs/swagger.yaml linguist-generated=true
+backend/docs/docs.go      linguist-generated=true

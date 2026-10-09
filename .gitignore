@@ -45,9 +45,13 @@ __pycache__/
 /frontend/.cache/
 /frontend/*.tsbuildinfo
 /frontend/coverage/
+/frontend/playwright-report/
+/frontend/test-results/
+/frontend/.artifacts/
 
 # Temporary files
 /release/
 /.tmp/
 /tmp/
 /Dockerfile.local
+/.pi/
