@@ -265,3 +265,34 @@ go test ./internal/infra/egress ./internal/infra/runtime/memory ./internal/pkg/p
 - 测试文件仍超 600 行：`quota_refresh_test.go` 1434、`credential_refresh_test.go` 909、`account_links_test.go` 753 等，本阶段未拆分。
 - 行为完全保持意味着 `Service.List` 仍是 6 次 SQL 往返；本轮**未**做合并优化（属需求外，且需先有实测收益证据）。
 - `Registry.Validate` 仍 86 行（REV-2 超限），未改动。
+
+### CI-01 更正与最终诊断（重跑后确认）
+
+上文的「供应链策略」只是**第一层、且是瞬时的**原因；重跑后它已自愈，暴露出真正持续的阻塞。
+
+**证据链**
+
+| 运行 | Publish 任务耗时 | 结果 |
+| --- | --- | --- |
+| main run #1（`51acd5da`） | 32s（10:57:11→10:57:43） | 在早期 `pnpm fetch` 失败（`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`） |
+| main run #2 重跑 | ~2min（15:31:43→15:33:16） | 供应链检查已通过（`✓ Lockfile passes supply-chain policies (433 entries in 3.1s)`），构建完成后在**推送**失败 |
+
+**真正的阻塞**（持续、非时间依赖）
+
+```
+ERROR: failed to push ghcr.io/jasminetony/grok2api:main-arm64: denied: permission_denied: write_package
+```
+
+**根因**：`JasmineTony/grok2api` 是 **2026-10-09T10:34:12Z 重新创建**的（此前被删除并重建），而 GHCR 命名空间下的 `jasminetony/grok2api` 包由**旧仓库实例**创建、在仓库删除后成为**孤立包**。新仓库的 `GITHUB_TOKEN` 对该包没有写权限，因此 `packages: write` 请求被拒。仓库 `default_workflow_permissions` 为 `read`，进一步说明该仓库的 Actions 权限是收紧配置。
+
+注意：工作流本身**是正确的**——`build_ghcr_image` 已声明 `permissions: { contents: read, packages: write }`。因此这不是 YAML 缺陷，无法靠改代码修复。
+
+**为什么分支看起来是绿的**：PR 事件只跑 `check_ghcr_image`（`push: false`，仅构建不推送），永远不会触发推送，因此碰不到该拒绝。分支**无法**修复此问题。
+
+**所需操作（需要 GitHub 设置或具备包作用域的凭据，当前 token 缺少 `read:packages`，包 API 返回 403，我无法代为执行）**
+
+1. 打开 GitHub → 个人头像 → **Packages** → `grok2api` → Package settings → **Connect repository** → 选择 `JasmineTony/grok2api`；随后重跑 main 的失败任务。
+2. 或**删除该孤立包**，让新仓库在下一次推送时重新创建并持有它。
+3. 可选：Settings → Actions → General → Workflow permissions 改为 "Read and write"，消除歧义（job 级 `packages: write` 仍然保留）。
+
+**已完成的持久修复（本分支）**：`frontend/pnpm-workspace.yaml` 显式固定 `minimumReleaseAge: 1440`（原为 pnpm 12 内置默认值，值不变、行为不变），使这条隐形策略变成可审查的仓库配置，避免同类失败再次以「不可见原因」出现。
