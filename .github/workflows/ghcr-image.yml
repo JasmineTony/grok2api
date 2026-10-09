@@ -22,6 +22,36 @@ jobs:
   verify:
     name: Verify
     runs-on: ubuntu-latest
+    # PostgreSQL / Redis 集成测试必须有真实服务，否则相关并发、锁与账本不变量没有证据。
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: grok2api
+          POSTGRES_PASSWORD: grok2api
+          POSTGRES_DB: grok2api
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U grok2api"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      # 仅指向本 job 的隔离 service container；测试用 TestMain 会按需创建并回收临时数据库。
+      TEST_POSTGRES_ADMIN_DSN: postgres://grok2api:grok2api@127.0.0.1:5432/grok2api?sslmode=disable
+      TEST_REDIS_ADDRESS: 127.0.0.1:6379
+      # 使用独立 DB 序号，避免与其它用途共用默认库。
+      TEST_REDIS_DATABASE: "9"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,7 +64,21 @@ jobs:
 
       - name: Test backend
         working-directory: backend
-        run: go test ./...
+        run: go test ./... -count=1 -json > "$RUNNER_TEMP/backend-test.json"
+
+      - name: Assert required integration tests ran
+        run: |
+          skipped=$(jq -r 'select(.Action == "skip" and .Test != null) | "\(.Package) \(.Test)"' "$RUNNER_TEMP/backend-test.json" \
+            | grep -E 'persistence/relational|runtime/redis' || true)
+          if [ -n "$skipped" ]; then
+            echo "必需集成用例被跳过（服务不可达或环境变量缺失），不得记为通过："
+            echo "$skipped"
+            exit 1
+          fi
+
+      - name: Race backend
+        working-directory: backend
+        run: go test -race ./... -count=1
 
       - name: Vet backend
         working-directory: backend
@@ -44,6 +88,15 @@ jobs:
         run: |
           make swagger
           git diff --exit-code -- backend/docs/docs.go backend/docs/swagger.json backend/docs/swagger.yaml
+
+      - name: Upload backend test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-report
+          path: ${{ runner.temp }}/backend-test.json
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -62,9 +115,19 @@ jobs:
         working-directory: frontend
         run: pnpm install --frozen-lockfile
 
+      # pnpm verify 覆盖格式、类型、Oxlint、ESLint、依赖边界、结构约束、门禁自测、覆盖率、生产构建与体积预算。
       - name: Verify frontend
         working-directory: frontend
         run: pnpm verify
+
+      - name: Upload frontend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage
+          if-no-files-found: ignore
+          retention-days: 7
 
   check_ghcr_image:
     name: Build image (${{ matrix.arch }})

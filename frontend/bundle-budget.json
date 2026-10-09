@@ -1,0 +1,90 @@
+{
+  "note": "AGENTS.md REV-5 硬阈值与冻结基线。baseline 由 `node scripts/check-bundle-budget.mjs --update` 生成，关键体积相对基线增长超过 growthTolerancePercent 即失败。",
+  "unit": "KiB = 1024 B；gzip 使用 zlib level 9；Brotli 仅记录不设阈值",
+  "thresholds": {
+    "initialJsGzipKiB": 260,
+    "routeIncrementGzipKiB": 180,
+    "allJsGzipKiB": 650,
+    "allCssGzipKiB": 20,
+    "maxChunkRawKiB": 500
+  },
+  "growthTolerancePercent": 5,
+  "baseline": {
+    "generatedAt": "2026-10-09T12:11:10.636Z",
+    "allJs": {
+      "count": 74,
+      "rawBytes": 2104707,
+      "gzipBytes": 607485,
+      "brotliBytes": 520588
+    },
+    "allCss": {
+      "count": 1,
+      "rawBytes": 102080,
+      "gzipBytes": 17054,
+      "brotliBytes": 13845
+    },
+    "initialClosure": {
+      "count": 2,
+      "files": ["assets/createLucideIcon-BHfKcrKG.js", "assets/index-DrQZI1si.js"],
+      "rawBytes": 816511,
+      "gzipBytes": 258122,
+      "brotliBytes": 218467
+    },
+    "maxChunk": {
+      "file": "assets/index-DrQZI1si.js",
+      "rawBytes": 469314,
+      "gzipBytes": 143387,
+      "brotliBytes": 124417
+    },
+    "routes": [
+      {
+        "entry": "assets/accounts-page-DAQ2aUPZ.js",
+        "closureGzipBytes": 76406
+      },
+      {
+        "entry": "assets/api-docs-page-BYqxu8PZ.js",
+        "closureGzipBytes": 29474
+      },
+      {
+        "entry": "assets/app-shell-C5vvoFhl.js",
+        "closureGzipBytes": 31614
+      },
+      {
+        "entry": "assets/client-keys-page-BsutYXVS.js",
+        "closureGzipBytes": 76396
+      },
+      {
+        "entry": "assets/creative-console-page-LftlGYVD.js",
+        "closureGzipBytes": 76695
+      },
+      {
+        "entry": "assets/dashboard-page-CR7cIx7f.js",
+        "closureGzipBytes": 130947
+      },
+      {
+        "entry": "assets/gallery-page-T2TBT5yg.js",
+        "closureGzipBytes": 31582
+      },
+      {
+        "entry": "assets/models-page-ufU7mEUm.js",
+        "closureGzipBytes": 50724
+      },
+      {
+        "entry": "assets/quality-guard-page-9T-i-b0w.js",
+        "closureGzipBytes": 66288
+      },
+      {
+        "entry": "assets/request-audits-page-DPDpOJgN.js",
+        "closureGzipBytes": 60361
+      },
+      {
+        "entry": "assets/settings-page-Dqfysufo.js",
+        "closureGzipBytes": 75773
+      },
+      {
+        "entry": "assets/video-gallery-page-Ck6yRUoS.js",
+        "closureGzipBytes": 45051
+      }
+    ]
+  }
+}

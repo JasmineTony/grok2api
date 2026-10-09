@@ -61,7 +61,44 @@
 | `internal/pkg/perfmetrics/registry_test.go` | `BenchmarkRegistryParallel` |
 
 - **缺口**：`internal/application/account` 包不存在任何 benchmark（Grep `func Benchmark` 命中 0，已核实）。而账号列表是全站最重的读路径——`Service.List` 每页要执行 6 次批量查询（账号分页、审计 token 汇总、billing、quota recovery、quota windows、model quota blocks）。阶段 4 必须补一个分页聚合基准，否则"优化"没有可比对象。
-- 具体数值见本轮测量结果（`baseline-backend2`）。
+- 基准命令（后续阶段必须用同一命令对比）：
+
+```bash
+go test ./internal/application/gateway ./internal/application/audit ./internal/infra/persistence/relational -run "^$" -bench . -benchmem -count=5
+go test ./internal/infra/egress ./internal/infra/runtime/memory ./internal/pkg/perfmetrics ./internal/transport/http/inference ./internal/transport/http/middleware -run "^$" -bench . -benchmem -count=5
+```
+
+- 实测中位数（5 次取第 3 位；Go 1.26.1 windows/amd64，GOMAXPROCS=8，CGO_ENABLED=0）：
+
+| Benchmark | ns/op | B/op | allocs/op |
+| --- | ---: | ---: | ---: |
+| `SelectorMultiModelCandidateLoad/models_2` | 15,413,665 | 2,814,369 | 34,890 |
+| `SelectorMultiModelCandidateLoad/models_8` | 22,938,981 | 5,485,970 | 50,860 |
+| `SelectorSegmentedCandidatePlanning/3000/full` | 2,202,993 | 483,879 | 5,924 |
+| `SelectorSegmentedCandidatePlanning/3000/active_segmented_64` | 1,348,750 | 77,638 | 157 |
+| `SelectorSegmentedCandidatePlanning/3000/active_segmented_64_full_fallback` | 4,209,020 | 709,670 | 6,000 |
+| `SelectorSegmentedCandidatePlanning/10000/full` | 7,594,783 | 1,782,851 | 19,951 |
+| `SelectorSegmentedCandidatePlanning/10000/active_segmented_64` | 4,690,615 | 224,372 | 159 |
+| `SelectorSegmentedCandidatePlanning/10000/active_segmented_64_full_fallback` | 11,245,722 | 2,512,185 | 20,078 |
+| `SelectorCandidatePlanning` | 617,059 | 343,678 | 5,907 |
+| `AuditServiceSQLite/attempts_0` | 427,659 | 10,853 | 91 |
+| `AuditServiceSQLite/attempts_2` | 515,894 | 17,810 | 156 |
+| `DashboardUsageAggregate/legacy` | 78,285,147 | 13,556 | 113 |
+| `DashboardUsageAggregate/performance` | 103,834,920 | 22,242 | 130 |
+| `RoutingAccountBaseProjectionWithLargePayloads` | 73,725,580 | 3,126,136 | 62,248 |
+| `SelectedCredentialHydration` | 279,813 | 143,174 | 155 |
+| `ManagerAcquireCachedBuild` | 1,883 | 1,633 | 12 |
+| `ConcurrencyLimiterCurrentMany` | 266,380 | 219,412 | 32 |
+| `RegistryParallel` | 319.8 | 0 | 0 |
+| `FirstTokenInspection/responses` | 1,319 | 320 | 7 |
+| `FirstTokenInspection/responses_custom_tool` | 1,748 | 336 | 7 |
+| `FirstTokenInspection/chat` | 2,743 | 504 | 11 |
+| `FirstTokenInspection/anthropic` | 2,401 | 408 | 10 |
+| `RequestBodyObservation/plain` | 3,156 | 5,383 | 15 |
+| `RequestBodyObservation/observed` | 4,446 | 5,449 | 16 |
+
+- **噪声警告**：`DashboardUsageAggregate`（performance 子用例 5 次区间 97.8M–118.7M ns/op）与 `RoutingAccountBaseProjectionWithLargePayloads` 波动较大；后续对比必须先评估噪声水平，不能把单次差异当作优化收益。
+- 分段选号收益的现有证据：3000 候选下 `active_segmented_64` 相对 `full` 为 1.35M vs 2.20M ns/op、157 vs 5,924 allocs/op；10000 候选下为 4.69M vs 7.59M ns/op、159 vs 19,951 allocs/op。这是**已有实现**的基线，不是本轮优化成果。
 
 ## 4. 架构审计
 
