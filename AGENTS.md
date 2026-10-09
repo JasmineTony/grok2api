@@ -1,128 +1,176 @@
 # AGENTS.md — grok2api 维护线开发规范
 
-本文件对本仓库的 AI Agent 与人类贡献者同时生效。每条规范都有编号与**可验证的判定方式**；无法通过命令或明确检查项验证的要求不得写入本文件。
+本文件是开发与验收规范的唯一事实来源（SSOT）。规则必须能通过命令或明确检查项验证；代码、工具配置与规范变化必须在同次改动中同步。
 
 ## 1. 仓库定位与上游关系
 
-- 本仓库是 [`chenyme/grok2api`](https://github.com/chenyme/grok2api) 的**衍生 / 维护线**（maintenance fork），用于承载本地维护与增量开发。
-- 上游地址：https://github.com/chenyme/grok2api
-- 上游优先：与上游冲突时，以上游 `main` 的对外行为契约为准；本地偏离必须在 PR 描述中写明理由、影响面与回滚方式。
-- 可回馈上游的通用修复、协议对齐、能力增强，应尽量实现为可回馈上游的形态（避免只在本地 fork 成立的私有改动）。
-- 判定方式：`git remote -v` 确认远端归属。本维护线 `origin` 指向 `https://github.com/JasmineTony/grok2api.git`，`upstream` 指向 `https://github.com/chenyme/grok2api.git`；推送前必须显式确认目标远端，禁止向上游仓库推送。
-- 技术栈现状：后端 Go（`backend/`，`go test ./...`、`go vet ./...`）；前端 React 19 + TypeScript + Vite + pnpm（`frontend/`）；CI 定义见 `.github/workflows/ghcr-image.yml`。
+- 本仓库是 [`chenyme/grok2api`](https://github.com/chenyme/grok2api) 的衍生维护线，不是无关的独立重写。
+- 上游 `main` 的对外行为契约优先；偏离须在 PR 中说明理由、影响与回滚方式。通用修复优先采用可回馈上游的实现。
+- `origin` 必须指向 `https://github.com/JasmineTony/grok2api.git`，`upstream` 指向 `https://github.com/chenyme/grok2api.git`。推送前执行 `git remote -v`，禁止推送 upstream。
+- 当前技术路线：Go/Gin/GORM 模块化单体；React 19、TypeScript 6、Vite 8、pnpm，服务端状态用 TanStack Query，客户端会话状态用 Zustand。
+- 架构重构不默认授权改变 API、模型路由 ID、凭据/数据库格式、鉴权、计费、账号范围、审计或取消语义；不可逆迁移和生产发布单独确认。
+- 在维护分支分阶段提交。草稿 PR/CI 验证不等于允许合并 `main`、发布或部署。
 
 ## 2. 开发规范（DEV）
 
-### DEV-1 所有新组件必须有 `data-testid`
+### DEV-1 新增或重构 UI 必须可稳定定位
 
-- 规则：`frontend/src/**` 下**新增**（或重构中重写）的 React 组件与可视元素（`*.tsx`）必须带稳定的 `data-testid`。
-- 命名：kebab-case，体现语义与所属领域，以前缀标识组件/功能，例如 `account-quota-model-block-marker`、`account-status-model-quota-block-badge`。
-- 唯一性：同一页面渲染范围内 `data-testid` 必须唯一。列表项必须可区分，二选一并**在同一文件内保持一致**：
-  - 方案 A（本项目采用）：把业务标识拼进 testid，例如 `` data-testid={`account-quota-model-block-item-${block.model}`} ``；
-  - 方案 B：静态 `data-testid` + `data-model` 等业务属性组合。
-- 稳定性：`data-testid` 是测试契约，不得随文案、样式、i18n key 变动；重命名必须同步更新测试。
-- 判定方式：`rg -n "data-testid" frontend/src` 覆盖本轮新增组件；测试通过 `@testing-library/react` 的 `getByTestId` 命中。纯展示且无断言价值的包装层可豁免，但必须在 PR 描述中说明。
+- 新增或重写的业务 React 组件及可视交互元素使用稳定的 `data-testid`，命名为领域前缀的 kebab-case。
+- 同一页面内 testid 唯一。列表采用业务 ID 后缀，例如 ``account-row-${account.id}``，不以数组位置、文案或 i18n key 作为标识。
+- 组件测试通过 testid 断言可见结果，同时检查 role、可访问名称、键盘操作及错误提示；不能用 testid 代替可访问性。
+- 纯展示包装层可豁免，但须在 PR 说明。重命名测试契约必须同步测试。
+- 判定：检查新增 JSX、运行组件集成测试与 Playwright；查询 `data-testid` 的扫描只作辅助，不等于行为验证。
 
-### DEV-2 所有新函数必须有 TypeScript 类型
+### DEV-2 显式 TypeScript 契约
 
-- 规则：新增的导出函数、组件、hook 必须有显式类型：props 使用具名或内联对象类型，函数与 hook 必须标注返回类型；不得以类型推断充当对外契约。
-- 禁止 `any` 与 `@ts-ignore`。`@typescript-eslint/no-explicit-any` 已在 `frontend/eslint.config.js` 中配置为 `error`。
-- 例外：确需绕过类型系统时必须在 PR 描述中给出理由、影响面与移除计划；只允许 `@ts-expect-error` + 说明（仅限外部类型缺陷），禁止 `@ts-ignore`。
-- 判定方式：`frontend/` 下 `pnpm lint` exit 0；`rg -n ":\s*any\b|@ts-ignore" frontend/src` 无命中；`frontend/` 下 `npx tsc -b --force` exit 0。
+- 新增导出函数、组件、hook 声明返回类型；props 使用具名或内联对象类型。不以推断代替对外契约。
+- 禁止新增 `any` 与 `@ts-ignore`。仅外部类型缺陷可用带具体说明的 `@ts-expect-error`，并在 PR 写明移除条件。
+- 生产源码、Node 工具配置、测试与 E2E 均有明确的类型检查范围。不得把失败代码移出 include 来绕过检查。
+- 判定：`pnpm typecheck`、`pnpm lint` 退出 0；辅助检索 `rg -n ":\s*any\b|@ts-ignore" frontend/src`，逐项区分代码与文本。
 
-### DEV-3 遵循本文件与仓库既有约定
+### DEV-3 沿用分层与既有能力
 
-- 规则：沿用既有分层与目录职责（`frontend/src/features/<feature>/`、`frontend/src/shared/`、`frontend/src/components/ui/`）；新增前先检索同文件、同目录、同领域实现，能复用就不复制第二套业务逻辑；保持最小改动，不夹带无关重构、批量格式化、命名调整与依赖升级。
-- 判定方式：PR diff 仅包含当前需求相关文件；`frontend/` 下 `pnpm lint`、`pnpm build` 均 exit 0；新增第三方依赖必须在 PR 描述中证明既有能力无法满足，并给出体积/许可证/回滚评估。
+- 前端依赖方向：`app` 组合 `features`；feature 消费 `entities` 的公共领域契约与 `shared`；`components/ui` 是基础原语。下层不能反向引用 app/features。
+- 多个 feature 共同使用的 DTO/只读查询归属相应 entity；命令、交互、表单及可取消任务归属 feature。禁止复制一套鉴权、API 客户端、校验、查询 key 或服务端状态。
+- 后端：Transport → Application → Domain；Repository/Ports 定义契约，Infra 实现；`internal/app` 是装配入口。存量依赖例外必须显式登记，不得扩大。
+- 先检索同目录/领域实现，复用现有解码器、表格、分页、额度展示、任务池、事务、锁与取消能力。拆分必须体现职责，不把巨型组件改名为巨型 hook。
+- 默认不增加生产依赖或框架。新增依赖须说明现有能力不足、版本兼容性、许可证、生产体积与回滚方式。
+- 判定：架构检查退出 0；diff 只含阶段范围；无未使用代码、永久兼容转发层或第二套业务规则。
 
-### DEV-4 每个 PR 必须通过 `pnpm verify`
+### DEV-4 前端质量门禁
 
-- 规则：在 `frontend/` 下执行 `pnpm verify`，必须 exit 0。
-- CI 门禁：`.github/workflows/ghcr-image.yml` 的 `verify` job 以前端 `pnpm verify` 作为合并门禁，与 `go test ./...`、`go vet ./...`、swagger 文档校验并列。
-- 过渡说明：若 `frontend/package.json` 尚未定义 `verify` 脚本，等价门禁为 `frontend/` 下依次执行 `pnpm lint`、`pnpm test`、`pnpm build` 且全部 exit 0；`verify` 脚本补齐后以 `pnpm verify` 为准。
-- 判定方式：本地实际执行上述命令并确认 exit 0；CI 上确认 `verify` job 通过。禁止以“未运行”代替“通过”。
+- `frontend/` 下 `pnpm verify` 必须退出 0，覆盖格式、类型、Oxlint、ESLint、架构、单元/组件覆盖率、生产构建和预算。
+- `pnpm verify:full` 在质量门禁之后运行真实全栈 E2E；CI 必须同时运行前端质量、E2E、后端与镜像检查，不能以快速命令代替全部验收。
+- 聚合命令不重复运行同一套测试。独立 `pnpm test` 用于开发反馈，`pnpm test:ui:coverage` 保留覆盖率入口。
+- 不以 `Skipped`、`Blocked`、未运行、只写好配置或重试后偶然通过代替 `Passed`。
+- 门禁与实际证据位置见 `frontend/AUDIT.md`、`backend/AUDIT.md`；规则变更须同步本文件。
+
+### DEV-5 格式、环境和构建一致性
+
+- Prettier 是前端格式唯一来源。仓库存储换行由 `.gitattributes` 统一为 LF；工作区检出换行由 git `core.autocrlf` 与 Prettier `endOfLine` 决定，两者不得互相矛盾。格式调整与行为变化分开审查，不夹带无关批量格式化。
+- ESLint 检查 TS/React/Hooks 语义，Oxlint 检查 correctness；生成物与基础原语的排除范围须一致且有依据。禁止宽泛 disable 掩盖问题。
+- `pnpm-lock.yaml` 冻结安装；使用 `packageManager` 声明的 pnpm。记录 Node/pnpm/Go/OS/提交与锁文件 hash。
+- 开发代理目标只用于开发，不得污染生产公开地址回退；不将后端秘密注入 `VITE_*`。生产保持后端受控运行配置、同源管理 API、哈希资源与 SPA 回退。
+- 同工具链/平台/输入下两次干净构建产物 hash 一致；冷/热构建耗时分开记录，不声称跨 Node/OS 字节级一致。
+- 判定：format/type/lint/config 回归、冻结安装、生产产物检查与两次构建比较。
 
 ## 3. 测试要求（TEST）
 
-### TEST-1 UI 组件测试覆盖率 > 75%
+### TEST-1 业务 UI 覆盖率门槛 76%
 
-- 规则：`frontend/src/**/*.tsx` 中被测试覆盖的语句与分支覆盖率必须 **> 75%**；`frontend/src/components/ui/`（shadcn 原语，已在 `frontend/eslint.config.js` 中 ignore）不计入。
-- 度量方式与门槛位置：使用 vitest coverage（provider 采用 `@vitest/coverage-v8`），门槛写入 `frontend/vitest.config.ts` 的 `test.coverage.thresholds`，通过 `coverage.include` 限定到纳入 ratchet 的文件（`src/**/*.ts(x)`；当前为 `src/features/accounts/account-quota.tsx`、`src/shared/auth/auth-store.ts`、`src/shared/auth/use-auth.ts`）。
- - 判定方式：`frontend/` 下 `pnpm test:ui:coverage`（`vitest run --coverage`）产出报表并强制门槛；未达标时 vitest 以非零退出码失败。该命令已由 `pnpm verify` 串联。
- - 现状（ratchet 已落地）：`frontend/vitest.config.ts` 已配置 v8 coverage 与全局 75 门槛，`coverage.include` 见上一条。实测：`account-quota.tsx` statements 99.06% / branches 83.6% / functions 100% / lines 100%；`auth-store.ts`（zustand 认证 store）statements 100% / branches 100% / functions 100% / lines 100%。`accounts-page.tsx` 等存量文件尚未纳入门槛（该文件格式化后 3752 行，属 §5 存量债务），需按 feature 逐块补齐后再扩大 `coverage.include`。
+- 原要求“>75%”统一为可执行的 **76%**，本轮新增/完成重构的业务 UI 按文件约束语句、分支、函数和行覆盖率。
+- 使用 Vitest `@vitest/coverage-v8`；include 和 thresholds 位于 `frontend/vitest.config.ts`，报告必须区分已纳入范围与存量未覆盖范围。
+- shadcn 基础原语不纳入业务 UI 门槛；原语内部自定义 hook 仍遵守 TEST-2。
+- 扩大覆盖采用逐阶段 ratchet，不降低已达标文件门槛，不删除断言，不通过排除新增/重构文件制造达标。
+- 判定：`pnpm test:ui:coverage` 退出 0，报告中目标文件达到门槛；既有高覆盖保持，未覆盖风险显式记录。
 
-### TEST-2 Hooks 测试覆盖率 100%
+### TEST-2 自定义 hooks 覆盖率 100%
 
-- 规则：自定义 hook（`frontend/src/**/use*.ts(x)` 以及组件文件内定义/导出的 `use*` 函数）必须达到 **100%** 语句与分支覆盖，并覆盖副作用清理（定时器、订阅、请求取消）与边界入参。
- - 判定方式：coverage 报表中 hook 文件为 100%；hook 达标后应在 `frontend/vitest.config.ts` 中对其单独设置 `thresholds` 为 100%。
- - 现状（部分落地）：hook 共 6 个（3 个独立文件 `frontend/src/shared/hooks/use-debounced-value.ts`、`frontend/src/shared/auth/use-auth.ts`、`frontend/src/features/settings/use-settings.ts`；3 个组件内 hook 见 `frontend/src/features/system/version-update.tsx`、`frontend/src/components/ui/chart.tsx`）。`use-auth.ts` 已随认证全局状态迁移到 zustand store 达标（100% 语句/分支/函数/行），并在 `frontend/vitest.config.ts` 中对其单独设置 100 门槛；其余 5 个 hook 覆盖率仍为 0，作为独立迭代推进。
+- 自定义 hook（独立 `use*.ts(x)` 或组件内的 `use*` 函数）语句、分支、函数、行均为 **100%**。
+- 覆盖订阅、定时器、请求/流取消、重复操作、StrictMode 和边界入参；按生命周期实际断言清理。
+- 可将 hook 与展示职责分离以单独设置 100% 门槛，不能为了覆盖率改变行为或隐藏未测试分支。
+- 判定：相关 hook coverage 报表与 `vitest.config.ts` 单独阈值一致。
 
-### TEST-3 关键路径必须有集成测试
+### TEST-3 关键路径组件集成测试
 
-- 规则：登录/鉴权、账号导入与凭据刷新、额度与模型封锁展示、请求审计筛选、客户端密钥增删、系统版本更新等关键路径，必须存在覆盖「UI 交互 → API 调用 → 状态与错误分支」的集成测试（mock 网络层，不 mock 被测业务组件）。
-- 判定方式：每条关键路径至少 1 个集成测试文件（例如 `frontend/src/features/accounts/accounts-page.test.tsx`），断言用户可见结果（`data-testid` 命中、错误提示、权限不足路径、空态），而非仅断言 mock 调用次数。
+- 登录/鉴权、导入与凭据刷新、额度/模型封锁、审计筛选、客户端密钥增删、设置冲突、版本更新等均需覆盖 UI → API → 状态/错误。
+- 网络边界可替换，被测业务组件、hook、decoder 与状态流保持真实；不能只检查 mock 调用次数。
+- 判定：领域集成测试断言正常/失败/空态与相关权限、重复操作、取消等路径的用户可见结果。
 
 ### TEST-4 禁止弱化测试
 
-- 规则：新增或修改业务逻辑必须同步新增/更新测试；不得删除测试、弱化断言、只验证 mock 调用，或用过度 mock 掩盖事务/权限/状态/一致性问题。
-- 判定方式：PR diff 中测试文件只增不减（减少必须有明确理由并说明替代覆盖）；断言需覆盖正常路径、异常路径、边界值、权限不足、重复请求、外部失败。
+- 业务逻辑变化同步新增/更新测试。移除测试须说明等效替代覆盖，不能删除失败断言、扩大超时或无条件重试来掩盖缺陷。
+- 既有 `node:test` 迁移到 Vitest 必须逐项保留用例和断言，并确保纯逻辑 Node 环境与组件 jsdom 环境分离。
+- 判定：测试 diff、用例计数与关键不变量对比；缺陷修复先提供复现/根因证据。
+
+### TEST-5 真实全栈 E2E 与隔离
+
+- Playwright 使用生产前端产物和真实 Go HTTP/Auth/Application/SQLite/Memory。mock 管理 API 的浏览器测试必须单列，不作为全栈通过证明。
+- 每 worker 独立端口、临时数据库/媒体目录、合成凭据；只监听 loopback，不读取真实 `config.yaml`，不继承指向真实服务的环境配置。
+- 外部 Provider/OAuth/更新查询使用明确的测试 client 或本地替身；未知外部调用失败，不放宽 TLS、鉴权或生产 readiness，不新增生产后门。
+- 空账号池 `/readyz` 未就绪与管理面可用分别断言。清理只针对测试自有 PID/目录，日志与 trace 不包含真实秘密。
+- 判定：`pnpm test:e2e`、`pnpm verify:full`；登录/会话/密码、密钥 CRUD、账号、审计、设置/模型/出口、创作/媒体、语言主题与路由刷新按阶段纳入。
+
+### TEST-6 后端与存储验证
+
+- 后端执行 `go test ./... -count=1`、`go vet ./...`、`go build ./...`；Linux CI 执行 `go test -race ./...`。
+- PostgreSQL/Redis 集成测试使用隔离 CI 服务；启动前确认环境可达，不能用缺环境跳过冒充通过。复用临时 PostgreSQL 数据库和隔离 Redis 命名空间。
+- 公开接口注释变化需生成 Swagger 并做精确 diff 校验；架构重构保持公开协议与前轮回归。
+- 判定：命令退出码、测试 JSON 中失败/跳过明细及 CI 真实结果。环境不足准确标记阻塞。
 
 ## 4. 代码审查（REV）
 
 ### REV-1 单文件不超过 600 行
 
-- 判定方式：`frontend/src` 下不存在行数 > 600 的 `*.ts` / `*.tsx`；新增文件必须 ≤ 600 行。
+- 前端新增或完成重构的 `.ts`/`.tsx` 文件 ≤600 行；存量豁免必须在阶段基线中明确，不得把未超限文件推过阈值。
+- 判定：架构/结构门禁和 `git diff --numstat`；行数仅是边界，不是只搬文件即可通过的理由。
 
 ### REV-2 函数不超过 50 行
 
-- 规则：单个函数/组件/回调不超过 50 行（不含类型声明与 import）。
-- 判定方式：人工审查；建议后续在 `frontend/eslint.config.js` 启用 `max-lines-per-function`（当前未启用，属工具链后续任务）。
+- 新增或完成重构的函数、组件、回调 ≤50 行，不含 import 与类型声明；拆分应命名实际职责，不能生成无语义 helper。
+- 判定：结构门禁与人工 diff 检查；未完成阶段的旧函数不得继续扩大。
 
-### REV-3 避免深层嵌套（最多 3 层）
+### REV-3 控制流嵌套最多 3 层
 
-- 规则：控制流嵌套（`if` / `for` / `try` / 三元链）最多 3 层；超出时用提前返回、提取函数或查表替代。
-- 判定方式：人工审查；建议后续在 `frontend/eslint.config.js` 启用 `max-depth: ["error", 3]`（当前未启用，属工具链后续任务）。
+- `if`/`for`/`try`/三元链最多 3 层，优先提前返回、明确条件与职责拆分。
+- 判定：结构门禁与 diff 检查，不用复杂表达式或一行代码隐藏嵌套。
 
-### REV-4 使用有意义的命名
+### REV-4 使用业务命名
 
-- 规则：命名表达业务语义；禁止 `xxx2`、`newXxx`、`finalXxx`、`tempXxx`、`oldXxx` 等无语义命名与无意义缩写。
-- 判定方式：`rg -n "\b(new|final|temp|old)[A-Z]" frontend/src` 与 `rg -n "\w+2\b\s*=" frontend/src` 的命中必须能逐条给出业务语义解释。
+- 禁止无意义 `xxx2`、`newXxx`、`finalXxx`、`tempXxx`、`oldXxx`；`newPassword` 等确属业务含义的名称可保留。
+- 判定：检索命中逐项说明，不对文本误报机械改名。
 
-## 5. 存量债务与生效边界（重要）
+### REV-5 产物与性能预算
 
-- 仓库现存部分文件已超过 REV 阈值，属**存量债务**，不代表本规范失效。当前 `frontend/src` 下共 **11** 个 `*.ts`/`*.tsx` 文件超过 600 行，例如：
-  - `frontend/src/features/accounts/accounts-page.tsx`（2452 行）
-  - `frontend/src/shared/i18n/index.ts`（2412 行）
-  - `frontend/src/features/creative-console/creative-console-page.tsx`（2017 行）
-  - 其余：`request-audits-page.tsx`(784)、`client-keys-page.tsx`(740)、`accounts-api.ts`(718)、`egress-nodes.tsx`(696)、`creative-console-api.ts`(692)、`settings-page.tsx`(678)、`quality-guard-page.tsx`(656)、`request-audit-detail-dialog.tsx`(606)
-- 生效边界：DEV / TEST / REV 规范对**新增代码**与**后续重构**生效；不得要求在一次 PR 内整改全部存量超限文件。
-- 硬性要求：**新增代码不得引入新的超限文件或超限函数** —— 不得新建 > 600 行的文件、不得新增 > 50 行的函数、不得把未超限文件推过阈值。
-- 修改存量超限文件时：允许行数持平或下降，不得继续增大其体积（除非 PR 同时给出拆分计划与后续任务链接）；优先把被修改的逻辑抽到新文件/新函数中。
-- 判定方式：`git diff --numstat` 对比改动前后行数，超限文件不得净增；新增文件行数 ≤ 600。
+| 指标 | 硬阈值 |
+| --- | ---: |
+| 登录首屏关键 JS 依赖闭包（含必需语言资源） | 260 KiB gzip |
+| 业务路由相对基础资源的新增 JS 依赖闭包 | 180 KiB gzip |
+| 全部生产 JS（去重） | 650 KiB gzip |
+| 全部生产 CSS | 20 KiB gzip |
+| 单个 JS chunk | 500 KiB 原始体积 |
 
-## 6. 文档维护规则
+- KiB=1024 B，gzip 使用固定参数。共享依赖去重；结合浏览器资源记录检查，不能只拆 chunk 绕预算。
+- 关键体积比冻结基线增长 >5% 必须解释处理，不自动提高阈值。压缩体积不等于服务器已开启传输压缩。
+- 性能比较同环境重复测量，记录前端资源/请求/DOM与后端 `ns/op`、`B/op`、`allocs/op`、查询次数。稳定回退 >10% 必须查明；不为提速牺牲事务、安全、审计或一致性。
+- 判定：`pnpm check:budget`、构建产物与 benchmark 前后报告；无实测收益则不声称优化成功。
 
-- 本文件是规范的唯一事实来源（SSOT）。
-- 任何规范变更（新增/修改/删除条目、调整门槛数值、变更判定命令或门禁位置）必须**在同一次改动中**同步更新本文件。
-- 条目编号稳定：删除条目时保留编号并标记「已废弃」，不得复用编号。
-- 判定方式：规范类 PR 必须包含 `AGENTS.md` 的 diff；仅修改代码而规范已变化的 PR 视为不合规。
+## 5. 存量债务与阶段边界
 
-## 7. 提交前快速自检
+- `7c0493a2` 基线：前端 18 个源码文件 >600 行，含 accounts 3864、creative-console 3018、i18n 4150、settings 1604、quality-guard 1579、egress-nodes 1560 等。旧“11个”记录已失效。
+- 完整文件/函数基线、已整改范围与问题状态由机器可读结构基线及 `frontend/AUDIT.md` 记录；不能将新违规写成历史豁免。
+- 重构按公共契约 → 账号/密钥/审计/模型 → 设置/出口/守护 → 创作/媒体/Gateway推进。完成模块移出豁免；阶段内未完成旧文件只允许持平或减小。
+- 全量审计不意味着一次性同时重写全部目录；但已批准的后续阶段不得悄悄取消或冒称全部完成。
+
+## 6. 文档与验收状态
+
+- 本文件编号稳定；条目废弃保留编号，不复用。规则变化同步配置、命令、README与审计报告。
+- 问题记录包含编号、`file:line`/日志证据、现有/新增、影响、优先级、阶段、验证方法、结果与回滚点。
+- P0：安全、数据损坏、范围/计费/审计不变量失效，立即阻塞。
+- P1：必需检查失败/未运行、预算或新架构违规、生产环境隔离失败，阶段验收阻塞。
+- P2：已登记且未扩张的计划内存量债务；P3：无缺陷证据的建议，不无限扩大任务。
+- `Passed`、`Failed`、`Skipped`、`Blocked` 分别记录。CI未实际完成、测试只定义未执行、Quality Guard只写配置均不能记为通过。
+- 自审只列相关风险：修改与保留文件、复用点/新增抽象理由、边界与重复逻辑、权限/并发/事务/性能/失败处理、测试、未覆盖风险及按阶段提交回滚。
+
+## 7. 验证入口
 
 ```powershell
-# 前端（在 E:\grok2api\frontend 下执行）
-pnpm lint                 # DEV-2 / DEV-3
-pnpm test                 # TEST 现有纯 TS 用例
-pnpm build                # DEV-3（含 tsc -b）
-npx tsc -b --force        # DEV-2 显式类型
-pnpm verify               # DEV-4 门禁（脚本未落地时用 lint + test + build 替代）
+# frontend/
+pnpm install --frozen-lockfile
+pnpm verify
+pnpm verify:full
 
-# 后端（在 E:\grok2api\backend 下执行）
-go test ./...
+# backend/
+go test ./... -count=1
 go vet ./...
+go build ./...
+# 支持 race 的 Linux/CI 工具链
+go test -race ./...
 
-# 规范自检
-rg -n ":\s*any\b|@ts-ignore" frontend/src                    # DEV-2 应为空
-rg -n "data-testid" frontend/src                             # DEV-1 覆盖新增组件
-git diff --numstat                                           # REV-1 超限文件不得净增
+# 仓库根：检查改动边界与目标远端
+git diff --check
+git diff --numstat
+git remote -v
 ```
+
+独立命令、覆盖范围、环境限制、性能基线与实际运行结果参见 [前端审计](frontend/AUDIT.md)、[后端审计](backend/AUDIT.md)。
