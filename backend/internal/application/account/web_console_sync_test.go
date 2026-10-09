@@ -13,10 +13,11 @@ import (
 
 	accountdomain "github.com/chenyme/grok2api/backend/internal/domain/account"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	consoleprovider "github.com/chenyme/grok2api/backend/internal/infra/provider/console"
 	"github.com/chenyme/grok2api/backend/internal/infra/runtime/memory"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 	"github.com/chenyme/grok2api/backend/internal/repository"
 )
 
@@ -66,7 +67,7 @@ func TestSyncWebAccountsToConsoleIsIdempotentAndPreservesBuildLink(t *testing.T)
 		t.Fatal(err)
 	}
 	var parseCalls atomic.Int64
-	service := NewService(accounts, nil, nil, nil, provider.NewRegistry(consoleSSOCodecAdapter{parseCalls: &parseCalls}), cipher, memory.NewLockStore())
+	service := NewService(accounts, nil, nil, nil, providerregistry.NewRegistry(consoleSSOCodecAdapter{parseCalls: &parseCalls}), cipher, memory.NewLockStore())
 	var observed []uint64
 	var progress [][2]int
 	first, err := service.SyncWebAccountsToConsoleWithProgress(ctx, []uint64{webAccount.ID}, func(accountID uint64) error {
@@ -197,7 +198,7 @@ func TestSyncWebAccountsToConsoleWrapsTokenAsDeterministicJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	var captured []byte
-	service := NewService(accounts, nil, nil, nil, provider.NewRegistry(consoleSSOCodecAdapter{lastPayload: &captured}), cipher, memory.NewLockStore())
+	service := NewService(accounts, nil, nil, nil, providerregistry.NewRegistry(consoleSSOCodecAdapter{lastPayload: &captured}), cipher, memory.NewLockStore())
 
 	result, err := service.SyncWebAccountsToConsoleWithProgress(ctx, []uint64{webAccount.ID}, nil, nil)
 	if err != nil {
@@ -246,7 +247,7 @@ func TestSyncWebAccountsToConsoleRoundTripsThroughRealAdapter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := NewService(accounts, nil, nil, nil, provider.NewRegistry(consoleprovider.NewAdapter(consoleprovider.Config{}, nil, nil, nil)), cipher, memory.NewLockStore())
+	service := NewService(accounts, nil, nil, nil, providerregistry.NewRegistry(consoleprovider.NewAdapter(consoleprovider.Config{}, nil, nil, nil)), cipher, memory.NewLockStore())
 
 	first, err := service.SyncWebAccountsToConsoleWithProgress(ctx, []uint64{webAccount.ID}, nil, nil)
 	if err != nil {
@@ -305,7 +306,7 @@ func TestSyncWebAccountsToConsoleRejectsInvalidUTF8Token(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := NewService(accounts, nil, nil, nil, provider.NewRegistry(consoleSSOCodecAdapter{}), cipher, memory.NewLockStore())
+	service := NewService(accounts, nil, nil, nil, providerregistry.NewRegistry(consoleSSOCodecAdapter{}), cipher, memory.NewLockStore())
 
 	if _, err := service.SyncWebAccountsToConsoleWithProgress(ctx, []uint64{webAccount.ID}, nil, nil); err == nil || !strings.Contains(err.Error(), "UTF-8") {
 		t.Fatalf("error = %v, want invalid UTF-8 rejection", err)
@@ -332,7 +333,7 @@ func TestSyncAllWebAccountsToConsoleProcessesMoreThanLegacyLimitInBatches(t *tes
 		})
 	}
 	repository := &webConsoleBatchRepository{values: values}
-	service := NewService(repository, nil, nil, nil, provider.NewRegistry(consoleSSOCodecAdapter{}), cipher, memory.NewLockStore())
+	service := NewService(repository, nil, nil, nil, providerregistry.NewRegistry(consoleSSOCodecAdapter{}), cipher, memory.NewLockStore())
 	progress := make([][2]int, 0, totalAccounts+1)
 	result, err := service.SyncAllWebAccountsToConsoleWithProgress(context.Background(), nil, func(completed, total int) error {
 		progress = append(progress, [2]int{completed, total})

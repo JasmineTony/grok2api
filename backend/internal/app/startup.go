@@ -10,7 +10,7 @@ import (
 	accountapp "github.com/chenyme/grok2api/backend/internal/application/account"
 	auditapp "github.com/chenyme/grok2api/backend/internal/application/audit"
 	accountdomain "github.com/chenyme/grok2api/backend/internal/domain/account"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/repository"
 	httpserver "github.com/chenyme/grok2api/backend/internal/transport/http"
 )
@@ -122,7 +122,7 @@ func readinessSnapshot(
 	runtimeHealth func(context.Context) error,
 	models repository.ModelRepository,
 	accounts repository.AccountRepository,
-	providers *provider.Registry,
+	providers *providerregistry.Registry,
 	ledger *auditapp.Service,
 ) httpserver.ReadinessSnapshot {
 	phase, updatedAt, report, statsig := state.snapshot()
@@ -276,7 +276,7 @@ func newReadinessStartupReport(report startupReport) *httpserver.ReadinessStartu
 	}
 }
 
-func startupCandidateUsable(candidate accountdomain.RoutingCandidate, now time.Time, providers *provider.Registry) bool {
+func startupCandidateUsable(candidate accountdomain.RoutingCandidate, now time.Time, providers *providerregistry.Registry) bool {
 	credential := candidate.Credential
 	if credential.AuthType == "" || credential.AuthStatus != accountdomain.AuthStatusActive {
 		return false

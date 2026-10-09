@@ -17,8 +17,9 @@ import (
 
 	accountdomain "github.com/chenyme/grok2api/backend/internal/domain/account"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 )
 
 type detectResponsesAdapter struct {
@@ -73,7 +74,7 @@ func TestFinishBuildDetectCredentialErrorClassifiesPermanentRefreshAsInvalid(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := NewService(repo, nil, nil, nil, provider.NewRegistry(detectResponsesAdapter{}), cipher, nil)
+	service := NewService(repo, nil, nil, nil, providerregistry.NewRegistry(detectResponsesAdapter{}), cipher, nil)
 
 	for _, refreshErr := range []error{
 		ErrCredentialRefreshPermanent,
@@ -118,7 +119,7 @@ func TestFinishBuildDetectResponseUsesScopedFailureState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := NewService(repo, nil, nil, nil, provider.NewRegistry(detectResponsesAdapter{}), cipher, nil)
+	service := NewService(repo, nil, nil, nil, providerregistry.NewRegistry(detectResponsesAdapter{}), cipher, nil)
 	response := &provider.Response{
 		StatusCode: http.StatusPaymentRequired,
 		Body:       io.NopCloser(bytes.NewReader([]byte(`{"code":"personal-team-blocked:spending-limit","error":"blocked"}`))),
@@ -267,7 +268,7 @@ func TestDetectBuildAccountsStreamsInvalidOnlyForAll(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 401 属于凭据拒绝；全量模式只将 invalid 明细推送给 observer。
-	service := NewService(repo, nil, nil, nil, provider.NewRegistry(detectResponsesAdapter{
+	service := NewService(repo, nil, nil, nil, providerregistry.NewRegistry(detectResponsesAdapter{
 		status: http.StatusUnauthorized,
 	}), cipher, nil)
 
@@ -395,7 +396,7 @@ func newConcurrentInvalidBuildDetectService(t *testing.T, accountCount int) *Ser
 			t.Fatal(err)
 		}
 	}
-	service := NewService(repo, nil, nil, nil, provider.NewRegistry(detectResponsesAdapter{
+	service := NewService(repo, nil, nil, nil, providerregistry.NewRegistry(detectResponsesAdapter{
 		status: http.StatusUnauthorized,
 	}), cipher, nil)
 	service.SetDetectPool(batch.NewPool(accountCount))

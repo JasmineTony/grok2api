@@ -21,10 +21,11 @@ import (
 	inferencedomain "github.com/chenyme/grok2api/backend/internal/domain/inference"
 	modeldomain "github.com/chenyme/grok2api/backend/internal/domain/model"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/provider/conversation"
 	"github.com/chenyme/grok2api/backend/internal/infra/runtime/memory"
 	neterrorpkg "github.com/chenyme/grok2api/backend/internal/pkg/neterror"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 )
 
 func TestClassifyQualityHold(t *testing.T) {
@@ -1591,7 +1592,7 @@ func TestAttemptLoopQualityHoldPreservesReplaySafety(t *testing.T) {
 				credentials[0].ID: {{status: http.StatusOK, body: firstBody}},
 				credentials[1].ID: {{status: http.StatusOK, body: thinking}},
 			}}
-			registry := provider.NewRegistry(adapter)
+			registry := providerregistry.NewRegistry(adapter)
 			sticky := memory.NewStickyStore()
 			accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 			selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -1696,7 +1697,7 @@ func TestAttemptLoopQualityHold(t *testing.T) {
 		credentials[1].ID: {{status: http.StatusOK, body: noThink}},
 		credentials[2].ID: {{status: http.StatusOK, body: thinking}},
 	}}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -1815,7 +1816,7 @@ func TestAttemptLoopQualityHoldFailOpenKeepsSingleAccountBody(t *testing.T) {
 	adapter := &scriptedBuildAdapter{responses: map[uint64][]scriptedBuildResponse{
 		credential.ID: {{status: http.StatusOK, body: noThink}},
 	}}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -1909,7 +1910,7 @@ func TestAttemptLoopQualityFailOpenFallbackAndTotalAttemptCap(t *testing.T) {
 		responses[credential.ID] = []scriptedBuildResponse{{status: http.StatusInternalServerError, body: `{"error":"temporary"}`}}
 	}
 	adapter := &scriptedBuildAdapter{responses: responses}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -2048,7 +2049,7 @@ func TestAttemptLoopDoesNotHoldConsoleQualityStream(t *testing.T) {
 	adapter := &scriptedConsoleAdapter{responses: map[uint64][]scriptedBuildResponse{
 		credential.ID: {{status: http.StatusOK, body: noThink}},
 	}}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)

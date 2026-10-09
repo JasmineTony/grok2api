@@ -11,7 +11,7 @@ import (
 
 	accountdomain "github.com/chenyme/grok2api/backend/internal/domain/account"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	cliprovider "github.com/chenyme/grok2api/backend/internal/infra/provider/cli"
 	consoleprovider "github.com/chenyme/grok2api/backend/internal/infra/provider/console"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
@@ -48,7 +48,7 @@ func newConsoleImportService(t *testing.T) (*Service, *relational.AccountReposit
 		t.Fatal(err)
 	}
 	accounts := relational.NewAccountRepository(database)
-	service := NewService(accounts, nil, nil, nil, provider.NewRegistry(consoleprovider.NewAdapter(consoleprovider.Config{}, nil, nil, nil)), cipher, nil)
+	service := NewService(accounts, nil, nil, nil, providerregistry.NewRegistry(consoleprovider.NewAdapter(consoleprovider.Config{}, nil, nil, nil)), cipher, nil)
 	return service, accounts
 }
 
@@ -147,7 +147,7 @@ func TestImportBuildDocumentsCountsDuplicateSourcesTowardLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	accounts := relational.NewAccountRepository(database)
-	service := NewService(accounts, nil, nil, nil, provider.NewRegistry(cliprovider.NewAdapter(cliprovider.Config{}, cipher)), cipher, nil)
+	service := NewService(accounts, nil, nil, nil, providerregistry.NewRegistry(cliprovider.NewAdapter(cliprovider.Config{}, cipher)), cipher, nil)
 
 	duplicateEntry := `{"refresh_token":"same-refresh"}`
 	duplicateDoc := []byte("[" + strings.Repeat(duplicateEntry+",", maxCredentialImportAccounts-2) + duplicateEntry + "]")

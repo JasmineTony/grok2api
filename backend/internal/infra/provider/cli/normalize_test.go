@@ -9,8 +9,8 @@ import (
 	"time"
 
 	modeldomain "github.com/chenyme/grok2api/backend/internal/domain/model"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/provider/conversation"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 )
 
 func TestNormalizeResponsesRequest(t *testing.T) {

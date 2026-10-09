@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	infraegress "github.com/chenyme/grok2api/backend/internal/infra/egress"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 )
 
 var reasoningDecodeFailureMarkers = [][]byte{

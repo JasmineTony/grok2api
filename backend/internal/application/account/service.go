@@ -18,11 +18,11 @@ import (
 
 	egressapp "github.com/chenyme/grok2api/backend/internal/application/egress"
 	accountdomain "github.com/chenyme/grok2api/backend/internal/domain/account"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
 	"github.com/chenyme/grok2api/backend/internal/pkg/batch"
 	"github.com/chenyme/grok2api/backend/internal/pkg/perfmetrics"
 	"github.com/chenyme/grok2api/backend/internal/pkg/resultcache"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 	"github.com/chenyme/grok2api/backend/internal/repository"
 	"golang.org/x/sync/singleflight"
 )
@@ -417,7 +417,7 @@ type Service struct {
 	concurrency         repository.ConcurrencyLimiter
 	quotaQueue          repository.QuotaRecoveryQueue
 	quotaRefreshState   repository.QuotaRefreshCoordinator
-	providers           *provider.Registry
+	providers           provider.Registry
 	cipher              *security.Cipher
 	refreshes           singleflight.Group
 	billingSyncs        singleflight.Group
@@ -487,7 +487,7 @@ func (s *Service) SetObservedModelStore(value repository.ObservedModelStateRepos
 	s.observedModelStore = value
 }
 
-func NewService(accounts repository.AccountRepository, audits repository.AuditRepository, deviceSessions repository.DeviceSessionRepository, sticky repository.StickySessionRepository, providers *provider.Registry, cipher *security.Cipher, refreshLock repository.DistributedLock) *Service {
+func NewService(accounts repository.AccountRepository, audits repository.AuditRepository, deviceSessions repository.DeviceSessionRepository, sticky repository.StickySessionRepository, providers provider.Registry, cipher *security.Cipher, refreshLock repository.DistributedLock) *Service {
 	return &Service{
 		accounts: accounts, audits: audits, deviceSessions: deviceSessions, sticky: sticky,
 		providers: providers, cipher: cipher, refreshLock: refreshLock,

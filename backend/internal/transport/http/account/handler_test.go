@@ -22,10 +22,11 @@ import (
 	gatewayapp "github.com/chenyme/grok2api/backend/internal/application/gateway"
 	accountdomain "github.com/chenyme/grok2api/backend/internal/domain/account"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	cliprovider "github.com/chenyme/grok2api/backend/internal/infra/provider/cli"
 	"github.com/chenyme/grok2api/backend/internal/infra/runtime/memory"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 	"github.com/chenyme/grok2api/backend/internal/repository"
 	"github.com/gin-gonic/gin"
 )
@@ -485,7 +486,7 @@ func TestRefreshTokenImportHTTPReturnsPartialResult(t *testing.T) {
 	}
 	repository := relational.NewAccountRepository(database)
 	adapter := refreshTokenImportHTTPAdapter{parser: cliprovider.NewAdapter(cliprovider.Config{}, cipher)}
-	service := accountapp.NewService(repository, nil, nil, nil, provider.NewRegistry(adapter), cipher, nil)
+	service := accountapp.NewService(repository, nil, nil, nil, providerregistry.NewRegistry(adapter), cipher, nil)
 	handler := NewHandler(service, nil)
 	router := gin.New()
 	handler.Register(router.Group("/api/admin/v1"))

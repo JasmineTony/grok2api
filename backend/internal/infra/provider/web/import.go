@@ -8,8 +8,9 @@ import (
 	"time"
 
 	"github.com/chenyme/grok2api/backend/internal/domain/account"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 )
 
 const (
@@ -46,7 +47,7 @@ func (a *Adapter) ParseImportedCredentials(data []byte) ([]provider.CredentialSe
 	if !strings.HasPrefix(trimmed, "{") && !strings.HasPrefix(trimmed, "[") {
 		return parsePlainTextCredentials(trimmed)
 	}
-	entries, err := provider.DecodeCredentialJSONEntries[importEntry](data, string(account.ProviderWeb), maxImportAccounts)
+	entries, err := providerregistry.DecodeCredentialJSONEntries[importEntry](data, string(account.ProviderWeb), maxImportAccounts)
 	if err != nil {
 		return nil, fmt.Errorf("解析 Grok Web 账号 JSON: %w", err)
 	}

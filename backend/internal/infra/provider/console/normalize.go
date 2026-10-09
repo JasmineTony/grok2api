@@ -10,8 +10,8 @@ import (
 	"time"
 
 	auditdomain "github.com/chenyme/grok2api/backend/internal/domain/audit"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/provider/cli"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 )
 
 var (

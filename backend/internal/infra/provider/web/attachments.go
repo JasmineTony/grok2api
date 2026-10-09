@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/chenyme/grok2api/backend/internal/infra/egress"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/pkg/netguard"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 )
 
 const (

@@ -15,8 +15,9 @@ import (
 	"github.com/chenyme/grok2api/backend/internal/domain/account"
 	modeldomain "github.com/chenyme/grok2api/backend/internal/domain/model"
 	infraegress "github.com/chenyme/grok2api/backend/internal/infra/egress"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 )
 
 func TestBuildVideoCreatePayloadNoImageAndSingleR2URL(t *testing.T) {
@@ -658,7 +659,7 @@ func TestBuildVideoCreateFailureStagesPreserveRetrySafety(t *testing.T) {
 }
 
 func TestRegistryExposesBuildVideoAdapter(t *testing.T) {
-	registry := provider.NewRegistry(NewAdapter(Config{}, nil))
+	registry := providerregistry.NewRegistry(NewAdapter(Config{}, nil))
 	adapter, ok := registry.Videos(account.ProviderBuild)
 	if !ok {
 		t.Fatal("Build video adapter not registered")

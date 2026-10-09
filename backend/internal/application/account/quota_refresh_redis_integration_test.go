@@ -11,7 +11,7 @@ import (
 
 	accountdomain "github.com/chenyme/grok2api/backend/internal/domain/account"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	redisruntime "github.com/chenyme/grok2api/backend/internal/infra/runtime/redis"
 	redisclient "github.com/redis/go-redis/v9"
 )
@@ -73,7 +73,7 @@ func TestRedisQuotaRefreshCrossInstanceTrailing(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := &quotaCountingAdapter{modeStarted: make(chan struct{}, 4), modeRelease: make(chan struct{}, 4)}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	first := NewService(accounts, nil, nil, nil, registry, nil, redisruntime.NewLockStore(firstRuntime))
 	second := NewService(accounts, nil, nil, nil, registry, nil, redisruntime.NewLockStore(secondRuntime))
 	first.SetQuotaRefreshCoordinator(firstRuntime)

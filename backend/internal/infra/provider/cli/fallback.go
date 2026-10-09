@@ -12,7 +12,7 @@ import (
 
 	"github.com/chenyme/grok2api/backend/internal/domain/account"
 	"github.com/chenyme/grok2api/backend/internal/infra/config"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 )
 
 // FallbackMarker 记录 Build 请求因当次 403 成功回退到 XAI。

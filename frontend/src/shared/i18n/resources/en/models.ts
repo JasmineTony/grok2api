@@ -1,0 +1,73 @@
+/**
+ * en 文案 · 模型路由与接口能力。
+ * 命名空间：models。
+ */
+export default {
+  models: {
+    title: "Model routes",
+    description:
+      "Configure multiple independent upstream targets for one client-facing model name. Requests remain session-sticky across schedulable targets and avoid unavailable targets automatically. Multiple public names may also target the same upstream model.",
+    sync: "Sync models",
+    search: "Search models",
+    model: "Public model name",
+    publicId: "Public model name",
+    upstream: "Upstream model",
+    provider: "Model source",
+    providerGrokBuild: "Grok Build",
+    providerGrokWeb: "Grok Web",
+    accountSupport: "Supported accounts",
+    lastSyncedAt: "Last synced",
+    capability: "Endpoint capability",
+    supportSummary: "{{supported}} available / {{total}} total",
+    awaitingCapabilitySync: "Awaiting model capability sync",
+    unknownCapability: "Pending sync",
+    partialCapability: "Awaiting remaining accounts",
+    available: "Available",
+    unavailable: "Unavailable",
+    status: "Status",
+    create: "Add model",
+    createTitle: "Add model route",
+    createDescription:
+      "Add a Grok Build route target. Public names are customizable and may be duplicated; targets with the same name form a scheduling pool. Build/ may be retained as part of the public name, while upstream models use the Build/ prefix.",
+    editTitle: "Edit model route",
+    bindAccounts: "Bind specific accounts",
+    boundAccounts: "Bound accounts",
+    bindAccountsDescription:
+      "When enabled, route only through the selected accounts. Otherwise, schedule from the provider's eligible account pool automatically. Built-in Console models do not require per-account bindings.",
+    enabledDescription: "Controls whether this route participates in model discovery and request scheduling.",
+    searchAccounts: "Search account name or ID",
+    selectedAccounts: "{{count}} accounts selected",
+    selectAccountRequired: "Select at least one account",
+    noBindableAccounts: "No accounts from this provider can be bound",
+    deleteTitle: "Delete model route?",
+    deleteDescription:
+      "This removes {{name}} and its client-key permissions. A later sync recreates it if upstream accounts still support the model.",
+    batchDeleteTitle: "Delete {{count}} selected model routes?",
+    batchDeleteDescription:
+      "This removes the selected routes and their client-key permissions. Models still supported by upstream accounts are recreated on a later sync.",
+    syncing: "Preparing account capability sync",
+    syncingProgress: "Syncing account capabilities {{completed}} / {{total}}",
+    synced: "Synced {{count}} models",
+    created: "Model route created",
+    updated: "Model route updated",
+    deleted: "Model route deleted",
+    batchDeleted: "Deleted {{count}} model routes",
+    batchUpdated: "Selected models updated",
+    capabilityConversation: "Conversation",
+    capabilityCompletions: "Completions",
+    capabilityResponses: "Responses",
+    capabilityMessages: "Messages",
+    capabilityImage: "Image",
+    capabilityImageEdit: "Image Edit",
+    capabilityVideo: "Video",
+    capabilityTTS: "TTS",
+    capabilitySTT: "STT",
+    capabilityRealtime: "Realtime",
+    automaticAccounts: "Automatic pool",
+    mixedAccounts: "Mixed account pools",
+    partiallyEnabled: "Partially enabled",
+    editCapability: "Edit {{capability}}",
+    deleteGroupDescription:
+      "This removes all {{count}} endpoint capabilities for {{name}} and their client-key permissions. A later catalog sync may recreate capabilities that the upstream still supports.",
+  },
+} as const;

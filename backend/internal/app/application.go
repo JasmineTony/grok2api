@@ -33,7 +33,7 @@ import (
 	infraegress "github.com/chenyme/grok2api/backend/internal/infra/egress"
 	inframedia "github.com/chenyme/grok2api/backend/internal/infra/media"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	cliprovider "github.com/chenyme/grok2api/backend/internal/infra/provider/cli"
 	consoleprovider "github.com/chenyme/grok2api/backend/internal/infra/provider/console"
 	webprovider "github.com/chenyme/grok2api/backend/internal/infra/provider/web"
@@ -80,7 +80,7 @@ type Application struct {
 	invalidations   *invalidationapp.Service
 	accountRepo     repository.AccountRepository
 	modelRepo       repository.ModelRepository
-	providers       *provider.Registry
+	providers       *providerregistry.Registry
 	web             *webprovider.Adapter
 	egress          *infraegress.Manager
 	egressOps       *egressapp.Service
@@ -225,7 +225,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	webAdapter := webprovider.NewAdapter(webProviderConfig(cfg), egressManager, cipher, responseRepo, mediaService)
 	webAdapter.SetLogger(logger)
 	consoleAdapter := consoleprovider.NewAdapter(consoleProviderConfig(cfg), egressManager, cipher, mediaService)
-	providers := provider.NewRegistry(cliAdapter, webAdapter, consoleAdapter)
+	providers := providerregistry.NewRegistry(cliAdapter, webAdapter, consoleAdapter)
 	if err := providers.Validate(); err != nil {
 		if runtimeStore != nil {
 			_ = runtimeStore.Close()

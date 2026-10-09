@@ -19,7 +19,8 @@ import (
 	mediadomain "github.com/chenyme/grok2api/backend/internal/domain/media"
 	modeldomain "github.com/chenyme/grok2api/backend/internal/domain/model"
 	infraegress "github.com/chenyme/grok2api/backend/internal/infra/egress"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 )
 
 const (
@@ -735,7 +736,7 @@ func (a *Adapter) DownloadVideo(ctx context.Context, credential account.Credenti
 		}
 		lease.Release()
 	}
-	return provider.NewCompletionReadCloser(response.Body, onFinished), contentType, response.ContentLength, nil
+	return providerregistry.NewCompletionReadCloser(response.Body, onFinished), contentType, response.ContentLength, nil
 }
 
 func invalidConsoleMediaRequest(message string) *provider.Response {

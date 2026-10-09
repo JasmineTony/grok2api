@@ -15,9 +15,10 @@ import (
 	modelapp "github.com/chenyme/grok2api/backend/internal/application/model"
 	accountdomain "github.com/chenyme/grok2api/backend/internal/domain/account"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/runtime/memory"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 )
 
 type billingStub struct {
@@ -380,7 +381,7 @@ func TestInitialSyncDoesNotRepeatUpstreamRequestsForSyncedAccount(t *testing.T) 
 		t.Fatal(err)
 	}
 	adapter := &countingAdapter{}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	accountService := accountapp.NewService(accounts, audits, memory.NewDeviceSessionStore(), memory.NewStickyStore(), registry, cipher, nil)
 	modelService := modelapp.NewService(models, accounts, accountService, registry)
 	service := NewService(slog.Default(), accountService, accountService, accountService, modelService)

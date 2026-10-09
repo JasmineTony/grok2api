@@ -27,11 +27,12 @@ import (
 	mediadomain "github.com/chenyme/grok2api/backend/internal/domain/media"
 	modeldomain "github.com/chenyme/grok2api/backend/internal/domain/model"
 	infraegress "github.com/chenyme/grok2api/backend/internal/infra/egress"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/provider/conversation"
 	providerstreamidle "github.com/chenyme/grok2api/backend/internal/infra/provider/streamidle"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
 	"github.com/chenyme/grok2api/backend/internal/pkg/neterror"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 	"github.com/chenyme/grok2api/backend/internal/repository"
 )
 
@@ -95,13 +96,13 @@ func TestWebImagePublicNamesMatchProtocolProducts(t *testing.T) {
 	if !ok || spec.PublicID != "grok-imagine-image-edit" || spec.Capability != modeldomain.CapabilityImageEdit {
 		t.Fatalf("edit upstream resolved as %#v ok=%v", spec, ok)
 	}
-	if alias, ok := provider.NewRegistry(&Adapter{}).ResolveModelAlias("grok-imagine-image-quality-lite"); ok {
+	if alias, ok := providerregistry.NewRegistry(&Adapter{}).ResolveModelAlias("grok-imagine-image-quality-lite"); ok {
 		t.Fatalf("retired quality-lite alias remains registered: %#v", alias)
 	}
 }
 
 func TestWebChatPricingUsesGrok45(t *testing.T) {
-	registry := provider.NewRegistry(&Adapter{})
+	registry := providerregistry.NewRegistry(&Adapter{})
 	for _, upstreamModel := range []string{"grok-chat-fast", "grok-chat-auto", "grok-chat-expert", "grok-chat-heavy"} {
 		if got := registry.PricingModel(account.ProviderWeb, upstreamModel); got != "grok-4.5" {
 			t.Fatalf("pricing model for %s = %q", upstreamModel, got)

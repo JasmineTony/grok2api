@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/chenyme/grok2api/backend/internal/domain/account"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/provider/sessionidentity"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 )
 
 // SyncAccountIdentity 从 Grok Web 会话读取非敏感身份元数据。
