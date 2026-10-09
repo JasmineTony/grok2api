@@ -202,3 +202,34 @@
 - `src/components/ui/use-chart.tsx` 位于 `components/ui`，该目录按既有约定被 eslint/oxlint 排除，因此这个**我们自己的新 hook 不参与 lint**（拆分前的 `chart.tsx` 同样不参与）。修复路径：移到 `src/shared/hooks/use-chart.ts` 并同步 `chart.tsx` 与 `vitest.config.ts`；登记为阶段 4 处理项。
 - `shared/api/client.ts` 的 `decodeNever` 实际不可达（`parseResponse` 在 `!response.ok` 分支已抛错），属存量死代码；本轮未改动，登记为 P3。
 - i18n 资源模块为纯数据对象，未纳入 `coverage.include`（无分支，风险低）。
+
+## 9. 阶段 4 成果（账号 / 客户端密钥 / 模型）
+
+源码文件 102 → **185**（拆分为小文件，非新增业务逻辑）；超限文件 18 → **14**、超限函数 80 → **74**；结构基线已收紧至 14 / 74。
+
+| 模块                                        |   前 |       后 |       新增测试 |
+| ------------------------------------------- | ---: | -------: | -------------: |
+| `features/accounts/accounts-page.tsx`       | 3864 | **2382** | 13（账号集成） |
+| `features/accounts/accounts-api.ts`         | 1076 |  **157** |              — |
+| `features/client-keys/client-keys-page.tsx` | 1370 |  **241** |             27 |
+| `features/models/models-page.tsx`           | 1043 |   **69** |             38 |
+
+- accounts 按 DTO / 任务流 / 批量 / 导出与各弹窗拆分；client-keys 拆出表格、表单、范围、模型选择、删除与密钥弹窗等 15 个模块；models 拆出 6 个 hook + 5 个组件
+- **阶段 3 遗留已修复**：`useChart` 从被 lint 排除的 `components/ui/` 迁至 `shared/hooks/use-chart.ts`。迁移前 `eslint` 报「File ignored because of a matching ignore pattern」、`oxlint` 报「No files found to lint」，迁移后两者均实际检查该文件且 0 问题——有前后对比证据，不是仅凭位置推断
+- 覆盖率 include 扩至 **24 个文件**；Vitest **17 文件 / 182 用例**通过；全局 **96.41 / 88.91 / 97.18 / 97.43**
+- 体积：首屏闭包 249.93 KiB（阈值 260）；全部 JS 596.59 KiB（阈值 650，相对上一基线 +0.92%，在 5% 容差内）；12 条路由增量最大 127.98 KiB（阈值 180）
+- 门禁全绿：`pnpm verify` exit 0、`pnpm test:e2e` 6/6、依赖 0 违规（211 模块 / 964 依赖）、门禁自测 9 例
+
+### 阶段 4 未达标项（如实登记，未静默排除）
+
+**accounts 拆分出的多数新模块覆盖率仅 0–45%，因此未纳入 `coverage.include`，TEST-1 的 76% 要求对 accounts 模块尚未满足。**
+
+实测（CLI 临时 include）：`account-batch-api.ts` 0、`account-export-api.ts` 0、`account-batch-dialogs.tsx` 17.85、`account-cleanup-dialog.tsx` 6.06、`account-conversion-dialogs.tsx` 14.81、`account-device-dialog.tsx` 18.18、`account-import-dialog.tsx` 20、`accounts-page.tsx` 41.63；已达标的仅 `account-quota.tsx` 99.06、`accounts-dto.ts` / `account-edit-form.ts` / `accounts-summary-panel.tsx` / `account-edit-dialog.tsx` 100。
+
+13 个账号集成测试覆盖的是**页面级流程**，不能替代各拆分模块的文件级 76%。该项登记为阶段 4 未完成，需在后续阶段补测后纳入 include；`vitest.config.ts` 的注释已同步说明，避免后人误以为 accounts 已达标。
+
+其它遗留：
+
+- `client-keys` 有 2 个用例显式放宽超时到 20s（真实 300ms 防抖 + Radix 交互在覆盖率插桩下超 5s），未弱化断言，但属测试成本问题。
+- 受限模型查询现在随弹窗卸载释放缓存（原实现以 `enabled:false` 保留），UI 可见结果一致，重开弹窗会重新请求。
+- `src/features/*/…test-support.ts(x)` 测试脚手架位于 `src` 内，会被 `tsc -b` 检查；未纳入 coverage include。
