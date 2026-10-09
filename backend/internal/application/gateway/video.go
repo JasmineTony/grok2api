@@ -536,6 +536,17 @@ func (s *Service) runVideoJob(parent context.Context, job media.Job, route model
 	forbiddenEgressRetried := make(map[uint64]bool)
 	var retryPinnedAccountID uint64
 	failureAttempts := newFailureAttemptRecorder(http.MethodPost, "/videos/generations")
+	// 重试回退必须沿用创建阶段 client key 的 provider/tier 作用域，否则 pin 账号失败后的
+	// 回退搜索会越过该 key 的账号范围。ClientKeyID==0 只可能来自升级前的历史任务。
+	accountScope := clientkey.AccountScope{}
+	if job.ClientKeyID > 0 {
+		clientKey, keyErr := s.clientKeys.Get(ctx, job.ClientKeyID)
+		if keyErr != nil {
+			s.failVideoJob(parent, job, "account_unavailable", keyErr, 0, nil)
+			return
+		}
+		accountScope = clientKey.AccountScope()
+	}
 	var selection *selectionSession
 	var lease *accountLease
 	var result provider.VideoResult
@@ -556,7 +567,7 @@ func (s *Service) runVideoJob(parent context.Context, job media.Job, route model
 			pinnedAccountID = job.AccountID
 		}
 		if pinnedAccountID > 0 && !excluded[pinnedAccountID] {
-			lease, err = s.selector.AcquirePinned(ctx, route.Provider, pinnedAccountID, route.ID, route.UpstreamModel, quotaMode, true)
+			lease, err = s.selector.AcquirePinnedForKey(ctx, route.Provider, pinnedAccountID, route.ID, route.UpstreamModel, quotaMode, true, accountScope)
 			if err != nil {
 				excluded[pinnedAccountID] = true
 				lease = nil
@@ -564,7 +575,7 @@ func (s *Service) runVideoJob(parent context.Context, job media.Job, route model
 		}
 		if lease == nil {
 			if selection == nil {
-				selection, err = s.selector.beginSelectionSession(ctx, route.Provider, route.ID, route.UpstreamModel, quotaMode, "", excluded, false)
+				selection, err = s.selector.beginSelectionSessionForKey(ctx, route.Provider, route.ID, route.UpstreamModel, quotaMode, "", excluded, false, accountScope)
 			}
 			if err == nil {
 				lease, err = selection.Acquire(ctx, excluded, false)
