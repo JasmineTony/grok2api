@@ -2,4 +2,5 @@ dist
 node_modules
 coverage
 .cache
+.artifacts
 pnpm-lock.yaml

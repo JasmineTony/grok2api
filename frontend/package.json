@@ -9,18 +9,21 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --force",
+    "typecheck:e2e": "tsc -p tsconfig.e2e.json",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "oxlint": "oxlint",
     "lint": "eslint .",
     "test": "tsc -p tsconfig.test.json && node --experimental-strip-types --test \"src/**/*.test.ts\"",
     "test:ui": "vitest run",
+    "test:e2e": "playwright test",
     "test:ui:coverage": "vitest run --coverage",
     "check:architecture": "depcruise --config .dependency-cruiser.cjs src",
     "check:structure": "node scripts/check-structure.mjs",
     "check:budget": "node scripts/check-bundle-budget.mjs",
     "test:gates": "node scripts/self-test-gates.mjs",
-    "verify": "pnpm format:check && pnpm oxlint && pnpm lint && pnpm typecheck && pnpm test && pnpm test:ui:coverage && pnpm check:architecture && pnpm check:structure && pnpm test:gates && pnpm build && pnpm check:budget",
+    "verify": "pnpm format:check && pnpm oxlint && pnpm lint && pnpm typecheck && pnpm typecheck:e2e && pnpm test && pnpm test:ui:coverage && pnpm check:architecture && pnpm check:structure && pnpm test:gates && pnpm build && pnpm check:budget",
+    "verify:full": "pnpm verify && pnpm test:e2e",
     "prepare": "cd .. && husky frontend/.husky"
   },
   "dependencies": {
@@ -59,6 +62,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.0",
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.2",
     "@testing-library/jest-dom": "^7.0.1",
