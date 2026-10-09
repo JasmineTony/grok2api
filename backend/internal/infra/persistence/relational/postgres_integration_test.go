@@ -1026,7 +1026,11 @@ func TestPostgresRoutingProjectionAndCredentialHydration(t *testing.T) {
 		t.Fatalf("cross-provider credential error = %v, want ErrNotFound", err)
 	}
 	disabled := false
-	if _, err := accounts.UpdateMany(ctx, account.ProviderBuild, []uint64{created.ID}, repository.AccountUpdates{Enabled: &disabled}); err != nil {
+	// 该账号属于 Web 池，用 Build 池更新必须被守卫拒绝，而不是静默写库。
+	if _, err := accounts.UpdateMany(ctx, account.ProviderBuild, []uint64{created.ID}, repository.AccountUpdates{Enabled: &disabled}); !errors.Is(err, repository.ErrAccountPoolMismatch) {
+		t.Fatalf("cross-provider update error = %v, want ErrAccountPoolMismatch", err)
+	}
+	if _, err := accounts.UpdateMany(ctx, account.ProviderWeb, []uint64{created.ID}, repository.AccountUpdates{Enabled: &disabled}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := accounts.GetCredentialMaterial(ctx, created.ID, account.ProviderWeb); !errors.Is(err, repository.ErrNotFound) {
