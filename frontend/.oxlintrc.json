@@ -3,5 +3,5 @@
   "categories": {
     "correctness": "error"
   },
-  "ignorePatterns": ["dist", "coverage", "src/components/ui"]
+  "ignorePatterns": ["dist", "coverage", ".artifacts", "src/components/ui"]
 }

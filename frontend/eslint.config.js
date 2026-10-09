@@ -6,7 +6,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   // coverage 与 dist 同为生成物，与 .oxlintrc.json / .prettierignore 保持一致，不参与 lint。
-  { ignores: ["dist", "coverage", "src/components/ui"] },
+  { ignores: ["dist", "coverage", ".artifacts", "src/components/ui"] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],

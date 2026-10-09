@@ -88,6 +88,7 @@
 - Playwright 使用生产前端产物和真实 Go HTTP/Auth/Application/SQLite/Memory。mock 管理 API 的浏览器测试必须单列，不作为全栈通过证明。
 - 每 worker 独立端口、临时数据库/媒体目录、合成凭据；只监听 loopback，不读取真实 `config.yaml`，不继承指向真实服务的环境配置。
 - 外部 Provider/OAuth/更新查询使用明确的测试 client 或本地替身；未知外部调用失败，不放宽 TLS、鉴权或生产 readiness，不新增生产后门。
+- 已验证的隔离手段：子进程设 `HTTP_PROXY`/`HTTPS_PROXY` 指向未监听端口使未知外呼快速失败，并剔除 `GROK2API_*`、`TEST_POSTGRES_*`、`TEST_REDIS_*`；globalSetup 在 dist 缺失或早于构建输入时重建，避免测到过期产物。
 - 空账号池 `/readyz` 未就绪与管理面可用分别断言。清理只针对测试自有 PID/目录，日志与 trace 不包含真实秘密。
 - 判定：`pnpm test:e2e`、`pnpm verify:full`；登录/会话/密码、密钥 CRUD、账号、审计、设置/模型/出口、创作/媒体、语言主题与路由刷新按阶段纳入。
 

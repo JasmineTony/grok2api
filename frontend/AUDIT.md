@@ -28,8 +28,8 @@
 | FE-A10 | 门禁自测           | `pnpm test:gates`                    | Passed（9 用例，含 4 个必须失败）                  |
 | FE-A11 | 产物体积预算       | `pnpm check:budget`                  | Passed（首屏 252.07 / 260 KiB）                    |
 | FE-A12 | 构建可复现性       | 同工具链三次构建产物哈希一致         | Passed（86 文件逐文件 SHA256 零差异）              |
-| FE-A13 | 真实全栈 E2E       | `pnpm test:e2e`                      | **Pending**（阶段 2）                              |
-| FE-A14 | 聚合全量门禁       | `pnpm verify:full`                   | **Pending**（阶段 2 接入 E2E 后提供）              |
+| FE-A13 | 真实全栈 E2E       | `pnpm test:e2e`                      | Passed（6 用例 / 4 worker / 15.9s）                |
+| FE-A14 | 聚合全量门禁       | `pnpm verify:full`                   | Passed（质量门禁 + E2E，exit 0）                   |
 
 `pnpm verify` 实测 exit 0，链路为：
 `format:check → oxlint → lint → typecheck → test → test:ui:coverage → check:architecture → check:structure → test:gates → build → check:budget`。
@@ -53,6 +53,24 @@
 | `src/shared/auth/auth-store.ts`           |   100 |    100 |   100 |   100 |
 | `src/shared/auth/use-auth.ts`             |   100 |    100 |   100 |   100 |
 | `src/features/accounts/account-quota.tsx` | 99.06 |  83.60 |   100 |   100 |
+
+### 真实全栈 E2E（阶段 2）
+
+`pnpm test:e2e` = Playwright 1.64.0（自带 Chromium 156.0.8078.4）+ 生产 `frontend/dist` + 真实 Go 二进制（临时 SQLite、Memory 运行态）。每 worker 独占一个后端进程，`fullyParallel`、`retries: 0`（不用重试掩盖缺陷）。
+
+隔离机制（均经反向验证，不是仅靠配置）：
+
+| 约束               | 实现                                                                                                 | 验证证据                                                                                                             |
+| ------------------ | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| 不触碰真实上游     | 子进程设 `HTTP_PROXY`/`HTTPS_PROXY=http://127.0.0.1:9`（未监听端口），`NO_PROXY=127.0.0.1,localhost` | 启动期版本检查报 `proxyconnect ... 127.0.0.1:9 ... refused`（非致命），管理 API 仍返回 200                           |
+| 不继承真实服务配置 | 启动前剔除全部 `GROK2API_*` 与 `TEST_POSTGRES_*`/`TEST_REDIS_*`                                      | 父进程注入假 `GROK2API_DATABASE_URL`（postgres）与 `GROK2API_QUALITY_GUARD_DIR` 后，后端仍以 sqlite 正常启动并可登录 |
+| 每 worker 独立     | 动态空闲端口 + 独立 `%TEMP%\grok2api-e2e-*`（config.yaml / backend.db / media）                      | 两个 worker 分别监听 127.0.0.1:1879 / 1878，临时目录互不重叠                                                         |
+| 只清理自有资源     | 结束只杀自己启动的进程、删除自己的临时目录                                                           | 运行后 0 残留进程、0 残留临时目录                                                                                    |
+| 测的是当前代码     | globalSetup 在 dist 缺失**或早于任一构建输入**时重建前端；后端二进制每次重建                         | 把 `dist/index.html` mtime 置为 2000-01-01 后运行：触发重建（6 passed）；随后再运行：零构建（6 passed）              |
+
+当前覆盖：未登录访问受保护路由被重定向、错误密码登录失败、正确登录后刷新仍保持、注销后不可回访、表单可访问名称。空账号池下 `/readyz` 返回 503 `not_ready` 属预期生产语义，管理面可用性单独断言，未放宽生产门槛。
+
+尚未覆盖（后续阶段补齐）：客户端密钥 CRUD、账号导入与列表、审计筛选、设置保存与版本冲突、模型/出口页面、Quality Guard 未启用状态、创作台与媒体流程、语言主题与移动视口。
 
 ## 3. 生产产物与体积预算
 
