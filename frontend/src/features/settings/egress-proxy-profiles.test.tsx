@@ -220,8 +220,11 @@ describe("EgressProxyProfiles 删除确认", () => {
     await user().click(screen.getByTestId("egress-proxy-profile-actions-prof-1"));
 
     const deleteItem = await screen.findByTestId("egress-proxy-profile-delete-prof-1");
-    expect(deleteItem).toBeDisabled();
     expect(deleteItem).toHaveTextContent(i18n.t("egressProxyProfiles.deleteBlocked", { count: 3 }));
+    // 断言用户可见后果（被阻止删除），而不是依赖 Radix 菜单项暴露 disabled 的具体属性形式：
+    // 组件以 disabled={boundNodeCount > 0} 阻止该动作（egress-proxy-profiles.tsx:424）。
+    await user().click(deleteItem);
+    expect(screen.queryByTestId("egress-proxy-profile-delete-dialog")).not.toBeInTheDocument();
   });
 
   it("未绑定节点的配置删除确认可取消", async () => {
