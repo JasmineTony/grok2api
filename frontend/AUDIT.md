@@ -1,46 +1,51 @@
 # 前端审计与验收报告
 
 本文件记录前端验收矩阵、质量门禁现状、架构审计结论、性能基线与问题清单。
-规则唯一事实来源是根目录 [`AGENTS.md`](../AGENTS.md)；本文件只记录**实际证据**与状态，不重复规范条文。
+规则唯一事实来源是根目录 [`AGENTS.md`](../AGENTS.md)；本文件只记录**实际证据**与状态。
 
-- 基线提交：`7c0493a2`（`refactor(auth): 认证全局状态由 React Context 迁移到 Zustand store`）
+- 基线提交：`7c0493a2`；阶段 0 提交：`7636acca`
 - 维护分支：`maint/modular-quality-audit`
-- 环境：Windows 11 Pro (10.0.26300)，Node `24.0.1`，pnpm `12.3.4`，TypeScript `6.0.3`，Vite `8.3.4`，Vitest `5.0.3`
-- 锁文件：`frontend/pnpm-lock.yaml` SHA256 `E0819D57485E3353C99C160B7EF7FFED39BC33D25057E4EC156543178AB64CAF`
-- 基线采集时间：2026-10-09（`pnpm verify` 为热缓存运行，非冷缓存）
+- 环境：Windows 11 Pro (10.0.26300)，Node `24.0.1`，pnpm `12.10.1`，TypeScript `6.0.3`，Vite `8.3.4`，Vitest `5.0.3`，CPU Intel i5-10210U（8 逻辑核）
+- 锁文件：`frontend/pnpm-lock.yaml` SHA256 `E0819D57485E3353C99C160B7EF7FFED39BC33D25057E4EC156543178AB64CAF`（阶段 0 基线值；阶段 1 新增 `dependency-cruiser` 后变更）
+- 单位约定：KiB = 1024 B；gzip 使用 `zlib` level 9；Vite 自身输出的 “kB” 按 1000 B 计，两者不可混用
 
 ## 1. 验收矩阵
 
-状态取值：`Passed` / `Failed` / `Skipped`（缺环境跳过）/ `Blocked`（环境不支持）/ `Pending`（本轮尚未执行）。
+状态取值：`Passed` / `Failed` / `Skipped`（缺环境跳过）/ `Blocked`（环境不支持）/ `Pending`（尚未执行）。
 不允许用 `Skipped`、`Blocked` 或"配置已写好"代替 `Passed`。
 
-| 编号   | 验收项                  | 判定命令/证据                    | 基线状态                               |
-| ------ | ----------------------- | -------------------------------- | -------------------------------------- |
-| FE-A1  | 格式一致                | `pnpm format:check`              | Passed（随 `pnpm verify`）             |
-| FE-A2  | 类型契约                | `pnpm exec tsc -b --force`       | Passed（随 `pnpm verify` 的 `tsc -b`） |
-| FE-A3  | Oxlint correctness      | `pnpm oxlint`                    | Passed（0 warnings / 0 errors）        |
-| FE-A4  | ESLint 语义             | `pnpm lint`                      | Passed                                 |
-| FE-A5  | 纯逻辑单测（node:test） | `pnpm test`                      | Passed（16 tests）                     |
-| FE-A6  | 组件单测 + 覆盖率门槛   | `pnpm test:ui:coverage`          | Passed（2 文件 / 39 tests）            |
-| FE-A7  | 生产构建                | `pnpm build`                     | Passed（1.31s）                        |
-| FE-A8  | 依赖边界与循环          | `pnpm check:architecture`        | **Pending**（门禁未落地）              |
-| FE-A9  | 产物体积预算            | `pnpm check:budget`              | **Pending**（门禁未落地）              |
-| FE-A10 | 真实全栈 E2E            | `pnpm test:e2e`                  | **Pending**（未落地）                  |
-| FE-A11 | 聚合全量门禁            | `pnpm verify:full`               | **Pending**（未落地）                  |
-| FE-A12 | 构建可复现性            | 同工具链两次干净构建产物哈希一致 | **Pending**（本轮测量中）              |
+| 编号   | 验收项             | 判定命令                             | 状态                                               |
+| ------ | ------------------ | ------------------------------------ | -------------------------------------------------- |
+| FE-A1  | 格式一致           | `pnpm format:check`                  | Passed                                             |
+| FE-A2  | 类型契约           | `pnpm typecheck`（`tsc -b --force`） | Passed（17.3s，无输出）                            |
+| FE-A3  | Oxlint correctness | `pnpm oxlint`                        | Passed（0 warnings / 0 errors，97 文件 / 96 规则） |
+| FE-A4  | ESLint 语义        | `pnpm lint`                          | Passed                                             |
+| FE-A5  | 纯逻辑单测         | `pnpm test`（node:test）             | Passed（16 tests）                                 |
+| FE-A6  | 组件单测 + 覆盖率  | `pnpm test:ui:coverage`              | Passed（2 文件 / 39 tests）                        |
+| FE-A7  | 生产构建           | `pnpm build`                         | Passed（冷 16.4s / 热 1.15–2.56s）                 |
+| FE-A8  | 依赖边界与循环     | `pnpm check:architecture`            | Passed（128 模块 / 659 依赖 / 0 违规）             |
+| FE-A9  | 结构约束           | `pnpm check:structure`               | Passed（18 超限文件 / 80 超限函数已冻结）          |
+| FE-A10 | 门禁自测           | `pnpm test:gates`                    | Passed（9 用例，含 4 个必须失败）                  |
+| FE-A11 | 产物体积预算       | `pnpm check:budget`                  | Passed（首屏 252.07 / 260 KiB）                    |
+| FE-A12 | 构建可复现性       | 同工具链三次构建产物哈希一致         | Passed（86 文件逐文件 SHA256 零差异）              |
+| FE-A13 | 真实全栈 E2E       | `pnpm test:e2e`                      | **Pending**（阶段 2）                              |
+| FE-A14 | 聚合全量门禁       | `pnpm verify:full`                   | **Pending**（阶段 2 接入 E2E 后提供）              |
 
-## 2. 质量门禁现状与检查范围
+`pnpm verify` 实测 exit 0，链路为：
+`format:check → oxlint → lint → typecheck → test → test:ui:coverage → check:architecture → check:structure → test:gates → build → check:budget`。
 
-`pnpm verify` = `format:check && oxlint && lint && test && test:ui:coverage && build`。
+## 2. 质量门禁与检查范围
 
-- **格式**：Prettier 3.9.9，配置 `frontend/.prettierrc`（`printWidth 120`、`trailingComma all`、`endOfLine auto`）。仓库存储换行由根 `.gitattributes` 统一为 LF。
-- **类型**：`tsconfig.app.json`（`src`，排除测试）、`tsconfig.node.json`（`vite.config.ts`、`vitest.config.ts`）、`tsconfig.test.json`（测试与 `src/types/*.d.ts`）三套工程。基线缺口：E2E 尚无独立 tsconfig。
-- **Lint**：ESLint 10.6.0 + `typescript-eslint` 8.63.0（`@typescript-eslint/no-explicit-any: error`）；Oxlint 1.87.0 仅 `correctness` 类。两者排除范围一致：`dist`、`coverage`、`src/components/ui`。
-- **测试**：`*.test.ts` 由 `node --experimental-strip-types --test` 运行；`*.test.tsx` 由 Vitest（jsdom）运行。双运行器并存属待收敛项（TEST-4）。
-- **覆盖率**：`@vitest/coverage-v8`，`coverage.include` 目前仅 3 个文件（`account-quota.tsx`、`auth-store.ts`、`use-auth.ts`），全局阈值 75，`use-auth.ts` 单独 100。
-- **门禁缺口**：无架构/循环检查、无体积预算、无 E2E、无门禁自测。
+- **格式**：Prettier 3.9.9，`frontend/.prettierrc`（`printWidth 120`、`trailingComma all`、`endOfLine auto`）。仓库存储换行由根 `.gitattributes` 统一为 LF；工作区 CRLF 来自 `core.autocrlf=true`，两者不冲突。
+- **类型**：`tsconfig.app.json`（`src`，排除测试）、`tsconfig.node.json`（`vite.config.ts`、`vitest.config.ts`）、`tsconfig.test.json`（测试与 `src/types/*.d.ts`）。E2E 独立 tsconfig 属阶段 2。
+- **Lint**：ESLint 10.6.0 + `typescript-eslint` 8.63.0（`@typescript-eslint/no-explicit-any: error`）；Oxlint 1.87.0 仅 `correctness`。排除范围一致：`dist`、`coverage`、`src/components/ui`。
+- **测试**：`*.test.ts` 由 `node --experimental-strip-types --test` 运行；`*.test.tsx` 由 Vitest（jsdom）运行。
+- **覆盖率**：`@vitest/coverage-v8`，`coverage.include` 当前 3 个文件，全局门槛 **76**，`use-auth.ts` 单独 100。
+- **依赖边界**：dependency-cruiser 18.5.0，`.dependency-cruiser.cjs`：循环、不可解析导入、下层反向依赖、跨 feature（存量例外显式冻结）。
+- **结构与预算**：`scripts/check-structure.mjs`、`scripts/check-bundle-budget.mjs`，基线分别是 `structure-baseline.json`、`bundle-budget.json`。
+- **门禁自测**：`scripts/self-test-gates.mjs` 用临时装置验证门禁在违规输入下确实非零退出。
 
-### 基线覆盖率实测
+### 覆盖率实测（`pnpm test:ui:coverage`）
 
 | 文件                                      | Stmts | Branch | Funcs | Lines |
 | ----------------------------------------- | ----: | -----: | ----: | ----: |
@@ -49,53 +54,49 @@
 | `src/shared/auth/use-auth.ts`             |   100 |    100 |   100 |   100 |
 | `src/features/accounts/account-quota.tsx` | 99.06 |  83.60 |   100 |   100 |
 
-注：`account-quota.tsx` 数值取自前一轮报告；`vitest` 汇总行的 84.84% 分支由该文件主导。规范门槛为 **76%**，`account-quota.tsx` 分支覆盖是当前唯一低于 90% 的纳入文件，属需继续提升项。
+## 3. 生产产物与体积预算
 
-## 3. 生产产物基线
+量化口径：`scripts/check-bundle-budget.mjs`，AST 解析 dist 内的相对 `import`/`export-from` 与懒加载 `import(...)` 字面量。
 
-`pnpm verify` 末尾构建（Vite 输出单位按 1000 B 计，下表原样引用）：
+| 指标                                          |            实测 |    阈值 | 余量                  |
+| --------------------------------------------- | --------------: | ------: | --------------------- |
+| 首屏关键 JS 闭包（2 文件：入口 + 图标运行时） | 252.07 KiB gzip | 260 KiB | 7.93 KiB（占 96.95%） |
+| 最大路由新增闭包（`dashboard-page`）          | 127.88 KiB gzip | 180 KiB | 52.12 KiB             |
+| 全部生产 JS（74 文件去重）                    | 593.25 KiB gzip | 650 KiB | 56.75 KiB             |
+| 全部生产 CSS（1 文件）                        |  16.65 KiB gzip |  20 KiB | 3.35 KiB              |
+| 最大单 chunk（`index-*.js`）                  | 458.31 KiB 原始 | 500 KiB | 41.69 KiB             |
 
-| 产物                                         |      原始 |      gzip |
-| -------------------------------------------- | --------: | --------: |
-| `assets/index-*.js`（入口）                  | 469.31 kB | 144.95 kB |
-| `assets/createLucideIcon-*.js`（图标运行时） | 347.19 kB | 115.41 kB |
-| `assets/dashboard-page-*.js`（仪表盘路由）   | 458.05 kB | 118.25 kB |
-| `assets/creative-console-page-*.js`          | 133.46 kB |  37.94 kB |
-| `assets/settings-page-*.js`                  | 117.06 kB |  23.23 kB |
-| `assets/client-keys-page-*.js`               | 108.85 kB |  30.04 kB |
-| `assets/accounts-page-*.js`                  |  98.95 kB |  23.01 kB |
-| `assets/index-*.css`                         |         — |         — |
+原始与 Brotli 参考：全部 JS raw 2055.38 KiB / brotli 508.39 KiB；首屏闭包 raw 797.37 KiB / brotli 213.35 KiB。
 
-- 首屏关键 JS 依赖闭包（入口 + `createLucideIcon` 预加载）基线约 **252 KiB gzip**（1024 B 换算，取自既有产物只读统计），规范阈值 260 KiB，**余量很小**。
-- 单个 JS chunk 阈值 500 KiB 原始体积：`index-*.js`(469.31 kB) 与 `dashboard-page-*.js`(458.05 kB) 均接近上限，`createLucideIcon`(347.19 kB) 亦偏大。
-- 结论：预算不是"宽松通过"，需要真实门禁而非事后解释。
+12 个路由新增闭包（gzip KiB）：dashboard 127.88、creative-console 74.90、accounts 74.62、client-keys 74.61、settings 74.00、quality-guard 64.73、request-audits 58.95、models 49.54、video-gallery 44.00、app-shell 30.87、gallery 30.84、api-docs 28.78。
+
+**关键结论：首屏闭包只余 7.93 KiB（3.05%）余量**，任何新增到入口闭包的代码都必须同时给出体积影响；这也是阶段 3 优先拆分 i18n 与入口依赖的直接动因。
+
+### 构建可复现性
+
+冷构建（删除 `dist`、`.cache`、`node_modules/.vite`）16.4s（vite 段 942ms，3734 modules）；热构建 1.15–2.56s。三次构建共 86 个产物文件，文件集合与逐文件 SHA256 **零差异**，即字节级可复现。
 
 ## 4. 架构审计
 
 ### 4.1 分层与依赖方向
 
-- 现有目录：`app`（路由/壳层/Provider）、`features`（业务能力）、`entities`（领域 DTO 与只读查询）、`shared`（API/鉴权/配置/组件/工具）、`components/ui`（shadcn 原语）。
-- 静态扫描（TypeScript AST，102 个非测试源码文件）结果：**未发现** `shared` / `entities` / `components/ui` 反向引用 `app` / `features`。分层方向当前成立。
-- 已发现 **9 处跨 feature 引用**，需逐项判定是"公共领域契约放错位置"还是合理的领域组合：
+- 目录职责：`app`（路由/壳层/Provider）、`features`（业务能力）、`entities`（领域 DTO 与只读查询）、`shared`（API/鉴权/配置/组件/工具）、`components/ui`（shadcn 原语）。
+- dependency-cruiser 实测（128 模块 / 659 依赖）：**0 循环、0 不可解析导入、0 下层反向依赖、0 未冻结的跨 feature 依赖**。
+- 门禁反向验证：注入 `features/models → features/settings` 后立即报 `no-cross-feature-models` 并 exit 1，删除后恢复 exit 0。
+- 已冻结的 9 处跨 feature 依赖（`.dependency-cruiser.cjs` 的 `frozenCrossFeatureDebt`，阶段 3 整改，只允许删除条目）：
 
-| 来源                                                  | 目标                                      | 判定                                           |
-| ----------------------------------------------------- | ----------------------------------------- | ---------------------------------------------- |
-| `features/accounts/accounts-page.tsx`                 | `features/settings/settings-api.ts`       | 账号页消费出口节点/订阅源 DTO，应下沉到 entity |
-| `features/audits/request-audits-page.tsx`             | `features/client-keys/client-keys-api.ts` | 审计筛选需要密钥选项，应下沉到 entity          |
-| `features/audits/request-audits-page.tsx`             | `features/accounts/accounts-api.ts`       | 审计筛选需要账号选项，应下沉到 entity          |
-| `features/creative-console/creative-console-page.tsx` | `features/client-keys/client-keys-api.ts` | 创作台选择密钥，同上                           |
-| `features/creative-console/creative-console-page.tsx` | `features/media/media-api.ts`             | 创作台上传/媒体，同上                          |
-| `features/dashboard/dashboard-page.tsx`               | `features/system/version-update.tsx`      | 复用版本更新组件，应下沉到 `shared`/entity     |
-| `features/quality-guard/degrade-accounts-panel.tsx`   | `features/accounts/accounts-api.ts`       | 守护面板列出账号，同上                         |
-| `features/quality-guard/quality-guard-page.tsx`       | `features/settings/settings-api.ts`       | 守护页需要出口节点，同上                       |
-| `features/settings/settings-page.tsx`                 | `features/system/version-update.tsx`      | 同上                                           |
-
-处理原则：多个 feature 共同消费的只读 DTO/查询入口下沉到对应 `entities/*`；命令与交互留在原 feature；不做无差别搬迁。
+| 来源 feature       | 允许目标（存量债务）      | 判定                                           |
+| ------------------ | ------------------------- | ---------------------------------------------- |
+| `accounts`         | `settings`                | 账号页消费出口节点/订阅源 DTO，应下沉到 entity |
+| `audits`           | `accounts`、`client-keys` | 审计筛选需要账号/密钥选项，应下沉到 entity     |
+| `creative-console` | `client-keys`、`media`    | 创作台选择密钥与上传，同上                     |
+| `dashboard`        | `system`                  | 复用版本更新组件，应下沉到 `shared`            |
+| `quality-guard`    | `accounts`、`settings`    | 守护面板列出账号、需要出口节点                 |
+| `settings`         | `system`                  | 同上                                           |
 
 ### 4.2 结构与体量基线
 
-- 源码文件：102 个（不含测试与 `.d.ts`）。
-- **超过 600 行**：18 个文件（规范此前记录的"11 个"已失效）：
+结构门禁实测：**102 个源码文件**（`src` 下非测试、非 `.d.ts`），其中 **18 个超过 600 行**、**80 个具名函数超过 50 行**（作为参数内联的匿名回调不计入，见脚本说明）。
 
 | 文件                                                  | 行数 |
 | ----------------------------------------------------- | ---: |
@@ -118,33 +119,36 @@
 | `features/media/video-gallery-page.tsx`               |  647 |
 | `features/quality-guard/degrade-accounts-panel.tsx`   |  636 |
 
-- **超过 50 行**的函数/组件：101 个。最严重的集中在 `AccountsPage`(3391 行)、`SettingsPage`(1411)、`EgressNodes`(1086)、`ClientKeysPage`(1060)、`ModelsPage`(776)、`ChatPanel`(758)、`VideoPanel`(651)。
-- 这是**存量债务**，按 `AGENTS.md` §5 分阶段消减；未完成阶段只允许持平或下降。
+最严重的具名超限函数：`AccountsPage`(3391)、`SettingsPage`(1411)、`EgressNodes`(1086)、`ClientKeysPage`(1060)、`ModelsPage`(776)、`ChatPanel`(758)、`VideoPanel`(651)。
+
+这些是**存量债务**，按 `AGENTS.md` §5 分阶段消减；未完成阶段只允许持平或下降，新增代码不得引入新的超限项（门禁已强制）。
 
 ### 4.3 已具备且不应重复建设的能力
 
-- 路由级懒加载（`app/deferred-pages.tsx`）、`Suspense` 回退。
+- 路由级懒加载（`app/deferred-pages.tsx`）与 `Suspense` 回退。
 - 大表虚拟化（`shared/components/virtual-table-body.tsx`，>20 行启用，含 `ResizeObserver` 与滚动监听清理）。
 - 服务端状态统一走 TanStack Query；会话状态走 Zustand store。
-- 统一 API 客户端（`shared/api/client.ts`：401 刷新重试、`navigator.locks` 并发刷新、SSE 解析、`ApiError` 语义）与解码器（`shared/api/decoder.ts`）。
+- 统一 API 客户端（401 刷新重试、`navigator.locks` 并发刷新、SSE 解析、`ApiError` 语义）与解码器。
 - 结论：性能优化必须以实测收益为准，不得以"新增虚拟化/懒加载/缓存"冒充改进。
 
 ## 5. 问题清单
 
-| 编号   | 证据                                                                                                  | 现有/新增 | 影响                                 | 优先级 | 阶段 | 验证方法                      | 状态    |
-| ------ | ----------------------------------------------------------------------------------------------------- | --------- | ------------------------------------ | ------ | ---- | ----------------------------- | ------- |
-| FE-01  | `pnpm verify` 无 E2E/预算/架构检查                                                                    | 现有      | 关键路径与体积无自动门禁             | P1     | 1、2 | 新增门禁并在 CI 实跑          | Pending |
-| FE-02  | `vitest.config.ts` 仅纳入 3 文件；规范 `>75%` 与阈值 `75` 边界不一致                                  | 现有      | 覆盖率口径歧义、覆盖面过窄           | P1     | 1    | 阈值改 76，逐阶段扩大 include | Pending |
-| FE-03  | `AGENTS.md` 债务清单为 11 个/过时行数                                                                 | 现有      | 基线不可信                           | P2     | 0    | 已按 18 个文件更正            | Passed  |
-| FE-04  | 18 个超限文件、101 个超长函数                                                                         | 现有      | 可维护性与审查成本                   | P2     | 3–6  | 逐模块拆分并移出豁免          | Pending |
-| FE-05  | `vite.config.ts` 无条件 `define` 注入 `VITE_DEV_API_TARGET`，`runtime-config.ts` 将其作为公开地址回退 | 现有      | 设置该变量时开发地址可能进入生产回退 | P1     | 1    | 环境隔离改造 + 配置回归测试   | Pending |
-| FE-06  | 9 处跨 feature 引用（见 §4.1）                                                                        | 现有      | 领域契约位置不清晰                   | P2     | 3    | 下沉到 entity 后架构检查通过  | Pending |
-| FE-07  | 已有虚拟化/懒加载/Query 能力                                                                          | 现有      | 需避免重复建设                       | P2     | 3–6  | 补测并按实测收益优化          | Pending |
-| DOC-01 | `frontend/README.md` 验证章节仅 `pnpm lint`/`pnpm build`                                              | 现有      | 文档与门禁不一致                     | P2     | 1、7 | 同步 README 与真实脚本        | Pending |
-| FE-08  | 双测试运行器（node:test + Vitest）并存                                                                | 现有      | 维护两套断言风格                     | P2     | 1    | 迁移后逐项核对用例与断言      | Pending |
-| FE-09  | `VITE_CONFIG_NATIVE_IGNORE_WARNING` 警告出现在构建输出                                                | 现有      | 噪声，需确认 CI 行为                 | P3     | 1    | 定位来源并确认是否需要处理    | Pending |
+| 编号   | 证据                                                                                  | 现有/新增 | 影响                             | 优先级 | 阶段 | 验证方法                                            | 状态                                  |
+| ------ | ------------------------------------------------------------------------------------- | --------- | -------------------------------- | ------ | ---- | --------------------------------------------------- | ------------------------------------- |
+| FE-01  | `pnpm verify` 原本无 E2E/预算/架构/结构检查                                           | 现有      | 关键路径与体积无自动门禁         | P1     | 1    | 新增四类门禁并实测通过                              | **Passed**（E2E 属 FE-A13，阶段 2）   |
+| FE-02  | 规范 `>75%` 与阈值 `75` 边界不一致；include 仅 3 文件                                 | 现有      | 覆盖率口径歧义、覆盖面过窄       | P1     | 1    | 阈值改 76 并实测通过                                | **Passed**（扩大 include 逐阶段推进） |
+| FE-03  | `AGENTS.md` 债务清单为 11 个/过时行数                                                 | 现有      | 基线不可信                       | P2     | 0    | 已按 18 个文件更正                                  | **Passed**                            |
+| FE-04  | 18 个超限文件、80 个超限具名函数                                                      | 现有      | 可维护性与审查成本               | P2     | 3–6  | 逐模块拆分并收缩基线                                | Pending                               |
+| FE-05  | `vite.config.ts` 无条件 `define` 注入 `VITE_DEV_API_TARGET`，可能进入生产公开地址回退 | 现有      | 开发地址污染生产回退             | P1     | 1    | 改为仅 `serve` 注入，构建期固定空串                 | **Passed**                            |
+| FE-06  | 9 处跨 feature 引用                                                                   | 现有      | 领域契约位置不清晰               | P2     | 3    | 下沉 entity 并删除冻结例外                          | Pending                               |
+| FE-07  | 已有虚拟化/懒加载/Query 能力                                                          | 现有      | 需避免重复建设                   | P2     | 3–6  | 补测并按实测收益优化                                | Pending                               |
+| FE-08  | 双测试运行器（node:test + Vitest）并存                                                | 现有      | 维护两套断言风格                 | P2     | 1    | 迁移后逐项核对用例与断言                            | Pending（迁移属阶段 1 收尾/阶段 3）   |
+| FE-09  | 构建输出 `__dirname` 不受 Vite 原生配置加载器支持的警告                               | 现有      | 每次构建噪声，CI 非 TTY 同样出现 | P3     | 1    | 改用 `fileURLToPath(import.meta.url)`，实测警告消失 | **Passed**                            |
+| FE-10  | 首屏闭包仅余 7.93 KiB（3.05%）预算余量                                                | 现有      | 入口新增代码空间极小             | P1     | 3    | 拆分 i18n/入口依赖并复测预算                        | Pending                               |
+| DOC-01 | `frontend/README.md` 验证章节仅 `pnpm lint`/`pnpm build`                              | 现有      | 文档与门禁不一致                 | P2     | 1    | 已同步真实脚本与门禁表                              | **Passed**                            |
 
 ## 6. 后续阶段与回滚
 
 - 阶段顺序与文件范围见 `.pi/plan/前后端全量审计与分阶段模块化升级计划-20261009-1947.md`。
-- 回滚：按阶段提交回滚源码、配置、文档与锁文件；本文件在每阶段结束时更新状态与证据，不覆盖历史结论。
+- 阶段 1 之后仍待完成：E2E（阶段 2）、公共契约与 i18n 拆分（阶段 3）、账号/密钥/审计/模型（阶段 4）、设置/出口/守护（阶段 5）、创作台/媒体/Gateway（阶段 6）、性能与文档总验收（阶段 7）。
+- 回滚：按阶段提交回滚源码、配置、文档与锁文件；门禁基线与豁免清单随对应阶段提交一起回滚。本文件在每阶段结束时更新状态与证据，不覆盖历史结论。

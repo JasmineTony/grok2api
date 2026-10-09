@@ -155,10 +155,16 @@
 ## 7. 验证入口
 
 ```powershell
-# frontend/
+# frontend/（pnpm verify 已串联全部前端门禁）
 pnpm install --frozen-lockfile
 pnpm verify
-pnpm verify:full
+# 单项复查
+pnpm typecheck
+pnpm check:architecture
+pnpm check:structure
+pnpm test:gates
+pnpm check:budget
+# 阶段 2 起：pnpm verify:full（质量门禁 + 真实全栈 E2E）
 
 # backend/
 go test ./... -count=1
