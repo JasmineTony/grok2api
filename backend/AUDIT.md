@@ -238,3 +238,30 @@ go test ./internal/infra/egress ./internal/infra/runtime/memory ./internal/pkg/p
 - `Registry.Validate` 仍为 86 行（REV-2 超限），本轮未改动。
 - `internal/infra/provider/web/sso_build_test.go` 存在与 HEAD 逐字一致的 gofmt 对齐偏差（存量，未夹带修复）。
 - 观察到一个与本改动无关的偶发失败（`infra/egress` 的 `TestPinnedHTTPSClientSOCKS5HReceivesPinnedIP`，Windows loopback reset），单独重跑 3 次通过，该包不在 diff 内。
+
+## 10. 阶段 4 成果（账号模块拆分）
+
+| 文件 | 前 | 后 |
+| --- | ---: | ---: |
+| `internal/application/account/service.go` | 4717 | **294**（+ 13 个按用例分组的同包文件） |
+| `internal/infra/persistence/relational/account_repository.go` | 2846 | **47**（+ 8 个按数据访问关注点分组的文件） |
+
+- 未引入新包，`Service` / `AccountRepository` 的公开方法签名零改动，transport 与 `internal/app` 无需修改
+- 拆分等价性以「函数体行多重集比对」证明：`service.go` 4439 = 4439、`account_repository.go` 2706 = 2706，无代码丢失或重复
+- application 侧分组：查询与视图组装、导入、Provider 转换、导出、凭据刷新、billing、quota、quota 刷新队列、批量任务、管理操作、检测、观察模型
+- 仓储侧分组：分页查询、单账号读取、路由投影（候选/基础 + 路由侧装载）、写入（事务与行锁）、批量更新与清理、状态写入、billing 与 quota
+
+### 新增基准与不变量（QA-03 / BE-03）
+
+- `BenchmarkServiceListPageAggregation`（300 账号 + billing + 额度恢复 + 额度窗口 + 模型封锁 + 审计 token）：**8.60 / 9.81 / 9.61 ms/op，1.573–1.613 MB/op，19 233–19 642 allocs/op**。该包此前**没有任何 benchmark**，这是首个可比基线。
+- `TestListPageAggregationQueryCountIsPageSizeIndependent`：pageSize ∈ {1, 20, 50, 300} 时，`Service.List` 的仓储调用序列恒为 `List → SumTokensByAccountsSince → GetBillings → GetQuotaRecoveries → GetQuotaWindows → GetModelQuotaBlocks`（固定 6 次），且每个批量方法只调用一次并收到整页 ID，即调用数不随页大小增长，**不存在 N+1**。计数在仓储边界实现（`relational.Database` 不暴露 GORM 句柄，SQL 级计数需为测试新增生产 API，故采用等价的调用级证据）。
+- 回归检查：`BenchmarkRoutingAccountBaseProjectionWithLargePayloads` 拆分后 99.2 / 90.4 / 96.6 ms/op、3 107–3 128 KB/op、62 223–62 270 allocs/op；同机 HEAD 基线 124.3 / 176.5 / 111.5 ms/op、3 083–3 128 KB/op、62 220–62 272 allocs/op → **内存与分配完全一致，无回归**（ns/op 抖动来自本机负载）。
+
+验证：`go build ./...`、`go vet ./...`、`go test ./... -count=1` 全部 exit 0；20 个外部存储集成用例按预期跳过；`pnpm verify` 与 `pnpm test:e2e`（6/6）全绿。
+
+### 阶段 4 遗留（如实登记）
+
+- `infra/persistence/relational/account_links.go` 仍 **776 行**（>600），属存量基线债务，不在本轮两个目标文件范围内。
+- 测试文件仍超 600 行：`quota_refresh_test.go` 1434、`credential_refresh_test.go` 909、`account_links_test.go` 753 等，本阶段未拆分。
+- 行为完全保持意味着 `Service.List` 仍是 6 次 SQL 往返；本轮**未**做合并优化（属需求外，且需先有实测收益证据）。
+- `Registry.Validate` 仍 86 行（REV-2 超限），未改动。
