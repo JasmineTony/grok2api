@@ -19,8 +19,19 @@ export default mergeConfig(
         // - accounts-page.tsx（3752 行、依赖大量 hooks/查询/弹窗）无法在不引入大量无关 mock 的前提下单测，故不纳入；
         //   其中本轮新增的模型级封锁分支复用 ModelQuotaBlockTooltip，由 account-quota.tsx 的用例覆盖。
         // - 其余存量文件同样不在本轮达标范围内。
-        include: ["src/features/accounts/account-quota.tsx"],
-        thresholds: { lines: 75, functions: 75, branches: 75, statements: 75 },
+        include: [
+          "src/features/accounts/account-quota.tsx",
+          "src/shared/auth/auth-store.ts",
+          "src/shared/auth/use-auth.ts",
+        ],
+        // 全局门槛 75；hook（use-auth.ts）按 AGENTS.md TEST-2 单独收紧到 100%。
+        thresholds: {
+          lines: 75,
+          functions: 75,
+          branches: 75,
+          statements: 75,
+          "src/shared/auth/use-auth.ts": { lines: 100, functions: 100, branches: 100, statements: 100 },
+        },
       },
     },
   }),
