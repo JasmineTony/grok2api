@@ -1335,7 +1335,7 @@ attemptLoop:
 			if responseFailure && qualityRequestHasReplayUnsafeHostedTools(input.Body) {
 				break attemptLoop
 			}
-			if shouldStopForNonAccountFingerprint(failureFingerprints, lastFailure) {
+			if shouldStopForNonAccountFingerprint(failureFingerprints, lastFailure, credential.Provider) {
 				break
 			}
 			continue
@@ -1381,7 +1381,7 @@ attemptLoop:
 					if !isRetryableTransportFailure(credential.Provider, err) {
 						break attemptLoop
 					}
-					if shouldStopForNonAccountFingerprint(failureFingerprints, lastFailure) {
+					if shouldStopForNonAccountFingerprint(failureFingerprints, lastFailure, credential.Provider) {
 						break attemptLoop
 					}
 				}
@@ -1500,7 +1500,7 @@ attemptLoop:
 					if !isRetryableTransportFailure(credential.Provider, err) {
 						break attemptLoop
 					}
-					if shouldStopForNonAccountFingerprint(failureFingerprints, lastFailure) {
+					if shouldStopForNonAccountFingerprint(failureFingerprints, lastFailure, credential.Provider) {
 						break attemptLoop
 					}
 					continue attemptLoop
@@ -1568,7 +1568,7 @@ attemptLoop:
 			lease.Release()
 			lastErr = fmt.Errorf("上游返回 %d", response.StatusCode)
 			s.logger.Warn("upstream_request_failed", "request_id", input.RequestID, "account_id", credential.ID, "provider", credential.Provider, "status", response.StatusCode, "upstream_code", lastFailure.UpstreamCode, "account_scoped", lastFailure.AccountScoped)
-			if shouldStopForNonAccountFingerprint(failureFingerprints, lastFailure) {
+			if shouldStopForNonAccountFingerprint(failureFingerprints, lastFailure, credential.Provider) {
 				break
 			}
 			continue
@@ -1603,7 +1603,7 @@ attemptLoop:
 						}
 						writeCancel()
 					}
-					if !qualityCrossAccountReplay || shouldStopForNonAccountFingerprint(failureFingerprints, lastFailure) {
+					if !qualityCrossAccountReplay || shouldStopForNonAccountFingerprint(failureFingerprints, lastFailure, credential.Provider) {
 						break
 					}
 					continue
@@ -2072,12 +2072,14 @@ func (b *finalizingBody) Close() error {
 
 // shouldStopForNonAccountFingerprint 仅对非账号归因故障累计指纹并在达到阈值后停止换号。
 // 账号级失败（额度、鉴权、冷却等）继续轮询其它凭证。
-// 未知 403、Team 模型限流只跳过当前号，不累计指纹、不提前结束整次请求。
-func shouldStopForNonAccountFingerprint(fingerprints map[string]int, failure *UpstreamFailure) bool {
+// Team 模型限流只跳过当前号，不累计指纹、不提前结束整次请求。
+// Grok Build 上无法归因的 403 例外：它既不写入冷却、也无法通过换号解决，逐号遍历只会
+// 耗尽整个账号池（issue #1064），因此与其它非账号归因故障同口径设上限。
+func shouldStopForNonAccountFingerprint(fingerprints map[string]int, failure *UpstreamFailure, provider accountdomain.Provider) bool {
 	if failure == nil || failure.AccountScoped || failure.Fingerprint == "" {
 		return false
 	}
-	if failure.HTTPStatus == http.StatusForbidden {
+	if failure.HTTPStatus == http.StatusForbidden && !isUnknownBuildForbidden(failure, provider) {
 		return false
 	}
 	if failure.Fingerprint == "429:team_model_rate_limit" {
@@ -2089,6 +2091,17 @@ func shouldStopForNonAccountFingerprint(fingerprints map[string]int, failure *Up
 		limit = streamIdleFailureFingerprintLimit
 	}
 	return fingerprints[failure.Fingerprint] >= limit
+}
+
+// isUnknownBuildForbidden 判断这是 Grok Build 上无法归因的 403：既不是账号级失效，
+// 也不是在更早分支已被终止的请求级策略拒绝（DPoP、安全拒答、invalid_argument 等）。
+// 这类响应此前既不冷却也不计指纹，导致每个请求都重新遍历整个账号池。
+func isUnknownBuildForbidden(failure *UpstreamFailure, provider accountdomain.Provider) bool {
+	if failure == nil || provider != accountdomain.ProviderBuild || failure.HTTPStatus != http.StatusForbidden {
+		return false
+	}
+	return !failure.AccountBlocked && !failure.PermanentAccountDenial && !failure.CredentialRejected &&
+		!failure.SpendingLimitBlocked && !failure.RequestScopedForbidden && !failure.SafetyRejection
 }
 
 func isRetryable(status int) bool {
@@ -2119,7 +2132,9 @@ func isRetryableResponse(response *provider.Response, upstreamProvider accountdo
 
 // isTerminalRequestForbidden identifies request-level 403 responses that must
 // be returned without account or egress side effects. Unknown 403 responses,
-// including bare permission-denied, remain on the credential traversal path.
+// including bare permission-denied, are never cooled down or counted as account
+// failures; on Grok Build they are only bounded by the per-request non-account
+// fingerprint limit so a single request cannot traverse the whole account pool.
 // General request policy classification is Build-specific so Web and Console
 // keep their browser/clearance recovery behavior. The exact Console DPoP rollout
 // error is also terminal because changing account or egress cannot satisfy it.

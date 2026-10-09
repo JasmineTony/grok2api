@@ -203,7 +203,7 @@ func TestNonAccountFailureFingerprintStopsAtLimit(t *testing.T) {
 	} {
 		accountScoped := &UpstreamFailure{HTTPStatus: status, AccountScoped: true, Fingerprint: http.StatusText(status)}
 		for i := 0; i < nonAccountFailureFingerprintLimit+5; i++ {
-			if shouldStopForNonAccountFingerprint(fingerprints, accountScoped) {
+			if shouldStopForNonAccountFingerprint(fingerprints, accountScoped, accountdomain.ProviderBuild) {
 				t.Fatalf("account-scoped %d stopped credential traversal at iteration %d", status, i)
 			}
 		}
@@ -212,14 +212,14 @@ func TestNonAccountFailureFingerprintStopsAtLimit(t *testing.T) {
 		t.Fatalf("account-scoped failures should not count fingerprints: %#v", fingerprints)
 	}
 
-	// 未知 403、Team 限流不计指纹，应持续换号。
+	// 非 Build 的未知 403 与 Team 限流不计指纹，应持续换号。
 	unknown403 := &UpstreamFailure{HTTPStatus: http.StatusForbidden, Fingerprint: "403:unknown"}
 	teamLimit := &UpstreamFailure{HTTPStatus: http.StatusTooManyRequests, Fingerprint: "429:team_model_rate_limit"}
 	for i := 0; i < nonAccountFailureFingerprintLimit+5; i++ {
-		if shouldStopForNonAccountFingerprint(fingerprints, unknown403) {
-			t.Fatalf("unknown 403 must not stop at iteration %d", i)
+		if shouldStopForNonAccountFingerprint(fingerprints, unknown403, accountdomain.ProviderWeb) {
+			t.Fatalf("unknown non-Build 403 must not stop at iteration %d", i)
 		}
-		if shouldStopForNonAccountFingerprint(fingerprints, teamLimit) {
+		if shouldStopForNonAccountFingerprint(fingerprints, teamLimit, accountdomain.ProviderBuild) {
 			t.Fatalf("team rate limit must not stop at iteration %d", i)
 		}
 	}
@@ -227,13 +227,46 @@ func TestNonAccountFailureFingerprintStopsAtLimit(t *testing.T) {
 		t.Fatalf("excluded failure types should not count fingerprints: %#v", fingerprints)
 	}
 
+	// Build 上无法归因的 403 既不写冷却、也无法靠换号解决，必须与其它非账号归因故障
+	// 同口径收敛，否则单个请求会把整个账号池遍历一遍（issue #1064）。
+	buildForbidden := &UpstreamFailure{HTTPStatus: http.StatusForbidden, Fingerprint: "403:unknown"}
+	buildFingerprints := map[string]int{}
+	for i := 1; i < nonAccountFailureFingerprintLimit; i++ {
+		if shouldStopForNonAccountFingerprint(buildFingerprints, buildForbidden, accountdomain.ProviderBuild) {
+			t.Fatalf("build unknown 403 stopped early at count %d", i)
+		}
+	}
+	if !shouldStopForNonAccountFingerprint(buildFingerprints, buildForbidden, accountdomain.ProviderBuild) {
+		t.Fatalf("build unknown 403 should stop after %d attempts", nonAccountFailureFingerprintLimit)
+	}
+	if buildFingerprints["403:unknown"] != nonAccountFailureFingerprintLimit {
+		t.Fatalf("build 403 fingerprint count = %d, want %d", buildFingerprints["403:unknown"], nonAccountFailureFingerprintLimit)
+	}
+	// 请求级策略拒绝永远不得被当作"无法归因的 Build 403"，否则会误给账号加惩罚。
+	for _, requestScoped := range []*UpstreamFailure{
+		{HTTPStatus: http.StatusForbidden, Fingerprint: "403:unknown", RequestScopedForbidden: true},
+		{HTTPStatus: http.StatusForbidden, Fingerprint: "403:unknown", SafetyRejection: true},
+		{HTTPStatus: http.StatusForbidden, Fingerprint: "403:unknown", AccountBlocked: true},
+		{HTTPStatus: http.StatusForbidden, Fingerprint: "403:unknown", CredentialRejected: true},
+	} {
+		if isUnknownBuildForbidden(requestScoped, accountdomain.ProviderBuild) {
+			t.Fatalf("classified 403 must not be treated as unknown: %#v", requestScoped)
+		}
+	}
+	if isUnknownBuildForbidden(&UpstreamFailure{HTTPStatus: http.StatusForbidden}, accountdomain.ProviderWeb) {
+		t.Fatal("unknown 403 must only be fingerprinted for Grok Build")
+	}
+	if isUnknownBuildForbidden(&UpstreamFailure{HTTPStatus: http.StatusUnauthorized}, accountdomain.ProviderBuild) {
+		t.Fatal("only 403 can be an unknown Build forbidden")
+	}
+
 	network := &UpstreamFailure{Fingerprint: "upstream_timeout"}
 	for i := 1; i < nonAccountFailureFingerprintLimit; i++ {
-		if shouldStopForNonAccountFingerprint(fingerprints, network) {
+		if shouldStopForNonAccountFingerprint(fingerprints, network, accountdomain.ProviderBuild) {
 			t.Fatalf("stopped early at count %d", i)
 		}
 	}
-	if !shouldStopForNonAccountFingerprint(fingerprints, network) {
+	if !shouldStopForNonAccountFingerprint(fingerprints, network, accountdomain.ProviderBuild) {
 		t.Fatalf("should stop after %d non-account failures", nonAccountFailureFingerprintLimit)
 	}
 	if fingerprints["upstream_timeout"] != nonAccountFailureFingerprintLimit {
@@ -245,10 +278,10 @@ func TestNonAccountFailureFingerprintStopsAtLimit(t *testing.T) {
 		HTTPStatus: http.StatusGatewayTimeout, Code: "upstream_stream_idle_timeout",
 		Fingerprint: "upstream_stream_idle_timeout",
 	}
-	if shouldStopForNonAccountFingerprint(idleFingerprints, idle) {
+	if shouldStopForNonAccountFingerprint(idleFingerprints, idle, accountdomain.ProviderBuild) {
 		t.Fatal("the first stream idle failure should allow one compensating account switch")
 	}
-	if !shouldStopForNonAccountFingerprint(idleFingerprints, idle) {
+	if !shouldStopForNonAccountFingerprint(idleFingerprints, idle, accountdomain.ProviderBuild) {
 		t.Fatalf("stream idle failures should stop after %d attempts", streamIdleFailureFingerprintLimit)
 	}
 	if idleFingerprints[idle.Fingerprint] != streamIdleFailureFingerprintLimit {
