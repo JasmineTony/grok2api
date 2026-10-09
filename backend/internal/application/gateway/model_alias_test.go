@@ -9,7 +9,7 @@ import (
 	"github.com/chenyme/grok2api/backend/internal/domain/account"
 	"github.com/chenyme/grok2api/backend/internal/domain/audit"
 	modeldomain "github.com/chenyme/grok2api/backend/internal/domain/model"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/provider/console"
 	"github.com/chenyme/grok2api/backend/internal/infra/provider/conversation"
 	"github.com/chenyme/grok2api/backend/internal/repository"
@@ -151,7 +151,7 @@ func TestResolvePublicModelRoutesGatesDynamicAliasesAndPreservesCompatibility(t 
 		models: &aliasRouteResolver{
 			byPublic: map[string][]modeldomain.Route{"Build/grok-4.5": {route}},
 		},
-		providers: provider.NewRegistry(console.NewAdapter(console.Config{}, nil, nil, nil)),
+		providers: providerregistry.NewRegistry(console.NewAdapter(console.Config{}, nil, nil, nil)),
 	}
 
 	// Base model always works.

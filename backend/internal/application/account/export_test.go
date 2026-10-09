@@ -9,11 +9,12 @@ import (
 
 	accountdomain "github.com/chenyme/grok2api/backend/internal/domain/account"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	cliprovider "github.com/chenyme/grok2api/backend/internal/infra/provider/cli"
 	consoleprovider "github.com/chenyme/grok2api/backend/internal/infra/provider/console"
 	webprovider "github.com/chenyme/grok2api/backend/internal/infra/provider/web"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 )
 
 func TestExportCredentialsRoundTripsImportFormat(t *testing.T) {
@@ -50,7 +51,7 @@ func TestExportCredentialsRoundTripsImportFormat(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := cliprovider.NewAdapter(cliprovider.Config{}, cipher)
-	service := NewService(repository, nil, nil, nil, provider.NewRegistry(adapter), cipher, nil)
+	service := NewService(repository, nil, nil, nil, providerregistry.NewRegistry(adapter), cipher, nil)
 
 	result, err := service.ExportCredentials(ctx)
 	if err != nil {
@@ -143,7 +144,7 @@ func TestExportProviderCredentialsCursorKeepsStableSnapshot(t *testing.T) {
 	second := createAccount("second")
 	third := createAccount("third")
 	adapter := cliprovider.NewAdapter(cliprovider.Config{}, cipher)
-	service := NewService(repository, nil, nil, nil, provider.NewRegistry(adapter), cipher, nil)
+	service := NewService(repository, nil, nil, nil, providerregistry.NewRegistry(adapter), cipher, nil)
 
 	pageOne, err := service.ExportProviderCredentialsCursor(ctx, accountdomain.ProviderBuild, 0, 0, 2)
 	if err != nil {
@@ -247,7 +248,7 @@ func TestExportProviderCredentialsRoundTripsSSOProviders(t *testing.T) {
 			if _, err := repository.Update(ctx, created); err != nil {
 				t.Fatal(err)
 			}
-			service := NewService(repository, nil, nil, nil, provider.NewRegistry(test.adapter), cipher, nil)
+			service := NewService(repository, nil, nil, nil, providerregistry.NewRegistry(test.adapter), cipher, nil)
 
 			result, err := service.ExportProviderCredentials(ctx, test.providerValue)
 			if err != nil {

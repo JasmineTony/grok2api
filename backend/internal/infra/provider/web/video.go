@@ -17,7 +17,8 @@ import (
 	"github.com/chenyme/grok2api/backend/internal/domain/account"
 	domainegress "github.com/chenyme/grok2api/backend/internal/domain/egress"
 	settingsdomain "github.com/chenyme/grok2api/backend/internal/domain/settings"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 )
 
 type webMediaUpstreamError struct {
@@ -351,7 +352,7 @@ func (a *Adapter) DownloadVideo(ctx context.Context, credential account.Credenti
 		}
 		lease.Release()
 	}
-	return provider.NewCompletionReadCloser(response.Body, onFinished), contentType, response.ContentLength, nil
+	return providerregistry.NewCompletionReadCloser(response.Body, onFinished), contentType, response.ContentLength, nil
 }
 
 func parseVideoStream(response *http.Response, progress func(int)) (provider.VideoResult, string, error) {

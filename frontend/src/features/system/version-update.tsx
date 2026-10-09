@@ -1,32 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowUpRight, Info, RefreshCw } from "lucide-react";
 import { type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { checkForUpdates, getVersionInfo } from "@/entities/system/system-api";
+import { useCheckForUpdates, useVersionInfo } from "@/features/system/use-version-update";
 import { cn } from "@/shared/lib/cn";
 import { formatDateTime } from "@/shared/lib/format";
-
-const versionQueryKey = ["system-version"] as const;
-
-function useVersionInfo() {
-  return useQuery({
-    queryKey: versionQueryKey,
-    queryFn: getVersionInfo,
-    staleTime: 60_000,
-    retry: 1,
-  });
-}
-
-function useCheckForUpdates() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: checkForUpdates,
-    onSuccess: (value) => queryClient.setQueryData(versionQueryKey, value),
-  });
-}
 
 export function CurrentVersionLabel() {
   const versionQuery = useVersionInfo();

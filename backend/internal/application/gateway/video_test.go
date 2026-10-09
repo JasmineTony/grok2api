@@ -23,8 +23,9 @@ import (
 	"github.com/chenyme/grok2api/backend/internal/domain/media"
 	"github.com/chenyme/grok2api/backend/internal/domain/model"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/runtime/memory"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 	"github.com/chenyme/grok2api/backend/internal/repository"
 )
 
@@ -245,7 +246,7 @@ func TestCreateVideoAppliesRouteConstraintsAfterKeyEligibilityAndBeforeInputIO(t
 	service := &Service{
 		models:     &aliasRouteResolver{byPublic: map[string][]model.Route{"shared-video": routes}},
 		clientKeys: clientkeyapp.NewService(nil, nil, nil, 60, 4, nil),
-		providers:  provider.NewRegistry(consoleVideoAdmissionAdapter{}),
+		providers:  providerregistry.NewRegistry(consoleVideoAdmissionAdapter{}),
 		mediaJobs:  jobs, mediaAssets: assets, mediaQueue: make(chan string, 1), mediaQueued: make(map[string]struct{}),
 		logger: slog.Default(),
 	}
@@ -836,7 +837,7 @@ func TestVideoWebForbiddenRetriesPinnedAccountOnceThenFailsOver(t *testing.T) {
 		failures: map[uint64]int{first.ID: 2},
 		status:   http.StatusForbidden,
 	}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)

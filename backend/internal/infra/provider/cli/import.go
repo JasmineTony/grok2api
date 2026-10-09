@@ -11,8 +11,9 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 )
 
 const (
@@ -144,7 +145,7 @@ func parsePlainTextRefreshTokens(value string) ([]importedCredentialEntry, error
 }
 
 func parseImportedCredentialJSONSequence(data []byte) ([]importedCredentialEntry, error) {
-	return provider.DecodeCredentialJSONEntries[importedCredentialEntry](data, credentialImportProvider, maxCredentialImportAccounts)
+	return providerregistry.DecodeCredentialJSONEntries[importedCredentialEntry](data, credentialImportProvider, maxCredentialImportAccounts)
 }
 
 func parseImportedCredentialJSONValue(data []byte) ([]importedCredentialEntry, error) {

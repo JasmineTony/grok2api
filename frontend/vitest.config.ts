@@ -23,17 +23,29 @@ export default mergeConfig(
         //   其中本轮新增的模型级封锁分支复用 ModelQuotaBlockTooltip，由 account-quota.tsx 的用例覆盖。
         // - 其余存量文件同样不在本轮达标范围内。
         include: [
+          "src/components/ui/use-chart.tsx",
           "src/features/accounts/account-quota.tsx",
+          "src/features/settings/use-settings.ts",
+          "src/features/system/use-version-update.ts",
+          "src/shared/api/client.ts",
           "src/shared/auth/auth-store.ts",
           "src/shared/auth/use-auth.ts",
+          "src/shared/components/virtual-table-body.tsx",
+          "src/shared/hooks/use-debounced-value.ts",
         ],
-        // 业务 UI 门槛 76%（AGENTS.md TEST-1）；hook（use-auth.ts）按 AGENTS.md TEST-2 单独收紧到 100%。
+        // 业务 UI 门槛 76%（AGENTS.md TEST-1）；自定义 hook 按 AGENTS.md TEST-2 单独收紧到 100%。
+        // hook 与展示组件已拆分（use-chart.tsx / use-version-update.ts），
+        // 否则文件级阈值会把无关的渲染分支一并纳入 100% 要求。
         thresholds: {
           lines: 76,
           functions: 76,
           branches: 76,
           statements: 76,
+          "src/components/ui/use-chart.tsx": { lines: 100, functions: 100, branches: 100, statements: 100 },
+          "src/features/settings/use-settings.ts": { lines: 100, functions: 100, branches: 100, statements: 100 },
+          "src/features/system/use-version-update.ts": { lines: 100, functions: 100, branches: 100, statements: 100 },
           "src/shared/auth/use-auth.ts": { lines: 100, functions: 100, branches: 100, statements: 100 },
+          "src/shared/hooks/use-debounced-value.ts": { lines: 100, functions: 100, branches: 100, statements: 100 },
         },
       },
     },

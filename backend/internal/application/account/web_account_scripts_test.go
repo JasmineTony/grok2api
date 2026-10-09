@@ -9,8 +9,9 @@ import (
 	"time"
 
 	accountdomain "github.com/chenyme/grok2api/backend/internal/domain/account"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/runtime/memory"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 )
 
 func TestRunWebAccountScriptsReportsProgressAndIsolatesFailures(t *testing.T) {
@@ -202,7 +203,7 @@ func TestWebAccountScriptsRejectConcurrentWorkForTheSameAccount(t *testing.T) {
 		entered: make(chan struct{}, 2),
 		release: make(chan struct{}),
 	}
-	service.providers = provider.NewRegistry(adapter)
+	service.providers = providerregistry.NewRegistry(adapter)
 	service.refreshLock = memory.NewLockStore()
 
 	errorsChannel := make(chan error, 1)

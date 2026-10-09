@@ -29,10 +29,10 @@ import (
 	mediadomain "github.com/chenyme/grok2api/backend/internal/domain/media"
 	modeldomain "github.com/chenyme/grok2api/backend/internal/domain/model"
 	infraegress "github.com/chenyme/grok2api/backend/internal/infra/egress"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
 	neterrorpkg "github.com/chenyme/grok2api/backend/internal/pkg/neterror"
 	"github.com/chenyme/grok2api/backend/internal/pkg/requestmeta"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 	"github.com/chenyme/grok2api/backend/internal/repository"
 )
 
@@ -203,7 +203,7 @@ type Service struct {
 	audits                      auditRecorder
 	accounts                    *accountapp.Service
 	clientKeys                  *clientkeyapp.Service
-	providers                   *provider.Registry
+	providers                   provider.Registry
 	selector                    *Selector
 	responses                   repository.ResponseRepository
 	maxAttempts                 atomic.Int64
@@ -261,7 +261,7 @@ func (s *Service) ConfigureMediaAssets(store videoAssetStore) {
 	s.mediaAssets = store
 }
 
-func NewService(models routeResolver, audits auditRecorder, accounts *accountapp.Service, clientKeys *clientkeyapp.Service, providers *provider.Registry, selector *Selector, responses repository.ResponseRepository, maxAttempts int) *Service {
+func NewService(models routeResolver, audits auditRecorder, accounts *accountapp.Service, clientKeys *clientkeyapp.Service, providers provider.Registry, selector *Selector, responses repository.ResponseRepository, maxAttempts int) *Service {
 	service := &Service{
 		models: models, audits: audits, accounts: accounts, clientKeys: clientKeys, providers: providers,
 		selector: selector, responses: responses, logger: slog.Default(),

@@ -8,7 +8,8 @@ import (
 
 	accountdomain "github.com/chenyme/grok2api/backend/internal/domain/account"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 )
 
 func TestSyncAccountIdentityLinksUniqueBuildWithoutSharingState(t *testing.T) {
@@ -212,7 +213,7 @@ func TestSyncConsoleAccountIdentityLinksUniqueWebAccountOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := &consoleIdentityAdapterStub{identity: provider.AccountIdentity{UserID: "same-user", Email: "same@example.com"}}
-	service := NewService(repo, nil, nil, nil, provider.NewRegistry(adapter), nil, nil)
+	service := NewService(repo, nil, nil, nil, providerregistry.NewRegistry(adapter), nil, nil)
 	if err := service.SyncAccountIdentity(ctx, console.ID); err != nil {
 		t.Fatal(err)
 	}

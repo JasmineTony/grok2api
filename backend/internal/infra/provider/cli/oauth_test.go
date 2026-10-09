@@ -7,8 +7,9 @@ import (
 	accountapp "github.com/chenyme/grok2api/backend/internal/application/account"
 	accountdomain "github.com/chenyme/grok2api/backend/internal/domain/account"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -118,7 +119,7 @@ func TestCredentialRefreshCallsOAuthAndPersistsRotationEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := accountapp.NewService(repository, nil, nil, nil, provider.NewRegistry(adapter), cipher, nil)
+	service := accountapp.NewService(repository, nil, nil, nil, providerregistry.NewRegistry(adapter), cipher, nil)
 	refreshed, err := service.EnsureCredential(ctx, credential, true)
 	if err != nil {
 		t.Fatal(err)

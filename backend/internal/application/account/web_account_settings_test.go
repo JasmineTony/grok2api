@@ -12,7 +12,8 @@ import (
 
 	accountdomain "github.com/chenyme/grok2api/backend/internal/domain/account"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 )
 
 func TestWebAccountSettingsAreWebOnlyAndGenerateBirthDate(t *testing.T) {
@@ -175,7 +176,7 @@ func newWebAccountSettingsTestService(t *testing.T) (*Service, *relational.Accou
 	}
 	repo := relational.NewAccountRepository(database)
 	adapter := &webAccountSettingsAdapterStub{}
-	service := NewService(repo, nil, nil, nil, provider.NewRegistry(adapter), nil, nil)
+	service := NewService(repo, nil, nil, nil, providerregistry.NewRegistry(adapter), nil, nil)
 	service.now = func() time.Time { return time.Date(2026, 7, 18, 0, 0, 0, 0, time.UTC) }
 	return service, repo, adapter
 }

@@ -27,11 +27,12 @@ import (
 	modeldomain "github.com/chenyme/grok2api/backend/internal/domain/model"
 	infraegress "github.com/chenyme/grok2api/backend/internal/infra/egress"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/runtime/memory"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
 	neterrorpkg "github.com/chenyme/grok2api/backend/internal/pkg/neterror"
 	"github.com/chenyme/grok2api/backend/internal/pkg/requestmeta"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 	"github.com/chenyme/grok2api/backend/internal/repository"
 )
 
@@ -198,7 +199,7 @@ func TestGatewayFailsOverBeforeReturningBody(t *testing.T) {
 		failureHeader:   http.Header{"X-Should-Retry": {"false"}},
 		reasoningEffort: "high",
 	}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	cipher := testCipher(t)
 	sticky := memory.NewStickyStore()
 	concurrency := memory.NewConcurrencyLimiter()
@@ -507,7 +508,7 @@ func TestQualityProbeForcesObservedNodeForUnboundAccountAndRejectsConflictingBin
 		t.Fatal(err)
 	}
 	adapter := &forcedQualityProbeAdapter{}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -570,7 +571,7 @@ func TestGatewayBuildResponseHeaderTimeoutDoesNotSwitchAccounts(t *testing.T) {
 		}
 	}
 	adapter := &failoverAdapter{transportErrorIDs: map[uint64]error{credentials[0].ID: responseHeaderTimeoutTestError{}}}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -638,7 +639,7 @@ func TestGatewayNonStreamingEmptyIdleCoolsAccountAndSwitches(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := &failoverAdapter{transportErrorIDs: map[uint64]error{credentials[0].ID: &neterrorpkg.IdleTimeoutError{}}}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -809,7 +810,7 @@ func TestGatewayUnlimitedAttemptsExhaustsEligiblePool(t *testing.T) {
 		failureBody:   `{"code":"personal-team-blocked:spending-limit","error":"You have run out of credits"}`,
 		failureHeader: http.Header{"X-Should-Retry": {"false"}},
 	}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -883,7 +884,7 @@ func TestGatewayUnlimitedAttemptsRetainsEgressRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := &transientEgressForbiddenAdapter{}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -973,7 +974,7 @@ func testGatewaySSOFailureMarksInvalidAndSwitchesAccount(t *testing.T, providerV
 		providerValue: providerValue, rejectedID: credentials[0].ID,
 		failureStatus: failureStatus, failureBody: failureBody,
 	}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -1060,7 +1061,7 @@ func TestGatewayTeamModelRateLimitOnlySkipsMatchingTeam(t *testing.T) {
 	}
 
 	adapter := &teamModelRateLimitConsoleAdapter{rateLimitedTeam: "team-a"}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -1094,7 +1095,7 @@ func TestGatewayTeamModelRateLimitOnlySkipsMatchingTeam(t *testing.T) {
 }
 
 func TestSelectConversationRouteRespectsClientKeyAcrossSharedPublicModel(t *testing.T) {
-	registry := provider.NewRegistry(&failoverAdapter{}, webStoredResponseAdapter{}, statelessConsoleAdapter{})
+	registry := providerregistry.NewRegistry(&failoverAdapter{}, webStoredResponseAdapter{}, statelessConsoleAdapter{})
 	service := &Service{
 		clientKeys: clientkeyapp.NewService(nil, nil, nil, 60, 4, nil),
 		providers:  registry,
@@ -1238,7 +1239,7 @@ func TestCreateResponseFallsBackAcrossSameNameTargetsWithUnavailablePool(t *test
 		t.Fatal(err)
 	}
 	adapter := &failoverAdapter{}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accounts, audits, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accounts, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -1263,7 +1264,7 @@ func TestCreateResponseFallsBackAcrossSameNameTargetsWithUnavailablePool(t *test
 }
 
 func TestSelectMediaRouteSkipsSameNamedConversationRoute(t *testing.T) {
-	registry := provider.NewRegistry(&failoverAdapter{}, &webImageStreamAdapter{})
+	registry := providerregistry.NewRegistry(&failoverAdapter{}, &webImageStreamAdapter{})
 	service := &Service{
 		clientKeys: clientkeyapp.NewService(nil, nil, nil, 60, 4, nil),
 		providers:  registry,
@@ -1337,7 +1338,7 @@ func TestSelectSchedulableMediaRouteSkipsUnavailableFirstTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	registry := provider.NewRegistry(&credentialFailureImageAdapter{}, &webImageStreamAdapter{})
+	registry := providerregistry.NewRegistry(&credentialFailureImageAdapter{}, &webImageStreamAdapter{})
 	sticky := memory.NewStickyStore()
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
 	service := &Service{
@@ -1421,7 +1422,7 @@ func TestUnpricedVoiceRemainsAvailableToFiniteClientKey(t *testing.T) {
 	if err := modelRepo.ReplaceAccountCapabilities(ctx, credential.ID, []string{voiceModel}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	registry := provider.NewRegistry(statelessConsoleAdapter{})
+	registry := providerregistry.NewRegistry(statelessConsoleAdapter{})
 	sticky := memory.NewStickyStore()
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
@@ -1487,7 +1488,7 @@ func TestVoicePricingSettlesTTSAndRESTSTTUsage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	registry := provider.NewRegistry(statelessConsoleAdapter{})
+	registry := providerregistry.NewRegistry(statelessConsoleAdapter{})
 	sticky := memory.NewStickyStore()
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
@@ -1609,7 +1610,7 @@ func TestGenerateImageReturnsWhenEveryCredentialRefreshFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := &credentialFailureImageAdapter{}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -1661,7 +1662,7 @@ func TestGenerateImageUnlimitedAttemptsRetainsEgressRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := &webImageStreamAdapter{forbiddenRemaining: 1}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -1719,7 +1720,7 @@ func TestGatewayDoesNotPersistStatelessConsoleResponses(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := statelessConsoleAdapter{}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -1798,7 +1799,7 @@ func TestGatewayWebOwnershipDoesNotPersistRawPromptCacheKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := webStoredResponseAdapter{}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -1868,7 +1869,7 @@ func TestFinalizationCommitsOwnershipAndLocalQuotaBeforeSlowAudit(t *testing.T) 
 		t.Fatal(err)
 	}
 	adapter := finalizationOrderAdapter{}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, nil, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -2007,7 +2008,7 @@ func TestGatewayUnknownBuildForbiddenTraversesAllAccountsWithoutCooldown(t *test
 	}
 
 	adapter := &systemicForbiddenAdapter{}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -2080,7 +2081,7 @@ func TestGatewayRefreshesAndRetriesBuildUnauthorizedOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := &authRescueAdapter{}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -2169,7 +2170,7 @@ func TestBuildChatPermissionDenialDoesNotInvalidateVideoCredential(t *testing.T)
 	}
 	adapter := &authRescueAdapter{}
 	adapter.denyChat.Store(true)
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -2267,7 +2268,7 @@ func TestBuildChatPermissionDenialMarksReauthWhenEnabled(t *testing.T) {
 	}
 	adapter := &authRescueAdapter{}
 	adapter.denyChat.Store(true)
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -2333,7 +2334,7 @@ func TestSpendingLimitBlockedMarksQuotaRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := &spendingLimitAdapter{}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -2411,7 +2412,7 @@ func TestWebRateLimitExhaustsOnlyRequestedQuotaMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := webRateLimitAdapter{}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	accountService.SetQuotaRecoveryQueue(memory.NewQuotaRecoveryQueue())
@@ -2484,7 +2485,7 @@ func TestImageStreamPropagatesWithoutTouchingChatQuota(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := &webImageStreamAdapter{synced: make(chan string, 1)}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	runQuotaRefreshWorkers(t, accountService)
@@ -2696,7 +2697,7 @@ func TestWebImageUnauthorizedMarksInvalidAndSwitchesAccount(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := &webImageStreamAdapter{synced: make(chan string, 1), unauthorizedID: credentials[0].ID}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -2767,7 +2768,7 @@ func TestSuccessfulWebChatRefreshesCurrentModeQuota(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := &webChatQuotaAdapter{synced: make(chan string, 1)}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	runQuotaRefreshWorkers(t, accountService)
@@ -3017,7 +3018,7 @@ func TestGatewaySafetyRejectionDoesNotTouchAccountState(t *testing.T) {
 		credentials[0].ID: {{status: http.StatusForbidden, body: body}},
 		credentials[1].ID: {{status: http.StatusOK, body: `{"id":"resp-should-not-run"}`}},
 	}}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -3115,7 +3116,7 @@ func TestGatewayConsoleDPoPRequirementStopsAfterOneAccount(t *testing.T) {
 	}
 
 	adapter := &dpopRequiredConsoleAdapter{}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -3205,7 +3206,7 @@ func TestGatewayFreeUsageExhaustionFailsOverToAnotherAccount(t *testing.T) {
 		credentials[0].ID: {{status: http.StatusTooManyRequests, body: exhausted, header: http.Header{"X-Should-Retry": {"false"}}}},
 		credentials[1].ID: {{status: http.StatusOK, body: `{"id":"resp-free-b"}`}},
 	}}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -3308,7 +3309,7 @@ func TestGatewayBuildTeamRPSRateLimitSwitchesTeam(t *testing.T) {
 		credentials[1].ID: {{status: http.StatusOK, body: `{"id":"resp-should-skip-same-team"}`}},
 		credentials[2].ID: {{status: http.StatusOK, body: `{"id":"resp-team-y"}`}},
 	}}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -3476,7 +3477,7 @@ func TestGatewayGeneric429CoolsAccountAndRotates(t *testing.T) {
 		credentials[0].ID: {{status: http.StatusTooManyRequests, body: `{"error":"You are sending requests too quickly. Please try again later."}`}},
 		credentials[1].ID: {{status: http.StatusOK, body: `{"id":"resp-fast-b"}`}},
 	}}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -3551,7 +3552,7 @@ func TestGatewayRetryStreamFailureRecordsPrior429AndRetryStream(t *testing.T) {
 		credentials[0].ID: {{status: http.StatusTooManyRequests, body: exhausted}},
 		credentials[1].ID: {{status: http.StatusOK, header: http.Header{"Content-Type": {"text/event-stream"}}, body: "data: {\"type\":\"response.created\"}\n\n"}},
 	}}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -3643,7 +3644,7 @@ func TestGatewayNonAccount5xxSoftCoolsAndRotates(t *testing.T) {
 		credentials[0].ID: {{status: http.StatusGatewayTimeout, body: `{"error":"temporary upstream timeout"}`}},
 		credentials[1].ID: {{status: http.StatusOK, body: `{"id":"resp-soft-5xx-b"}`}},
 	}}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, 30*time.Second, 30*time.Minute)
@@ -3727,7 +3728,7 @@ func TestGatewayExhausted429PreservesLastBodyInFailure(t *testing.T) {
 		credentials[0].ID: {{status: http.StatusTooManyRequests, body: firstBody}},
 		credentials[1].ID: {{status: http.StatusTooManyRequests, body: secondBody}},
 	}}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -3816,7 +3817,7 @@ func TestGatewayExplicitPolicyRejectionDoesNotPenalizeOrRotateAccount(t *testing
 	adapter := &scriptedBuildAdapter{responses: map[uint64][]scriptedBuildResponse{
 		credential.ID: {{status: http.StatusForbidden, body: body}},
 	}}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -3916,7 +3917,7 @@ func TestGatewayUnknownBuildForbiddenRotatesWithoutPenalizingAccount(t *testing.
 		}},
 		credentials[1].ID: {{status: http.StatusOK, body: `{"id":"resp-after-403","status":"completed","output":[]}`}},
 	}}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -4003,7 +4004,7 @@ func TestGatewayBarePermissionDeniedRetainsEgressRetryForWebAndConsole(t *testin
 			}
 
 			adapter := &barePermissionEgressAdapter{providerValue: providerValue}
-			registry := provider.NewRegistry(adapter)
+			registry := providerregistry.NewRegistry(adapter)
 			sticky := memory.NewStickyStore()
 			accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 			selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -4091,7 +4092,7 @@ func TestGatewayPreviousResponseIDDoesNotCrossAccounts(t *testing.T) {
 		credentials[0].ID: {{status: http.StatusTooManyRequests, body: exhausted, header: http.Header{"X-Should-Retry": {"false"}}}},
 		credentials[1].ID: {{status: http.StatusOK, body: `{"id":"resp-should-not-run"}`}},
 	}}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -4172,7 +4173,7 @@ func TestGatewayPinnedDisabledOwnerRecordsSpecific503(t *testing.T) {
 	adapter := &scriptedBuildAdapter{responses: map[uint64][]scriptedBuildResponse{
 		healthy.ID: {{status: http.StatusOK, body: `{"id":"must-not-run"}`}},
 	}}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)
@@ -4255,7 +4256,7 @@ func TestGatewayPinnedResponseReturnsCachedTeamRateLimitWithoutSpinning(t *testi
 	}
 
 	adapter := &scriptedBuildAdapter{responses: map[uint64][]scriptedBuildResponse{}}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)

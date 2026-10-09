@@ -15,8 +15,9 @@ import (
 	"github.com/chenyme/grok2api/backend/internal/domain/media"
 	modeldomain "github.com/chenyme/grok2api/backend/internal/domain/model"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/runtime/memory"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 )
 
 // videoScopeHarness 是「视频任务重试必须留在 client key 账号范围内」用例的公共装配。
@@ -82,7 +83,7 @@ func newVideoScopeHarness(t *testing.T, keyScope clientkey.AccountScope) *videoS
 	}
 
 	adapter := &videoCreateFailoverAdapter{failures: map[uint64]int{}, status: http.StatusForbidden}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, testCipher(t), nil)
 	selector := NewSelector(accountRepo, memory.NewConcurrencyLimiter(), sticky, registry, time.Hour, time.Second, time.Minute)

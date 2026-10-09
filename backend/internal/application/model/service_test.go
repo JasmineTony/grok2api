@@ -15,9 +15,10 @@ import (
 	"github.com/chenyme/grok2api/backend/internal/domain/account"
 	modeldomain "github.com/chenyme/grok2api/backend/internal/domain/model"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/runtime/memory"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 )
 
 func TestModelProviderFilterAcceptsOnlyKnownProviders(t *testing.T) {
@@ -59,7 +60,7 @@ func TestCreateAndUpdatePreserveProviderPrefixedPublicNames(t *testing.T) {
 	}
 	modelRepo := relational.NewModelRepository(database)
 	accountRepo := relational.NewAccountRepository(database)
-	registry := provider.NewRegistry(&modelRouteAdapter{modelCapabilityAdapter: &modelCapabilityAdapter{}})
+	registry := providerregistry.NewRegistry(&modelRouteAdapter{modelCapabilityAdapter: &modelCapabilityAdapter{}})
 	service := NewService(modelRepo, accountRepo, nil, registry)
 
 	created, err := service.Create(ctx, CreateInput{
@@ -152,7 +153,7 @@ func TestSyncAggregatesCapabilitiesFromAllAccounts(t *testing.T) {
 	webAdapter := &modelCapabilityAdapter{provider: account.ProviderWeb, models: map[uint64][]string{
 		webAccount.ID: {"grok-chat-fast", "grok-chat-auto"},
 	}}
-	registry := provider.NewRegistry(adapter, webAdapter)
+	registry := providerregistry.NewRegistry(adapter, webAdapter)
 	sticky := memory.NewStickyStore()
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), sticky, registry, cipher, nil)
 	service := NewService(modelRepo, accountRepo, accountService, registry)
@@ -277,7 +278,7 @@ func TestSyncAccountNormalizesBuildVideo15ByBillingSuper(t *testing.T) {
 	webAdapter := &modelCapabilityAdapter{provider: account.ProviderWeb, models: map[uint64][]string{
 		webAccount.ID: {"grok-chat-fast", "grok-imagine-video"},
 	}}
-	registry := provider.NewRegistry(buildAdapter, webAdapter)
+	registry := providerregistry.NewRegistry(buildAdapter, webAdapter)
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), memory.NewStickyStore(), registry, cipher, nil)
 	service := NewService(modelRepo, accountRepo, accountService, registry)
 
@@ -375,7 +376,7 @@ func TestSyncAccountRunsUpstreamDiscoveryConcurrently(t *testing.T) {
 		accountIDs = append(accountIDs, value.ID)
 		adapter.models[value.ID] = []string{"grok-shared"}
 	}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	accountService := accountapp.NewService(accountRepo, auditRepo, memory.NewDeviceSessionStore(), memory.NewStickyStore(), registry, cipher, nil)
 	service := NewService(modelRepo, accountRepo, accountService, registry)
 

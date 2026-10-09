@@ -13,8 +13,9 @@ import (
 
 	accountdomain "github.com/chenyme/grok2api/backend/internal/domain/account"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/runtime/memory"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 	"github.com/chenyme/grok2api/backend/internal/repository"
 )
 
@@ -79,7 +80,7 @@ func TestWeeklyQuotaRefreshPreservesTrailingSnapshot(t *testing.T) {
 		modeStarted: make(chan struct{}, 2),
 		modeRelease: make(chan struct{}, 2),
 	}
-	service := NewService(accounts, nil, nil, nil, provider.NewRegistry(adapter), nil, nil)
+	service := NewService(accounts, nil, nil, nil, providerregistry.NewRegistry(adapter), nil, nil)
 
 	service.QueueQuotaRefresh(credential.ID, "weekly")
 	request := <-service.quotaRefreshQueue
@@ -199,7 +200,7 @@ func TestRecentConsoleUsageSnapshotSuppressesDuplicateUpstreamRefresh(t *testing
 		t.Fatal(err)
 	}
 	adapter := &consoleQuotaSnapshotAdapter{}
-	service := NewService(accounts, nil, nil, nil, provider.NewRegistry(adapter), nil, nil)
+	service := NewService(accounts, nil, nil, nil, providerregistry.NewRegistry(adapter), nil, nil)
 	service.now = func() time.Time { return now.Add(10 * time.Second) }
 	service.QueueQuotaRefresh(credential.ID, "console")
 	request := <-service.quotaRefreshQueue
@@ -240,7 +241,7 @@ func TestQuotaRefreshCrossInstanceGenerationTriggersSingleTrailingRefresh(t *tes
 		t.Fatal(err)
 	}
 	adapter := &quotaCountingAdapter{modeStarted: make(chan struct{}, 4), modeRelease: make(chan struct{}, 4)}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	coordinator := memory.NewQuotaRefreshCoordinator()
 	lock := memory.NewLockStore()
 	first := NewService(accounts, nil, nil, nil, registry, nil, lock)
@@ -322,7 +323,7 @@ func TestRefreshQuotaModeDoesNotTriggerFullProviderSyncForAutoTier(t *testing.T)
 		t.Fatal(err)
 	}
 	adapter := &quotaCountingAdapter{}
-	service := NewService(accounts, nil, nil, nil, provider.NewRegistry(adapter), nil, nil)
+	service := NewService(accounts, nil, nil, nil, providerregistry.NewRegistry(adapter), nil, nil)
 	window, err := service.RefreshQuotaMode(ctx, credential.ID, "fast")
 	if err != nil {
 		t.Fatal(err)
@@ -399,7 +400,7 @@ func TestReconcileConsoleRateLimitVerifiesUsageBeforeExhausting(t *testing.T) {
 				t.Fatal(err)
 			}
 			adapter := &rateLimitConsoleQuotaAdapter{remaining: test.remaining}
-			service := NewService(accounts, nil, nil, nil, provider.NewRegistry(adapter), nil, nil)
+			service := NewService(accounts, nil, nil, nil, providerregistry.NewRegistry(adapter), nil, nil)
 			service.SetQuotaRecoveryQueue(memory.NewQuotaRecoveryQueue())
 
 			state, err := service.ReconcileRateLimit(ctx, credential.ID, "console", 0)
@@ -449,7 +450,7 @@ func TestReconcileConsoleRateLimitQueuesRetryWhenUsageProbeFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := &rateLimitConsoleQuotaAdapter{err: errors.New("usage temporarily rate limited")}
-	service := NewService(accounts, nil, nil, nil, provider.NewRegistry(adapter), nil, nil)
+	service := NewService(accounts, nil, nil, nil, providerregistry.NewRegistry(adapter), nil, nil)
 	if state, err := service.ReconcileRateLimit(ctx, credential.ID, "console", 0); err == nil || state != RateLimitReconcileInconclusive {
 		t.Fatalf("state=%s err=%v", state, err)
 	}
@@ -489,7 +490,7 @@ func TestReconcileConsoleRateLimitDoesNotQueueWhenAnotherReplicaIsRefreshing(t *
 		t.Fatal(err)
 	}
 	adapter := &rateLimitConsoleQuotaAdapter{remaining: 9}
-	service := NewService(accounts, nil, nil, nil, provider.NewRegistry(adapter), nil, nil)
+	service := NewService(accounts, nil, nil, nil, providerregistry.NewRegistry(adapter), nil, nil)
 	service.refreshLock = deniedQuotaRefreshLock{}
 
 	state, err := service.ReconcileRateLimit(ctx, credential.ID, "console", 0)
@@ -536,7 +537,7 @@ func TestConsoleImmediateAndQueuedRefreshUseSameDistributedLock(t *testing.T) {
 	}
 	adapter := &rateLimitConsoleQuotaAdapter{err: errors.New("usage temporarily unavailable")}
 	refreshLock := &recordingQuotaRefreshLock{}
-	service := NewService(accounts, nil, nil, nil, provider.NewRegistry(adapter), nil, nil)
+	service := NewService(accounts, nil, nil, nil, providerregistry.NewRegistry(adapter), nil, nil)
 	service.refreshLock = refreshLock
 
 	if state, err := service.ReconcileRateLimit(ctx, credential.ID, "console", 0); err == nil || state != RateLimitReconcileInconclusive {
@@ -585,7 +586,7 @@ func TestRefreshWebImagineQuotaModeAtomicallyReplacesGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := &imagineQuotaGroupAdapter{}
-	service := NewService(accounts, nil, nil, nil, provider.NewRegistry(adapter), nil, nil)
+	service := NewService(accounts, nil, nil, nil, providerregistry.NewRegistry(adapter), nil, nil)
 	window, err := service.RefreshQuotaMode(ctx, credential.ID, accountdomain.QuotaModeWebImagePro)
 	if err != nil {
 		t.Fatal(err)
@@ -636,7 +637,7 @@ func TestRefreshPaidWebImagineFallsBackToSharedWeeklyQuota(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := &sharedWeeklyImagineAdapter{}
-	service := NewService(accounts, nil, nil, nil, provider.NewRegistry(adapter), nil, nil)
+	service := NewService(accounts, nil, nil, nil, providerregistry.NewRegistry(adapter), nil, nil)
 	window, err := service.RefreshQuotaMode(ctx, credential.ID, accountdomain.QuotaModeWebImagePro)
 	if err != nil {
 		t.Fatal(err)
@@ -687,7 +688,7 @@ func TestRefreshConsoleQuotaModePersistsCompleteUsageSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := &consoleQuotaSnapshotAdapter{}
-	service := NewService(accounts, nil, nil, nil, provider.NewRegistry(adapter), nil, nil)
+	service := NewService(accounts, nil, nil, nil, providerregistry.NewRegistry(adapter), nil, nil)
 	queue := memory.NewQuotaRecoveryQueue()
 	service.SetQuotaRecoveryQueue(queue)
 	if err := queue.ScheduleQuotaRecovery(ctx, accountdomain.QuotaRecoveryEvent{AccountID: credential.ID, Mode: "console", DueAt: now.Add(24 * time.Hour)}); err != nil {
@@ -732,7 +733,7 @@ func TestConsoleFullAndModeQuotaRefreshShareOneSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := &consoleQuotaSnapshotAdapter{fullStarted: make(chan struct{}, 1), fullRelease: make(chan struct{})}
-	service := NewService(accounts, nil, nil, nil, provider.NewRegistry(adapter), nil, nil)
+	service := NewService(accounts, nil, nil, nil, providerregistry.NewRegistry(adapter), nil, nil)
 
 	fullDone := make(chan error, 1)
 	go func() {
@@ -806,7 +807,7 @@ func TestSyncIncompleteConsoleQuotasMigratesOnlyLegacySnapshot(t *testing.T) {
 	}
 	completeID := create("complete-console", completeWindows)
 	adapter := &consoleQuotaSnapshotAdapter{}
-	service := NewService(accounts, nil, nil, nil, provider.NewRegistry(adapter), nil, nil)
+	service := NewService(accounts, nil, nil, nil, providerregistry.NewRegistry(adapter), nil, nil)
 	succeeded, failed, err := service.SyncIncompleteConsoleQuotas(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -879,7 +880,7 @@ func TestSyncStaleConsoleQuotasRefreshesOnlyOldCompleteSnapshots(t *testing.T) {
 	}
 
 	adapter := &consoleQuotaSnapshotAdapter{}
-	service := NewService(accounts, nil, nil, nil, provider.NewRegistry(adapter), nil, nil)
+	service := NewService(accounts, nil, nil, nil, providerregistry.NewRegistry(adapter), nil, nil)
 	succeeded, failed, nextAfterID, err := service.SyncStaleConsoleQuotas(ctx, now.Add(-6*time.Hour), 0, 1)
 	if err != nil {
 		t.Fatal(err)
@@ -1165,7 +1166,7 @@ func TestRefreshQuotaFetchesWebIdentityOnlyUntilDataExists(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := &quotaCountingAdapter{}
-	service := NewService(accounts, nil, nil, nil, provider.NewRegistry(adapter), nil, nil)
+	service := NewService(accounts, nil, nil, nil, providerregistry.NewRegistry(adapter), nil, nil)
 	for range 2 {
 		if _, err := service.RefreshQuota(ctx, credential.ID); err != nil {
 			t.Fatal(err)
@@ -1206,7 +1207,7 @@ func TestRefreshQuotaUnauthorizedMarksWebAccountInvalid(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := &quotaCountingAdapter{fullErr: provider.ErrUnauthorized}
-	service := NewService(accounts, nil, nil, nil, provider.NewRegistry(adapter), nil, nil)
+	service := NewService(accounts, nil, nil, nil, providerregistry.NewRegistry(adapter), nil, nil)
 	if _, err := service.RefreshQuota(ctx, credential.ID); !errors.Is(err, provider.ErrUnauthorized) {
 		t.Fatalf("err = %v", err)
 	}

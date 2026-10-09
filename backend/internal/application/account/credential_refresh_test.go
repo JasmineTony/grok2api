@@ -12,8 +12,9 @@ import (
 
 	accountdomain "github.com/chenyme/grok2api/backend/internal/domain/account"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/runtime/memory"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 	"github.com/chenyme/grok2api/backend/internal/repository"
 )
 
@@ -164,7 +165,7 @@ func TestEnsureCredentialCollapsesRefreshAcrossServiceInstances(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := &credentialRefreshAdapter{delay: 40 * time.Millisecond}
-	registry := provider.NewRegistry(adapter)
+	registry := providerregistry.NewRegistry(adapter)
 	lock := memory.NewLockStore()
 	first := NewService(repository, nil, nil, nil, registry, nil, lock)
 	second := NewService(repository, nil, nil, nil, registry, nil, lock)
@@ -828,7 +829,7 @@ func newCredentialRefreshTestService(t *testing.T, now time.Time) (*Service, acc
 		t.Fatal(err)
 	}
 	adapter := &credentialRefreshAdapter{}
-	service := NewService(repository, nil, nil, nil, provider.NewRegistry(adapter), nil, nil)
+	service := NewService(repository, nil, nil, nil, providerregistry.NewRegistry(adapter), nil, nil)
 	return service, credential, adapter
 }
 

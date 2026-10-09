@@ -10,8 +10,9 @@ import (
 
 	accountdomain "github.com/chenyme/grok2api/backend/internal/domain/account"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/security"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 )
 
 type rtImportAdapter struct{}
@@ -82,7 +83,7 @@ func TestImportRefreshTokensPersistsSuccessfulRotations(t *testing.T) {
 		t.Fatal(err)
 	}
 	repository := relational.NewAccountRepository(database)
-	service := NewService(repository, nil, nil, nil, provider.NewRegistry(rtImportAdapter{}), cipher, nil)
+	service := NewService(repository, nil, nil, nil, providerregistry.NewRegistry(rtImportAdapter{}), cipher, nil)
 	progress := make([][2]int, 0, 3)
 	result, err := service.ImportCredentialsWithProgress(ctx, []byte("ignored"), nil, func(completed, total int) error {
 		progress = append(progress, [2]int{completed, total})
@@ -136,7 +137,7 @@ func TestImportRefreshTokenPersistsRotationWhenRequestCancelsAfterExchange(t *te
 		t.Fatal(err)
 	}
 	repository := relational.NewAccountRepository(database)
-	service := NewService(repository, nil, nil, nil, provider.NewRegistry(cancelingRTImportAdapter{cancel: cancel}), cipher, nil)
+	service := NewService(repository, nil, nil, nil, providerregistry.NewRegistry(cancelingRTImportAdapter{cancel: cancel}), cipher, nil)
 	result, err := service.ImportCredentials(ctx, []byte("ignored"))
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context canceled", err)
@@ -175,7 +176,7 @@ func TestImportRefreshTokenPersistsRotationBeforeProgressFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	repository := relational.NewAccountRepository(database)
-	service := NewService(repository, nil, nil, nil, provider.NewRegistry(cancelingRTImportAdapter{cancel: func() {}}), cipher, nil)
+	service := NewService(repository, nil, nil, nil, providerregistry.NewRegistry(cancelingRTImportAdapter{cancel: func() {}}), cipher, nil)
 	progressFailure := errors.New("progress stream closed")
 	progressCalls := 0
 	result, err := service.ImportCredentialsWithProgress(ctx, []byte("ignored"), nil, func(_, _ int) error {

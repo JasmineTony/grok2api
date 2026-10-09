@@ -13,7 +13,7 @@ import (
 	"github.com/bogdanfinn/websocket"
 
 	egressdomain "github.com/chenyme/grok2api/backend/internal/domain/egress"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 )
 
 // DialVoiceWebSocket opens an authenticated Console websocket for realtime or STT streaming.

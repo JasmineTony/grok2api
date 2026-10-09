@@ -13,8 +13,8 @@ import (
 	"github.com/chenyme/grok2api/backend/internal/domain/account"
 	clientkeydomain "github.com/chenyme/grok2api/backend/internal/domain/clientkey"
 	modeldomain "github.com/chenyme/grok2api/backend/internal/domain/model"
-	"github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/pkg/batch"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 	"github.com/chenyme/grok2api/backend/internal/repository"
 	"golang.org/x/sync/singleflight"
 )
@@ -72,13 +72,13 @@ type Service struct {
 	models    repository.ModelRepository
 	accounts  repository.AccountRepository
 	account   *accountapp.Service
-	providers *provider.Registry
+	providers provider.Registry
 	bulkPool  *batch.Pool
 	logger    *slog.Logger
 	syncAll   singleflight.Group
 }
 
-func NewService(models repository.ModelRepository, accounts repository.AccountRepository, accountService *accountapp.Service, providers *provider.Registry) *Service {
+func NewService(models repository.ModelRepository, accounts repository.AccountRepository, accountService *accountapp.Service, providers provider.Registry) *Service {
 	return &Service{models: models, accounts: accounts, account: accountService, providers: providers, bulkPool: batch.NewPool(defaultModelSyncWorkers), logger: slog.Default()}
 }
 
