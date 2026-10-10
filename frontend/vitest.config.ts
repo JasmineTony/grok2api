@@ -12,15 +12,18 @@ export default mergeConfig(
   defineConfig({
     test: {
       environment: "jsdom",
-      // 并行度与超时口径：交互型用例 + 覆盖率插桩在满载时会把单个用例压到 5s 默认超时之上，
-      // 属 CPU 饱和/GC 压力，不是逻辑挂起。实测证据：
+      // 并行度与超时口径：交互型用例 + 覆盖率插桩在满载时会把单个用例压到默认超时之上，
+      // 属 CPU 饱和/GC 压力，不是逻辑挂起。实测证据（均为本机 8 核、`vitest run --coverage`）：
       //  - 24 文件 / 245 用例：24 worker 18 失败、4 worker 5 失败、1 worker 全过（阶段 5）
       //  - 63 文件 / 682 用例：4 worker 1 个超时；2 worker 全过（阶段 6 早期）
-      //  - 155 文件 / 800+ 用例：2 worker 下 2 个用例超时，同文件单跑 21/21 全过（阶段 6 末）
-      // 单用例实测 wall time 本就可达 2–3.2s（egress 交互用例），因此 5s 默认值对重型交互用例过紧。
-      // 这里按真实成本设定超时，不通过删除用例、放宽断言或无条件重试来掩盖失败。
+      //  - 155 文件 / 800+ 用例、108 文件 / 1347 用例：满载下 2~3 例超时，逐文件单跑全过
+      //  - 阶段 7：`egress-node-actions`（21 用例）与 `egress-operations-extra`（26 用例）
+      //    在满载下各有 1–2 例超时；同两个文件单跑分别为 21/21（28.7s）与 26/26（32.2s），
+      //    最重用例单跑 wall time 3.5s，其它交互用例 0.5–2.5s
+      // 结论：真实挂起会表现为单跑同样超时，而上述用例单跑稳定快速通过，故按实测成本把
+      // 单用例上限设为 20s（约等于观测最重用例的 5.7 倍），不用删除用例、放宽断言或无条件重试掩盖失败。
       maxWorkers: 2,
-      testTimeout: 10000,
+      testTimeout: 20000,
       setupFiles: ["./src/test/setup.ts"],
       // 只接管 *.test.tsx（React 组件测试）；既有 *.test.ts 仍由 `pnpm test` 的 node:test 运行。
       include: ["src/**/*.test.tsx"],
@@ -59,8 +62,9 @@ export default mergeConfig(
           "src/**/*-test-support.ts",
           "src/**/*-test-support.tsx",
           "src/test/**",
-          // 纯逻辑模块：测试位于 node:test 层（同名 *.test.ts，由 `pnpm test` 运行），
-          // jsdom 覆盖率运行不统计它们；用例数与断言见 frontend/AUDIT.md「测试分层」。
+          // 纯逻辑模块：测试位于 node:test 层（同名 `*.test.ts`，由 `pnpm test` 运行；
+          // `endpoint-definitions.ts` 由 `api-docs-examples.test.ts` 覆盖），jsdom 覆盖率运行
+          // 不统计它们；用例数与断言见 frontend/AUDIT.md「测试分层」。
           "src/features/audits/audit-format.ts",
           "src/features/audits/audit-detail-format.ts",
           "src/features/audits/audit-usage.ts",
@@ -99,6 +103,62 @@ export default mergeConfig(
             statements: 100,
           },
           "src/features/models/use-model-selection.ts": { lines: 100, functions: 100, branches: 100, statements: 100 },
+          // 阶段 7：下列 hook 已实测 statements/branches/functions/lines 全部 100，加入逐文件
+          // 门槛锁定，防止回退（AGENTS.md TEST-2）。
+          "src/features/quality-guard/use-degrade-accounts.ts": {
+            lines: 100,
+            functions: 100,
+            branches: 100,
+            statements: 100,
+          },
+          "src/features/quality-guard/use-guard-nodes.ts": {
+            lines: 100,
+            functions: 100,
+            branches: 100,
+            statements: 100,
+          },
+          "src/features/quality-guard/use-probe-profiles.ts": {
+            lines: 100,
+            functions: 100,
+            branches: 100,
+            statements: 100,
+          },
+          "src/features/quality-guard/use-guard-node-actions.ts": {
+            lines: 100,
+            functions: 100,
+            branches: 100,
+            statements: 100,
+          },
+          "src/features/creative-console/use-creative-console.ts": {
+            lines: 100,
+            functions: 100,
+            branches: 100,
+            statements: 100,
+          },
+          "src/features/creative-console/use-creative-video.ts": {
+            lines: 100,
+            functions: 100,
+            branches: 100,
+            statements: 100,
+          },
+          "src/features/creative-console/use-creative-voice.ts": {
+            lines: 100,
+            functions: 100,
+            branches: 100,
+            statements: 100,
+          },
+          "src/features/accounts/use-accounts-transfer-flows.ts": {
+            lines: 100,
+            functions: 100,
+            branches: 100,
+            statements: 100,
+          },
+          "src/features/accounts/use-accounts-page-model.ts": {
+            lines: 100,
+            functions: 100,
+            branches: 100,
+            statements: 100,
+          },
         },
       },
     },
