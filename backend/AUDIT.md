@@ -44,23 +44,24 @@
 
 ## 3. 性能基线
 
-- 已存在的 benchmark（共 12 个，Grep `^func Benchmark` 实测）：
+- 已存在的 benchmark（阶段 0 基线为 12 个；当前工作树 Grep `^func Benchmark` 实测 **19 个**，含阶段 4 新增的 `BenchmarkServiceListPageAggregation` 与 §13.2 新增的 6 个 `infra/provider/web` 基准）：
 
-| 文件                                                                         | Benchmark                                                                                                                   |
-| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `internal/infra/persistence/relational/routing_projection_benchmark_test.go` | `BenchmarkRoutingAccountBaseProjectionWithLargePayloads`（300 账号 + 大 JSON 负载）、`BenchmarkSelectedCredentialHydration` |
-| `internal/application/gateway/selector_layered_benchmark_test.go`            | `BenchmarkSelectorMultiModelCandidateLoad`（300 账号 × 2/8 模型）                                                           |
-| `internal/application/gateway/selector_test.go`                              | `BenchmarkSelectorCandidatePlanning`                                                                                        |
-| `internal/application/gateway/selector_segmented_active_test.go`             | `BenchmarkSelectorSegmentedCandidatePlanning`                                                                               |
-| `internal/application/audit/service_benchmark_test.go`                       | `BenchmarkAuditServiceSQLite`                                                                                               |
-| `internal/infra/persistence/relational/dashboard_repository_test.go`         | `BenchmarkDashboardUsageAggregate`                                                                                          |
-| `internal/infra/egress/manager_test.go`                                      | `BenchmarkManagerAcquireCachedBuild`                                                                                        |
-| `internal/transport/http/inference/handler_test.go`                          | `BenchmarkFirstTokenInspection`                                                                                             |
-| `internal/transport/http/middleware/request_test.go`                         | `BenchmarkRequestBodyObservation`                                                                                           |
-| `internal/infra/runtime/memory/store_test.go`                                | `BenchmarkConcurrencyLimiterCurrentMany`                                                                                    |
-| `internal/pkg/perfmetrics/registry_test.go`                                  | `BenchmarkRegistryParallel`                                                                                                 |
+| 文件                                                                         | Benchmark                                                                                                                                                                                                                                        |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `internal/infra/persistence/relational/routing_projection_benchmark_test.go` | `BenchmarkRoutingAccountBaseProjectionWithLargePayloads`（300 账号 + 大 JSON 负载）、`BenchmarkSelectedCredentialHydration`                                                                                                                      |
+| `internal/application/gateway/selector_layered_benchmark_test.go`            | `BenchmarkSelectorMultiModelCandidateLoad`（300 账号 × 2/8 模型）                                                                                                                                                                                |
+| `internal/application/gateway/selector_test.go`                              | `BenchmarkSelectorCandidatePlanning`                                                                                                                                                                                                             |
+| `internal/application/gateway/selector_segmented_active_test.go`             | `BenchmarkSelectorSegmentedCandidatePlanning`                                                                                                                                                                                                    |
+| `internal/application/audit/service_benchmark_test.go`                       | `BenchmarkAuditServiceSQLite`                                                                                                                                                                                                                    |
+| `internal/infra/persistence/relational/dashboard_repository_test.go`         | `BenchmarkDashboardUsageAggregate`                                                                                                                                                                                                               |
+| `internal/infra/egress/manager_test.go`                                      | `BenchmarkManagerAcquireCachedBuild`                                                                                                                                                                                                             |
+| `internal/transport/http/inference/handler_test.go`                          | `BenchmarkFirstTokenInspection`                                                                                                                                                                                                                  |
+| `internal/transport/http/middleware/request_test.go`                         | `BenchmarkRequestBodyObservation`                                                                                                                                                                                                                |
+| `internal/infra/runtime/memory/store_test.go`                                | `BenchmarkConcurrencyLimiterCurrentMany`                                                                                                                                                                                                         |
+| `internal/pkg/perfmetrics/registry_test.go`                                  | `BenchmarkRegistryParallel`                                                                                                                                                                                                                      |
+| `internal/infra/provider/web/benchmark_test.go`                              | 阶段 6 收尾新增 6 个：`BenchmarkConsumeJSONObjects`、`BenchmarkParseUpstreamFrame`、`BenchmarkNormalizeOpenAIInput`、`BenchmarkBuildOpenAIChatResult`、`BenchmarkParseWeeklyCreditsResponse`、`BenchmarkInferWebTierFromQuota`（实测值见 §13.2） |
 
-- **缺口**：`internal/application/account` 包不存在任何 benchmark（Grep `func Benchmark` 命中 0，已核实）。而账号列表是全站最重的读路径——`Service.List` 每页要执行 6 次批量查询（账号分页、审计 token 汇总、billing、quota recovery、quota windows、model quota blocks）。阶段 4 必须补一个分页聚合基准，否则"优化"没有可比对象。
+- **缺口**：`internal/application/account` 包不存在任何 benchmark（阶段 0 核实；**已由阶段 4 的 `list_page_benchmark_test.go::BenchmarkServiceListPageAggregation` 补齐**，见 §10）。而账号列表是全站最重的读路径——`Service.List` 每页要执行 6 次批量查询（账号分页、审计 token 汇总、billing、quota recovery、quota windows、model quota blocks）。阶段 4 已补分页聚合基准，见 §10 与 §13.2。
 - 基准命令（后续阶段必须用同一命令对比）：
 
 ```bash
@@ -161,16 +162,17 @@ go test ./internal/infra/egress ./internal/infra/runtime/memory ./internal/pkg/p
 
 ## 5. 问题清单
 
-| 编号  | 证据                                                            | 现有/新增 | 影响                     | 优先级 | 阶段 | 验证方法                 | 状态                                                           |
-| ----- | --------------------------------------------------------------- | --------- | ------------------------ | ------ | ---- | ------------------------ | -------------------------------------------------------------- |
-| BE-01 | `application/account/service.go` 4717 行等 16 个 >1000 行文件   | 现有      | 可维护性、审查成本       | P2     | 4–6  | 按用例/读写/调度拆分     | Pending                                                        |
-| BE-02 | 28 处 application → infra 依赖（§4.1）                          | 现有      | 分层模糊，契约与实现同包 | P2     | 3    | 契约迁 ports + 边界测试  | Pending                                                        |
-| BE-03 | 账号列表已按页批量（6 次查询），非 N+1                          | 现有      | 不应虚构缺陷             | P2     | 4    | 补查询次数断言与基准     | Pending                                                        |
-| QA-01 | 20 个 PostgreSQL/Redis 集成用例在本机跳过，含并发/锁/账本不变量 | 现有      | 关键一致性无本地证据     | P1     | 1、7 | CI 隔离 service 真实执行 | **Passed**（CI 0 跳过 / 2842 通过，并暴露并修复 1 个用例缺陷） |
-| QA-02 | `go test -race` 本机 Blocked（无 cgo）                          | 现有      | 竞态检测缺失             | P1     | 7    | Linux CI 执行            | **Passed**（CI `go test -race ./... -count=1` success）        |
-| QA-03 | `internal/application/account` 无 benchmark                     | 现有      | 最重读路径无可比基线     | P2     | 4    | 新增分页聚合基准         | Pending                                                        |
-| BE-04 | `app.New()`/`Run()` 单函数过长，装配与生命周期混合              | 现有      | 变更风险集中             | P2     | 3    | 拆分后回归装配与关闭顺序 | Pending                                                        |
-| BE-05 | `infra/provider/provider.go` 1468 行含约 30 个能力接口          | 现有      | 契约与实现同包           | P2     | 3    | 迁至 ports 并同步调用方  | Pending                                                        |
+| 编号  | 证据                                                                                                                                                                      | 现有/新增                           | 影响                                        | 优先级 | 阶段   | 验证方法                                   | 状态                                                                                                                                                  |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ------------------------------------------- | ------ | ------ | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| BE-01 | `application/account/service.go` 4717 行等 16 个 >1000 行文件                                                                                                             | 现有                                | 可维护性、审查成本                          | P2     | 4–6    | 按用例/读写/调度拆分                       | Pending                                                                                                                                               |
+| BE-02 | 28 处 application → infra 依赖（§4.1）                                                                                                                                    | 现有                                | 分层模糊，契约与实现同包                    | P2     | 3      | 契约迁 ports + 边界测试                    | Pending                                                                                                                                               |
+| BE-03 | 账号列表已按页批量（6 次查询），非 N+1                                                                                                                                    | 现有                                | 不应虚构缺陷                                | P2     | 4      | 补查询次数断言与基准                       | **Passed**（阶段 4：`TestListPageAggregationQueryCountIsPageSizeIndependent` 断言 pageSize 1–300 恒为固定 6 次批量调用；§10）                         |
+| QA-01 | 20 个 PostgreSQL/Redis 集成用例在本机跳过，含并发/锁/账本不变量                                                                                                           | 现有                                | 关键一致性无本地证据                        | P1     | 1、7   | CI 隔离 service 真实执行                   | **Passed**（CI 0 跳过 / 2842 通过，并暴露并修复 1 个用例缺陷）                                                                                        |
+| QA-02 | `go test -race` 本机 Blocked（无 cgo）                                                                                                                                    | 现有                                | 竞态检测缺失                                | P1     | 7      | Linux CI 执行                              | **Passed**（CI `go test -race ./... -count=1` success）                                                                                               |
+| QA-03 | `internal/application/account` 无 benchmark                                                                                                                               | 现有                                | 最重读路径无可比基线                        | P2     | 4      | 新增分页聚合基准                           | **Passed**（阶段 4 新增 `BenchmarkServiceListPageAggregation`：8.60 / 9.81 / 9.61 ms/op；§10）                                                        |
+| BE-04 | `app.New()`/`Run()` 单函数过长，装配与生命周期混合                                                                                                                        | 现有                                | 变更风险集中                                | P2     | 3      | 拆分后回归装配与关闭顺序                   | Pending                                                                                                                                               |
+| BE-05 | `infra/provider/provider.go` 1468 行含约 30 个能力接口                                                                                                                    | 现有                                | 契约与实现同包                              | P2     | 3      | 迁至 ports 并同步调用方                    | Pending                                                                                                                                               |
+| BE-06 | 媒体尝试循环跨轮携带 `err`，判定换号/重试后下一轮跳过 `Acquire`，健康账号仍在池中却返回 503 `ErrNoAvailableAccount`（`gateway/voice_execution.go`、`image_execution.go`） | 现有（基线即有，阶段 6 收尾前未修） | 单账号凭据失效/传输抖动被放大为下游可见 503 | P1     | 6 收尾 | 两账号夹具回归测试断言第二个账号被真正租用 | **Passed**（§13.1：改为每轮独立 `acquireErr`；`media_attempt_loop_test.go` 3 条断言；`go build`/`vet`/`go test ./... -count=1` exit 0，64 包 0 FAIL） |
 
 ## 6. 强制保留的前轮修复（回归清单）
 
@@ -353,27 +355,29 @@ ERROR: failed to push ghcr.io/jasminetony/grok2api:main-arm64: denied: permissio
 
 ### 12.2 函数级分解（REV-2）
 
-**结论：本轮把三个包的超限函数从 88 降到 18（降幅 80%），且无一处行数增大。**
-下表的「分解前」由 HEAD `236175e4` 的独立 worktree 实测得出（AST 统计，`count` 为包内 >50 行函数总数），「本轮后」为当前工作树实测，两者由同一工具测量，可直接比较：
+**结论：本阶段把三个包的超限函数从 88 降到 18（降幅 80%）；阶段 6 收尾的后续函数分解把它进一步降到 7（累计降幅 92%），且无一处行数增大。**
+下表的「分解前」由 HEAD `236175e4` 的独立 worktree 实测得出（AST 统计，`count` 为包内 >50 行函数总数），「阶段 6 本轮后」为该阶段的记录值，「当前工作树实测」为阶段 6 收尾后由同口径工具重新统计：
 
-| 包                         | 分解前 >50 行 | 本轮后 >50 行 |   消除 |   剩余 |
-| -------------------------- | ------------: | ------------: | -----: | -----: |
-| `application/gateway`      |            32 |             9 |     23 |      9 |
-| `transport/http/inference` |            18 |         **0** |     18 |      0 |
-| `infra/provider/web`       |            38 |             9 |     29 |      9 |
-| **合计**                   |        **88** |        **18** | **70** | **18** |
+| 包                         | 分解前 >50 行（HEAD `236175e4`） | 阶段 6 本轮后 | 当前工作树实测 | 累计消除 |
+| -------------------------- | -------------------------------: | ------------: | -------------: | -------: |
+| `application/gateway`      |                               32 |             9 |          **7** |       25 |
+| `transport/http/inference` |                               18 |         **0** |          **0** |       18 |
+| `infra/provider/web`       |                               38 |             9 |          **0** |       38 |
+| **合计**                   |                           **88** |        **18** |          **7** |   **81** |
 
 达标示例：`handleVideoCreate` 199→30、`transcribeSpeechRequest` 170→33、`editImage` 108→（≤50）、`sanitizeResponsesEvent` 100→（≤50）、`handleOpenAISpeech` 95→（≤50）、`streamOpenAIResponse` 201→≤50、`ForwardResponse` 184→≤50、`generateWSImageAttempt` 126→≤50、`editImageAttempt` 114→≤50、`generateLiteImageURL` 112→≤50、`buildOpenAIResult` 124→≤50、`executeImage` 259→66、`executeVoice` 237→64、`acquirePinned` 92→≤50、`beginSelectionSessionForKey` 101→≤50、`acquireSegmentedCandidates` 111→≤50、`planCandidateIndexesWithHints` 94→≤50、`segmentedCandidateCohorts` 86→≤50、`ProbeEgressQuality` 153→≤50。
 
-仍超限函数**逐项登记**（实测行数，不隐藏、未强行拆）：
+当前仍超限函数**逐项登记**（当前工作树 AST 实测行数，不隐藏、未强行拆）：
 
-- gateway（9）：`createResponseAt` 908、`runVideoJob` 284、`OpenVoiceWebSocket` 247、`acquire` 246、`CreateVideo` 144、`executeImage` 66、`executeVoice` 64、`ClassifyQualityHold` 58、`peekQualityStream` 51
-- inference：**0**（`handler.go` 2475→91 后 18 个超限函数全部消除）
-- web（9）：`openGatewayChat` 93、`SyncQuotaMode` 85、`runGatewayStream` 79、`streamImageEdit` 72、`doWithFollow` 67、`executeWebAccountSetting` 60、`postJSONWithReferer` 58、`DownloadVideo` 53、`pollToken` 53
+- gateway（7）：`createResponseAt` 908、`runVideoJob` 284、`OpenVoiceWebSocket` 247、`acquire` 246、`executeImage` 57、`executeVoice` 54、`CreateVideo` 52
+- inference：**0**（`handler.go` 2475→91 后 18 个超限函数全部消除，本阶段无回升）
+- web：**0**（阶段 6 收尾拆掉 `openGatewayChat` 93、`SyncQuotaMode` 85、`runGatewayStream` 79、`streamImageEdit` 72、`doWithFollow` 67、`executeWebAccountSetting` 60、`postJSONWithReferer` 58、`DownloadVideo` 53、`pollToken` 53 共 9 个；该包已无 >50 行函数）
 
-**行数未增大的证据**：`createResponseAt` 在 HEAD 与本轮工作树均为 **908** 行（未改动，未强行拆）；`runVideoJob` 284（HEAD 284）、`OpenVoiceWebSocket` 247（HEAD 247）、`acquire` 246（HEAD 246）、`CreateVideo` 144（HEAD 144）逐项持平。表内「消除」来自其余 70 个函数被真正分解，而非把行数搬进新函数。
+结构分布：扣除 `createResponseAt`（908 行，已登记为不强行拆）后剩 6 个——其中 3 个仍是多锁段/状态机量级（`runVideoJob` 284、`OpenVoiceWebSocket` 247、`acquire` 246），3 个仅轻微超限（`executeImage` 57、`executeVoice` 54、`CreateVideo` 52）。
 
-未拆理由（真实原因，不声称「不可拆」）：gateway 的 `createResponseAt`（908 行）含 `attemptLoop`/`handleResponse`/`afterTeamRateLimit` 三处跨块 `goto`，`err`/`selection`/`fallback`/`qualityAccountAttempts`/`timingHandedOff` 与 `defer` 交织，需先按 image/voice 的返回码枚举方式等价改写控制流；`runVideoJob`/`OpenVoiceWebSocket`/`acquire` 为多锁段 + singleflight 内外双检缓存的分层状态机，需逐个核对锁边界与版本判定；web 侧 9 个含闭包捕获、goroutine 生命周期与超时/取消时序（上游协议与鉴权路径），等价提取风险高于收益。**这 18 个是阶段 6 仍未完成的 REV-2 范围，不记为「已通过」。**
+**行数未增大的证据**：`createResponseAt` 在 HEAD 与当前工作树均为 **908** 行（未改动，未强行拆）；`runVideoJob` 284（HEAD 284）、`OpenVoiceWebSocket` 247（HEAD 247）、`acquire` 246（HEAD 246）逐项持平；`executeImage` 与 `executeVoice` 由阶段 6 记录值 66/64 降到 57/54（收尾修复顺手收敛，非搬行）。表内「消除」来自被真正分解的函数，而非把行数搬进新函数。
+
+未拆理由（真实原因，不声称「不可拆」）：gateway 的 `createResponseAt`（908 行）含 `attemptLoop`/`handleResponse`/`afterTeamRateLimit` 三处跨块 `goto`，`err`/`selection`/`fallback`/`qualityAccountAttempts`/`timingHandedOff` 与 `defer` 交织，需先按 image/voice 的返回码枚举方式等价改写控制流；`runVideoJob`/`OpenVoiceWebSocket`/`acquire` 为多锁段 + singleflight 内外双检缓存的分层状态机，需逐个核对锁边界与版本判定，等价提取风险高于收益；`CreateVideo`（52）与 `executeImage`（57）/`executeVoice`（54）为整段事务与结算顺序，拆分会引入跨函数状态传递。**这 7 个是 REV-2 仍未完成的剩余范围，不记为「已通过」。**
 
 验证：三包 `go test` 全通过（inference 138 / provider-web 229 / gateway 311+192 子测试，0 FAIL / 0 SKIP）；`go build ./...`、`go vet ./...` exit 0。测试通过只证明被现有断言覆盖的行为未变，未被断言覆盖的分支不做等价性声明。
 
@@ -395,13 +399,13 @@ ERROR: failed to push ghcr.io/jasminetony/grok2api:main-arm64: denied: permissio
 
 对 12 个提交做过一次独立只读审查，结论与处置：
 
-| 发现 | 核实方式 | 处置 |
-| --- | --- | --- |
-| `image_execution.go` 连续两次 `checkLedgerReady()`（复制残留） | 对照 HEAD `236175e4:gateway/image.go` 实测**只有 1 次** | **已删除重复调用**（该检查幂等只读，行为等价且恢复与基线一致）；`go build`/`vet`/gateway 包测试 exit 0 |
-| `voice_execution.go`/`image_execution.go` 尝试循环把上一轮 `err` 带入下一轮，`if err == nil` 可能跳过 `Acquire` | 对照 HEAD `236175e4:gateway/voice.go:357-363`：基线**同样是循环外 `var err error` + `if err == nil` 守卫**，结构逐行一致 | **判定为既有行为被忠实保留，非本轮引入**；未改动（改它会改变既有重试语义，超出「等价搬移」范围）。已登记为**未覆盖风险**：voice/image 执行链目前无「第 1 账号传输失败 → 第 2 账号成功」的用例，`voice_ws.go` 亦复用同一写法，三者并存 |
-| `§12.1`「后」列行数过时（叠加了后续函数分解） | 用文件实际行数重新实测 | **已更新全表**，并注明「后」为工作树实测、部分数值大于拆分当次是函数分解回填所致 |
-| `§12.2` 结论「86 → 18」与同节表格「88 → 18」矛盾 | 复核 HEAD 基线实测为 88 | **已更正为 88 / 降幅 80%** |
-| `§12.4` 新增用例数「47（16/13/18）」与文件实际不符 | 实测 `^func Test` 为 22/34/18 | **已更正为 74（22/34/18）** |
+| 发现                                                                                                            | 核实方式                                                                                                                 | 处置                                                                                                                                                                                                                                                                                                                         |
+| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `image_execution.go` 连续两次 `checkLedgerReady()`（复制残留）                                                  | 对照 HEAD `236175e4:gateway/image.go` 实测**只有 1 次**                                                                  | **已删除重复调用**（该检查幂等只读，行为等价且恢复与基线一致）；`go build`/`vet`/gateway 包测试 exit 0                                                                                                                                                                                                                       |
+| `voice_execution.go`/`image_execution.go` 尝试循环把上一轮 `err` 带入下一轮，`if err == nil` 可能跳过 `Acquire` | 对照 HEAD `236175e4:gateway/voice.go:357-363`：基线**同样是循环外 `var err error` + `if err == nil` 守卫**，结构逐行一致 | **当次判定为既有行为被忠实保留，非本轮引入**，未在等价搬移范围内改动，并登记为**未覆盖风险**（voice/image 执行链无「第 1 账号失败 → 第 2 账号成功」用例，`voice_ws.go` 亦复用同一写法）。**后续已在 §13.1 作为 P1 缺陷正式修复并补回归测试**；原判断（基线即有）成立，但「既有」不等于「可接受」，修正在等价搬移之外单独提交 |
+| `§12.1`「后」列行数过时（叠加了后续函数分解）                                                                   | 用文件实际行数重新实测                                                                                                   | **已更新全表**，并注明「后」为工作树实测、部分数值大于拆分当次是函数分解回填所致                                                                                                                                                                                                                                             |
+| `§12.2` 结论「86 → 18」与同节表格「88 → 18」矛盾                                                                | 复核 HEAD 基线实测为 88                                                                                                  | **已更正为 88 / 降幅 80%**                                                                                                                                                                                                                                                                                                   |
+| `§12.4` 新增用例数「47（16/13/18）」与文件实际不符                                                              | 实测 `^func Test` 为 22/34/18                                                                                            | **已更正为 74（22/34/18）**                                                                                                                                                                                                                                                                                                  |
 
 审查同时确认无问题：`voice_ws.go` 的 WebSocket 截止时间、`sso_build.go` 的 consent token、`quality_retry.go` 的 Build-only 拦截、`stream_copy.go` 的中止 trailer 与 `errors.go::classifyCopyError` 均未被改写；`selector_cache.go`/`selector_health_cache.go` 未见 `defer` 与显式 `Unlock` 混用导致的重复解锁。
 
@@ -411,3 +415,76 @@ ERROR: failed to push ghcr.io/jasminetony/grok2api:main-arm64: denied: permissio
 - `go test ./... -count=1` exit 0：**64 包 ok / 0 FAIL / 2879 PASS / 20 SKIP**（20 条为 PostgreSQL·Redis 集成用例，本机无隔离服务，属预期；CI 提供隔离服务后必须 0 skip）
 - 新增测试 3 文件 / 74 个顶层用例：`application/gateway/refactor_helpers_test.go` 22、`transport/http/inference/refactor_helpers_test.go` 34、`infra/provider/web/refactor_helpers_test.go` 18；覆盖提取出的定价估算、STT 格式化（text/json/verbose_json/rawjson）、媒体 JSON 解码、选择失败码、流分帧与 EOF 处理、导入凭据归一、图像/编辑校验拒绝路径（计数为 `^func Test` 实测，`inference` 侧含 2 处 `t.Run` 子用例）
 - `-race` 本机无 cgo，**Blocked**，由 CI 覆盖
+
+## 13. 阶段 6 收尾（P1 缺陷修复 / 函数分解收敛 / benchmark / 去重）
+
+本节记录阶段 6 收尾轮次的实测结果。除下述明确列出的改动外，公开协议（路由、DTO、状态码、错误文案、SSE 分帧、计费/审计顺序）未变。
+
+### 13.1 P1 修复：媒体尝试循环在多账号池下跳过 `Acquire`，把可自愈失败放大为 503
+
+**缺陷（`backend/internal/application/gateway/voice_execution.go`、`image_execution.go`）**：两个尝试循环把 `err` 声明在循环外且每轮不重置，本轮以错误结束并判定需要换号/重试时，下一轮 `if err == nil` 为假 → 跳过 `beginSelectionSessionForKey` + `selection.Acquire`，随即返回 503 `ErrNoAvailableAccount`。**即使账号池中仍有健康账号，第二个账号也从未被租用或尝试**——单账号凭据失效或一次性传输抖动会被放大为下游可见的 503。
+
+**修复**：每轮改用独立 `acquireErr`（`voice_execution.go:161-174`、`image_execution.go:241-251` 各带注释说明「selection 只在第 1 轮建立，其后轮次的租约获取不应受上一轮错误影响」）；`applyVoiceExecutionError` 返回值由 `(retry, carriedErr, fatalErr)` 收敛为 `(retry, err)`，消除跨轮携带错误的载体本身。
+
+**回归测试**：新增 `backend/internal/application/gateway/media_attempt_loop_test.go`（两账号夹具；`mediaAttemptLoopLimiter` 记录每个账号并发槽位的真实获取次数，作为「本轮是否重新获取租约」的可观察证据；`Current` 恒返回 0 避免夹具自身制造饱和假象）：
+
+| 用例                                                            | 断言                                                                                                                                        |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TestRunVoiceAttemptsReacquiresLeaseAfterRetryableAttemptError` | ① SSO 被拒后第二个账号被**真正租用**并成功返回 200；② 可重试传输失败在**同一账号**上重试 3 次（出口绑定语义保持），且第二个账号一次未被租用 |
+| `TestRunImageAttemptsRetryableAttemptErrorSwitchesAccount`      | ③ image 循环 SSO 换号成功、transport 失败以 502 终态（**不是**池耗尽）                                                                      |
+
+**验证**：`go build ./...`、`go vet ./...` exit 0；`go test ./... -count=1` 64 包 ok / 0 FAIL。影响面与回滚：单包单文件修复 + 新增测试，回滚即恢复旧循环语义（会退回 503 放大行为，不建议）。
+
+### 13.2 `infra/provider/web` 新增 6 个基准（解析/归一热点此前无可比基线）
+
+`backend/internal/infra/provider/web/benchmark_test.go` 新增 6 个基准。测量条件：**Go 1.26.1 windows/amd64、`-benchmem -count=3`、未固定 CPU**，下表为三次代表值区间：
+
+| Benchmark                             |         ns/op |    B/op | allocs/op |
+| ------------------------------------- | ------------: | ------: | --------: |
+| `BenchmarkConsumeJSONObjects`         |   425k – 563k | 180,256 |         4 |
+| `BenchmarkParseUpstreamFrame`         |  8.8k – 10.8k |   3,289 |        48 |
+| `BenchmarkNormalizeOpenAIInput`       |   191k – 196k |  56,088 |       680 |
+| `BenchmarkBuildOpenAIChatResult`      | 14.8k – 20.7k |  10,320 |        85 |
+| `BenchmarkParseWeeklyCreditsResponse` |   1.0k – 1.6k |     376 |         7 |
+| `BenchmarkInferWebTierFromQuota`      |     172 – 188 |       0 |         0 |
+
+口径说明：未固定 CPU 且未做 5 次中位数，因此**区间值只作基线量级参考**，不作为「优化收益」证据；后续对比必须同机、同 `-count` 重复测量。全仓 `^func Benchmark` 计数由阶段 0 的 12 增至 **19**（`infra/provider/web/benchmark_test.go` 内 6 个，另含阶段 2–4 新增的 1 个账号分页聚合基准）。
+
+### 13.3 后端去重：删除纯转发包装
+
+`internal/infra/provider/web/account_settings.go`：删除纯转发包装 `runWebAccountSetting`（仅把参数原样转给 `runWebAccountSettings`，无附加语义），三处调用点（同文件 55、88、108 行）改为直接调用 `runWebAccountSettings`。行为等价、减少一层无价值间接；无新增依赖。
+
+### 13.4 阶段 6 收尾验证
+
+- `go build ./...` exit 0；`go vet ./...` exit 0
+- `go test ./... -count=1`：**64 包 ok / 0 FAIL**
+- 函数级 REV-2：三包合计 **7**（详见 §12.2 更新后的表格与逐项登记），未记为全部达标
+- `-race` 本机无 cgo，**Blocked**，由 CI 覆盖（本轮未重跑）
+
+### 13.5 P2 修复：`runVideoJob` 固定账号获取失败时跳过换号回退（与 §13.1 同类）
+
+**缺陷（`backend/internal/application/gateway/video.go:499-505`，HEAD 既有，非本轮拆分引入）**：`runVideoJob` 的重试循环把固定账号（首轮为 `job.AccountID`，其后为 403 出口重试的同一账号）的 `AcquirePinnedForKey` 失败错误写回循环级 `err`，随后的回退门 `if lease == nil { ... if err == nil { selection.Acquire(...) } }` 因此被判假 → 跳过会话租约获取，直接 `failVideoJob(..., "account_unavailable", lastErr, ...)`。触发条件：固定账号在重试轮次前被禁用/冷却/能力失效，而账号范围内仍有其它健康账号；任务被误判为账号池耗尽，审计写入的 `error_code=account_unavailable` 还会与从上一轮上游错误解析出的 HTTP 状态自相矛盾。
+
+**归属证据**：`git diff HEAD -- backend/internal/application/gateway/video.go` 只覆盖 `CreateVideo` 的拆分（旧 59–194 行）；`runVideoJob`（421–704）本次未改动，故为基线既有行为，与 §13.1 的 voice/image 循环是同一类缺陷的第三处。
+
+**修复**：固定账号获取失败只排除该账号，不再把错误写回 `err`（`video.go:499-509`），使 `selection.Acquire` 回退按循环注释「Create-stage failures may switch accounts」的既有语义执行。
+
+**回归测试**：新增 `TestVideoPinnedAccountUnavailableFallsBackWithinScope`（`video_scope_test.go`）。夹具扩为三账号（Super 200 / Free 100 / Spare 50），并给 `videoCreateFailoverAdapter` 增加 `onAttempt` 回调，用于在两次尝试之间禁用账号：
+
+| 步骤    | 事件                                                                                                                   |
+| ------- | ---------------------------------------------------------------------------------------------------------------------- |
+| 前置    | 禁用 Super；`job.AccountID = Super`                                                                                    |
+| 第 1 轮 | Super 固定获取失败 → 建立 selection 会话并租到 Free；Free 返回 create 阶段 403 → 固定 Free 重试；`onAttempt` 禁用 Free |
+| 第 2 轮 | Free 固定获取失败 → **回退租用 Spare 并成功**                                                                          |
+
+断言：`attempts == [Free, Spare]`，终态 `completed` 且 `AccountID == Spare`。**反向验证**：临时把 `video.go` 还原为旧写法后该用例失败（`attempts=[Free]`，任务以 `account_unavailable` 终止），确认用例确实钉住该缺陷。
+
+**验证**：`go build ./...`、`go vet ./...` exit 0；`go test ./internal/application/gateway -count=1` exit 0（38.4s）；全量结果见 §13.6。回滚：还原该 5 行即回到旧语义（会退回误判池耗尽行为，不建议）。
+
+### 13.6 阶段 7 独立复核与复验（本轮实测）
+
+- **独立只读审查**（针对未提交的 gateway / provider-web 拆分 diff）：确认质量判定与持有扫描、SSE 分帧、403/Statsig 重放、SSO 轮询、额度解码、视频帧解析在 HEAD 测试基线下行为等价；`quality_decision.go` 的四类指纹与 `BoundQualityRetry` 逐条复算无差异；`doWithFollow`/`pollToken`/`syncWeeklyCredits` 的 body 关闭与 timer 停止配对正确；`BenchmarkBuildOpenAIChatResult` 复用 `parsed` 不产生跨迭代污染。发现 1 个 P2（已修复，§13.5）与 3 项 P3（登记如下）。
+- **P3 登记（未修改，如实记录）**：① `gateway/video.go:658-661` 的 `if lease == nil` 防御分支在当前 attempt 策略下不可达（`allows(attempt)` 与 `hasNext(attempt)` 互斥），属死代码而非缺陷；② `infra/provider/web/gateway.go:617-619` 的 `collectGatewayToolResult` 注释在拆分时错位到 `gatewayActionSource` 上方；③ `refactor_helpers_test.go` 中 `TestVoiceQuotaModeOnlyResolvesWhenQuotaConsumed` 只覆盖 `consumesQuota=false` 分支，`BenchmarkInferWebTierFromQuota` 的 fixture 全部解析为同一 tier，未进入 `rank[candidate] < rank[detected]` 分支。三者均不改变对外行为，未据「建议」扩大改动。
+- **复验结果**：`go build ./...` exit 0；`go vet ./...` exit 0；`go test ./... -count=1` = **64 包 ok / 0 FAIL / 11 包 no test files**；20 个 PostgreSQL·Redis 集成用例 **Skipped**（本机无隔离服务，`TEST_POSTGRES_DSN`/`TEST_REDIS_ADDRESS` 为空，CI 提供后必须 0 skip）；`go test -race` 本机 `CGO_ENABLED=0` **Blocked**，由 Linux CI 覆盖。
+- **REV-2 独立复测**：用 stdlib `go/ast` 自建工具重测三包 >50 行函数 = **7**（gateway 7 / inference 0 / provider-web 0），与 §12.2 逐项一致；口径校验用 `createResponseAt` = 908 行（与登记值相同）。
+- **基准复测注意**：本次 6 个 `infra/provider/web` 基准是在**两个前端覆盖率进程并行占满 CPU** 的条件下测得（如 `ConsumeJSONObjects` 927k ns/op，§13.2 为 425k–563k），因此不写入基线；§13.2 的区间仍是未并行负载下的参考值，后续对比必须同机同负载。
