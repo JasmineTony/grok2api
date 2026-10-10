@@ -1,18 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Button } from "@/components/ui/button";
-import { DashboardActivity } from "@/features/dashboard/dashboard-activity";
 import { getDashboard, type DashboardPeriod } from "@/features/dashboard/dashboard-api";
-import { DashboardOverview, DashboardResources } from "@/features/dashboard/dashboard-overview";
-import { DashboardProviderDistribution } from "@/features/dashboard/dashboard-provider-distribution";
-import { DashboardTopModels } from "@/features/dashboard/dashboard-top-models";
-import { DashboardTrend } from "@/features/dashboard/dashboard-trend";
-import { VersionUpdateBanner } from "@/features/system/version-update";
+import { DashboardHeader } from "@/features/dashboard/dashboard-header";
+import { DashboardOverview } from "@/features/dashboard/dashboard-overview";
+import { DashboardPanels } from "@/features/dashboard/dashboard-panels";
 import { ErrorState } from "@/shared/components/data-state";
-import { PeriodSelector } from "@/shared/components/period-selector";
 import { PERIOD_DAYS, toPeriodValue, type PeriodDays } from "@/shared/lib/period";
 
 type DashboardPreferences = { periodDays: PeriodDays };
@@ -20,8 +14,9 @@ type DashboardPreferences = { periodDays: PeriodDays };
 const DASHBOARD_PREFERENCES_KEY = "grok2api:dashboard-preferences";
 const DEFAULT_DASHBOARD_PREFERENCES: DashboardPreferences = { periodDays: 30 };
 
+/** 仪表盘页：持有周期偏好与 dashboard 查询，头部与各面板均为独立组件。 */
 export function DashboardPage() {
-  const { t, i18n } = useTranslation();
+  const { i18n } = useTranslation();
   const [preferences, setPreferences] = useState<DashboardPreferences>(readDashboardPreferences);
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const forceRefresh = useRef(false);
@@ -62,39 +57,15 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-5">
-      <div className="space-y-5">
-        <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="text-xl font-medium">{t("dashboard.title")}</h1>
-          <div className="flex min-w-0 shrink-0 items-center gap-2">
-            <PeriodSelector
-              value={periodDays}
-              onChange={(value) => setPreferences((current) => ({ ...current, periodDays: value }))}
-              ariaLabel={t("dashboard.usage")}
-            />
-            <Button type="button" variant="secondary" size="sm" onClick={refreshAll} disabled={refreshing}>
-              <RefreshCw className={manualRefreshing ? "animate-spin" : undefined} />
-              {t("common.refresh")}
-            </Button>
-          </div>
-        </header>
-
-        <VersionUpdateBanner />
-      </div>
-
+      <DashboardHeader
+        periodDays={periodDays}
+        onPeriodChange={(value) => setPreferences((current) => ({ ...current, periodDays: value }))}
+        refreshing={refreshing}
+        spinning={manualRefreshing}
+        onRefresh={refreshAll}
+      />
       <DashboardOverview dashboard={dashboard} locale={i18n.language} loading={loading} />
-
-      <div className="grid items-stretch gap-2 xl:grid-cols-[minmax(0,3fr)_minmax(360px,2fr)]">
-        <DashboardTrend dashboard={dashboard} locale={i18n.language} loading={loading} />
-        <DashboardProviderDistribution dashboard={dashboard} locale={i18n.language} loading={loading} />
-      </div>
-
-      <div className="grid items-stretch gap-2 xl:grid-cols-[minmax(0,3fr)_minmax(360px,2fr)]">
-        <DashboardTopModels dashboard={dashboard} locale={i18n.language} loading={loading} />
-        <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2 xl:h-full">
-          <DashboardActivity dashboard={dashboard} locale={i18n.language} loading={loading} />
-          <DashboardResources dashboard={dashboard} locale={i18n.language} loading={loading} />
-        </div>
-      </div>
+      <DashboardPanels dashboard={dashboard} locale={i18n.language} loading={loading} />
     </div>
   );
 }
