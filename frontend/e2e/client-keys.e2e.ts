@@ -33,6 +33,13 @@ async function expectToast(page: Page, text: RegExp): Promise<void> {
   await expect(page.locator("[data-sonner-toast]").filter({ hasText: text }).first()).toBeVisible();
 }
 
+/** 用唯一搜索词把列表收敛到确定集合：同一 worker 内其它用例留下的数据不会影响空态断言。 */
+async function searchKeys(page: Page, value: string): Promise<void> {
+  const search = page.getByTestId("client-keys-search");
+  await search.fill(value);
+  await expect(search).toHaveValue(value);
+}
+
 /** 从创建响应的明文密钥 g2a_<prefix>_<secret> 解析出前缀，用于核对列表掩码。 */
 function parseSecretPrefix(secret: string): string {
   const match = /^g2a_([0-9a-f]+)_/.exec(secret);
@@ -67,9 +74,14 @@ test("未登录访问密钥页会被重定向到登录页", async ({ page, serve
 
 test("创建密钥：表单校验失败后成功创建并展示一次性明文", async ({ page, request, server }) => {
   await signIn(page, server);
+  const name = `e2e-创建-${Date.now().toString(36)}`;
   await page.getByRole("link", { name: keysNavName }).click();
   await expect(page.getByRole("heading", { name: keysNavName })).toBeVisible();
+
+  // 空态断言：用唯一搜索词收敛列表，不依赖同一 worker 内其它用例是否留下数据。
+  await searchKeys(page, name);
   await expect(page.getByTestId("client-keys-empty")).toContainText(noDataText);
+  await searchKeys(page, "");
 
   // 校验失败路径：空名称提交，弹窗保留且不入库。
   await page.getByRole("button", { name: createButtonName }).click();
@@ -77,10 +89,9 @@ test("创建密钥：表单校验失败后成功创建并展示一次性明文",
   await page.getByTestId("client-keys-form-submit").click();
   await expect(page.getByTestId("client-keys-form-name-error")).toContainText(requiredErrorText);
   await expect(page.getByTestId("client-keys-form-dialog")).toBeVisible();
-  expect(await apiKeyNames(request, server, "")).toEqual([]);
+  expect(await apiKeyNames(request, server, name)).toEqual([]);
 
   // 正常创建路径。
-  const name = `e2e-创建-${Date.now().toString(36)}`;
   await page.getByTestId("client-keys-form-name").fill(name);
   await page.getByTestId("client-keys-form-submit").click();
 
@@ -135,6 +146,7 @@ test("编辑密钥：停用后状态徽标与筛选结果同步变化", async ({
   await expect(page.getByRole("row").filter({ hasText: name })).toBeVisible();
 
   await selectStatusFilter(page, activeStatusText);
+  await searchKeys(page, name);
   await expect(page.getByTestId("client-keys-empty")).toContainText(noDataText);
   await expect(page.getByRole("row").filter({ hasText: name })).toHaveCount(0);
 });
@@ -168,6 +180,8 @@ test("删除密钥：确认后行与真实服务端记录同时消失", async ({
 
   await expectToast(page, deletedToast);
   await expect(page.getByRole("row").filter({ hasText: name })).toHaveCount(0);
+  // 空态断言：用唯一搜索词收敛列表，不依赖同一 worker 内其它用例是否留下数据。
+  await searchKeys(page, name);
   await expect(page.getByTestId("client-keys-empty")).toContainText(noDataText);
   expect(await apiKeyNames(request, server, name)).toEqual([]);
 });
