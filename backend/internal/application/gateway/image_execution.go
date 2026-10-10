@@ -103,14 +103,13 @@ func (s *Service) executeImage(
 	if err := s.checkLedgerReady(); err != nil {
 		return nil, err
 	}
-	pricingModel := s.providers.PricingModel(route.Provider, route.UpstreamModel)
-	pricingResolution, pricingQuality := imagePricingTiers(route.Provider, operation, resolution, quality)
-	reservation, priced := estimateImagePricing(operation, pricingModel, pricingResolution, pricingQuality, requestedCount, inputImageCount)
-	reserved, err := s.reserveImageBilling(ctx, key, eventID, reservation, priced)
+	billing, settlement, err := s.reserveImageSettlement(ctx, imageSettlementRequest{
+		key: key, eventID: eventID, operation: operation, route: route,
+		resolution: resolution, quality: quality, requestedCount: requestedCount, inputImageCount: inputImageCount,
+	})
 	if err != nil {
 		return nil, err
 	}
-	billing := imageBillingReservation{service: s, eventID: eventID, reserved: reserved}
 	defer billing.cancelUnlessOwned()
 	outcome, err := s.runImageAttempts(ctx, imageExecutionPlan{
 		requestID: requestID, eventID: eventID, externalModel: externalModel, key: key, route: route,
@@ -125,12 +124,38 @@ func (s *Service) executeImage(
 		return nil, s.reportImageSelectionFailure(auditCtx, outcome)
 	}
 	billing.owned = true
-	finalization := newImageFinalization(s, auditCtx, operation, route, outcome, imageSettlementFields{
+	return buildImageResult(newImageFinalization(s, auditCtx, operation, route, outcome, settlement)), nil
+}
+
+// imageSettlementRequest 固定图片请求计费预留与结算档位所需的输入。
+type imageSettlementRequest struct {
+	key             clientkey.Key
+	eventID         string
+	operation       audit.Operation
+	route           modeldomain.Route
+	resolution      string
+	quality         string
+	requestedCount  int
+	inputImageCount int
+}
+
+// reserveImageSettlement 计算官方报价档位并预留计费额度；未定价时只返回未预留的引用。
+func (s *Service) reserveImageSettlement(ctx context.Context, request imageSettlementRequest) (imageBillingReservation, imageSettlementFields, error) {
+	pricingModel := s.providers.PricingModel(request.route.Provider, request.route.UpstreamModel)
+	pricingResolution, pricingQuality := imagePricingTiers(request.route.Provider, request.operation, request.resolution, request.quality)
+	reservation, priced := estimateImagePricing(request.operation, pricingModel, pricingResolution, pricingQuality, request.requestedCount, request.inputImageCount)
+	fields := imageSettlementFields{
 		pricingModel: pricingModel, pricingResolution: pricingResolution, pricingQuality: pricingQuality,
-		requestedCount: requestedCount, inputImageCount: inputImageCount,
-		quotaRefreshGroup: s.providers.QuotaRefreshGroup(route.Provider, route.UpstreamModel),
-	})
-	return buildImageResult(finalization), nil
+		requestedCount: request.requestedCount, inputImageCount: request.inputImageCount,
+		quotaRefreshGroup: s.providers.QuotaRefreshGroup(request.route.Provider, request.route.UpstreamModel),
+	}
+	billing := imageBillingReservation{service: s, eventID: request.eventID}
+	if !priced {
+		return billing, fields, nil
+	}
+	reserved, err := s.clientKeys.ReserveBilling(ctx, request.key, request.eventID, reservation.CostInUSDTicks, mediaBillingReservationTTL)
+	billing.reserved = reserved
+	return billing, fields, err
 }
 
 // imageBillingReservation 跟踪图片请求的计费预留；未移交给结算时在函数退出时取消。
@@ -178,14 +203,6 @@ func buildImageResult(finalization *imageFinalization) *Result {
 	}
 }
 
-// reserveImageBilling 预留图片请求的计费额度；未定价时不做预留。
-func (s *Service) reserveImageBilling(ctx context.Context, key clientkey.Key, eventID string, reservation audit.PricingResult, priced bool) (bool, error) {
-	if !priced {
-		return false, nil
-	}
-	return s.clientKeys.ReserveBilling(ctx, key, eventID, reservation.CostInUSDTicks, mediaBillingReservationTTL)
-}
-
 // reportImageSelectionFailure 落库账号选择失败的审计并返回统一错误。
 func (s *Service) reportImageSelectionFailure(auditCtx mediaAuditContext, outcome imageAttemptOutcome) error {
 	s.writeMediaFailureAudit(auditCtx, http.StatusServiceUnavailable, "upstream_unavailable", outcome.lastCredentialFailure)
@@ -220,25 +237,28 @@ func estimateImagePricing(operation audit.Operation, pricingModel, resolution, q
 // runImageAttempts 按运行时尝试策略依次获取账号并执行图片上游请求。
 func (s *Service) runImageAttempts(ctx context.Context, plan imageExecutionPlan) (imageAttemptOutcome, error) {
 	state := imageAttemptState{excluded: make(map[uint64]bool), selection: plan.preselected}
-	var err error
 	for attempt := 0; plan.policy.allows(attempt); attempt++ {
+		// acquireErr 每轮独立：selection 只在第 1 轮建立，其后轮次的租约获取不应受
+		// 上一轮上游错误影响，否则存在健康账号时也会直接判定池耗尽。
+		var acquireErr error
 		if state.selection == nil {
-			state.selection, err = s.selector.beginSelectionSessionForKey(ctx, plan.route.Provider, plan.route.ID, plan.route.UpstreamModel, plan.quotaMode, "", state.excluded, false, plan.key.AccountScope())
+			state.selection, acquireErr = s.selector.beginSelectionSessionForKey(ctx, plan.route.Provider, plan.route.ID, plan.route.UpstreamModel, plan.quotaMode, "", state.excluded, false, plan.key.AccountScope())
 		}
-		if err == nil {
-			state.outcome.lease, err = state.selection.Acquire(ctx, state.excluded, false)
+		if acquireErr == nil {
+			state.outcome.lease, acquireErr = state.selection.Acquire(ctx, state.excluded, false)
 		}
-		if err != nil {
-			return state.outcome, s.abortImageAttempts(&state, err)
+		if acquireErr != nil {
+			return state.outcome, s.abortImageAttempts(&state, acquireErr)
 		}
 		state.excluded[state.outcome.lease.Credential.ID] = true
 		if !s.ensureImageAttemptCredential(ctx, plan, &state) {
 			continue
 		}
 		state.outcome.lease.markSelectorUpstreamStarted()
-		state.outcome.response, err = plan.execute(ctx, plan.route.Provider, state.outcome.credential, plan.route.UpstreamModel)
-		if err != nil {
-			retry, fatalErr := s.handleImageExecutionFailure(ctx, plan, &state, err)
+		executionErr := error(nil)
+		state.outcome.response, executionErr = plan.execute(ctx, plan.route.Provider, state.outcome.credential, plan.route.UpstreamModel)
+		if executionErr != nil {
+			retry, fatalErr := s.handleImageExecutionFailure(ctx, plan, &state, executionErr)
 			if fatalErr != nil {
 				return state.outcome, fatalErr
 			}
