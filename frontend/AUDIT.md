@@ -21,7 +21,7 @@
 | FE-A3  | Oxlint correctness | `pnpm oxlint`                        | Passed（0 warnings / 0 errors，500 文件 / 96 规则）                                                                     |
 | FE-A4  | ESLint 语义        | `pnpm lint`                          | Passed（0 problem）                                                                                                     |
 | FE-A5  | 纯逻辑单测         | `pnpm test`（node:test）             | Passed（68 tests / 37 suites / 0 fail / 0 skip）                                                                        |
-| FE-A6  | 组件单测 + 覆盖率  | `pnpm test:ui:coverage`              | Passed（110 文件 / 1357 tests；全局 97.34 / 93.25 / 97.32 / 98.09）                                                     |
+| FE-A6  | 组件单测 + 覆盖率  | `pnpm test:ui:coverage`              | Passed（113 文件 / 1388 tests；全局 97.65 / 93.76 / 97.94 / 98.36）                                                     |
 | FE-A7  | 生产构建           | `pnpm build`                         | Passed（阶段 7 热构建 1.32s）                                                                                           |
 | FE-A8  | 依赖边界与循环     | `pnpm check:architecture`            | Passed（406 模块 / 1823 依赖 / 0 违规）                                                                                 |
 | FE-A9  | 结构约束           | `pnpm check:structure`               | Passed（380 源码文件；0 超限文件 / 29 超限函数 = 冻结基线）                                                             |
@@ -51,9 +51,9 @@
 
 | 范围                        | Stmts | Branch | Funcs | Lines |
 | --------------------------- | ----: | -----: | ----: | ----: |
-| All files（287 个纳入文件） | 97.34 |  93.25 | 97.32 | 98.09 |
+| All files（287 个纳入文件） | 97.65 |  93.76 | 97.94 | 98.36 |
 
-逐文件口径：语句与行全部 ≥76%（最低语句 77.77）；8 个文件在分支或函数指标上 <76%，另有 5 个不含可执行语句的类型/DTO 模块报 0/0/0/0（统计假象）。逐项见 §13.2 与 §13.3。
+逐文件口径：**四项全部 ≥76%**（阶段 6 登记的「约 32 个文件 <76%」已归零，见 §13.2）；另有 5 个不含可执行语句的类型/DTO 模块报 0/0/0/0（统计假象）。仍不可驱动的是若干死分支/工具语义不可达分支，逐项见 §13.3。
 
 ### 真实全栈 E2E（阶段 2）
 
@@ -362,9 +362,9 @@
 
 ### 12.3 仍未达标项（本阶段未解决，如实登记）
 
-- **逐文件分支/函数 <76% 的 8 个文件**：阶段 7 已把阶段 6 的「约 32 个」收敛到 **8 个**（全部落在分支或函数指标，语句与行均 ≥76%，最低语句 77.77），逐项见 §13.2；该结论为阶段 7 实测，不再是「未重新统计」。
+- **逐文件口径**：阶段 6 收尾登记的「约 32 个文件 <76%」已归零——阶段 7 先补 `src/app/**` 6 个 0% 入口与 9 个 hook 的 100%（§13.1），再补齐最后 8 个文件的分支/函数缺口（§13.2）。当前逐文件四项全部 ≥76%。
 - **hook 100%（TEST-2）**：阶段 7 已把逐文件 100% 阈值从 10 个扩到 **19 个** hook；唯一未纳入的是 `use-account-cleanup-flow.ts`（分支 97.06，1 个不可驱动分支），见 §13.3。
-- **全局覆盖率**：阶段 7 重新实测 statements 97.34 / branches 93.25 / functions 97.32 / lines 98.09（门槛 76），取代此前「补强后未重新实测」的说明。
+- **全局覆盖率**：阶段 7 最终实测 statements 97.65 / branches 93.76 / functions 97.94 / lines 98.36（113 文件 / 1388 用例，门槛 76），取代此前「补强后未重新实测」的说明。
 - **后端函数级 REV-2 仍剩 7 个** >50 行（gateway 7 / inference 0 / provider-web 0，详见 `backend/AUDIT.md` §12.2 与 §13.6），未记为「已通过」。
 
 ## 13. 阶段 7（逐文件覆盖率 ratchet / 文档与配置一致性 / 复验）
@@ -389,26 +389,30 @@
 
 `vitest.config.ts` 的 TEST-2 逐文件 100% 阈值由 10 个 hook 扩到 **19 个**，把上述已达标 hook 锁定，防止回退。
 
-### 13.2 逐文件覆盖率实测（阶段 7）
+### 13.2 逐文件覆盖率实测（阶段 7，最终）
 
-`pnpm verify` 内 `test:ui:coverage`：**110 文件 / 1357 用例全过**（492s，`maxWorkers: 2`），全局 **97.34 / 93.25 / 97.32 / 98.09**（门槛 76）。逐文件（287 个纳入文件）：**语句与行全部 ≥76%**（最低语句 77.77）；**8 个文件在分支或函数指标上仍 <76%**：
+`pnpm verify` 内 `test:ui:coverage`：**113 文件 / 1388 用例全过**（413.8s，`maxWorkers: 2`），全局 **97.65 / 93.76 / 97.94 / 98.36**（门槛 76）。逐文件（287 个纳入文件）**四项全部 ≥76%**——阶段 6 登记的「约 32 个文件 <76%」已归零。
 
-| 文件                                               | Stmts | Branch | Funcs | Lines |
-| -------------------------------------------------- | ----: | -----: | ----: | ----: |
-| `features/settings/egress-source-dialog.tsx`       | 77.77 |  87.50 | 70.58 | 80.76 |
-| `features/settings/egress-node-dialogs.tsx`        | 82.81 |  77.02 | 75.00 | 85.00 |
-| `features/settings/settings-page.tsx`              | 90.00 | 100.00 | 66.66 |   100 |
-| `features/settings/settings-page-tabs.tsx`         |   100 |  50.00 |   100 |   100 |
-| `features/settings/settings-form-layout.tsx`       | 87.50 |  69.23 |   100 |   100 |
-| `features/settings/egress-automation-settings.tsx` | 93.54 |  66.66 | 90.47 | 93.10 |
-| `features/accounts/web-account-settings.tsx`       | 87.50 |  91.66 | 71.42 | 85.71 |
-| `features/media/video-gallery-page.tsx`            |   100 |  72.72 |   100 |   100 |
+收口过程：先由 `src/app/**` 6 个 0% 入口补测（§12.2）与 9 个 hook 收敛到 100%（§13.1）把缺口从 32 降到 8，再补 31 个用例把最后 8 个文件的分支/函数指标补过门槛：
+
+| 文件                                               | 收敛前（stmts/br/fn/lines）   | 收敛后（stmts/br/fn/lines） |
+| -------------------------------------------------- | ----------------------------- | --------------------------- |
+| `features/settings/egress-source-dialog.tsx`       | 77.77 / 87.50 / 70.58 / 80.76 | 100 / 95.83 / 100 / 100     |
+| `features/settings/egress-node-dialogs.tsx`        | 82.81 / 77.02 / 75.00 / 85.00 | 100 / 95.95 / 100 / 100     |
+| `features/settings/settings-page.tsx`              | 90.00 / 100 / 66.66 / 100     | 100 / 100 / 100 / 100       |
+| `features/settings/settings-page-tabs.tsx`         | 100 / 50.00 / 100 / 100       | 100 / 100 / 100 / 100       |
+| `features/settings/settings-form-layout.tsx`       | 87.50 / 69.23 / 100 / 100     | 100 / 100 / 100 / 100       |
+| `features/settings/egress-automation-settings.tsx` | 93.54 / 66.66 / 90.47 / 93.10 | 100 / 83.33 / 100 / 100     |
+| `features/accounts/web-account-settings.tsx`       | 87.50 / 91.66 / 71.42 / 85.71 | 100 / 95.83 / 100 / 100     |
+| `features/media/video-gallery-page.tsx`            | 100 / 72.72 / 100 / 100       | 100 / 90.90 / 100 / 100     |
+
+新增测试文件 3 个（`settings/egress-dialog-fields.test.tsx`、`settings/settings-form-controls.test.tsx`、`accounts/web-account-settings-menu.test.tsx`），扩展 4 个既有测试文件（`settings/egress-operations-extra.test.tsx`、`settings/settings-page.test.tsx`、`accounts/web-account-settings-dialogs.test.tsx`、`media/video-gallery-page.test.tsx`）；**未修改任何生产代码**。
 
 另有 5 个**不含可执行语句**的类型/DTO 模块在文本报表中显示 0/0/0/0（`shared/auth/auth-state.ts`、`features/settings/settings-dto.ts`、`features/settings/egress-dto.ts`、`features/media/types.ts`、`features/accounts/accounts-flow-context.ts`），属 v8 统计假象，不是覆盖缺口。
 
 ### 13.3 仍登记未达标项
 
-- **逐文件分支/函数 <76% 的 8 个文件**（§13.2 表）：集中在 `settings/**`（6）、`accounts/web-account-settings.tsx`、`media/video-gallery-page.tsx`。缺口来自 Radix 交互分支与 recharts/选择器回调在 jsdom 下不可驱动，或未触发的错误回调；未用伪造覆盖率或改生产代码的方式绕过。
+- **逐文件 TEST-1：已无 <76% 的文件**。原 8 个文件的分支/函数缺口已补齐（§13.2）；仍保持未覆盖的是下列**死分支或工具语义不可达**分支（未伪造覆盖率、未改生产代码）：`egress-automation-settings.tsx:301` 的 `error` 死 prop 与 `:356` 逻辑上不可能成立的 `??` 右侧；`egress-source-dialog.tsx:46`、`egress-node-dialogs.tsx:53`/`:354` 的 `onOpenChange` 合成 else 分支（父级完全受控、内部无 `DialogTrigger`，jsdom 不可驱动）；`egress-node-dialogs.tsx:461` 的 `description` 死 prop；`media/video-gallery-page.tsx:39` 的 `result?.items.length ?? 0` 回退（左侧 `Boolean(result)` 已保证非空）；`accounts/web-account-settings.tsx:114` 的 `confirmationTarget` else 分支（目标为 null 时按钮 `disabled`，真实浏览器不派发 click）。这些分支不影响四项指标达标。
 - **hook 100%（TEST-2）仍有 1 个未纳入阈值**：`accounts/use-account-cleanup-flow.ts` 分支 97.06，剩 `:169` 的 `preview?.data ?? null` 兜底分支。不可驱动证据：`previewFresh` 为真时 `preview` 必非 null，且 `preview.data` 来自 `account-batch-api.ts` 的解码器校验，null/undefined 响应会直接 reject。要让该分支执行只能让 mock 违反解码器契约（伪造覆盖率）或改生产代码，两者均未采用。
 - **后端函数级 REV-2 仍剩 7 个** >50 行（gateway 7 / inference 0 / provider-web 0，详见 `backend/AUDIT.md` §12.2 与 §13.6），未记为「已通过」。
 - **既有 StrictMode 用例是空转（本轮发现，未修改原用例）**：`creative-console/use-creative-console.test.tsx` 的 `strictWrapper` 把 `<StrictMode>` 放在自定义 wrapper 组件**内部**，实测不会触发 React 的 effect 双重执行，因此该用例「StrictMode 下不重复读取密钥」并未真正走到重挂载路径。本轮新增了真实双重执行的用例覆盖同一行为。
@@ -436,7 +440,7 @@
 | 类型           | `pnpm typecheck`          | Passed（无输出）                                                                                |
 | E2E 类型       | `pnpm typecheck:e2e`      | Passed（无输出）                                                                                |
 | 纯逻辑单测     | `pnpm test`               | Passed（68 tests / 37 suites / 0 fail / 0 skip）                                                |
-| 组件单测覆盖率 | `pnpm test:ui:coverage`   | Passed（110 文件 / 1357 tests；97.34 / 93.25 / 97.32 / 98.09）                                  |
+| 组件单测覆盖率 | `pnpm test:ui:coverage`   | Passed（113 文件 / 1388 tests；97.65 / 93.76 / 97.94 / 98.36）                                  |
 | 依赖边界       | `pnpm check:architecture` | Passed（406 模块 / 1823 依赖 / 0 违规）                                                         |
 | 结构约束       | `pnpm check:structure`    | Passed（380 源码文件；0 超限文件 / 29 超限函数 = 冻结基线）                                     |
 | 门禁自测       | `pnpm test:gates`         | Passed（9 用例，含 4 个必须失败）                                                               |
