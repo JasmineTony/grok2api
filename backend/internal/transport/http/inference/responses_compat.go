@@ -140,102 +140,159 @@ func rewriteResponsesDataLine(line []byte, state *responsesCompatState) []byte {
 func sanitizeResponsesEvent(event map[string]any, state *responsesCompatState) bool {
 	changed := false
 	typ := stringAny(event["type"])
-	if responsesEventCarriesResponseID(typ) && state.responseID == "" {
-		if id := strings.TrimSpace(stringAny(event["id"])); id != "" {
-			state.responseID = id
-		}
+	rememberResponseIDFromEvent(typ, event, state)
+	if sanitizeResponseObject(event, state) {
+		changed = true
 	}
-	if resp, ok := event["response"].(map[string]any); ok {
-		if id := strings.TrimSpace(stringAny(resp["id"])); id != "" {
-			if state.responseID == "" {
-				state.responseID = id
-			} else if id != state.responseID {
-				resp["id"] = state.responseID
-				changed = true
-			}
-		} else {
-			resp["id"] = state.ensureID()
-			changed = true
-		}
-		if resp["created_at"] == nil {
-			_ = state.ensureID()
-			resp["created_at"] = state.createdAt
-			changed = true
-		} else if ts, ok := asInt64(resp["created_at"]); ok && ts > 0 {
-			if state.createdAt == 0 {
-				state.createdAt = ts
-			} else if ts != state.createdAt {
-				resp["created_at"] = state.createdAt
-				changed = true
-			}
-		}
-		if resp["object"] == nil {
-			resp["object"] = "response"
-			changed = true
-		}
-		if resp["output"] == nil {
-			resp["output"] = []any{}
-			changed = true
-		}
-		if model := strings.TrimSpace(stringAny(resp["model"])); model != "" {
-			state.model = model
-		} else {
-			// Grok TUI serde requires `model` on response.failed / completed.
-			resp["model"] = state.model
-			changed = true
-		}
-		if errObj, ok := resp["error"].(map[string]any); ok && strings.TrimSpace(stringAny(errObj["id"])) == "" {
-			errObj["id"] = "err_" + strings.TrimPrefix(state.ensureID(), "resp_")
-			changed = true
-		}
-		event["response"] = resp
+	if sanitizeResponseItem(event, state) {
+		changed = true
 	}
-	if item, ok := event["item"].(map[string]any); ok {
-		itemID := strings.TrimSpace(stringAny(item["id"]))
-		outputIndex, hasOutputIndex := asInt64(event["output_index"])
-		if hasOutputIndex {
-			if remembered := state.itemID(outputIndex); remembered != "" {
-				itemID = remembered
-			}
-		}
-		if itemID == "" {
-			itemID = state.nextItemID()
-		}
-		if strings.TrimSpace(stringAny(item["id"])) != itemID {
-			item["id"] = itemID
-			event["item"] = item
-			changed = true
-		}
-		state.rememberItemID(outputIndex, hasOutputIndex, itemID)
+	if sanitizeEventItemID(event, state) {
+		changed = true
 	}
-	if strings.TrimSpace(stringAny(event["item_id"])) == "" && responsesEventNeedsItemID(stringAny(event["type"])) {
-		if outputIndex, ok := asInt64(event["output_index"]); ok {
-			itemID := state.itemID(outputIndex)
-			if itemID == "" {
-				itemID = state.nextItemID()
-				state.rememberItemID(outputIndex, true, itemID)
-			}
-			event["item_id"] = itemID
-			changed = true
-		}
-	}
-	if responsesEventCarriesResponseID(typ) {
-		if id := strings.TrimSpace(stringAny(event["id"])); id == "" {
-			event["id"] = state.ensureID()
-			changed = true
-		} else {
-			if state.responseID == "" {
-				state.responseID = id
-			} else if id != state.responseID {
-				event["id"] = state.responseID
-				changed = true
-			}
-		}
+	if sanitizeEventResponseID(typ, event, state) {
+		changed = true
 	}
 	if ensureOutputTextAnnotations(event) {
 		changed = true
 	}
 	return changed
+}
+
+// rememberResponseIDFromEvent 在事件自身携带响应 ID 时先确立会话级响应 ID。
+func rememberResponseIDFromEvent(typ string, event map[string]any, state *responsesCompatState) {
+	if !responsesEventCarriesResponseID(typ) || state.responseID != "" {
+		return
+	}
+	if id := strings.TrimSpace(stringAny(event["id"])); id != "" {
+		state.responseID = id
+	}
+}
+
+// sanitizeResponseObject 统一 response 子对象中的 id / created_at / object / output / model / error.id。
+func sanitizeResponseObject(event map[string]any, state *responsesCompatState) bool {
+	resp, ok := event["response"].(map[string]any)
+	if !ok {
+		return false
+	}
+	changed := false
+	if id := strings.TrimSpace(stringAny(resp["id"])); id != "" {
+		if state.responseID == "" {
+			state.responseID = id
+		} else if id != state.responseID {
+			resp["id"] = state.responseID
+			changed = true
+		}
+	} else {
+		resp["id"] = state.ensureID()
+		changed = true
+	}
+	if resp["created_at"] == nil {
+		_ = state.ensureID()
+		resp["created_at"] = state.createdAt
+		changed = true
+	} else if ts, ok := asInt64(resp["created_at"]); ok && ts > 0 {
+		if state.createdAt == 0 {
+			state.createdAt = ts
+		} else if ts != state.createdAt {
+			resp["created_at"] = state.createdAt
+			changed = true
+		}
+	}
+	if resp["object"] == nil {
+		resp["object"] = "response"
+		changed = true
+	}
+	if resp["output"] == nil {
+		resp["output"] = []any{}
+		changed = true
+	}
+	if model := strings.TrimSpace(stringAny(resp["model"])); model != "" {
+		state.model = model
+	} else {
+		// Grok TUI serde requires `model` on response.failed / completed.
+		resp["model"] = state.model
+		changed = true
+	}
+	if ensureResponseErrorID(resp, state) {
+		changed = true
+	}
+	event["response"] = resp
+	return changed
+}
+
+// ensureResponseErrorID 为响应级错误补齐稳定 id，保持跨事件可引用。
+func ensureResponseErrorID(resp map[string]any, state *responsesCompatState) bool {
+	errObj, ok := resp["error"].(map[string]any)
+	if !ok || strings.TrimSpace(stringAny(errObj["id"])) != "" {
+		return false
+	}
+	errObj["id"] = "err_" + strings.TrimPrefix(state.ensureID(), "resp_")
+	return true
+}
+
+// sanitizeResponseItem 统一 item.id 与 output_index 的对应关系并记录映射。
+func sanitizeResponseItem(event map[string]any, state *responsesCompatState) bool {
+	item, ok := event["item"].(map[string]any)
+	if !ok {
+		return false
+	}
+	itemID := strings.TrimSpace(stringAny(item["id"]))
+	outputIndex, hasOutputIndex := asInt64(event["output_index"])
+	if hasOutputIndex {
+		if remembered := state.itemID(outputIndex); remembered != "" {
+			itemID = remembered
+		}
+	}
+	if itemID == "" {
+		itemID = state.nextItemID()
+	}
+	changed := false
+	if strings.TrimSpace(stringAny(item["id"])) != itemID {
+		item["id"] = itemID
+		event["item"] = item
+		changed = true
+	}
+	state.rememberItemID(outputIndex, hasOutputIndex, itemID)
+	return changed
+}
+
+func sanitizeEventItemID(event map[string]any, state *responsesCompatState) bool {
+	if strings.TrimSpace(stringAny(event["item_id"])) != "" || !responsesEventNeedsItemID(stringAny(event["type"])) {
+		return false
+	}
+	outputIndex, ok := asInt64(event["output_index"])
+	if !ok {
+		return false
+	}
+	itemID := state.itemID(outputIndex)
+	if itemID == "" {
+		itemID = state.nextItemID()
+		state.rememberItemID(outputIndex, true, itemID)
+	}
+	event["item_id"] = itemID
+	return true
+}
+
+// sanitizeEventResponseID 保证携带响应 ID 的事件始终使用同一会话级 ID。
+func sanitizeEventResponseID(typ string, event map[string]any, state *responsesCompatState) bool {
+	if !responsesEventCarriesResponseID(typ) {
+		return false
+	}
+	id := strings.TrimSpace(stringAny(event["id"]))
+	if id == "" {
+		event["id"] = state.ensureID()
+		return true
+	}
+	if state.responseID == "" {
+		state.responseID = id
+		return false
+	}
+	if id != state.responseID {
+		event["id"] = state.responseID
+		return true
+	}
+	return false
 }
 
 // Grok CLI serde requires output_text.annotations even when there are no

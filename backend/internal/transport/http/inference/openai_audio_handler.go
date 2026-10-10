@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/chenyme/grok2api/backend/internal/application/gateway"
+	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 	"github.com/gin-gonic/gin"
 )
 
@@ -40,22 +41,10 @@ func (h *Handler) synthesizeOpenAIAudioTask(c *gin.Context) {
 }
 
 func (h *Handler) handleOpenAISpeech(c *gin.Context) {
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, h.maxBodyBytes)
-	if !isJSONRequest(c) {
-		writeOpenAIError(c, http.StatusUnsupportedMediaType, "invalid_request", "audio speech 仅支持 application/json")
+	request, ok := h.decodeOpenAISpeechRequest(c)
+	if !ok {
 		return
 	}
-	body, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		writeOpenAIError(c, http.StatusRequestEntityTooLarge, "request_too_large", "请求体超过限制")
-		return
-	}
-	var request openAISpeechRequest
-	if err := decodeSingleJSON(bytes.NewReader(body), &request, false); err != nil {
-		writeOpenAIError(c, http.StatusBadRequest, "invalid_request", "audio speech 请求无效")
-		return
-	}
-
 	text := strings.TrimSpace(request.Input)
 	if text == "" {
 		writeOpenAIError(c, http.StatusBadRequest, "invalid_request", "input 不能为空")
@@ -70,69 +59,97 @@ func (h *Handler) handleOpenAISpeech(c *gin.Context) {
 	if model == "" {
 		model = "grok-voice-latest"
 	}
-	voiceID := firstNonEmpty(strings.TrimSpace(request.VoiceID), strings.TrimSpace(request.Voice))
-	if mapped := mapOpenAIVoiceID(voiceID); mapped != "" {
-		voiceID = mapped
-	}
-
-	format, err := parseTTSOutputFormat(request.OutputFormat)
-	if err != nil {
-		writeOpenAIError(c, http.StatusBadRequest, "invalid_parameter", err.Error())
+	format, ok := parseOpenAISpeechFormat(c, request)
+	if !ok {
 		return
 	}
-	if format.Codec == "" {
-		if codec := mapOpenAIResponseFormat(request.ResponseFormat); codec != "" {
-			format.Codec = codec
-		} else if strings.TrimSpace(request.ResponseFormat) != "" {
-			writeOpenAIError(c, http.StatusBadRequest, "invalid_request", "response_format 不受支持")
-			return
-		} else {
-			format.Codec = "mp3"
-		}
-	}
-
-	speed, err := parseTTSSpeed(request.Speed)
-	if err != nil {
-		writeOpenAIError(c, http.StatusBadRequest, "invalid_parameter", err.Error())
+	speed, optimize, ok := parseOpenAISpeechTuning(c, request)
+	if !ok {
 		return
 	}
-	optimize, err := parseOptimizeStreamingLatency(request.OptimizeStreamingLatency)
-	if err != nil {
-		writeOpenAIError(c, http.StatusBadRequest, "invalid_parameter", err.Error())
-		return
-	}
-
 	clientKey, requestID, ok := requestIdentity(c)
 	if !ok {
 		return
 	}
-	input := gateway.TTSInput{
-		RequestID:                requestID,
-		ClientKey:                clientKey,
-		PublicModel:              model,
-		Text:                     text,
-		VoiceID:                  voiceID,
-		Language:                 language,
-		OutputFormat:             format,
-		Speed:                    speed,
-		OptimizeStreamingLatency: optimize,
-		Method:                   c.Request.Method,
-		Path:                     c.Request.URL.Path,
-		Headers:                  c.Request.Header.Clone(),
-	}
-	if request.TextNormalization != nil {
-		input.TextNormalization = *request.TextNormalization
-	}
-	if request.WithTimestamps != nil {
-		input.WithTimestamps = *request.WithTimestamps
-	}
-
+	input := openAISpeechInput(c, request, model, text, language, format, speed, optimize)
+	input.RequestID = requestID
+	input.ClientKey = clientKey
 	result, err := h.gateway.SynthesizeSpeech(c.Request.Context(), input)
 	if err != nil {
 		writeGatewayError(c, err)
 		return
 	}
 	h.writeMediaResult(c, result)
+}
+
+func (h *Handler) decodeOpenAISpeechRequest(c *gin.Context) (openAISpeechRequest, bool) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, h.maxBodyBytes)
+	if !isJSONRequest(c) {
+		writeOpenAIError(c, http.StatusUnsupportedMediaType, "invalid_request", "audio speech 仅支持 application/json")
+		return openAISpeechRequest{}, false
+	}
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		writeOpenAIError(c, http.StatusRequestEntityTooLarge, "request_too_large", "请求体超过限制")
+		return openAISpeechRequest{}, false
+	}
+	var request openAISpeechRequest
+	if err := decodeSingleJSON(bytes.NewReader(body), &request, false); err != nil {
+		writeOpenAIError(c, http.StatusBadRequest, "invalid_request", "audio speech 请求无效")
+		return openAISpeechRequest{}, false
+	}
+	return request, true
+}
+
+// parseOpenAISpeechFormat 解析 output_format，并在缺省时按 OpenAI response_format 映射编解码器。
+func parseOpenAISpeechFormat(c *gin.Context, request openAISpeechRequest) (provider.TTSOutputFormat, bool) {
+	format, err := parseTTSOutputFormat(request.OutputFormat)
+	if err != nil {
+		writeOpenAIError(c, http.StatusBadRequest, "invalid_parameter", err.Error())
+		return provider.TTSOutputFormat{}, false
+	}
+	if format.Codec != "" {
+		return format, true
+	}
+	if codec := mapOpenAIResponseFormat(request.ResponseFormat); codec != "" {
+		format.Codec = codec
+		return format, true
+	}
+	if strings.TrimSpace(request.ResponseFormat) != "" {
+		writeOpenAIError(c, http.StatusBadRequest, "invalid_request", "response_format 不受支持")
+		return provider.TTSOutputFormat{}, false
+	}
+	format.Codec = "mp3"
+	return format, true
+}
+
+func parseOpenAISpeechTuning(c *gin.Context, request openAISpeechRequest) (float64, int, bool) {
+	speed, err := parseTTSSpeed(request.Speed)
+	if err != nil {
+		writeOpenAIError(c, http.StatusBadRequest, "invalid_parameter", err.Error())
+		return 0, 0, false
+	}
+	optimize, err := parseOptimizeStreamingLatency(request.OptimizeStreamingLatency)
+	if err != nil {
+		writeOpenAIError(c, http.StatusBadRequest, "invalid_parameter", err.Error())
+		return 0, 0, false
+	}
+	return speed, optimize, true
+}
+
+// openAISpeechInput 组装修正后的 TTS 入参；voice 优先取 voice_id，其次 voice 并按 OpenAI 音色映射。
+func openAISpeechInput(c *gin.Context, request openAISpeechRequest, model, text, language string, format provider.TTSOutputFormat, speed float64, optimize int) gateway.TTSInput {
+	voiceID := firstNonEmpty(strings.TrimSpace(request.VoiceID), strings.TrimSpace(request.Voice))
+	if mapped := mapOpenAIVoiceID(voiceID); mapped != "" {
+		voiceID = mapped
+	}
+	input := gateway.TTSInput{
+		PublicModel: model, Text: text, VoiceID: voiceID, Language: language,
+		OutputFormat: format, Speed: speed, OptimizeStreamingLatency: optimize,
+		Method: c.Request.Method, Path: c.Request.URL.Path, Headers: c.Request.Header.Clone(),
+	}
+	applyTTSRequestToggles(&input, request.TextNormalization, request.WithTimestamps)
+	return input
 }
 
 func (h *Handler) transcribeOpenAIAudio(c *gin.Context) {

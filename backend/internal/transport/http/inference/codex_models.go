@@ -149,58 +149,72 @@ func codexAgentToolsSupported(item modelListItem) bool {
 func newCodexModelCatalog(items []modelListItem) codexModelCatalog {
 	models := make([]codexModelEntry, 0, len(items))
 	for index, item := range items {
-		capability, reasoningLevels := lookupGrokCapability(item.Provider, item.ID)
-		defaultLevel := modeldomain.DefaultReasoningEffortForProvider(item.Provider, item.ID)
-		// Alias entries pin a single effort; advertise only that level for client UX.
-		if _, effort, ok := modeldomain.ParseReasoningModelAlias(item.ID); ok {
-			reasoningLevels = []string{effort}
-			defaultLevel = effort
-		}
-		modalities := []string{"text"}
-		if capability.imageInput {
-			modalities = append(modalities, "image")
-		}
-		var applyPatchToolType *string
-		toolsSupported := codexAgentToolsSupported(item)
-		if toolsSupported {
-			value := "freeform"
-			applyPatchToolType = &value
-		}
-		reasoningSupported := modeldomain.SupportsReasoningForProvider(item.Provider, item.ID)
-		models = append(models, codexModelEntry{
-			Slug:                              item.ID,
-			DisplayName:                       codexDisplayName(item.ID),
-			Description:                       capability.description,
-			DefaultReasoningLevel:             defaultLevel,
-			SupportedReasoningLevels:          codexReasoningLevelsFor(reasoningLevels),
-			ShellType:                         "shell_command",
-			Visibility:                        codexVisibilityForCapability(item.Capability),
-			MinimalClientVersion:              "0.0.0",
-			SupportedInAPI:                    true,
-			Priority:                          index + 1,
-			AdditionalSpeedTiers:              []string{},
-			ServiceTiers:                      []any{},
-			BaseInstructions:                  codexBaseInstructions,
-			IncludeSkillsUsageInstructions:    false,
-			SupportsReasoningSummaryParameter: reasoningSupported,
-			SupportsReasoningSummaries:        reasoningSupported,
-			DefaultReasoningSummary:           "auto",
-			SupportVerbosity:                  false,
-			ApplyPatchToolType:                applyPatchToolType,
-			WebSearchToolType:                 "text",
-			TruncationPolicy:                  codexTruncationPolicy{Mode: "tokens", Limit: 10000},
-			SupportsParallelToolCalls:         toolsSupported,
-			SupportsImageDetailOriginal:       false,
-			ContextWindow:                     capability.contextWindow,
-			MaxContextWindow:                  capability.contextWindow,
-			EffectiveContextWindowPercent:     95,
-			ExperimentalSupportedTools:        []string{},
-			InputModalities:                   modalities,
-			SupportsSearchTool:                false,
-			UseResponsesLite:                  false,
-		})
+		models = append(models, buildCodexModelEntry(item, index))
 	}
 	return codexModelCatalog{Models: models}
+}
+
+// buildCodexModelEntry 把单条模型路由转换为 Codex 目录条目；index 决定 priority。
+func buildCodexModelEntry(item modelListItem, index int) codexModelEntry {
+	capability, reasoningLevels := lookupGrokCapability(item.Provider, item.ID)
+	defaultLevel := modeldomain.DefaultReasoningEffortForProvider(item.Provider, item.ID)
+	// Alias entries pin a single effort; advertise only that level for client UX.
+	if _, effort, ok := modeldomain.ParseReasoningModelAlias(item.ID); ok {
+		reasoningLevels = []string{effort}
+		defaultLevel = effort
+	}
+	toolsSupported := codexAgentToolsSupported(item)
+	reasoningSupported := modeldomain.SupportsReasoningForProvider(item.Provider, item.ID)
+	return codexModelEntry{
+		Slug:                              item.ID,
+		DisplayName:                       codexDisplayName(item.ID),
+		Description:                       capability.description,
+		DefaultReasoningLevel:             defaultLevel,
+		SupportedReasoningLevels:          codexReasoningLevelsFor(reasoningLevels),
+		ShellType:                         "shell_command",
+		Visibility:                        codexVisibilityForCapability(item.Capability),
+		MinimalClientVersion:              "0.0.0",
+		SupportedInAPI:                    true,
+		Priority:                          index + 1,
+		AdditionalSpeedTiers:              []string{},
+		ServiceTiers:                      []any{},
+		BaseInstructions:                  codexBaseInstructions,
+		IncludeSkillsUsageInstructions:    false,
+		SupportsReasoningSummaryParameter: reasoningSupported,
+		SupportsReasoningSummaries:        reasoningSupported,
+		DefaultReasoningSummary:           "auto",
+		SupportVerbosity:                  false,
+		ApplyPatchToolType:                codexApplyPatchToolType(toolsSupported),
+		WebSearchToolType:                 "text",
+		TruncationPolicy:                  codexTruncationPolicy{Mode: "tokens", Limit: 10000},
+		SupportsParallelToolCalls:         toolsSupported,
+		SupportsImageDetailOriginal:       false,
+		ContextWindow:                     capability.contextWindow,
+		MaxContextWindow:                  capability.contextWindow,
+		EffectiveContextWindowPercent:     95,
+		ExperimentalSupportedTools:        []string{},
+		InputModalities:                   codexInputModalities(capability.imageInput),
+		SupportsSearchTool:                false,
+		UseResponsesLite:                  false,
+	}
+}
+
+// codexInputModalities 按能力拼出输入模态列表；顺序与展示契约一致。
+func codexInputModalities(imageInput bool) []string {
+	modalities := []string{"text"}
+	if imageInput {
+		modalities = append(modalities, "image")
+	}
+	return modalities
+}
+
+// codexApplyPatchToolType 仅在支持 agent 工具时声明 freeform apply_patch 工具。
+func codexApplyPatchToolType(toolsSupported bool) *string {
+	if !toolsSupported {
+		return nil
+	}
+	value := "freeform"
+	return &value
 }
 
 func writeCodexModelCatalog(c *gin.Context, catalog codexModelCatalog) {
