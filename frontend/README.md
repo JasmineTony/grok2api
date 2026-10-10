@@ -59,21 +59,21 @@ pnpm verify        # 完整质量门禁
 
 `pnpm verify` 依次执行：
 
-| 步骤             | 命令                      | 说明                                                        |
-| ---------------- | ------------------------- | ----------------------------------------------------------- |
-| 格式             | `pnpm format:check`       | Prettier 是格式唯一来源                                     |
-| Oxlint           | `pnpm oxlint`             | correctness 类快速检查                                      |
-| ESLint           | `pnpm lint`               | TS / React / Hooks 语义                                     |
-| 类型             | `pnpm typecheck`          | `tsc -b --force`                                            |
-| 纯逻辑单测       | `pnpm test`               | `node:test`，16 个用例                                      |
-| 组件单测与覆盖率 | `pnpm test:ui:coverage`   | Vitest + jsdom，门槛见 `vitest.config.ts`                   |
-| 依赖边界         | `pnpm check:architecture` | dependency-cruiser：循环、分层方向、跨 feature              |
-| 结构约束         | `pnpm check:structure`    | 单文件 ≤600 行、具名函数 ≤50 行，存量债务冻结               |
-| 门禁自测         | `pnpm test:gates`         | 验证门禁在违规输入下确实失败                                |
-| 生产构建         | `pnpm build`              | `tsc -b && vite build`                                      |
-| 体积预算         | `pnpm check:budget`       | 首屏闭包 / 路由新增闭包 / 总量 / 最大 chunk                 |
-| E2E 类型         | `pnpm typecheck:e2e`      | `tsc -p tsconfig.e2e.json`                                  |
-| 真实全栈 E2E     | `pnpm test:e2e`           | Playwright + 生产 dist + 真实 Go 服务（临时 SQLite/Memory） |
+| 步骤             | 命令                      | 说明                                                              |
+| ---------------- | ------------------------- | ----------------------------------------------------------------- |
+| 格式             | `pnpm format:check`       | Prettier 是格式唯一来源                                           |
+| Oxlint           | `pnpm oxlint`             | correctness 类快速检查                                            |
+| ESLint           | `pnpm lint`               | TS / React / Hooks 语义                                           |
+| 类型             | `pnpm typecheck`          | `tsc -b --force`                                                  |
+| 纯逻辑单测       | `pnpm test`               | `node:test`（含 `tsc -p tsconfig.test.json` 类型检查），68 个用例 |
+| 组件单测与覆盖率 | `pnpm test:ui:coverage`   | Vitest + jsdom；全局门槛 76%，口径与例外见 `vitest.config.ts`     |
+| 依赖边界         | `pnpm check:architecture` | dependency-cruiser：循环、分层方向、跨 feature                    |
+| 结构约束         | `pnpm check:structure`    | 单文件 ≤600 行、具名函数 ≤50 行，存量债务冻结                     |
+| 门禁自测         | `pnpm test:gates`         | 验证门禁在违规输入下确实失败                                      |
+| 生产构建         | `pnpm build`              | `tsc -b && vite build`                                            |
+| 体积预算         | `pnpm check:budget`       | 首屏闭包 / 路由新增闭包 / 总量 / 最大 chunk                       |
+| E2E 类型         | `pnpm typecheck:e2e`      | `tsc -p tsconfig.e2e.json`                                        |
+| 真实全栈 E2E     | `pnpm test:e2e`           | Playwright + 生产 dist + 真实 Go 服务（临时 SQLite/Memory）       |
 
 `pnpm verify:full` = `pnpm verify && pnpm test:e2e`，用于交付前完整验收。
 
