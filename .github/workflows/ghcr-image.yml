@@ -221,6 +221,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ steps.image.outputs.name }}
+          # 同 merge 步骤：关闭自动 latest，否则 tag 推送时每个架构都会各自推送一个裸 latest 单架构镜像。
+          flavor: latest=false
           tags: |
             type=ref,event=branch,suffix=-${{ matrix.arch }}
             type=ref,event=tag,suffix=-${{ matrix.arch }}
@@ -273,6 +275,11 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ steps.image.outputs.name }}
+          # 关闭 metadata-action 的自动 latest：flavor=auto 会把 type=ref,event=tag 一律标记为 latest，
+          # 而自动 latest 只继承 flavor.prefix/suffix、不继承条目级 suffix，因此 tag 推送时
+          # per-arch 步骤会推送裸 latest（单架构），且 latest-amd64/arm64 只在 main 推送时生成，
+          # 使 merge 步骤因缺少 latest-<arch> 源而失败。latest 仅由下面的 type=raw 在 main 上显式产生。
+          flavor: latest=false
           tags: |
             type=ref,event=branch
             type=ref,event=tag
