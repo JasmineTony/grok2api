@@ -14,6 +14,7 @@ import (
 
 	"github.com/chenyme/grok2api/backend/internal/domain/account"
 	domainegress "github.com/chenyme/grok2api/backend/internal/domain/egress"
+	infraegress "github.com/chenyme/grok2api/backend/internal/infra/egress"
 	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 	"google.golang.org/protobuf/encoding/protowire"
 )
@@ -44,43 +45,53 @@ func (a *Adapter) SyncQuota(ctx context.Context, credential account.Credential) 
 		return provider.QuotaSnapshot{}, imagineErr
 	}
 	if len(chatWindows) > 0 {
-		tier, _ := resolveWebTierFromQuota(credential.WebTier, chatWindows, false)
-		var windows []account.QuotaWindow
-		// Basic/未知账号没有付费周池，避免为每次完整同步额外访问付费端点。
-		// 只有模式额度已经确认付费等级时才读取 weekly 作为权威额度。
-		if tier == account.WebTierSuper || tier == account.WebTierHeavy {
-			weekly, weeklyErr := a.syncWeeklyCredits(ctx, credential)
-			if weeklyErr != nil {
-				// Paid Web routing is governed by the shared weekly pool. Returning a
-				// partial successful snapshot would make the application replace and
-				// erase the last authoritative weekly window.
-				return provider.QuotaSnapshot{}, weeklyErr
-			}
-			// 周池覆盖 chat 模式窗口，但保留 imagine 窗口供前端展示与触顶判定。
-			kept := make([]account.QuotaWindow, 0, 1+len(imagineSnapshot.Windows))
-			kept = append(kept, weekly)
-			kept = append(kept, imagineSnapshot.Windows...)
-			windows = kept
-		}
-		if windows == nil {
-			windows = append(chatWindows, imagineSnapshot.Windows...)
-		}
-		return provider.QuotaSnapshot{Tier: tier, Windows: windows, SyncedAt: time.Now().UTC()}, nil
+		return a.chatQuotaSnapshot(ctx, credential, chatWindows, imagineSnapshot)
 	}
 	// 模式端点暂不可用时，仅已确认的付费账号允许用 weekly 兜底；
 	// Basic/Auto 不能凭周额度探测提权，也不应制造无意义的付费端点流量。
 	if credential.WebTier == account.WebTierSuper || credential.WebTier == account.WebTierHeavy {
-		if weekly, weeklyErr := a.syncWeeklyCredits(ctx, credential); weeklyErr == nil {
-			kept := append([]account.QuotaWindow{weekly}, imagineSnapshot.Windows...)
-			return provider.QuotaSnapshot{Tier: credential.WebTier, Windows: kept, SyncedAt: time.Now().UTC()}, nil
-		} else {
-			return provider.QuotaSnapshot{}, weeklyErr
-		}
+		return a.paidWeeklyQuotaSnapshot(ctx, credential, imagineSnapshot)
 	}
 	if fastErr != nil {
 		return provider.QuotaSnapshot{}, fastErr
 	}
 	return provider.QuotaSnapshot{}, autoErr
+}
+
+// chatQuotaSnapshot 在拿到模式额度后确定套餐等级，付费账号改为使用权威周池窗口。
+func (a *Adapter) chatQuotaSnapshot(ctx context.Context, credential account.Credential, chatWindows []account.QuotaWindow, imagineSnapshot provider.QuotaGroupSnapshot) (provider.QuotaSnapshot, error) {
+	tier, _ := resolveWebTierFromQuota(credential.WebTier, chatWindows, false)
+	var windows []account.QuotaWindow
+	// Basic/未知账号没有付费周池，避免为每次完整同步额外访问付费端点。
+	// 只有模式额度已经确认付费等级时才读取 weekly 作为权威额度。
+	if tier == account.WebTierSuper || tier == account.WebTierHeavy {
+		weekly, weeklyErr := a.syncWeeklyCredits(ctx, credential)
+		if weeklyErr != nil {
+			// Paid Web routing is governed by the shared weekly pool. Returning a
+			// partial successful snapshot would make the application replace and
+			// erase the last authoritative weekly window.
+			return provider.QuotaSnapshot{}, weeklyErr
+		}
+		// 周池覆盖 chat 模式窗口，但保留 imagine 窗口供前端展示与触顶判定。
+		kept := make([]account.QuotaWindow, 0, 1+len(imagineSnapshot.Windows))
+		kept = append(kept, weekly)
+		kept = append(kept, imagineSnapshot.Windows...)
+		windows = kept
+	}
+	if windows == nil {
+		windows = append(chatWindows, imagineSnapshot.Windows...)
+	}
+	return provider.QuotaSnapshot{Tier: tier, Windows: windows, SyncedAt: time.Now().UTC()}, nil
+}
+
+// paidWeeklyQuotaSnapshot 用权威周池构造快照，失败时按原语义返回错误而不返回部分快照。
+func (a *Adapter) paidWeeklyQuotaSnapshot(ctx context.Context, credential account.Credential, imagineSnapshot provider.QuotaGroupSnapshot) (provider.QuotaSnapshot, error) {
+	weekly, weeklyErr := a.syncWeeklyCredits(ctx, credential)
+	if weeklyErr != nil {
+		return provider.QuotaSnapshot{}, weeklyErr
+	}
+	kept := append([]account.QuotaWindow{weekly}, imagineSnapshot.Windows...)
+	return provider.QuotaSnapshot{Tier: credential.WebTier, Windows: kept, SyncedAt: time.Now().UTC()}, nil
 }
 
 // SyncQuotaGroup refreshes the authoritative Web Imagine quota group. The
@@ -101,37 +112,11 @@ func (a *Adapter) SyncQuotaGroup(ctx context.Context, credential account.Credent
 		return provider.QuotaGroupSnapshot{}, err
 	}
 	defer lease.Release()
-	endpoint := cfg.BaseURL + "/rest/media/imagine/quota_info"
-	requestCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.QuotaTimeoutSeconds)*time.Second)
-	defer cancel()
-	request, err := http.NewRequestWithContext(requestCtx, http.MethodPost, endpoint, bytes.NewReader([]byte("{}")))
+	body, err := a.fetchImagineQuotaBody(ctx, cfg, token, lease)
 	if err != nil {
 		return provider.QuotaGroupSnapshot{}, err
 	}
-	request.Header = buildHeaders(token, lease, "application/json")
-	applyAppHeaders(request.Header, cfg.BaseURL, cfg.BaseURL+"/imagine")
-	a.applySignedStatsig(requestCtx, request, token, lease)
-	response, err := lease.DoDeferredForbidden(request)
-	if err != nil {
-		a.egress.Feedback(context.WithoutCancel(ctx), lease.NodeID, 0, err)
-		return provider.QuotaGroupSnapshot{}, err
-	}
-	body, err := io.ReadAll(io.LimitReader(response.Body, 4<<20))
-	_ = response.Body.Close()
-	if err != nil {
-		return provider.QuotaGroupSnapshot{}, err
-	}
-	if response.StatusCode == http.StatusUnauthorized {
-		return provider.QuotaGroupSnapshot{}, provider.ErrUnauthorized
-	}
-	if response.StatusCode == http.StatusForbidden && provider.IsDefinitiveAccountBlockBody(body) {
-		return provider.QuotaGroupSnapshot{}, fmt.Errorf("%w: account blocked", provider.ErrUnauthorized)
-	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		a.egress.Feedback(context.WithoutCancel(ctx), lease.NodeID, response.StatusCode, nil)
-		return provider.QuotaGroupSnapshot{}, fmt.Errorf("Grok Web Imagine 配额接口返回 %d", response.StatusCode)
-	}
-	a.egress.Feedback(context.WithoutCancel(ctx), lease.NodeID, response.StatusCode, nil)
+	a.egress.Feedback(context.WithoutCancel(ctx), lease.NodeID, http.StatusOK, nil)
 	now := time.Now().UTC()
 	windows, err := decodeImagineQuotaSnapshot(body, credential.ID, now)
 	if err != nil {
@@ -140,6 +125,41 @@ func (a *Adapter) SyncQuotaGroup(ctx context.Context, credential account.Credent
 	return provider.QuotaGroupSnapshot{
 		Group: account.QuotaGroupWebImagine, Modes: account.WebImagineQuotaModes(), Windows: windows, SyncedAt: now,
 	}, nil
+}
+
+// fetchImagineQuotaBody 请求 media/unavailable 配额接口并读完响应体，非 2xx 按既有语义报错。
+func (a *Adapter) fetchImagineQuotaBody(ctx context.Context, cfg Config, token string, lease *infraegress.Lease) ([]byte, error) {
+	endpoint := cfg.BaseURL + "/rest/media/imagine/quota_info"
+	requestCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.QuotaTimeoutSeconds)*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(requestCtx, http.MethodPost, endpoint, bytes.NewReader([]byte("{}")))
+	if err != nil {
+		return nil, err
+	}
+	request.Header = buildHeaders(token, lease, "application/json")
+	applyAppHeaders(request.Header, cfg.BaseURL, cfg.BaseURL+"/imagine")
+	a.applySignedStatsig(requestCtx, request, token, lease)
+	response, err := lease.DoDeferredForbidden(request)
+	if err != nil {
+		a.egress.Feedback(context.WithoutCancel(ctx), lease.NodeID, 0, err)
+		return nil, err
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, 4<<20))
+	_ = response.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	if response.StatusCode == http.StatusUnauthorized {
+		return nil, provider.ErrUnauthorized
+	}
+	if response.StatusCode == http.StatusForbidden && provider.IsDefinitiveAccountBlockBody(body) {
+		return nil, fmt.Errorf("%w: account blocked", provider.ErrUnauthorized)
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		a.egress.Feedback(context.WithoutCancel(ctx), lease.NodeID, response.StatusCode, nil)
+		return nil, fmt.Errorf("Grok Web Imagine 配额接口返回 %d", response.StatusCode)
+	}
+	return body, nil
 }
 
 type imagineQuotaProduct struct {
@@ -158,81 +178,20 @@ func decodeImagineQuotaSnapshot(body []byte, accountID uint64, now time.Time) ([
 	if err := json.Unmarshal(body, &fields); err != nil {
 		return nil, fmt.Errorf("解析 Grok Web Imagine 配额: %w", err)
 	}
-	products := []struct {
-		field string
-		mode  string
-	}{
-		{"image", ""}, // lite uses the chat fast/weekly quota path.
-		{"imagePro", account.QuotaModeWebImagePro},
-		{"imageEdit", account.QuotaModeWebImageEdit},
-		{"video", account.QuotaModeWebVideo},
-		{"video720p", account.QuotaModeWebVideo720p},
-	}
+	// 只解析 JSON 顶层字段，具体产品字段交给 imagineQuotaWindow 校验。
 	windows := make([]account.QuotaWindow, 0, 4)
-	for _, item := range products {
+	for _, item := range imagineQuotaProducts() {
 		raw, ok := fields[item.field]
 		if !ok {
 			return nil, fmt.Errorf("Grok Web Imagine 配额响应缺少字段 %s", item.field)
 		}
-		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-			continue
+		window, keep, err := imagineQuotaWindow(item.field, item.mode, raw, accountID, now)
+		if err != nil {
+			return nil, err
 		}
-		var product imagineQuotaProduct
-		if err := json.Unmarshal(raw, &product); err != nil {
-			return nil, fmt.Errorf("解析 Grok Web Imagine 配额字段 %s: %w", item.field, err)
+		if keep {
+			windows = append(windows, window)
 		}
-		if product.Available == nil {
-			return nil, fmt.Errorf("Grok Web Imagine 配额字段 %s 结构不完整", item.field)
-		}
-		if item.mode == "" {
-			continue
-		}
-		// Paid Web tiers can use the shared weekly pool. For those accounts the
-		// Imagine endpoint reports only product availability and a window size,
-		// without an independent remainingQueries counter. Absence of that counter
-		// means "no product-specific window", not zero remaining quota. Omitting the
-		// row lets routing use the paid account's weekly window and atomically
-		// removes any stale per-product counter from an older response shape.
-		if *product.Available && product.RemainingQueries == nil {
-			if product.WindowSizeSeconds == nil {
-				return nil, fmt.Errorf("Grok Web Imagine 配额字段 %s 结构不完整", item.field)
-			}
-			if *product.WindowSizeSeconds <= 0 {
-				return nil, fmt.Errorf("Grok Web Imagine 配额字段 %s 的 windowSizeSeconds 无效", item.field)
-			}
-			continue
-		}
-		if *product.Available && product.WindowSizeSeconds == nil {
-			return nil, fmt.Errorf("Grok Web Imagine 配额字段 %s 结构不完整", item.field)
-		}
-		remaining := 0
-		if *product.Available && product.RemainingQueries != nil {
-			remaining = max(0, *product.RemainingQueries)
-		}
-		windowSeconds := 86400
-		if product.WindowSizeSeconds != nil {
-			windowSeconds = *product.WindowSizeSeconds
-		}
-		if windowSeconds <= 0 {
-			return nil, fmt.Errorf("Grok Web Imagine 配额字段 %s 的 windowSizeSeconds 无效", item.field)
-		}
-		var resetAt *time.Time
-		if product.NextAvailableAt != nil {
-			value := product.NextAvailableAt.UTC()
-			resetAt = &value
-		} else {
-			// Imagine exposes the quota-window length but omits its anchor while
-			// the product is available. Match Web chat quota semantics by using
-			// the observation time as the rolling prediction anchor; every sync
-			// replaces this estimate, while an explicit nextAvailableAt wins.
-			value := now.Add(time.Duration(windowSeconds) * time.Second)
-			resetAt = &value
-		}
-		windows = append(windows, account.QuotaWindow{
-			AccountID: accountID, Mode: item.mode, Remaining: remaining, Total: 0,
-			WindowSeconds: windowSeconds, ResetAt: resetAt, SyncedAt: &now,
-			Source: account.QuotaSourceUpstream, UpdatedAt: now,
-		})
 	}
 	return windows, nil
 }
@@ -302,19 +261,7 @@ func (a *Adapter) SyncQuotaMode(ctx context.Context, credential account.Credenti
 		return a.syncWeeklyCredits(ctx, credential)
 	}
 	if account.IsWebImagineQuotaMode(mode) {
-		snapshot, err := a.SyncQuotaGroup(ctx, credential, account.QuotaGroupWebImagine)
-		if err != nil {
-			return account.QuotaWindow{}, err
-		}
-		for _, w := range snapshot.Windows {
-			if w.Mode == mode {
-				return w, nil
-			}
-		}
-		if credential.WebTier == account.WebTierSuper || credential.WebTier == account.WebTierHeavy {
-			return a.syncWeeklyCredits(ctx, credential)
-		}
-		return account.QuotaWindow{}, fmt.Errorf("imagine 配额响应缺少 %s", mode)
+		return a.syncImagineQuotaMode(ctx, credential, mode)
 	}
 	cfg := a.config()
 	token, err := a.cipher.Decrypt(credential.EncryptedAccessToken)
@@ -395,6 +342,23 @@ func (a *Adapter) SyncQuotaMode(ctx context.Context, credential account.Credenti
 	}, nil
 }
 
+// syncImagineQuotaMode 从 Imagine 配额快照中取指定模式的窗口，付费账号可回退到共享周池。
+func (a *Adapter) syncImagineQuotaMode(ctx context.Context, credential account.Credential, mode string) (account.QuotaWindow, error) {
+	snapshot, err := a.SyncQuotaGroup(ctx, credential, account.QuotaGroupWebImagine)
+	if err != nil {
+		return account.QuotaWindow{}, err
+	}
+	for _, w := range snapshot.Windows {
+		if w.Mode == mode {
+			return w, nil
+		}
+	}
+	if credential.WebTier == account.WebTierSuper || credential.WebTier == account.WebTierHeavy {
+		return a.syncWeeklyCredits(ctx, credential)
+	}
+	return account.QuotaWindow{}, fmt.Errorf("imagine 配额响应缺少 %s", mode)
+}
+
 func (a *Adapter) syncWeeklyCredits(ctx context.Context, credential account.Credential) (account.QuotaWindow, error) {
 	cfg := a.config()
 	token, err := a.cipher.Decrypt(credential.EncryptedAccessToken)
@@ -407,41 +371,19 @@ func (a *Adapter) syncWeeklyCredits(ctx context.Context, credential account.Cred
 	}
 	defer lease.Release()
 
-	requestCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.QuotaTimeoutSeconds)*time.Second)
+	// 取消函数必须由调用方在读完响应体后再调用，否则会中断流式读取。
+	response, cancel, requestErr := a.requestWeeklyCredits(ctx, cfg, token, lease)
 	defer cancel()
-	endpoint := cfg.BaseURL + "/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig"
-	request, err := http.NewRequestWithContext(requestCtx, http.MethodPost, endpoint, bytes.NewReader([]byte{0, 0, 0, 0, 0}))
-	if err != nil {
-		return account.QuotaWindow{}, err
-	}
-	request.Header = buildHeaders(token, lease, "application/grpc-web+proto")
-	applyAppHeaders(request.Header, cfg.BaseURL, cfg.BaseURL+"/")
-	request.Header.Del("x-xai-request-id")
-	request.Header.Set("x-grpc-web", "1")
-	request.Header.Set("x-user-agent", "connect-es/2.1.1")
-
-	response, err := lease.DoDeferredForbidden(request)
-	if err != nil {
-		a.egress.Feedback(context.WithoutCancel(ctx), lease.NodeID, 0, err)
-		return account.QuotaWindow{}, err
+	if requestErr != nil {
+		return account.QuotaWindow{}, requestErr
 	}
 	defer response.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(response.Body, 4<<20))
 	if err != nil {
 		return account.QuotaWindow{}, err
 	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		if response.StatusCode == http.StatusUnauthorized {
-			return account.QuotaWindow{}, provider.ErrUnauthorized
-		}
-		if response.StatusCode == http.StatusForbidden && provider.IsDefinitiveAccountBlockBody(body) {
-			return account.QuotaWindow{}, fmt.Errorf("%w: account blocked", provider.ErrUnauthorized)
-		}
-		if response.StatusCode == http.StatusForbidden {
-			lease.InvalidateClearance()
-		}
-		a.egress.Feedback(context.WithoutCancel(ctx), lease.NodeID, response.StatusCode, nil)
-		return account.QuotaWindow{}, fmt.Errorf("Grok Web 周额度接口返回 %d", response.StatusCode)
+	if err := a.validateWeeklyCreditsResponse(ctx, lease, response, body); err != nil {
+		return account.QuotaWindow{}, err
 	}
 	window, err := parseWeeklyCreditsResponse(body, credential.ID, time.Now().UTC())
 	if err != nil {
@@ -449,6 +391,243 @@ func (a *Adapter) syncWeeklyCredits(ctx context.Context, credential account.Cred
 	}
 	a.egress.Feedback(context.WithoutCancel(ctx), lease.NodeID, response.StatusCode, nil)
 	return window, nil
+}
+
+// requestWeeklyCredits 发送 gRPC-Web 周额度请求并返回响应，错误时回报出口健康。
+func (a *Adapter) requestWeeklyCredits(ctx context.Context, cfg Config, token string, lease *infraegress.Lease) (*http.Response, context.CancelFunc, error) {
+	requestCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.QuotaTimeoutSeconds)*time.Second)
+	endpoint := cfg.BaseURL + "/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig"
+	request, err := http.NewRequestWithContext(requestCtx, http.MethodPost, endpoint, bytes.NewReader([]byte{0, 0, 0, 0, 0}))
+	if err != nil {
+		cancel()
+		return nil, nil, err
+	}
+	request.Header = buildHeaders(token, lease, "application/grpc-web+proto")
+	applyAppHeaders(request.Header, cfg.BaseURL, cfg.BaseURL+"/")
+	request.Header.Del("x-xai-request-id")
+	request.Header.Set("x-grpc-web", "1")
+	request.Header.Set("x-user-agent", "connect-es/2.1.1")
+	response, err := lease.DoDeferredForbidden(request)
+	if err != nil {
+		a.egress.Feedback(context.WithoutCancel(ctx), lease.NodeID, 0, err)
+		cancel()
+		return nil, nil, err
+	}
+	return response, cancel, nil
+}
+
+// validateWeeklyCreditsResponse 把非 2xx 状态映射为既有错误语义，并上报出口健康。
+func (a *Adapter) validateWeeklyCreditsResponse(ctx context.Context, lease *infraegress.Lease, response *http.Response, body []byte) error {
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		if response.StatusCode == http.StatusUnauthorized {
+			return provider.ErrUnauthorized
+		}
+		if response.StatusCode == http.StatusForbidden && provider.IsDefinitiveAccountBlockBody(body) {
+			return fmt.Errorf("%w: account blocked", provider.ErrUnauthorized)
+		}
+		if response.StatusCode == http.StatusForbidden {
+			lease.InvalidateClearance()
+		}
+		a.egress.Feedback(context.WithoutCancel(ctx), lease.NodeID, response.StatusCode, nil)
+		return fmt.Errorf("Grok Web 周额度接口返回 %d", response.StatusCode)
+	}
+	return nil
+}
+
+func imagineQuotaProducts() []struct {
+	field string
+	mode  string
+} {
+	return []struct {
+		field string
+		mode  string
+	}{
+		{"image", ""}, // lite uses the chat fast/weekly quota path.
+		{"imagePro", account.QuotaModeWebImagePro},
+		{"imageEdit", account.QuotaModeWebImageEdit},
+		{"video", account.QuotaModeWebVideo},
+		{"video720p", account.QuotaModeWebVideo720p},
+	}
+}
+
+// imagineQuotaWindow 把单个 Imagine 产品字段转换为额度窗口。
+// 返回 keep=false 表示该产品没有独立的剩余额度窗口，需跳过该行。
+func imagineQuotaWindow(field string, mode string, raw json.RawMessage, accountID uint64, now time.Time) (account.QuotaWindow, bool, error) {
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return account.QuotaWindow{}, false, nil
+	}
+	var product imagineQuotaProduct
+	if err := json.Unmarshal(raw, &product); err != nil {
+		return account.QuotaWindow{}, false, fmt.Errorf("解析 Grok Web Imagine 配额字段 %s: %w", field, err)
+	}
+	if product.Available == nil {
+		return account.QuotaWindow{}, false, fmt.Errorf("Grok Web Imagine 配额字段 %s 结构不完整", field)
+	}
+	if mode == "" {
+		return account.QuotaWindow{}, false, nil
+	}
+	skipped, err := imagineQuotaProductSkipped(field, product)
+	if err != nil {
+		return account.QuotaWindow{}, false, err
+	}
+	if skipped {
+		return account.QuotaWindow{}, false, nil
+	}
+	if *product.Available && product.WindowSizeSeconds == nil {
+		return account.QuotaWindow{}, false, fmt.Errorf("Grok Web Imagine 配额字段 %s 结构不完整", field)
+	}
+	remaining, windowSeconds, err := imagineQuotaProductLimits(field, product)
+	if err != nil {
+		return account.QuotaWindow{}, false, err
+	}
+	return account.QuotaWindow{
+		AccountID: accountID, Mode: mode, Remaining: remaining, Total: 0,
+		WindowSeconds: windowSeconds, ResetAt: imagineQuotaResetAt(product, windowSeconds, now), SyncedAt: &now,
+		Source: account.QuotaSourceUpstream, UpdatedAt: now,
+	}, true, nil
+}
+
+// imagineQuotaProductSkipped 判断该产品是否没有独立额度窗口。
+// Paid Web tiers can use the shared weekly pool. For those accounts the
+// Imagine endpoint reports only product availability and a window size,
+// without an independent remainingQueries counter. Absence of that counter
+// means "no product-specific window", not zero remaining quota. Omitting the
+// row lets routing use the paid account's weekly window and atomically
+// removes any stale per-product counter from an older response shape.
+func imagineQuotaProductSkipped(field string, product imagineQuotaProduct) (bool, error) {
+	if !*product.Available || product.RemainingQueries != nil {
+		return false, nil
+	}
+	if product.WindowSizeSeconds == nil {
+		return false, fmt.Errorf("Grok Web Imagine 配额字段 %s 结构不完整", field)
+	}
+	if *product.WindowSizeSeconds <= 0 {
+		return false, fmt.Errorf("Grok Web Imagine 配额字段 %s 的 windowSizeSeconds 无效", field)
+	}
+	return true, nil
+}
+
+// imagineQuotaProductLimits 读取剩余额度与窗口长度（秒）；窗口长度缺省为一天。
+func imagineQuotaProductLimits(field string, product imagineQuotaProduct) (int, int, error) {
+	remaining := 0
+	if *product.Available && product.RemainingQueries != nil {
+		remaining = max(0, *product.RemainingQueries)
+	}
+	windowSeconds := 86400
+	if product.WindowSizeSeconds != nil {
+		windowSeconds = *product.WindowSizeSeconds
+	}
+	if windowSeconds <= 0 {
+		return 0, 0, fmt.Errorf("Grok Web Imagine 配额字段 %s 的 windowSizeSeconds 无效", field)
+	}
+	return remaining, windowSeconds, nil
+}
+
+// imagineQuotaResetAt 计算重置时间：显式 nextAvailableAt 优先，否则以观测时间做滚动预测。
+func imagineQuotaResetAt(product imagineQuotaProduct, windowSeconds int, now time.Time) *time.Time {
+	if product.NextAvailableAt != nil {
+		value := product.NextAvailableAt.UTC()
+		return &value
+	}
+	// Imagine exposes the quota-window length but omits its anchor while
+	// the product is available. Match Web chat quota semantics by using
+	// the observation time as the rolling prediction anchor; every sync
+	// replaces this estimate, while an explicit nextAvailableAt wins.
+	value := now.Add(time.Duration(windowSeconds) * time.Second)
+	return &value
+}
+
+// weeklyCreditsFields 汇总周额度 protobuf 的解析中间结果。
+type weeklyCreditsFields struct {
+	usagePercent float64
+	usagePresent bool
+	periodStart  *time.Time
+	periodEnd    *time.Time
+	breakdown    []account.QuotaBreakdown
+}
+
+// decodeWeeklyCreditsField 解析单个周额度 protobuf 字段并写入中间结果，
+// 返回剩余待解析字节与是否命中已知字段。
+func decodeWeeklyCreditsField(fields *weeklyCreditsFields, number protowire.Number, fieldType protowire.Type, config []byte) (int, error) {
+	switch {
+	case number == 1 && fieldType == protowire.Fixed32Type:
+		value, consumed := protowire.ConsumeFixed32(config)
+		if consumed < 0 {
+			return 0, fmt.Errorf("周额度使用率无效")
+		}
+		fields.usagePercent = float64(math.Float32frombits(value))
+		fields.usagePresent = true
+		return consumed, nil
+	case (number == 4 || number == 5) && fieldType == protowire.BytesType:
+		value, consumed := protowire.ConsumeBytes(config)
+		if consumed < 0 {
+			return 0, fmt.Errorf("周额度周期无效")
+		}
+		parsed, parseErr := parseProtoTimestamp(value)
+		if parseErr != nil {
+			return 0, parseErr
+		}
+		if number == 4 {
+			fields.periodStart = &parsed
+		} else {
+			fields.periodEnd = &parsed
+		}
+		return consumed, nil
+	case number == 7 && fieldType == protowire.BytesType:
+		value, consumed := protowire.ConsumeBytes(config)
+		if consumed < 0 {
+			return 0, fmt.Errorf("周额度产品分解无效")
+		}
+		if item, ok := parseQuotaBreakdown(value); ok {
+			fields.breakdown = append(fields.breakdown, item)
+		}
+		return consumed, nil
+	default:
+		consumed := protowire.ConsumeFieldValue(number, fieldType, config)
+		if consumed < 0 {
+			return 0, fmt.Errorf("周额度 protobuf 字段无效")
+		}
+		return consumed, nil
+	}
+}
+
+// decodeWeeklyCreditsConfig 按字段号遍历周额度 protobuf 配置，遇到非法编码立即报错。
+func decodeWeeklyCreditsConfig(config []byte) (weeklyCreditsFields, error) {
+	fields := weeklyCreditsFields{breakdown: make([]account.QuotaBreakdown, 0, 8)}
+	for len(config) > 0 {
+		number, fieldType, n := protowire.ConsumeTag(config)
+		if n < 0 {
+			return weeklyCreditsFields{}, fmt.Errorf("周额度 protobuf tag 无效")
+		}
+		config = config[n:]
+		consumed, err := decodeWeeklyCreditsField(&fields, number, fieldType, config)
+		if err != nil {
+			return weeklyCreditsFields{}, err
+		}
+		config = config[consumed:]
+	}
+	return fields, nil
+}
+
+// weeklyCreditsWindowSeconds 校验周期并返回窗口长度（秒）。
+func weeklyCreditsWindowSeconds(fields weeklyCreditsFields) (int, error) {
+	if fields.usagePresent && (math.IsNaN(fields.usagePercent) || math.IsInf(fields.usagePercent, 0) || fields.usagePercent < 0 || fields.usagePercent > 100) {
+		return 0, fmt.Errorf("Grok Web 周额度响应缺少有效使用率")
+	}
+	if fields.periodStart == nil || fields.periodEnd == nil || !fields.periodEnd.After(*fields.periodStart) {
+		return 0, fmt.Errorf("Grok Web 周额度响应缺少有效周期")
+	}
+	if !fields.usagePresent && fields.periodStart.Nanosecond() == 0 && fields.periodEnd.Nanosecond() == 0 {
+		// Free accounts return a coarse entitlement period without a usage rate.
+		// A paid, unused weekly pool has the same rate omitted but retains its
+		// precise period boundaries, which represents zero percent used.
+		return 0, fmt.Errorf("Grok Web 周额度响应缺少有效使用率")
+	}
+	windowSeconds := int(fields.periodEnd.Sub(*fields.periodStart).Seconds())
+	if windowSeconds < 24*60*60 || windowSeconds > 31*24*60*60 {
+		return 0, fmt.Errorf("Grok Web 周额度周期长度异常")
+	}
+	return windowSeconds, nil
 }
 
 func parseWeeklyCreditsResponse(body []byte, accountID uint64, syncedAt time.Time) (account.QuotaWindow, error) {
@@ -460,78 +639,19 @@ func parseWeeklyCreditsResponse(body []byte, accountID uint64, syncedAt time.Tim
 	if err != nil {
 		return account.QuotaWindow{}, fmt.Errorf("解析 Grok Web 周额度响应: %w", err)
 	}
-	var usagePercent float64
-	var usagePresent bool
-	var periodStart, periodEnd *time.Time
-	breakdown := make([]account.QuotaBreakdown, 0, 8)
-	for len(config) > 0 {
-		number, fieldType, n := protowire.ConsumeTag(config)
-		if n < 0 {
-			return account.QuotaWindow{}, fmt.Errorf("周额度 protobuf tag 无效")
-		}
-		config = config[n:]
-		switch {
-		case number == 1 && fieldType == protowire.Fixed32Type:
-			value, consumed := protowire.ConsumeFixed32(config)
-			if consumed < 0 {
-				return account.QuotaWindow{}, fmt.Errorf("周额度使用率无效")
-			}
-			usagePercent = float64(math.Float32frombits(value))
-			usagePresent = true
-			config = config[consumed:]
-		case (number == 4 || number == 5) && fieldType == protowire.BytesType:
-			value, consumed := protowire.ConsumeBytes(config)
-			if consumed < 0 {
-				return account.QuotaWindow{}, fmt.Errorf("周额度周期无效")
-			}
-			parsed, parseErr := parseProtoTimestamp(value)
-			if parseErr != nil {
-				return account.QuotaWindow{}, parseErr
-			}
-			if number == 4 {
-				periodStart = &parsed
-			} else {
-				periodEnd = &parsed
-			}
-			config = config[consumed:]
-		case number == 7 && fieldType == protowire.BytesType:
-			value, consumed := protowire.ConsumeBytes(config)
-			if consumed < 0 {
-				return account.QuotaWindow{}, fmt.Errorf("周额度产品分解无效")
-			}
-			if item, ok := parseQuotaBreakdown(value); ok {
-				breakdown = append(breakdown, item)
-			}
-			config = config[consumed:]
-		default:
-			consumed := protowire.ConsumeFieldValue(number, fieldType, config)
-			if consumed < 0 {
-				return account.QuotaWindow{}, fmt.Errorf("周额度 protobuf 字段无效")
-			}
-			config = config[consumed:]
-		}
+	fields, err := decodeWeeklyCreditsConfig(config)
+	if err != nil {
+		return account.QuotaWindow{}, err
 	}
-	if usagePresent && (math.IsNaN(usagePercent) || math.IsInf(usagePercent, 0) || usagePercent < 0 || usagePercent > 100) {
-		return account.QuotaWindow{}, fmt.Errorf("Grok Web 周额度响应缺少有效使用率")
+	windowSeconds, err := weeklyCreditsWindowSeconds(fields)
+	if err != nil {
+		return account.QuotaWindow{}, err
 	}
-	if periodStart == nil || periodEnd == nil || !periodEnd.After(*periodStart) {
-		return account.QuotaWindow{}, fmt.Errorf("Grok Web 周额度响应缺少有效周期")
-	}
-	if !usagePresent && periodStart.Nanosecond() == 0 && periodEnd.Nanosecond() == 0 {
-		// Free accounts return a coarse entitlement period without a usage rate.
-		// A paid, unused weekly pool has the same rate omitted but retains its
-		// precise period boundaries, which represents zero percent used.
-		return account.QuotaWindow{}, fmt.Errorf("Grok Web 周额度响应缺少有效使用率")
-	}
-	windowSeconds := int(periodEnd.Sub(*periodStart).Seconds())
-	if windowSeconds < 24*60*60 || windowSeconds > 31*24*60*60 {
-		return account.QuotaWindow{}, fmt.Errorf("Grok Web 周额度周期长度异常")
-	}
-	usedBasisPoints := int(math.Round(usagePercent * 100))
+	usedBasisPoints := int(math.Round(fields.usagePercent * 100))
 	return account.QuotaWindow{
 		AccountID: accountID, Mode: weeklyQuotaMode, Remaining: max(0, 10000-usedBasisPoints), Total: 10000,
-		UsagePercent: usagePercent, Breakdown: breakdown, WindowSeconds: windowSeconds,
-		ResetAt: periodEnd, SyncedAt: &syncedAt, Source: account.QuotaSourceUpstream, UpdatedAt: syncedAt,
+		UsagePercent: fields.usagePercent, Breakdown: fields.breakdown, WindowSeconds: windowSeconds,
+		ResetAt: fields.periodEnd, SyncedAt: &syncedAt, Source: account.QuotaSourceUpstream, UpdatedAt: syncedAt,
 	}, nil
 }
 

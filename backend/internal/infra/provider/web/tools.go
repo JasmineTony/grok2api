@@ -71,40 +71,68 @@ type toolStreamSieve struct {
 	done      bool
 }
 
+// collectToolDeclarations 解析 tools 数组，登记函数工具与上游原生托管搜索声明。
+func collectToolDeclarations(configuration *toolConfiguration, rawTools json.RawMessage) error {
+	trimmed := bytes.TrimSpace(rawTools)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return nil
+	}
+	var values []map[string]any
+	if err := json.Unmarshal(trimmed, &values); err != nil {
+		return errors.New("tools 必须是数组")
+	}
+	if len(values) > maxFunctionTools {
+		return fmt.Errorf("tools 不能超过 %d 个", maxFunctionTools)
+	}
+	configuration.ResponseTools = make([]any, 0, len(values))
+	for _, value := range values {
+		configuration.ResponseTools = append(configuration.ResponseTools, value)
+		function, supported, err := parseFunctionTool(value)
+		if err != nil {
+			return err
+		}
+		if supported {
+			configuration.Functions = append(configuration.Functions, function)
+			continue
+		}
+		typeName, _ := value["type"].(string)
+		switch strings.ToLower(strings.TrimSpace(typeName)) {
+		case "web_search", "web_search_preview":
+			// Grok Web 原生搜索始终由上游执行，这两个标准声明无需注入函数提示词。
+			configuration.HostedWebSearch = true
+		default:
+			return fmt.Errorf("Grok Web 暂不支持 tools.type=%q", typeName)
+		}
+	}
+	return nil
+}
+
+// validateToolChoiceReferences 构建函数名索引并校验 tool_choice 的可满足性。
+func validateToolChoiceReferences(configuration *toolConfiguration) error {
+	configuration.available = make(map[string]struct{}, len(configuration.Functions))
+	for _, function := range configuration.Functions {
+		if _, exists := configuration.available[function.Name]; exists {
+			return fmt.Errorf("function tool 名称 %q 重复", function.Name)
+		}
+		configuration.available[function.Name] = struct{}{}
+	}
+	if configuration.ForcedName != "" {
+		if _, ok := configuration.available[configuration.ForcedName]; !ok {
+			return fmt.Errorf("tool_choice 指定的函数 %q 不存在", configuration.ForcedName)
+		}
+	}
+	if (configuration.Choice == "required" || configuration.ForcedName != "") && len(configuration.Functions) == 0 && !configuration.HostedWebSearch {
+		return errors.New("tool_choice 要求调用函数，但 tools 中没有可用函数")
+	}
+	return nil
+}
+
 // parseToolConfiguration 兼容 Chat Completions 与 Responses 的函数工具结构。
 func parseToolConfiguration(rawTools, rawChoice json.RawMessage) (toolConfiguration, error) {
 	configuration := toolConfiguration{Choice: "auto", ResponseChoice: "auto"}
-	trimmed := bytes.TrimSpace(rawTools)
-	if len(trimmed) > 0 && !bytes.Equal(trimmed, []byte("null")) {
-		var values []map[string]any
-		if err := json.Unmarshal(trimmed, &values); err != nil {
-			return toolConfiguration{}, errors.New("tools 必须是数组")
-		}
-		if len(values) > maxFunctionTools {
-			return toolConfiguration{}, fmt.Errorf("tools 不能超过 %d 个", maxFunctionTools)
-		}
-		configuration.ResponseTools = make([]any, 0, len(values))
-		for _, value := range values {
-			configuration.ResponseTools = append(configuration.ResponseTools, value)
-			function, supported, err := parseFunctionTool(value)
-			if err != nil {
-				return toolConfiguration{}, err
-			}
-			if supported {
-				configuration.Functions = append(configuration.Functions, function)
-				continue
-			}
-			typeName, _ := value["type"].(string)
-			switch strings.ToLower(strings.TrimSpace(typeName)) {
-			case "web_search", "web_search_preview":
-				// Grok Web 原生搜索始终由上游执行，这两个标准声明无需注入函数提示词。
-				configuration.HostedWebSearch = true
-			default:
-				return toolConfiguration{}, fmt.Errorf("Grok Web 暂不支持 tools.type=%q", typeName)
-			}
-		}
+	if err := collectToolDeclarations(&configuration, rawTools); err != nil {
+		return toolConfiguration{}, err
 	}
-
 	choice, forcedName, responseChoice, err := parseToolChoice(rawChoice)
 	if err != nil {
 		return toolConfiguration{}, err
@@ -112,20 +140,8 @@ func parseToolConfiguration(rawTools, rawChoice json.RawMessage) (toolConfigurat
 	configuration.Choice = choice
 	configuration.ForcedName = forcedName
 	configuration.ResponseChoice = responseChoice
-	configuration.available = make(map[string]struct{}, len(configuration.Functions))
-	for _, function := range configuration.Functions {
-		if _, exists := configuration.available[function.Name]; exists {
-			return toolConfiguration{}, fmt.Errorf("function tool 名称 %q 重复", function.Name)
-		}
-		configuration.available[function.Name] = struct{}{}
-	}
-	if forcedName != "" {
-		if _, ok := configuration.available[forcedName]; !ok {
-			return toolConfiguration{}, fmt.Errorf("tool_choice 指定的函数 %q 不存在", forcedName)
-		}
-	}
-	if (choice == "required" || forcedName != "") && len(configuration.Functions) == 0 && !configuration.HostedWebSearch {
-		return toolConfiguration{}, errors.New("tool_choice 要求调用函数，但 tools 中没有可用函数")
+	if err := validateToolChoiceReferences(&configuration); err != nil {
+		return toolConfiguration{}, err
 	}
 	return configuration, nil
 }
