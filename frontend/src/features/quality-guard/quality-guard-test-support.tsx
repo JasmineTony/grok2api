@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
+import { Toaster } from "sonner";
 import { vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -29,9 +30,15 @@ if (typeof Element !== "undefined" && !Element.prototype.hasPointerCapture) {
   Element.prototype.releasePointerCapture = () => undefined;
 }
 
+// jsdom 未实现 scrollIntoView，Radix Select 打开/移动高亮项时会调用它。
+if (typeof Element !== "undefined" && !Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => undefined;
+}
+
 export type RecordedRequest = { url: string; method: string; body: unknown };
 
-export type GuardApiFailure = "status" | "nodes" | "profiles" | "degrade" | "accounts" | "nodeAction";
+export type GuardApiFailure =
+  "status" | "nodes" | "profiles" | "degrade" | "accounts" | "nodeAction" | "nodeTest" | "profileAction" | "policySave";
 
 export type GuardApiOptions = {
   status?: Record<string, unknown>;
@@ -41,6 +48,7 @@ export type GuardApiOptions = {
   profiles?: Record<string, unknown>[];
   activeProfileId?: string;
   degrade?: Record<string, unknown>;
+  nodeTestResult?: Record<string, unknown>;
   failure?: GuardApiFailure;
 };
 
@@ -95,7 +103,7 @@ function guardConfig(): Record<string, unknown> {
   };
 }
 
-function guardNodeState(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+export function guardNodeState(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     active_soft_strikes: 0,
     passive_soft_strikes: 0,
@@ -328,32 +336,104 @@ function egressNodesResponse(options: GuardApiOptions, url: string, nodes: Recor
   });
 }
 
+// 手动探测的默认结果：TPS 高于 hard 阈值，命中 hard_tps 分类（用于验证立即刷新表格）。
+function defaultNodeTestResult(): Record<string, unknown> {
+  return {
+    nodeId: "node-1",
+    statusCode: 200,
+    firstTokenMs: 120,
+    durationMs: 2_000,
+    outputTokens: 128,
+    reasoningTokens: 16,
+    visibleTokens: 112,
+    outputTokensPerSecond: 1_200,
+    generationMs: 2_000,
+    expectedMatched: true,
+    thinkingRequired: false,
+  };
+}
+
+function respondGuardRoutes(options: GuardApiOptions, path: string, method: string): Response | null {
+  if (path === "/api/admin/v1/egress-quality-guard") {
+    if (options.failure === "status") return errorResponse("guardStatusReadFailed", "守护状态读取失败");
+    return jsonResponse(options.status ?? guardStatus());
+  }
+  if (path === "/api/admin/v1/egress-quality-guard/profiles" && method === "GET") {
+    return guardProfilesResponse(options);
+  }
+  if (path === "/api/admin/v1/egress-quality-guard/profiles" && method === "POST") {
+    if (options.failure === "profileAction") return errorResponse("guardProfileWriteFailed", "探针方案保存失败");
+    return jsonResponse(probeProfile({ id: "profile-new", name: "新方案", built_in: false }));
+  }
+  if (/^\/api\/admin\/v1\/egress-quality-guard\/profiles\/[^/]+$/.test(path)) {
+    if (options.failure === "profileAction") return errorResponse("guardProfileWriteFailed", "探针方案写入失败");
+    if (method === "DELETE") return jsonResponse({ deleted: true });
+    if (method === "PUT")
+      return jsonResponse(probeProfile({ id: path.split("/").at(-1) ?? "profile-1", built_in: false }));
+  }
+  if (path === "/api/admin/v1/egress-quality-guard/config" && method === "PUT") {
+    if (options.failure === "policySave") return errorResponse("guardPolicySaveFailed", "守护策略保存失败");
+    return jsonResponse({ saved: true });
+  }
+  if (/^\/api\/admin\/v1\/egress-quality-guard\/nodes\/[^/]+\/test$/.test(path) && method === "POST") {
+    if (options.failure === "nodeTest") return errorResponse("guardNodeTestFailed", "节点探测失败");
+    return jsonResponse(options.nodeTestResult ?? defaultNodeTestResult());
+  }
+  return null;
+}
+
+function respondEgressNodeRoutes(
+  options: GuardApiOptions,
+  path: string,
+  method: string,
+  url: string,
+  nodes: Record<string, unknown>[],
+): Response | null {
+  if (path === "/api/admin/v1/egress-nodes" && method === "GET") {
+    return egressNodesResponse(options, url, nodes);
+  }
+  if (path === "/api/admin/v1/egress-nodes" && method === "POST") {
+    if (options.failure === "nodeAction") return errorResponse("guardNodeCreateFailed", "节点创建失败");
+    return jsonResponse(guardNode({ id: "node-new", name: "新出口" }));
+  }
+  if (path === "/api/admin/v1/egress-nodes" && method === "DELETE") {
+    if (options.failure === "nodeAction") return errorResponse("guardNodeDeleteFailed", "节点删除失败");
+    return jsonResponse({ deleted: 1 });
+  }
+  if (path === "/api/admin/v1/egress-nodes/batch" && method === "PATCH") {
+    if (options.failure === "nodeAction") return errorResponse("guardNodeBatchFailed", "节点批量操作失败");
+    return jsonResponse({ updated: 1 });
+  }
+  // 批量路径必须先于单节点正则判定，否则 /egress-nodes/batch 会被当成节点 ID。
+  if (/^\/api\/admin\/v1\/egress-nodes\/[^/]+$/.test(path)) {
+    if (options.failure === "nodeAction") return errorResponse("guardNodeWriteFailed", "节点写入失败");
+    if (method === "PUT") return jsonResponse(guardNode());
+    if (method === "DELETE") return jsonResponse({ deleted: true });
+  }
+  return null;
+}
+
+function respondAccountRoutes(options: GuardApiOptions, path: string, method: string): Response | null {
+  if (path === "/api/admin/v1/request-audits/degrade-accounts") {
+    if (options.failure === "degrade") return errorResponse("degradeAccountsReadFailed", "降智账号读取失败");
+    return jsonResponse(options.degrade ?? degradeSummary());
+  }
+  if (path === "/api/admin/v1/accounts/batch" && method === "PATCH") {
+    if (options.failure === "accounts") return errorResponse("accountsBatchFailed", "账号批量操作失败");
+    return jsonResponse({ updated: 1 });
+  }
+  return null;
+}
+
 function createResponder(options: GuardApiOptions) {
   const nodes = options.nodes ?? [guardNode(), guardNode({ id: "node-2", name: "新加坡出口" })];
   return (url: string, method: string): Response => {
     const path = url.split("?")[0];
-    if (path === "/api/admin/v1/egress-quality-guard") {
-      if (options.failure === "status") return errorResponse("guardStatusReadFailed", "守护状态读取失败");
-      return jsonResponse(options.status ?? guardStatus());
-    }
-    if (path === "/api/admin/v1/egress-quality-guard/profiles" && method === "GET") {
-      return guardProfilesResponse(options);
-    }
-    if (path === "/api/admin/v1/egress-nodes" && method === "GET") {
-      return egressNodesResponse(options, url, nodes);
-    }
-    if (path === "/api/admin/v1/egress-nodes/batch" && method === "PATCH") {
-      if (options.failure === "nodeAction") return errorResponse("guardNodeBatchFailed", "节点批量操作失败");
-      return jsonResponse({ updated: 1 });
-    }
-    if (path === "/api/admin/v1/request-audits/degrade-accounts") {
-      if (options.failure === "degrade") return errorResponse("degradeAccountsReadFailed", "降智账号读取失败");
-      return jsonResponse(options.degrade ?? degradeSummary());
-    }
-    if (path === "/api/admin/v1/accounts/batch" && method === "PATCH") {
-      if (options.failure === "accounts") return errorResponse("accountsBatchFailed", "账号批量操作失败");
-      return jsonResponse({ updated: 1 });
-    }
+    const response =
+      respondGuardRoutes(options, path, method) ??
+      respondEgressNodeRoutes(options, path, method, url, nodes) ??
+      respondAccountRoutes(options, path, method);
+    if (response) return response;
     throw new Error(`unexpected request: ${method} ${url}`);
   };
 }
@@ -377,11 +457,15 @@ function createQueryClient(): QueryClient {
   });
 }
 
+// 页面本身不挂载 Toaster（由 app shell 负责），测试里补上，才能断言操作失败/成功的用户可见提示。
 function renderWithProviders(node: ReactNode) {
   return render(
     <I18nextProvider i18n={i18n}>
       <QueryClientProvider client={createQueryClient()}>
-        <TooltipProvider delayDuration={0}>{node}</TooltipProvider>
+        <TooltipProvider delayDuration={0}>
+          {node}
+          <Toaster />
+        </TooltipProvider>
       </QueryClientProvider>
     </I18nextProvider>,
   );

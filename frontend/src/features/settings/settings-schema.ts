@@ -11,9 +11,25 @@ import {
 export const MAX_ROUTING_ATTEMPTS = 65535;
 export const UNLIMITED_ROUTING_ATTEMPTS = -1;
 
-const durationSchema = z.object({ value: z.number().positive(), unit: z.enum(["s", "m", "h", "d"]) });
+// value 用 z.custom<number>()（只声明类型、不做运行时断言）承载，数值规则在对象级 issue 上判定：
+// 若把数值规则放在 value 自身的校验器里（z.number() / z.custom 带断言），issue 会落在子路径
+// ["value"]，则 formState.errors.<分组>.<字段> 只有 .value 有错而 .message 为空，
+// 各分页读不到错误文案，表现为「保存被静默拦截、界面无任何提示」。
+// 放在对象级后 issue 路径是字段本身，分页的 error={errors.X?.message} 才能渲染；
+// 同时把 value 的类型保留为 number，SettingsForm 对外契约不退化。
+const durationSchema = z
+  .object({ value: z.custom<number>(), unit: z.enum(["s", "m", "h", "d"]) })
+  .superRefine((value, context) => {
+    if (typeof value.value !== "number" || !Number.isFinite(value.value) || value.value <= 0)
+      context.addIssue({ code: "custom", message: "invalid" });
+  });
 const positiveInteger = z.number().int().positive();
-const byteSizeSchema = z.object({ value: z.number().positive(), unit: z.enum(["MiB", "GiB"]) });
+const byteSizeSchema = z
+  .object({ value: z.custom<number>(), unit: z.enum(["MiB", "GiB"]) })
+  .superRefine((value, context) => {
+    if (typeof value.value !== "number" || !Number.isFinite(value.value) || value.value <= 0)
+      context.addIssue({ code: "custom", message: "invalid" });
+  });
 const routingTTLDuration = durationSchema.refine((value) => durationSeconds(value) <= 30 * 86_400);
 const routingCooldownDuration = durationSchema.refine((value) => durationSeconds(value) <= 86_400);
 const routingCapacityWaitDuration = durationSchema.refine((value) => durationSeconds(value) <= 30);
