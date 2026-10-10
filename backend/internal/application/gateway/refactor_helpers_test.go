@@ -473,3 +473,107 @@ func TestSegmentedCohortOfKeepsUpstreamQuotaAuthority(t *testing.T) {
 		t.Fatalf("stale billing must not be fresh: %+v", cohort)
 	}
 }
+
+// closeCountingBody 记录 Close 调用次数，用于断言持有流读取泵的生命周期。
+type closeCountingBody struct {
+	closes int
+}
+
+func (body *closeCountingBody) Read(_ []byte) (int, error) { return 0, io.EOF }
+
+func (body *closeCountingBody) Close() error {
+	body.closes++
+	return nil
+}
+
+func TestQualityIsDumpBeforeDeliveryAggregatesEveryFingerprint(t *testing.T) {
+	// 终端态大额可见输出 + 1ms 刷新 = burst dump 指纹。
+	burst := QualityStreamSignals{
+		VisibleTokens: 16, Terminal: true, ReasoningTokens: defaultBurstMinReasoning,
+		FirstVisible: true, VisibleFlushMS: defaultBurstFlushMS - 1,
+	}
+	if !qualityIsDumpBeforeDelivery(burst, defaultQualityMinOutput) {
+		t.Fatal("burst dump fingerprint must be detected")
+	}
+	// 密文已达下限但无推理 delta、无 reasoning token = cipher drool 指纹。
+	drool := QualityStreamSignals{HasThinking: true, EncryptedBytes: 65536, VisibleTokens: defaultCipherDroolVisible}
+	if !qualityIsDumpBeforeDelivery(drool, defaultQualityMinOutput) {
+		t.Fatal("cipher drool fingerprint must be detected")
+	}
+	if qualityIsDumpBeforeDelivery(QualityStreamSignals{}, defaultQualityMinOutput) {
+		t.Fatal("empty signals must not match any dump fingerprint")
+	}
+}
+
+func TestClassifySettledVisibleOutputCoversFloorBoundaries(t *testing.T) {
+	cases := []struct {
+		name     string
+		output   int64
+		minOut   int64
+		expected QualityVerdict
+	}{
+		{name: "no output keeps waiting", output: 0, minOut: 8, expected: QualityWait},
+		{name: "below floor delivers", output: 3, minOut: 8, expected: QualityDeliver},
+		{name: "at floor withholds", output: 8, minOut: 8, expected: QualityWithhold},
+		{name: "above floor withholds", output: 99, minOut: 8, expected: QualityWithhold},
+	}
+	for _, testCase := range cases {
+		if got := classifySettledVisibleOutput(testCase.output, testCase.minOut); got != testCase.expected {
+			t.Fatalf("%s: verdict = %v, want %v", testCase.name, got, testCase.expected)
+		}
+	}
+}
+
+func TestClassifyQualityHoldRoutesThinkingAndVisibleInputs(t *testing.T) {
+	if got := ClassifyQualityHold(QualityStreamSignals{HasThinking: true, HasReasoningDelta: true}, 8); got != QualityDeliver {
+		t.Fatalf("plaintext reasoning verdict = %v, want deliver", got)
+	}
+	if got := ClassifyQualityHold(QualityStreamSignals{HasThinking: true}, 8); got != QualityWait {
+		t.Fatalf("cipher-only verdict = %v, want wait", got)
+	}
+	if got := ClassifyQualityHold(QualityStreamSignals{VisibleTokens: 64, Terminal: true}, 8); got != QualityWithhold {
+		t.Fatalf("terminal visible verdict = %v, want withhold", got)
+	}
+	if got := ClassifyQualityHold(QualityStreamSignals{VisibleTokens: 4}, 0); got != QualityWait {
+		t.Fatalf("default floor verdict = %v, want wait for an unfinished short stream", got)
+	}
+}
+
+func TestHeldQualityResultReplaysBufferAndKeepsPumpOpen(t *testing.T) {
+	body := &closeCountingBody{}
+	pump := newQualityReadPump(body)
+	t.Cleanup(func() { _ = pump.Close() })
+	held := &bytes.Buffer{}
+	held.WriteString("data: {}\n\n")
+
+	outcome := asQualityPeekOutcome(heldQualityResult(held, pump, &qualityScanState{responseID: "resp_1"}, QualityDeliver))
+	if outcome.err != nil || outcome.verdict != QualityDeliver || outcome.responseID != "resp_1" || outcome.usage.Reported {
+		t.Fatalf("outcome = %+v", outcome)
+	}
+	if body.closes != 0 {
+		t.Fatal("delivering a held prefix must keep the upstream pump open for the continuation read")
+	}
+	if payload, err := io.ReadAll(outcome.replay); err != nil || string(payload) != "data: {}\n\n" {
+		t.Fatalf("replayed prefix = %q err=%v", payload, err)
+	}
+	_ = outcome.replay.Close()
+}
+
+func TestAsQualityPeekOutcomeCarriesEveryField(t *testing.T) {
+	replay := io.NopCloser(strings.NewReader("x"))
+	outcome := asQualityPeekOutcome(replay, QualityWithhold, Usage{Reported: true}, "resp_2", errQualityEmptyStream)
+	if outcome.replay != replay || outcome.verdict != QualityWithhold || outcome.responseID != "resp_2" {
+		t.Fatalf("outcome = %+v", outcome)
+	}
+	if !outcome.usage.Reported || outcome.err == nil {
+		t.Fatalf("outcome payload = %+v", outcome)
+	}
+}
+
+func TestVoiceQuotaModeOnlyResolvesWhenQuotaConsumed(t *testing.T) {
+	service := &Service{}
+	route := modeldomain.Route{Provider: accountdomain.ProviderWeb, UpstreamModel: "grok-4"}
+	if got := service.voiceQuotaMode(route, false); got != "" {
+		t.Fatalf("non-quota voice mode = %q, want empty", got)
+	}
+}

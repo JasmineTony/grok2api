@@ -311,57 +311,66 @@ func (a *Adapter) postJSONWithReferer(ctx context.Context, cfg Config, lease *eg
 	data, _ := json.Marshal(payload)
 	for attempt := 0; attempt < 2; attempt++ {
 		requestCtx, cancel := context.WithTimeout(ctx, timeout)
-		request, err := http.NewRequestWithContext(requestCtx, http.MethodPost, endpoint, bytes.NewReader(data))
+		response, err := a.sendRefererJSONRequest(requestCtx, cfg, lease, token, endpoint, data, referer)
 		if err != nil {
 			cancel()
 			return nil, err
 		}
-		request.Header = buildHeaders(token, lease, "application/json")
-		applyAppHeaders(request.Header, cfg.BaseURL, referer)
-		a.applySignedStatsig(requestCtx, request, token, lease)
-		response, err := lease.DoDeferredForbidden(request)
-		if err != nil {
-			cancel()
-			return nil, err
+		if response.StatusCode != http.StatusForbidden {
+			response.Body = &cancelBody{ReadCloser: response.Body, cancel: cancel}
+			return response, nil
 		}
-		if response.StatusCode == http.StatusForbidden {
-			body, readErr := io.ReadAll(io.LimitReader(response.Body, webMediaDiagnosticBodyLimit+1))
-			_ = response.Body.Close()
-			cancel()
-			if readErr != nil {
-				return nil, fmt.Errorf("读取 Grok Web 403 响应: %w", readErr)
-			}
-			truncated := len(body) > webMediaDiagnosticBodyLimit
-			if truncated {
-				body = body[:webMediaDiagnosticBodyLimit]
-			}
-			upstreamErr := newWebMediaUpstreamError(response.StatusCode, body, truncated)
-			response.Body = io.NopCloser(bytes.NewReader(body))
-			response.ContentLength = int64(len(body))
-			if isClearanceRefreshableMediaError(upstreamErr) {
-				lease.InvalidateClearance()
-				_ = a.invalidateSignedStatsig(http.MethodPost, endpoint)
-				return response, nil
-			}
-			// Code 7 is the application-layer equivalent of reloading the Grok
-			// page: refresh only the path-bound Statsig signature and replay the
-			// explicitly rejected POST once. It is not a Cloudflare challenge, so
-			// the current Clearance lease remains valid.
-			if isStatsigRefreshableMediaError(upstreamErr, body) {
-				if attempt == 0 && a.invalidateSignedStatsig(http.MethodPost, endpoint) {
-					continue
-				}
-				return response, nil
-			}
-			// Remaining structured JSON responses are application policy decisions.
-			// They must not invalidate Clearance, affect egress health, or be replayed.
-			if upstreamErr.bodyKind == "json" || attempt > 0 || !a.invalidateSignedStatsig(http.MethodPost, endpoint) {
-				return response, nil
-			}
-			continue
+		retry, handleErr := a.handleRefererJSONForbidden(lease, endpoint, response, cancel, attempt)
+		if handleErr != nil {
+			return nil, handleErr
 		}
-		response.Body = &cancelBody{ReadCloser: response.Body, cancel: cancel}
-		return response, nil
+		if !retry {
+			return response, nil
+		}
 	}
 	return nil, fmt.Errorf("Grok Web Statsig 刷新失败")
+}
+
+// sendRefererJSONRequest 构造带应用头与签名 Statsig 的 POST 请求并执行一次。
+func (a *Adapter) sendRefererJSONRequest(requestCtx context.Context, cfg Config, lease *egress.Lease, token, endpoint string, data []byte, referer string) (*http.Response, error) {
+	request, err := http.NewRequestWithContext(requestCtx, http.MethodPost, endpoint, bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	request.Header = buildHeaders(token, lease, "application/json")
+	applyAppHeaders(request.Header, cfg.BaseURL, referer)
+	a.applySignedStatsig(requestCtx, request, token, lease)
+	return lease.DoDeferredForbidden(request)
+}
+
+// handleRefererJSONForbidden 处理 403 响应：返回 retry=true 表示调用方需重放一次请求。
+func (a *Adapter) handleRefererJSONForbidden(lease *egress.Lease, endpoint string, response *http.Response, cancel context.CancelFunc, attempt int) (bool, error) {
+	body, readErr := io.ReadAll(io.LimitReader(response.Body, webMediaDiagnosticBodyLimit+1))
+	_ = response.Body.Close()
+	cancel()
+	if readErr != nil {
+		return false, fmt.Errorf("读取 Grok Web 403 响应: %w", readErr)
+	}
+	truncated := len(body) > webMediaDiagnosticBodyLimit
+	if truncated {
+		body = body[:webMediaDiagnosticBodyLimit]
+	}
+	upstreamErr := newWebMediaUpstreamError(response.StatusCode, body, truncated)
+	response.Body = io.NopCloser(bytes.NewReader(body))
+	response.ContentLength = int64(len(body))
+	if isClearanceRefreshableMediaError(upstreamErr) {
+		lease.InvalidateClearance()
+		_ = a.invalidateSignedStatsig(http.MethodPost, endpoint)
+		return false, nil
+	}
+	// Code 7 是应用层的重新加载页面对应错误：只刷新路径绑定的 Statsig 签名并重放一次被拒绝的 POST。
+	// 它不是 Cloudflare 挑战，因此当前 Clearance 租约仍然有效。
+	if isStatsigRefreshableMediaError(upstreamErr, body) {
+		return attempt == 0 && a.invalidateSignedStatsig(http.MethodPost, endpoint), nil
+	}
+	// 其余结构化 JSON 响应属于上游策略结论：不得失效 Clearance、影响出口健康或被重放。
+	if upstreamErr.bodyKind == "json" || attempt > 0 || !a.invalidateSignedStatsig(http.MethodPost, endpoint) {
+		return false, nil
+	}
+	return true, nil
 }

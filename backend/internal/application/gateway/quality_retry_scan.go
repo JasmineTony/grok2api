@@ -521,7 +521,7 @@ func peekQualityStream(ctx context.Context, body io.ReadCloser, protocol string,
 	for {
 		sig := state.signals()
 		if verdict := ClassifyQualityHold(sig, cfg.MinOutputTokens); verdict != QualityWait {
-			return newPrefixReplay(&held, pump), verdict, state.usage, state.responseID, nil
+			return heldQualityResult(&held, pump, &state, verdict)
 		}
 		// A completed empty stream must rotate immediately. Waiting for idle
 		// timeout after response.completed / [DONE] surfaces HTTP 200 with 0
@@ -529,31 +529,60 @@ func peekQualityStream(ctx context.Context, body io.ReadCloser, protocol string,
 		if sig.Terminal {
 			return finishQualityPeek(&held, pump, &state, cfg)
 		}
-
-		select {
-		case <-ctx.Done():
-			return abortQualityPeek(ctx, ctx.Err(), pump, &held, &state)
-		case <-holdTimer.C:
-			state.holdExpired = true
-			sig.HoldExpired = true
-			if verdict := ClassifyQualityHold(sig, cfg.MinOutputTokens); verdict != QualityWait {
-				return newPrefixReplay(&held, pump), verdict, state.usage, state.responseID, nil
-			}
-		case result, ok := <-pump.results:
-			if !ok {
-				return finishQualityPeek(&held, pump, &state, cfg)
-			}
-			if deliver, verdict := bufferQualityChunk(&held, &state, result.data); deliver {
-				return newPrefixReplay(&held, pump), verdict, state.usage, state.responseID, nil
-			}
-			if result.err == io.EOF {
-				return finishQualityPeek(&held, pump, &state, cfg)
-			}
-			if result.err != nil {
-				return abortQualityPeek(ctx, result.err, pump, &held, &state)
-			}
+		outcome, done := awaitQualityPeekEvent(ctx, holdTimer, pump, &state, &held, sig, cfg)
+		if done {
+			return outcome.replay, outcome.verdict, outcome.usage, outcome.responseID, outcome.err
 		}
 	}
+}
+
+// qualityPeekOutcome 汇总持有期分帧判定的返回值，便于把 select 分支收敛为单一返回值。
+type qualityPeekOutcome struct {
+	replay     io.ReadCloser
+	verdict    QualityVerdict
+	usage      Usage
+	responseID string
+	err        error
+}
+
+// heldQualityResult 在判定结束后回放已缓冲分片并保留剩余读取泵。
+func heldQualityResult(held *bytes.Buffer, pump *qualityReadPump, state *qualityScanState, verdict QualityVerdict) (io.ReadCloser, QualityVerdict, Usage, string, error) {
+	return newPrefixReplay(held, pump), verdict, state.usage, state.responseID, nil
+}
+
+// awaitQualityPeekEvent 等待下一个持有期事件（取消、持有超时或上游分片）；done 为 true 时返回持有期终态。
+// sig 是进入等待前的判定快照，与调用方同轮循环的判定保持一致。
+func awaitQualityPeekEvent(ctx context.Context, holdTimer *time.Timer, pump *qualityReadPump, state *qualityScanState, held *bytes.Buffer, sig QualityStreamSignals, cfg QualityRetryRuntime) (qualityPeekOutcome, bool) {
+	select {
+	case <-ctx.Done():
+		return asQualityPeekOutcome(abortQualityPeek(ctx, ctx.Err(), pump, held, state)), true
+	case <-holdTimer.C:
+		state.holdExpired = true
+		sig.HoldExpired = true
+		if verdict := ClassifyQualityHold(sig, cfg.MinOutputTokens); verdict != QualityWait {
+			return asQualityPeekOutcome(heldQualityResult(held, pump, state, verdict)), true
+		}
+		return qualityPeekOutcome{}, false
+	case read, ok := <-pump.results:
+		if !ok {
+			return asQualityPeekOutcome(finishQualityPeek(held, pump, state, cfg)), true
+		}
+		if deliver, verdict := bufferQualityChunk(held, state, read.data); deliver {
+			return asQualityPeekOutcome(heldQualityResult(held, pump, state, verdict)), true
+		}
+		if read.err == io.EOF {
+			return asQualityPeekOutcome(finishQualityPeek(held, pump, state, cfg)), true
+		}
+		if read.err != nil {
+			return asQualityPeekOutcome(abortQualityPeek(ctx, read.err, pump, held, state)), true
+		}
+		return qualityPeekOutcome{}, false
+	}
+}
+
+// asQualityPeekOutcome 把持有期终止路径的返回值收敛为单一判定结果。
+func asQualityPeekOutcome(replay io.ReadCloser, verdict QualityVerdict, usage Usage, responseID string, err error) qualityPeekOutcome {
+	return qualityPeekOutcome{replay: replay, verdict: verdict, usage: usage, responseID: responseID, err: err}
 }
 
 // bufferQualityChunk 累积并分析一个上游分片；超过缓冲上限时放行已缓冲内容。

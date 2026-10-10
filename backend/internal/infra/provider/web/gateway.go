@@ -62,46 +62,109 @@ func (s *gatewaySender) write(value any) error {
 }
 
 func (a *Adapter) openGatewayChat(ctx context.Context, credential account.Credential, previousResponseID string, spec ModelSpec, input normalizedChatInput, options gatewayOpenOptions) (*http.Response, *infraegress.Lease, *inferencedomain.WebResponseState, string, error) {
-	cfg := a.config()
+	setup, err := a.prepareGatewayChat(ctx, credential, previousResponseID, input)
+	if err != nil {
+		return nil, nil, nil, "", err
+	}
+	requestCtx, idleCancel, cancel := gatewayChatContext(ctx, setup.cfg, options)
+	connection, handshake, dialErr := setup.dial(requestCtx, options)
+	if dialErr != nil {
+		cancel()
+		if handshake != nil {
+			return gatewayHandshakeResponse(handshake, setup.endpoint), setup.lease, setup.previous, "", nil
+		}
+		a.egress.Feedback(context.WithoutCancel(ctx), setup.lease.NodeID, 0, dialErr)
+		setup.lease.Release()
+		return nil, nil, nil, "", dialErr
+	}
+	body := gatewayChatStreamBody(requestCtx, connection, setup, spec, input, cancel)
+	if idleCancel != nil {
+		body = providerstreamidle.New(body, time.Duration(setup.cfg.StreamIdleTimeoutSeconds)*time.Second, idleCancel)
+	}
+	request, _ := http.NewRequestWithContext(requestCtx, http.MethodGet, setup.endpoint, nil)
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Status:     "200 OK",
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       body,
+		Request:    request,
+	}, setup.lease, setup.previous, "", nil
+}
+
+// gatewayChatSetup 保存一次 Gateway 会话在建立连接前解析出的身份、租约与前序状态。
+type gatewayChatSetup struct {
+	cfg         Config
+	token       string
+	lease       *infraegress.Lease
+	userID      string
+	previous    *inferencedomain.WebResponseState
+	attachments []string
+	endpoint    string
+	origin      string
+}
+
+// prepareGatewayChat 解析凭据、获取出口租约并准备前序状态与附件；失败时自行释放租约。
+func (a *Adapter) prepareGatewayChat(ctx context.Context, credential account.Credential, previousResponseID string, input normalizedChatInput) (*gatewayChatSetup, error) {
+	setup := &gatewayChatSetup{cfg: a.config()}
 	token, err := a.cipher.Decrypt(credential.EncryptedAccessToken)
 	if err != nil {
-		return nil, nil, nil, "", err
+		return nil, err
 	}
+	setup.token = token
 	lease, err := a.egress.AcquireCredential(ctx, domainegress.ScopeWeb, credential)
 	if err != nil {
-		return nil, nil, nil, "", err
+		return nil, err
 	}
-	userID, err := a.resolveGatewayUserID(ctx, cfg.BaseURL, credential, token, lease)
+	setup.lease = lease
+	userID, err := a.resolveGatewayUserID(ctx, setup.cfg.BaseURL, credential, token, lease)
 	if err != nil {
 		lease.Release()
-		return nil, nil, nil, "", err
+		return nil, err
 	}
-	var previous *inferencedomain.WebResponseState
-	if previousResponseID != "" {
-		state, stateErr := a.states.GetWebState(ctx, previousResponseID, time.Now().UTC())
-		if stateErr != nil {
-			lease.Release()
-			if errors.Is(stateErr, repository.ErrNotFound) {
-				return nil, nil, nil, "", fmt.Errorf("previous_response_id 不存在或已过期")
-			}
-			return nil, nil, nil, "", stateErr
+	setup.userID = userID
+	previous, err := a.gatewayPreviousState(ctx, previousResponseID, credential, lease)
+	if err != nil {
+		return nil, err
+	}
+	setup.previous = previous
+	attachments, err := a.prepareChatAttachments(ctx, setup.cfg, lease, token, input.Attachments)
+	if err != nil {
+		lease.Release()
+		return nil, err
+	}
+	setup.attachments = attachments
+	endpoint, origin, err := gatewayEndpoint(setup.cfg.BaseURL, userID)
+	if err != nil {
+		lease.Release()
+		return nil, err
+	}
+	setup.endpoint = endpoint
+	setup.origin = origin
+	return setup, nil
+}
+
+// gatewayPreviousState 读取并校验 previous_response_id 对应的会话状态；缺失或账号不一致时释放租约。
+func (a *Adapter) gatewayPreviousState(ctx context.Context, previousResponseID string, credential account.Credential, lease *infraegress.Lease) (*inferencedomain.WebResponseState, error) {
+	if previousResponseID == "" {
+		return nil, nil
+	}
+	state, stateErr := a.states.GetWebState(ctx, previousResponseID, time.Now().UTC())
+	if stateErr != nil {
+		lease.Release()
+		if errors.Is(stateErr, repository.ErrNotFound) {
+			return nil, fmt.Errorf("previous_response_id 不存在或已过期")
 		}
-		if state.AccountID != credential.ID {
-			lease.Release()
-			return nil, nil, nil, "", fmt.Errorf("previous_response_id 绑定的账号不一致")
-		}
-		previous = &state
+		return nil, stateErr
 	}
-	attachments, err := a.prepareChatAttachments(ctx, cfg, lease, token, input.Attachments)
-	if err != nil {
+	if state.AccountID != credential.ID {
 		lease.Release()
-		return nil, nil, nil, "", err
+		return nil, fmt.Errorf("previous_response_id 绑定的账号不一致")
 	}
-	endpoint, origin, err := gatewayEndpoint(cfg.BaseURL, userID)
-	if err != nil {
-		lease.Release()
-		return nil, nil, nil, "", err
-	}
+	return &state, nil
+}
+
+// gatewayChatContext 构造会话请求上下文；启用流空闲检测时返回可取消的 idle 句柄。
+func gatewayChatContext(ctx context.Context, cfg Config, options gatewayOpenOptions) (context.Context, context.CancelCauseFunc, context.CancelFunc) {
 	requestCtx, totalCancel := context.WithTimeout(ctx, time.Duration(cfg.ChatTimeoutSeconds)*time.Second)
 	var idleCancel context.CancelCauseFunc
 	if options.enforceStreamIdle && cfg.StreamIdleTimeoutSeconds > 0 {
@@ -113,46 +176,32 @@ func (a *Adapter) openGatewayChat(ctx context.Context, credential account.Creden
 		}
 		totalCancel()
 	}
-	var connection *websocket.Conn
-	var handshake *fhttp.Response
-	var dialErr error
+	return requestCtx, idleCancel, cancel
+}
+
+// dial 按 deferForbidden 选项建立 WebSocket 连接，失败时返回握手响应供上层生成 HTTP 诊断响应。
+func (s *gatewayChatSetup) dial(requestCtx context.Context, options gatewayOpenOptions) (*websocket.Conn, *fhttp.Response, error) {
+	headers := gatewayHeaders(s.origin, s.userID, s.token, s.lease)
 	if options.deferForbidden {
-		connection, handshake, dialErr = lease.DialWebSocketDeferredForbidden(requestCtx, endpoint, gatewayHeaders(origin, userID, token, lease), gatewayHandshakeTimeout)
-	} else {
-		connection, handshake, dialErr = lease.DialWebSocket(requestCtx, endpoint, gatewayHeaders(origin, userID, token, lease), gatewayHandshakeTimeout)
+		return s.lease.DialWebSocketDeferredForbidden(requestCtx, s.endpoint, headers, gatewayHandshakeTimeout)
 	}
-	if dialErr != nil {
-		cancel()
-		if handshake != nil {
-			return gatewayHandshakeResponse(handshake, endpoint), lease, previous, "", nil
-		}
-		a.egress.Feedback(context.WithoutCancel(ctx), lease.NodeID, 0, dialErr)
-		lease.Release()
-		return nil, nil, nil, "", dialErr
-	}
+	return s.lease.DialWebSocket(requestCtx, s.endpoint, headers, gatewayHandshakeTimeout)
+}
+
+// gatewayChatStreamBody 启动连接读循环与心跳，返回转发上游帧的流式响应体。
+func gatewayChatStreamBody(requestCtx context.Context, connection *websocket.Conn, setup *gatewayChatSetup, spec ModelSpec, input normalizedChatInput, cancel context.CancelFunc) io.ReadCloser {
 	reader, writer := io.Pipe()
 	go func() {
 		<-requestCtx.Done()
 		_ = connection.Close()
 	}()
 	go func() {
-		streamErr := runGatewayStream(requestCtx, connection, writer, spec.Mode, input.Prompt, attachments, previous)
+		streamErr := runGatewayStream(requestCtx, connection, writer, spec.Mode, input.Prompt, setup.attachments, setup.previous)
 		cancel()
 		_ = connection.Close()
 		_ = writer.CloseWithError(streamErr)
 	}()
-	request, _ := http.NewRequestWithContext(requestCtx, http.MethodGet, endpoint, nil)
-	body := io.ReadCloser(&cancelBody{ReadCloser: reader, cancel: cancel})
-	if idleCancel != nil {
-		body = providerstreamidle.New(body, time.Duration(cfg.StreamIdleTimeoutSeconds)*time.Second, idleCancel)
-	}
-	return &http.Response{
-		StatusCode: http.StatusOK,
-		Status:     "200 OK",
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       body,
-		Request:    request,
-	}, lease, previous, "", nil
+	return &cancelBody{ReadCloser: reader, cancel: cancel}
 }
 
 func (a *Adapter) resolveGatewayUserID(ctx context.Context, baseURL string, credential account.Credential, token string, lease *infraegress.Lease) (string, error) {
@@ -234,17 +283,16 @@ func runGatewayStream(ctx context.Context, connection *websocket.Conn, writer io
 		_ = connection.SetReadDeadline(deadline)
 	}
 	sender := &gatewaySender{connection: connection}
-	initialEventID := "evt_init_" + newRequestUUID()
+	state := gatewayStreamState{initialEventID: "evt_init_" + newRequestUUID()}
 	initial := map[string]any{
 		"event": map[string]any{
-			"type": "session.create", "event_id": initialEventID,
+			"type": "session.create", "event_id": state.initialEventID,
 			"session": gatewaySession(model, previous),
 		},
 	}
-	currentSessionID := ""
 	if previous != nil {
-		currentSessionID = previous.ConversationID
-		initial["session_id"] = currentSessionID
+		state.currentSessionID = previous.ConversationID
+		initial["session_id"] = state.currentSessionID
 	}
 	if err := sender.write(initial); err != nil {
 		return fmt.Errorf("发送 Grok Gateway session.create: %w", err)
@@ -252,60 +300,99 @@ func runGatewayStream(ctx context.Context, connection *websocket.Conn, writer io
 	heartbeatDone := make(chan struct{})
 	defer close(heartbeatDone)
 	go gatewayHeartbeat(sender, heartbeatDone)
-	created := false
-	attached := false
-	turnSent := false
 	for {
 		messageType, data, err := connection.ReadMessage()
 		if err != nil {
 			return fmt.Errorf("读取 Grok Gateway: %w", err)
 		}
-		if messageType != websocket.TextMessage {
-			continue
-		}
-		if len(data) > gatewayMaxFrameBytes {
-			return fmt.Errorf("Grok Gateway 响应帧超过安全上限")
-		}
-		var envelope gatewayEnvelope
-		if err := json.Unmarshal(data, &envelope); err != nil {
-			continue
-		}
-		if _, err := writer.Write(append(append([]byte(nil), data...), '\n')); err != nil {
+		action, err := handleGatewayFrame(writer, messageType, data, &state)
+		if err != nil {
 			return err
 		}
-		switch envelope.Event.Type {
-		case "session.created":
-			if envelope.Event.ClientEventID != "" && envelope.Event.ClientEventID != initialEventID {
-				continue
-			}
-			created = true
-			if currentSessionID == "" {
-				currentSessionID = envelope.SessionID
-			}
-		case "conversation.attached":
-			attached = true
-			if currentSessionID == "" {
-				currentSessionID = envelope.Event.Conversation.ID
-			}
-			if envelope.Event.Conversation.ID == "" || envelope.Event.Conversation.ID != currentSessionID {
-				return fmt.Errorf("Grok Gateway 返回了不一致的 conversation id")
-			}
-		case "response.done", "error":
+		switch action {
+		case gatewayFrameStop:
 			return nil
-		case "session.ended":
-			return fmt.Errorf("Grok Gateway session 在响应完成前结束")
+		case gatewayFrameSkip:
+			continue
 		}
-		if created && attached && !turnSent {
-			turnSent = true
-			item, response := gatewayTurnEvents(currentSessionID, prompt, attachments, previous)
-			if err := sender.write(item); err != nil {
-				return fmt.Errorf("发送 Grok Gateway conversation.item.create: %w", err)
-			}
-			if err := sender.write(response); err != nil {
-				return fmt.Errorf("发送 Grok Gateway response.create: %w", err)
-			}
+		if err := sendGatewayTurn(sender, &state, prompt, attachments, previous); err != nil {
+			return err
 		}
 	}
+}
+
+// gatewayStreamState 保存一次网关流会话在帧处理之间需要保持的状态。
+type gatewayStreamState struct {
+	initialEventID   string
+	currentSessionID string
+	created          bool
+	attached         bool
+	turnSent         bool
+}
+
+// gatewayFrameAction 表示单帧处理后消息循环的走向。
+type gatewayFrameAction int
+
+const (
+	gatewayFrameSkip    gatewayFrameAction = iota // 跳过本轮 turn 发送判断
+	gatewayFrameProceed                           // 继续执行 turn 发送判断
+	gatewayFrameStop                              // 结束读取循环
+)
+
+// handleGatewayFrame 转发一帧并按事件类型更新会话状态与循环走向。
+func handleGatewayFrame(writer io.Writer, messageType int, data []byte, state *gatewayStreamState) (gatewayFrameAction, error) {
+	if messageType != websocket.TextMessage {
+		return gatewayFrameSkip, nil
+	}
+	if len(data) > gatewayMaxFrameBytes {
+		return gatewayFrameStop, fmt.Errorf("Grok Gateway 响应帧超过安全上限")
+	}
+	var envelope gatewayEnvelope
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return gatewayFrameSkip, nil
+	}
+	if _, err := writer.Write(append(append([]byte(nil), data...), '\n')); err != nil {
+		return gatewayFrameStop, err
+	}
+	switch envelope.Event.Type {
+	case "session.created":
+		if envelope.Event.ClientEventID != "" && envelope.Event.ClientEventID != state.initialEventID {
+			return gatewayFrameSkip, nil
+		}
+		state.created = true
+		if state.currentSessionID == "" {
+			state.currentSessionID = envelope.SessionID
+		}
+	case "conversation.attached":
+		state.attached = true
+		if state.currentSessionID == "" {
+			state.currentSessionID = envelope.Event.Conversation.ID
+		}
+		if envelope.Event.Conversation.ID == "" || envelope.Event.Conversation.ID != state.currentSessionID {
+			return gatewayFrameStop, fmt.Errorf("Grok Gateway 返回了不一致的 conversation id")
+		}
+	case "response.done", "error":
+		return gatewayFrameStop, nil
+	case "session.ended":
+		return gatewayFrameStop, fmt.Errorf("Grok Gateway session 在响应完成前结束")
+	}
+	return gatewayFrameProceed, nil
+}
+
+// sendGatewayTurn 在会话创建且挂载完成后发送一次性的 turn 事件。
+func sendGatewayTurn(sender *gatewaySender, state *gatewayStreamState, prompt string, attachments []string, previous *inferencedomain.WebResponseState) error {
+	if !state.created || !state.attached || state.turnSent {
+		return nil
+	}
+	state.turnSent = true
+	item, response := gatewayTurnEvents(state.currentSessionID, prompt, attachments, previous)
+	if err := sender.write(item); err != nil {
+		return fmt.Errorf("发送 Grok Gateway conversation.item.create: %w", err)
+	}
+	if err := sender.write(response); err != nil {
+		return fmt.Errorf("发送 Grok Gateway response.create: %w", err)
+	}
+	return nil
 }
 
 func gatewayHeartbeat(sender *gatewaySender, done <-chan struct{}) {

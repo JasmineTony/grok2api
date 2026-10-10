@@ -132,25 +132,45 @@ func ClassifyQualityHold(sig QualityStreamSignals, minOutput int64) QualityVerdi
 	if minOutput <= 0 {
 		minOutput = defaultQualityMinOutput
 	}
-	if qualityIsBurstDump(sig, minOutput) || qualityIsCipherDrool(sig, minOutput) || qualityIsFakeEncryptedDump(sig, minOutput) || qualityIsFastReasoningRatioDump(sig) {
+	if qualityIsDumpBeforeDelivery(sig, minOutput) {
 		return QualityWithhold
 	}
 	if sig.HasThinking {
-		if sig.HasReasoningDelta {
-			return QualityDeliver
-		}
-		// Cipher-only: do not release when encrypted_content first meets
-		// the floor. Fake dumps send the blob, then the whole answer in
-		// <2s; releasing early lets that dump bypass fake-enc. Wait until
-		// visible text has streamed for 2s, or the stream ends.
-		if sig.Terminal {
-			return QualityDeliver
-		}
-		if sig.VisibleTokens >= minOutput && sig.FirstVisible && sig.VisibleFlushMS >= defaultFakeEncFlushMS {
-			return QualityDeliver
-		}
-		return QualityWait
+		return classifyThinkingHold(sig, minOutput)
 	}
+	return classifyVisibleHold(sig, minOutput)
+}
+
+// qualityIsDumpBeforeDelivery 汇总四类交付前降智指纹；任一命中都必须扣留。
+func qualityIsDumpBeforeDelivery(sig QualityStreamSignals, minOutput int64) bool {
+	return qualityIsBurstDump(sig, minOutput) ||
+		qualityIsCipherDrool(sig, minOutput) ||
+		qualityIsFakeEncryptedDump(sig, minOutput) ||
+		qualityIsFastReasoningRatioDump(sig)
+}
+
+// classifyThinkingHold 判定已出现思考证据的流：明文推理立即交付，仅有密文证据时须等到可见文本
+// 连续输出 2s 或流结束。
+func classifyThinkingHold(sig QualityStreamSignals, minOutput int64) QualityVerdict {
+	if sig.HasReasoningDelta {
+		return QualityDeliver
+	}
+	// Cipher-only: do not release when encrypted_content first meets
+	// the floor. Fake dumps send the blob, then the whole answer in
+	// <2s; releasing early lets that dump bypass fake-enc. Wait until
+	// visible text has streamed for 2s, or the stream ends.
+	if sig.Terminal {
+		return QualityDeliver
+	}
+	if sig.VisibleTokens >= minOutput && sig.FirstVisible && sig.VisibleFlushMS >= defaultFakeEncFlushMS {
+		return QualityDeliver
+	}
+	return QualityWait
+}
+
+// classifyVisibleHold 判定没有思考证据的流：以可见输出（缺失时回退总输出）与最小阈值决定
+// 交付、扣留或继续等待。
+func classifyVisibleHold(sig QualityStreamSignals, minOutput int64) QualityVerdict {
 	// Prefer observed/derived visible output. Total output includes reasoning
 	// tokens, which are deliberately not trusted as quality evidence above. If
 	// the stream exposed no visible count at all, retain OutputTokens as a
@@ -159,32 +179,27 @@ func ClassifyQualityHold(sig QualityStreamSignals, minOutput int64) QualityVerdi
 	if output <= 0 {
 		output = sig.OutputTokens
 	}
-	enough := output >= minOutput
 	if sig.ReasoningStarted && !sig.Terminal && !sig.HoldExpired {
 		return QualityWait
 	}
-	if sig.Terminal {
-		if output <= 0 {
-			return QualityWait
-		}
-		if enough {
-			return QualityWithhold
-		}
-		return QualityDeliver
+	if sig.Terminal || sig.HoldExpired {
+		return classifySettledVisibleOutput(output, minOutput)
 	}
-	if enough {
+	if output >= minOutput {
 		return QualityWithhold
 	}
-	if sig.HoldExpired {
-		if output <= 0 {
-			return QualityWait
-		}
-		if enough {
-			return QualityWithhold
-		}
-		return QualityDeliver
-	}
 	return QualityWait
+}
+
+// classifySettledVisibleOutput 判定已结束（终态或持有超时）且没有思考证据的流的最终交付决定。
+func classifySettledVisibleOutput(output, minOutput int64) QualityVerdict {
+	if output <= 0 {
+		return QualityWait
+	}
+	if output >= minOutput {
+		return QualityWithhold
+	}
+	return QualityDeliver
 }
 
 // qualityPeekAbortError prefers the idle-timeout cause over a plain

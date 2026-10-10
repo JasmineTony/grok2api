@@ -228,39 +228,59 @@ func (f *ssoBuildFlow) pollToken(ctx context.Context, deviceCode string, interva
 		if err != nil {
 			return ssoBuildToken{}, err
 		}
-		var payload struct {
-			AccessToken      string `json:"access_token"`
-			RefreshToken     string `json:"refresh_token"`
-			IDToken          string `json:"id_token"`
-			ExpiresIn        int    `json:"expires_in"`
-			Error            string `json:"error"`
-			ErrorDescription string `json:"error_description"`
-		}
-		if err := json.Unmarshal(body, &payload); err != nil {
-			return ssoBuildToken{}, fmt.Errorf("解析 xAI OAuth Token: %w", err)
-		}
-		if status >= 200 && status < 300 && payload.AccessToken != "" {
-			if payload.ExpiresIn <= 0 {
-				payload.ExpiresIn = 3600
-			}
-			return ssoBuildToken{AccessToken: payload.AccessToken, RefreshToken: payload.RefreshToken, IDToken: payload.IDToken, ExpiresAt: time.Now().UTC().Add(time.Duration(payload.ExpiresIn) * time.Second)}, nil
-		}
-		switch payload.Error {
-		case "authorization_pending":
+		token, pending, slowDown, err := decodeSSOTokenPollResponse(status, body)
+		switch {
+		case err != nil:
+			return ssoBuildToken{}, err
+		case pending:
 			continue
-		case "slow_down":
+		case slowDown:
 			interval += 5 * time.Second
 			continue
-		case "access_denied", "expired_token":
-			return ssoBuildToken{}, provider.ErrAuthorizationDenied
-		default:
-			if status >= 400 {
-				return ssoBuildToken{}, fmt.Errorf("xAI OAuth Token 失败 (%s): %w", firstValue(payload.ErrorDescription, payload.Error), conversionHTTPError{status: status})
-			}
-			return ssoBuildToken{}, fmt.Errorf("xAI OAuth Token 失败: %s", firstValue(payload.ErrorDescription, payload.Error, strconv.Itoa(status)))
 		}
+		return token, nil
 	}
 	return ssoBuildToken{}, fmt.Errorf("xAI Device Flow 轮询超时")
+}
+
+// decodeSSOTokenPollResponse 解析一次 device code 轮询响应；
+// slowDown 表示上游要求降低轮询频率，pending 表示授权仍在等待用户确认。
+func decodeSSOTokenPollResponse(status int, body []byte) (ssoBuildToken, bool, bool, error) {
+	var payload struct {
+		AccessToken      string `json:"access_token"`
+		RefreshToken     string `json:"refresh_token"`
+		IDToken          string `json:"id_token"`
+		ExpiresIn        int    `json:"expires_in"`
+		Error            string `json:"error"`
+		ErrorDescription string `json:"error_description"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return ssoBuildToken{}, false, false, fmt.Errorf("解析 xAI OAuth Token: %w", err)
+	}
+	if status >= 200 && status < 300 && payload.AccessToken != "" {
+		if payload.ExpiresIn <= 0 {
+			payload.ExpiresIn = 3600
+		}
+		return ssoBuildToken{
+			AccessToken:  payload.AccessToken,
+			RefreshToken: payload.RefreshToken,
+			IDToken:      payload.IDToken,
+			ExpiresAt:    time.Now().UTC().Add(time.Duration(payload.ExpiresIn) * time.Second),
+		}, false, false, nil
+	}
+	switch payload.Error {
+	case "authorization_pending":
+		return ssoBuildToken{}, true, false, nil
+	case "slow_down":
+		return ssoBuildToken{}, false, true, nil
+	case "access_denied", "expired_token":
+		return ssoBuildToken{}, false, false, provider.ErrAuthorizationDenied
+	default:
+		if status >= 400 {
+			return ssoBuildToken{}, false, false, fmt.Errorf("xAI OAuth Token 失败 (%s): %w", firstValue(payload.ErrorDescription, payload.Error), conversionHTTPError{status: status})
+		}
+		return ssoBuildToken{}, false, false, fmt.Errorf("xAI OAuth Token 失败: %s", firstValue(payload.ErrorDescription, payload.Error, strconv.Itoa(status)))
+	}
 }
 
 func (f *ssoBuildFlow) do(ctx context.Context, method, endpoint string, form url.Values) (int, string, []byte, error) {
@@ -278,25 +298,9 @@ func (f *ssoBuildFlow) doWithFollow(ctx context.Context, method, endpoint string
 	currentMethod := method
 	currentForm := form
 	for redirects := 0; redirects <= 8; redirects++ {
-		var body io.Reader
-		if currentForm != nil {
-			body = strings.NewReader(currentForm.Encode())
-		}
-		request, err := http.NewRequestWithContext(ctx, currentMethod, currentURL, body)
+		request, err := f.newFollowRequest(ctx, currentMethod, currentURL, currentForm, extra)
 		if err != nil {
 			return 0, "", nil, err
-		}
-		request.Header.Set("Accept", "application/json, text/html;q=0.9, */*;q=0.8")
-		request.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-		request.Header.Set("User-Agent", f.userAgent)
-		request.Header.Set("Cookie", f.cookieHeader())
-		if currentForm != nil {
-			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		}
-		for key, values := range extra {
-			for _, value := range values {
-				request.Header.Set(key, value)
-			}
 		}
 		response, err := f.client.Do(request)
 		if err != nil {
@@ -314,18 +318,10 @@ func (f *ssoBuildFlow) doWithFollow(ctx context.Context, method, endpoint string
 		if response.StatusCode < 300 || response.StatusCode > 399 {
 			return response.StatusCode, currentURL, data, nil
 		}
-		location := strings.TrimSpace(response.Header.Get("Location"))
-		if location == "" {
-			return response.StatusCode, currentURL, data, fmt.Errorf("xAI OAuth 重定向缺少 Location")
-		}
-		base, _ := url.Parse(currentURL)
-		next, err := url.Parse(location)
-		if err != nil {
-			return response.StatusCode, currentURL, data, err
-		}
-		currentURL = base.ResolveReference(next).String()
-		if !safeXAIURL(currentURL) {
-			return response.StatusCode, currentURL, data, fmt.Errorf("xAI OAuth 重定向到非受信域名")
+		nextURL, locationErr := resolveSSORedirectTarget(response, currentURL)
+		currentURL = nextURL
+		if locationErr != nil {
+			return response.StatusCode, currentURL, data, locationErr
 		}
 		if !follow {
 			return response.StatusCode, currentURL, nil, nil
@@ -336,6 +332,50 @@ func (f *ssoBuildFlow) doWithFollow(ctx context.Context, method, endpoint string
 		}
 	}
 	return 0, currentURL, nil, fmt.Errorf("xAI OAuth 重定向次数过多")
+}
+
+// newFollowRequest 构造一次 OAuth 请求：表单非空时按 urlencoded 提交，extra 覆盖同名默认头。
+func (f *ssoBuildFlow) newFollowRequest(ctx context.Context, method, endpoint string, form url.Values, extra http.Header) (*http.Request, error) {
+	var body io.Reader
+	if form != nil {
+		body = strings.NewReader(form.Encode())
+	}
+	request, err := http.NewRequestWithContext(ctx, method, endpoint, body)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Accept", "application/json, text/html;q=0.9, */*;q=0.8")
+	request.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+	request.Header.Set("User-Agent", f.userAgent)
+	request.Header.Set("Cookie", f.cookieHeader())
+	if form != nil {
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
+	for key, values := range extra {
+		for _, value := range values {
+			request.Header.Set(key, value)
+		}
+	}
+	return request, nil
+}
+
+// resolveSSORedirectTarget 解析 3xx 响应的 Location 得到跳转目标。
+// Location 缺失或解析失败时返回当前 URL 与对应错误；目标域名不受信时返回已解析的新 URL 与错误。
+func resolveSSORedirectTarget(response *http.Response, currentURL string) (string, error) {
+	location := strings.TrimSpace(response.Header.Get("Location"))
+	if location == "" {
+		return currentURL, fmt.Errorf("xAI OAuth 重定向缺少 Location")
+	}
+	base, _ := url.Parse(currentURL)
+	next, err := url.Parse(location)
+	if err != nil {
+		return currentURL, err
+	}
+	target := base.ResolveReference(next).String()
+	if !safeXAIURL(target) {
+		return target, fmt.Errorf("xAI OAuth 重定向到非受信域名")
+	}
+	return target, nil
 }
 
 // fetchConsentPage 以浏览器文档导航方式读取 consent 页正文，用于提取一次性防伪令牌 consent_token。
