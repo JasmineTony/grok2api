@@ -295,6 +295,9 @@ jobs:
       - name: Create manifest list
         shell: bash
         run: |
+          # fail-fast：管道的退出码只反映 while 循环最后一次迭代；缺 set -e/pipefail 时，
+          # 前面的 imagetools create 失败会被后面的成功掩盖，留下陈旧标签却报绿。
+          set -euo pipefail
           jq -cr '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON" | while read -r tag; do
             docker buildx imagetools create \
               -t "$tag" \
