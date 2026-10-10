@@ -252,4 +252,32 @@ describe("VideoGalleryPage", () => {
     await user.type(screen.getByTestId("video-gallery-search"), "paper");
     await waitFor(() => expect(queryParam(lastRequestURL(requests, VIDEOS_URL), "search")).toBe("paper"));
   });
+  it("删除请求在确认弹窗关闭后完成时，关闭被删任务的预览并清空选中", async () => {
+    const user = userEvent.setup();
+    const { requests } = installMediaApi({ videos: [mediaJob({ id: "job-1" })], videosTotal: 1 });
+    const baseFetch = globalThis.fetch;
+    let releaseDelete: (() => void) | undefined;
+    const deleteInFlight = new Promise<void>((resolve) => {
+      releaseDelete = resolve;
+    });
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      if ((init?.method ?? "GET").toUpperCase() === "DELETE") await deleteInFlight;
+      return baseFetch(input, init);
+    });
+
+    renderWithProviders(<VideoGalleryPage />);
+    await user.click(await screen.findByTestId("video-job-select-job-1"));
+    await user.click(screen.getByTestId("media-delete-request"));
+    await user.click(await screen.findByTestId("media-delete-confirm"));
+    // 确认后弹窗立即关闭但请求仍在进行：用户此时预览同一个任务，删除随后才在后台完成。
+    await waitFor(() => expect(screen.queryByTestId("media-delete-dialog")).not.toBeInTheDocument());
+    await user.click(screen.getByTestId("video-job-preview-job-1"));
+    expect(await screen.findByTestId("video-preview-player")).toBeInTheDocument();
+
+    releaseDelete?.();
+    // 任务已删除：预览随被删任务关闭，选中集合清空，且请求体只含该任务。
+    await waitFor(() => expect(screen.queryByTestId("video-preview-player")).not.toBeInTheDocument());
+    expect(screen.queryByTestId("media-selection-actions")).not.toBeInTheDocument();
+    expect(requestsMatching(requests, "DELETE", VIDEOS_URL)[0].body).toEqual({ ids: ["job-1"] });
+  });
 });
