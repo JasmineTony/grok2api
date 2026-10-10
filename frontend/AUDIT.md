@@ -254,3 +254,68 @@
 - accounts 新模块覆盖率仍 0–45%，未纳入 include（TEST-1 对 accounts 尚未满足）
 - `infra/persistence/relational/account_links.go` 776 行、若干测试文件 >600 行属存量债务
 - 阶段 6（创作台/媒体/Gateway）与阶段 7（性能对比与总验收）未开始
+
+## 11. 阶段 6 成果（创作台 / 文档 / 媒体 / 仪表盘 / 审计 / 账号 / app shell）
+
+基线 `236175e4` → 阶段 6 工作树。本阶段把前端**仍然超限的全部模块**拆完，并把覆盖率口径从「手工维护达标文件清单」改为「已重构模块整目录纳入 + 例外逐项登记」。
+
+### 11.1 拆分成果
+
+| 文件                                                                                     |                      前 |                后 | 新增按职责文件                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------------------------------------------------------------------------------------- | ----------------------: | ----------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `features/creative-console/creative-console-page.tsx`                                    |                    3018 |            **73** | 36 个：API 层（`creative-api-core`/`creative-responses-protocol`/`creative-*-api`）、聊天（`chat-session-model`/`chat-session-store`/`chat-conversation-actions`/`chat-markdown*`/`chat-message-*`/`chat-composer`/`chat-toolbar`/`chat-truncate-dialog`/`chat-panel`）、hooks（`use-creative-*` 7 个）、面板与共享件（`image-panel`/`video-request`/`video-attachment`/`video-composer`/`video-result`/`video-panel`/`voice-panel`/`creative-widgets`/`creative-model-scope`） |
+| `features/creative-console/creative-console-api.ts`                                      |                     777 |            **24** | 改为公共出口 barrel，导出符号与类型不变                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `features/docs/api-docs-page.tsx`                                                        |                     803 |            **63** | 6 个（`endpoint-definitions` 476、`api-docs-example-panel` 133、`api-docs-blocks` 106 等）                                                                                                                                                                                                                                                                                                                                                                                      |
+| `features/media/video-gallery-page.tsx`                                                  |                     647 |            **80** | media 共 20 个（最大 `video-gallery-table` 380）                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `features/media/gallery-page.tsx`                                                        |                     389 |            **62** | 同上                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `features/audits/request-audits-page.tsx`                                                |                    1259 |           **138** | 21 个（`use-audit-list` 370、`audit-attempt-detail` 188、`audit-filter-definitions` 151 等）                                                                                                                                                                                                                                                                                                                                                                                    |
+| `features/audits/request-audit-detail-dialog.tsx`                                        |                     670 |           **137** | 同上                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `features/accounts/accounts-page.tsx`                                                    |                    2382 |            **35** | 22 个（`use-accounts-transfer-flows` 356、`accounts-table` 347、`use-accounts-task-flows` 289、`use-account-delete-flow` 287、`accounts-toolbar` 318、`accounts-flow-dialogs` 260、`use-accounts-page-model` 254 等）                                                                                                                                                                                                                                                           |
+| `app/app-shell.tsx`                                                                      |                     437 |            **61** | 7 个（`shell-navigation` 160、`shell-account-control` 125、`change-password-dialog` 121 等）                                                                                                                                                                                                                                                                                                                                                                                    |
+| `features/dashboard/{trend,provider-distribution,overview,top-models,activity,page}.tsx` | 315/184/249/137/123/122 | 51/53/34/71/52/93 | 18 个（最大 `dashboard-trend-chart` 210）                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+
+**结构门禁（`structure-baseline.json` 已收紧）**：
+
+- **超限文件（>600 行）：7 → 0**（历史基线 18；本阶段清零，`files` 为空对象）
+- **超限函数（>50 行）：63 → 29**，全部为存量（无新增豁免）
+- 扫描源码文件：249 → 380
+
+### 11.2 覆盖率口径变更（本阶段重要纠正）
+
+阶段 3–5 使用「手工维护达标文件清单」，导致 `accounts`、`settings` 页面、`quality-guard` 页面**长期不在门槛内且不可见**。本阶段改为：
+
+- `include`：按已重构模块**整目录纳入**（app / accounts / audits / client-keys / creative-console / dashboard / docs / media / models / quality-guard / settings / system / shared-api / shared-auth / shared-hooks / virtual-table-body）
+- `exclude`：**逐项写明理由**——测试与测试支撑、纯逻辑模块（其测试位于 node:test 层，v8 in jsdom 不统计）、纯 re-export barrel
+- 首次暴露出的真实缺口：settings/egress/quality-guard 分支覆盖低至 0–10%（此前从未纳入），全局 branches 一度为 74.02%
+
+### 11.3 本轮发现并修复的真实缺陷
+
+1. **审计路由详情 tooltip 永不打开**（`features/audits/audit-route-cell.tsx#ModelRouteTrigger`）：`TooltipTrigger asChild` 克隆的 `onPointerMove`/`onFocus`/`data-state`/`ref` 被该函数组件丢弃、未展开到内部真实 `<button>`，触发器事件从不落到 DOM，路由详情（请求 ID / 客户端 IP / 实际模型 / 所属账号 / 所属密钥 / 检索来源）在真实 UI 中**永不显示**。修复为转发 `...triggerProps`；该文件分支覆盖由 33.33% 升到四项 100%
+2. **测试并行度/超时口径与用例规模脱节**：24 文件/245 用例时 4 worker 可用；63 文件/682 用例时 4 worker 出现 5s 超时；155 文件/800+ 用例时 2 worker 仍出现 2 例超时（同文件单跑 21/21 全过，证明是 CPU 饱和而非逻辑挂起）。按证据把 `maxWorkers` 定为 2、`testTimeout` 定为 10s，并记录反证（真实挂起仍会失败）
+3. **JSX 写进 `.ts` 文件**：`settings/egress-test-support.ts` 被追加 JSX 后 TypeScript 无法解析（19 个语法错误）→ 重命名为 `.tsx`
+4. **测试工程类型门禁漏检**：`tsc -b`（`typecheck`）**不含** `*.test.ts(x)`（`tsconfig.app.json` 显式排除），测试文件只由 `tsconfig.test.json` 检查。子代理只跑 `tsc -b` 导致 **29 个测试类型错误**流入；已全部修复。**教训已记录：改测试必须跑 `npx tsc -p tsconfig.test.json`**
+5. **11 个新用例契约漂移**（引用不存在的 testid/角色/文案）：`egress-node-actions.test.tsx` 9 个（`egress-import-list`→`egress-import-content`、不存在的 `egress-scope`/`egress-proxy-profile-manual`、分页选项 `50` 不存在实为 `100`、`/^筛选/` 命中多个等）、`guard-policy-and-events.test.tsx` 2 个（`min_healthy_nodes` 真实值为 1；zod 错误文案需先 submit 才渲染）。已按真实契约修复，未改任何组件行为、未弱化断言（反新增 2 条断言）
+
+### 11.4 验证（阶段 6 工作树，本轮复测证据）
+
+下列数字均为本轮实际执行的命令输出，不是计划值：
+
+- `npx tsc -b --force` exit 0；`npx tsc -p tsconfig.test.json` exit 0（**0 错误**）
+- `pnpm format:check`、`pnpm oxlint`（0 warnings / 0 errors，476 文件）、`pnpm lint`（eslint exit 0）全部通过
+- Vitest 覆盖率门禁 `vitest run --coverage`：**89 文件 / 1122 用例全通过，0 失败**；全局 **statements 94.59% / branches 90.07% / functions 93.37% / lines 95.69%**，四项均高于 TEST-1 的 76% 门槛
+- `pnpm check:architecture`（dependency-cruiser）**0 违规**：406 模块 / 1823 依赖（阶段 5 为 275/1234），跨 feature 冻结债务未扩张
+- `pnpm check:structure` 通过：**超限文件 0、超限函数 29**（与冻结基线一致）
+- 后端：`go build ./...`、`go vet ./...` exit 0；三包 `go test -count=1` 全通过（inference 138、provider-web 229、gateway 311 + 192 子测试，0 FAIL / 0 SKIP）
+
+### 11.5 本轮新增的缺陷修复（在 11.3 之外）
+
+1. **设置表单类型门禁整体失效（75 个 TS 错误）**：`settings-schema.ts` 为让字段级错误文案可渲染，把 `value` 从 `z.number().positive()` 改为 `z.unknown()` + 对象级 `superRefine`，导致 `SettingsForm` 中全部时长/字节字段退化为 `unknown`，`settings-model.ts`/各 pane 共 **75 处** TS2322/TS2345。根因不是断言过严，而是 schema 输出类型与 `DurationValue`/`ByteSizeValue` 契约脱节。修复：改用 `z.custom<number>()`（只声明类型、不做运行时断言），数值规则留在对象级 issue 上 —— 既保留「错误文案渲染到字段」的行为，又保持对外类型契约。修复后 `tsc -b` 0 错误，且 `src/features/settings` 160 个用例全通过
+2. **`use-accounts-remaining-branches.test.tsx` 4 个失败用例**：`ApiError` 未导入（`TS2304`/运行时 `ApiError is not defined`）；`mocks` 缺少 `convertWebAccountsToBuild`/`listAccounts`/`getAccountSummary`（`Cannot read properties of undefined`）；`result.current.list.isError` 引用了不存在的属性（真实契约是 `list.query.isError`，且页面模型不为列表失败弹 toast —— 错误由表格 `ErrorState` 渲染）。修复后 23/23 通过。**该文件是阶段 6 新增测试文件，此前「全部通过」的记录不成立**
+3. **`oxlint` 2 个错误 + 6 个文件格式不合规**：`use-accounts-remaining-branches.test.tsx` 重复 `import` 同一模块、`mocks` 重复键 `refreshAllWebAccountQuotas`、未使用的 `AccountProvider` 导入；另有 6 个文件（含 `AUDIT.md`）未过 Prettier。全部修正后 format/oxlint/lint 恢复 green
+
+### 11.6 阶段 6 仍未达标项（如实登记，未静默排除）
+
+- **全局覆盖率已达标（四项 ≥90%，门槛 76%），但仍有 32 个文件按 TEST-1 的「按文件」口径低于 76%**。其中 6 个是**未被任何组件测试导入**的入口/包裹层，实测 0%（`app/auth-boundary.tsx`、`app/deferred-pages.tsx`、`app/providers.tsx`、`app/router.tsx`、`shared/auth/auth-context.tsx`、`settings/egress-error-tooltip.tsx`）——由 E2E 而非组件测试覆盖；其余集中在 `quality-guard/**`（`degrade-events-list` 54.54%、`use-degrade-accounts` 74.57%、`probe-profile-dialog` 77.77%）与 `settings/egress*`（分支 66–77%）。逐文件 ratchet 未完成
+- **自定义 hook 未全部达到 TEST-2 的 100%**：实测未达四项 100% 的为 `use-degrade-accounts`（71.23/60/55.88/74.57）、`use-guard-nodes`（84.61/83.87/85.71/83.87）、`use-probe-profiles`（90/44.44/82.6/91.48）、`use-guard-node-actions`（96.87/64.28/93.33/96.72）、`use-creative-video`（98.82/94.44/96.29/98.73）以及多个 accounts/creative hook（语句/行达 100%，分支 90–97%）。全部已超过 76% 业务门槛，但未满足 TEST-2 的 100% 要求；`vitest.config.ts` 目前只对 10 个 hook 单独声明 100% 阈值
+- jsdom 无法驱动的分支已逐条登记（例如 Radix「每页条数」选择、模态遮挡下的预览删除路径、recharts tooltip/tick 回调、`web-account-scripts.tsx` 的 Radix Checkbox 提交路径）
+- 后端函数级 REV-2 仍有 **18** 个函数 >50 行（gateway 9 / inference 0 / provider-web 9），已由 HEAD 基线实测对比并逐项登记于 `backend/AUDIT.md` §12.2（**这是本轮更新，原记录「42 个」已过时**）
