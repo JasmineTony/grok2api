@@ -1,3 +1,12 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render } from "@testing-library/react";
+import { I18nextProvider } from "react-i18next";
+import { Toaster } from "sonner";
+import type { ReactNode } from "react";
+
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { EgressNodes } from "@/features/settings/egress-nodes";
+import { i18n } from "@/shared/i18n";
 import type { EgressOperationsConfigDTO } from "@/features/settings/settings-api";
 
 /**
@@ -227,4 +236,26 @@ export function egressOperationsWire(overrides: Partial<EgressOperationsConfigDT
     updatedAt: "2026-01-01T00:00:00Z",
     ...overrides,
   };
+}
+
+// jsdom 未实现 scrollIntoView，Radix Select 打开/移动高亮项时会调用它。
+if (typeof Element !== "undefined" && !Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => undefined;
+}
+
+/** 出口节点分区测试脚手架：真实 EgressNodes + react-query + i18n + Toaster。 */
+export function renderEgressNodes(clearanceMode: "manual" | "flaresolverr" | "on_demand" = "manual") {
+  const node: ReactNode = <EgressNodes title={i18n.t("settings.egress.title")} clearanceMode={clearanceMode} />;
+  return render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}
+    >
+      <I18nextProvider i18n={i18n}>
+        <TooltipProvider delayDuration={0}>
+          {node}
+          <Toaster />
+        </TooltipProvider>
+      </I18nextProvider>
+    </QueryClientProvider>,
+  );
 }
