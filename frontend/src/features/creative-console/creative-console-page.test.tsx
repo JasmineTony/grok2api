@@ -97,31 +97,35 @@ describe("创作台页面组合", () => {
 
     expect(screen.getByText(i18n.t("creativeConsole.title"))).toBeInTheDocument();
     await waitFor(() => expect(keysApiMock.getClientKeySecret).toHaveBeenCalledWith("key-1"));
-    expect(screen.getByLabelText(i18n.t("creativeConsole.clientKey"))).toBeInTheDocument();
+    expect(screen.getByTestId("creative-key-select")).toHaveAccessibleName(i18n.t("creativeConsole.clientKey"));
     await waitFor(() => expect(modelsApiMock.listModels).toHaveBeenCalled());
-    expect(screen.getByText(i18n.t("creativeConsole.welcome"))).toBeInTheDocument();
+    expect(screen.getByTestId("chat-welcome-state")).toHaveTextContent(i18n.t("creativeConsole.welcome"));
   });
 
   it("可以切换到图像、视频与语音模式", async () => {
     render(<CreativeConsolePage />, { wrapper });
-    await waitFor(() => expect(screen.getByText(i18n.t("creativeConsole.welcome"))).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByTestId("chat-welcome-state")).toHaveTextContent(i18n.t("creativeConsole.welcome")),
+    );
 
     const user = userEvent.setup({ delay: null });
-    await user.click(screen.getByRole("tab", { name: i18n.t("creativeConsole.modes.image") }));
-    expect(screen.getByText(i18n.t("creativeConsole.welcomeImage"))).toBeInTheDocument();
+    await user.click(screen.getByTestId("creative-mode-tab-image"));
+    expect(screen.getByTestId("image-welcome-state")).toHaveTextContent(i18n.t("creativeConsole.welcomeImage"));
 
-    await user.click(screen.getByRole("tab", { name: i18n.t("creativeConsole.modes.video") }));
-    expect(screen.getByText(i18n.t("creativeConsole.welcomeVideo"))).toBeInTheDocument();
+    await user.click(screen.getByTestId("creative-mode-tab-video"));
+    expect(screen.getByTestId("video-welcome-state")).toHaveTextContent(i18n.t("creativeConsole.welcomeVideo"));
 
-    await user.click(screen.getByRole("tab", { name: i18n.t("creativeConsole.modes.voice") }));
-    expect(screen.getByText(i18n.t("creativeConsole.welcomeVoice"))).toBeInTheDocument();
+    await user.click(screen.getByTestId("creative-mode-tab-voice"));
+    expect(screen.getByTestId("voice-welcome-state")).toHaveTextContent(i18n.t("creativeConsole.welcomeVoice"));
   });
 
   it("没有可用密钥时提示先创建密钥，且不请求模型", async () => {
     keysApiMock.listClientKeys.mockResolvedValue({ items: [{ ...activeKey, enabled: false }], total: 1 });
     render(<CreativeConsolePage />, { wrapper });
 
-    await waitFor(() => expect(screen.getByText(i18n.t("creativeConsole.errors.noKeys"))).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByTestId("creative-console-no-keys")).toHaveTextContent(i18n.t("creativeConsole.errors.noKeys")),
+    );
     expect(modelsApiMock.listModels).not.toHaveBeenCalled();
     expect(keysApiMock.getClientKeySecret).not.toHaveBeenCalled();
   });
@@ -130,9 +134,9 @@ describe("创作台页面组合", () => {
     keysApiMock.listClientKeys.mockRejectedValueOnce(new Error("密钥接口挂了"));
     render(<CreativeConsolePage />, { wrapper });
 
-    await waitFor(() => expect(screen.getByText("密钥接口挂了")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId("creative-console-keys-error")).toHaveTextContent("密钥接口挂了"));
     const user = userEvent.setup({ delay: null });
-    await user.click(screen.getByRole("button", { name: i18n.t("common.retry") }));
+    await user.click(screen.getByTestId("creative-console-keys-retry"));
     await waitFor(() => expect(keysApiMock.getClientKeySecret).toHaveBeenCalledWith("key-1"));
   });
 
@@ -140,13 +144,17 @@ describe("创作台页面组合", () => {
     modelsApiMock.listModels.mockRejectedValue(new Error("模型接口挂了"));
     render(<CreativeConsolePage />, { wrapper });
 
-    await waitFor(() => expect(screen.getByText("模型接口挂了")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId("creative-console-models-error")).toHaveTextContent("模型接口挂了"));
   });
 
   it("密钥明文不可读时提示密钥不可用", async () => {
     keysApiMock.getClientKeySecret.mockRejectedValue(new Error(""));
     render(<CreativeConsolePage />, { wrapper });
 
-    await waitFor(() => expect(screen.getByText(i18n.t("creativeConsole.errors.keyUnavailable"))).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByTestId("creative-console-key-error")).toHaveTextContent(
+        i18n.t("creativeConsole.errors.keyUnavailable"),
+      ),
+    );
   });
 });

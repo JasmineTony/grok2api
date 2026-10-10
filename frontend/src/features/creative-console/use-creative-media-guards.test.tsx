@@ -131,7 +131,7 @@ describe("图像面板提交守卫", () => {
 
   it("缺少密钥时提交不发请求", async () => {
     renderImagePanel({ apiKey: "" });
-    const prompt = screen.getByPlaceholderText(i18n.t("creativeConsole.imagePlaceholder"));
+    const prompt = screen.getByTestId("image-prompt");
     fireEvent.change(prompt, { target: { value: "一只猫" } });
     submitForm();
 
@@ -143,7 +143,7 @@ describe("图像面板提交守卫", () => {
     submitForm();
     expect(apiMock.generateImage).not.toHaveBeenCalled();
 
-    fireEvent.change(screen.getByPlaceholderText(i18n.t("creativeConsole.imagePlaceholder")), {
+    fireEvent.change(screen.getByTestId("image-prompt"), {
       target: { value: "   " },
     });
     submitForm();
@@ -167,7 +167,7 @@ describe("语音面板提交守卫", () => {
 
   it("缺少密钥时合成与转写都不发请求", async () => {
     renderVoicePanel({ apiKey: "" });
-    fireEvent.change(screen.getByPlaceholderText(i18n.t("creativeConsole.voicePlaceholder")), {
+    fireEvent.change(screen.getByTestId("voice-prompt"), {
       target: { value: "朗读" },
     });
     submitForm();
@@ -183,17 +183,17 @@ describe("语音面板提交守卫", () => {
 
   it("未选择音频文件时不发起转写，选择文件后才提交", async () => {
     renderVoicePanel();
-    fireEvent.click(screen.getAllByRole("button", { name: i18n.t("creativeConsole.transcribe") })[0]);
+    fireEvent.click(screen.getByTestId("voice-submode-stt"));
     submitForm();
     expect(apiMock.transcribeSpeech).not.toHaveBeenCalled();
 
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const input = screen.getByTestId("voice-audio-input") as HTMLInputElement;
     fireEvent.change(input, { target: { files: [new File(["a"], "a.mp3", { type: "audio/mpeg" })] } });
     expect(await screen.findByText("a.mp3")).toBeInTheDocument();
 
     submitForm();
     await vi.waitFor(() => expect(apiMock.transcribeSpeech).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText("识别结果")).toBeInTheDocument();
+    expect(await screen.findByTestId("voice-stt-transcript")).toHaveTextContent("识别结果");
   });
 });
 
@@ -211,25 +211,25 @@ describe("语音面板失败路径", () => {
     apiMock.synthesizeSpeech.mockRejectedValue(new Error("合成失败"));
     renderVoicePanel();
 
-    fireEvent.change(screen.getByPlaceholderText(i18n.t("creativeConsole.voicePlaceholder")), {
+    fireEvent.change(screen.getByTestId("voice-prompt"), {
       target: { value: "朗读这段话" },
     });
     submitForm();
 
-    expect(await screen.findByText("合成失败")).toBeInTheDocument();
+    expect(await screen.findByTestId("voice-tts-error")).toHaveTextContent("合成失败");
   });
 
   it("转写失败展示接口错误文案且不展示音频", async () => {
     apiMock.transcribeSpeech.mockRejectedValue(new Error("转写失败"));
     renderVoicePanel();
 
-    fireEvent.click(screen.getAllByRole("button", { name: i18n.t("creativeConsole.transcribe") })[0]);
-    fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, {
+    fireEvent.click(screen.getByTestId("voice-submode-stt"));
+    fireEvent.change(screen.getByTestId("voice-audio-input") as HTMLInputElement, {
       target: { files: [new File(["a"], "a.mp3", { type: "audio/mpeg" })] },
     });
     submitForm();
 
-    expect(await screen.findByText("转写失败")).toBeInTheDocument();
-    expect(document.querySelector("audio")).toBeNull();
+    expect(await screen.findByTestId("voice-stt-error")).toHaveTextContent("转写失败");
+    expect(screen.queryByTestId("voice-tts-preview")).toBeNull();
   });
 });

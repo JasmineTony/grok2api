@@ -3,7 +3,7 @@ import type { ModelRouteDTO } from "@/entities/model/types";
 import { ChatComposer } from "@/features/creative-console/chat-composer";
 import type { CreativeChatController } from "@/features/creative-console/use-creative-chat";
 import { i18n } from "@/shared/i18n";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { describe, expect, it, vi } from "vitest";
@@ -48,7 +48,10 @@ function renderComposer(controller: CreativeChatController) {
   );
 }
 
-/** Radix Select 会把候选值同步到隐藏的原生 select，jsdom 下用它驱动 onValueChange（表单提交路径）。 */
+/**
+ * Radix Select 会把候选值同步到隐藏的原生 select，jsdom 下用它驱动 onValueChange（表单提交路径）。
+ * 控件本身按 testid 定位并断言可访问名称（见下方各用例）。
+ */
 function changeHiddenSelect(container: HTMLElement, index: number, value: string): void {
   const select = container.querySelectorAll("select")[index];
   if (!select) throw new Error(`未找到第 ${index} 个原生 select`);
@@ -56,11 +59,11 @@ function changeHiddenSelect(container: HTMLElement, index: number, value: string
 }
 
 function promptBox(): HTMLElement {
-  return screen.getByPlaceholderText(i18n.t("creativeConsole.chatPlaceholder"));
+  return screen.getByTestId("chat-prompt");
 }
 
 function sendButton(): HTMLElement {
-  return screen.getByRole("button", { name: i18n.t("creativeConsole.send") });
+  return screen.getByTestId("chat-send");
 }
 
 describe("聊天输入区", () => {
@@ -68,6 +71,7 @@ describe("聊天输入区", () => {
     renderComposer(createController({ streamError: "上游中断" }));
 
     expect(sendButton()).toBeDisabled();
+    expect(promptBox()).toHaveAttribute("placeholder", i18n.t("creativeConsole.chatPlaceholder"));
     expect(screen.getByText("上游中断")).toBeInTheDocument();
   });
 
@@ -91,8 +95,9 @@ describe("聊天输入区", () => {
     const controller = createController({ isStreaming: true, canSubmit: true });
     renderComposer(controller);
 
-    expect(screen.queryByRole("button", { name: i18n.t("creativeConsole.send") })).not.toBeInTheDocument();
-    const stopButton = screen.getByRole("button", { name: i18n.t("creativeConsole.stopGenerating") });
+    expect(screen.queryByTestId("chat-send")).not.toBeInTheDocument();
+    const stopButton = screen.getByTestId("chat-stop");
+    expect(stopButton).toHaveAccessibleName(i18n.t("creativeConsole.stopGenerating"));
 
     const user = userEvent.setup({ delay: null });
     await user.click(stopButton);
@@ -104,6 +109,7 @@ describe("聊天输入区", () => {
     const controller = createController();
     const { container } = renderComposer(controller);
 
+    expect(screen.getByTestId("chat-model-select")).toHaveAccessibleName(i18n.t("creativeConsole.model"));
     changeHiddenSelect(container, 0, "grok-4.20-reasoning");
     expect(controller.onModelChange).toHaveBeenCalledWith("grok-4.20-reasoning");
   });
@@ -111,6 +117,13 @@ describe("聊天输入区", () => {
   it("网页搜索与 X 搜索开关按开关值回传布尔", () => {
     const off = createController();
     const offView = renderComposer(off);
+
+    expect(within(offView.container).getByTestId("chat-web-search-toggle")).toHaveAccessibleName(
+      new RegExp(i18n.t("creativeConsole.webSearch")),
+    );
+    expect(within(offView.container).getByTestId("chat-x-search-toggle")).toHaveAccessibleName(
+      new RegExp(i18n.t("creativeConsole.xSearch")),
+    );
 
     changeHiddenSelect(offView.container, 1, "on");
     expect(off.setWebSearch).toHaveBeenCalledWith(true);
@@ -134,22 +147,24 @@ describe("聊天输入区", () => {
 
     const active = createController({ reasoningEffort: "high" });
     renderComposer(active);
+    const selectors = screen.getAllByTestId("chat-reasoning-effort-select");
+    expect(selectors.length).toBeGreaterThan(0);
     expect(
-      screen.getAllByRole("combobox", {
-        name: `${i18n.t("creativeConsole.reasoningEffort")}: ${i18n.t("creativeConsole.reasoning.high")}`,
-      }).length,
-    ).toBeGreaterThan(0);
+      selectors.some((node) =>
+        (node.getAttribute("aria-label") ?? "").endsWith(i18n.t("creativeConsole.reasoning.high")),
+      ),
+    ).toBe(true);
   });
 
   it("固定推理模型下推理强度不可选，开关仍可切换", () => {
     const controller = createController({ fixedReasoningModel: true });
     const { container } = renderComposer(controller);
 
-    expect(
-      screen.getByRole("combobox", {
-        name: `${i18n.t("creativeConsole.reasoningEffort")}: ${i18n.t("creativeConsole.reasoning.auto")}`,
-      }),
-    ).toBeDisabled();
+    const effort = screen.getByTestId("chat-reasoning-effort-select");
+    expect(effort).toHaveAccessibleName(
+      `${i18n.t("creativeConsole.reasoningEffort")}: ${i18n.t("creativeConsole.reasoning.auto")}`,
+    );
+    expect(effort).toBeDisabled();
     expect(container.querySelectorAll("select")).toHaveLength(4);
 
     changeHiddenSelect(container, 1, "on");

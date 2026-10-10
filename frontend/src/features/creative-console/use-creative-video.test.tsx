@@ -72,18 +72,16 @@ function changeSelectByOptions(value: string, expectedOptions: string[]): void {
   fireEvent.change(select, { target: { value } });
 }
 
-function openPopover(label: string): void {
-  fireEvent.click(screen.getByRole("button", { name: label }));
+function openPopover(testId: string): void {
+  fireEvent.click(screen.getByTestId(testId));
 }
 
-function fileInput(): HTMLInputElement {
-  const input = document.querySelector('input[type="file"]');
-  if (!input) throw new Error("缺少文件输入框");
-  return input as HTMLInputElement;
+function fileInput(testId = "video-attachment-upload-image-file"): HTMLInputElement {
+  return screen.getByTestId(testId) as HTMLInputElement;
 }
 
-async function pickFile(name: string, type: string): Promise<void> {
-  fireEvent.change(fileInput(), { target: { files: [new File(["bin"], name, { type })] } });
+async function pickFile(name: string, type: string, testId?: string): Promise<void> {
+  fireEvent.change(fileInput(testId), { target: { files: [new File(["bin"], name, { type })] } });
 }
 
 beforeAll(() => {
@@ -116,10 +114,10 @@ describe("视频面板模型范围", () => {
   it("切换编辑动作后使用编辑路由范围", async () => {
     const { container } = renderPanel();
     const user = userEvent.setup({ delay: null });
-    await user.click(screen.getByRole("button", { name: i18n.t("creativeConsole.videoActions.edit") }));
+    await user.click(screen.getByTestId("video-action-edit"));
 
-    expect(await screen.findByRole("button", { name: i18n.t("creativeConsole.sourceVideo") })).toBeInTheDocument();
-    expect(screen.queryByRole("combobox", { name: i18n.t("creativeConsole.resolution") })).not.toBeInTheDocument();
+    expect(await screen.findByTestId("video-attachment-source")).toBeInTheDocument();
+    expect(screen.queryByTestId("video-resolution-select")).not.toBeInTheDocument();
     expect(container.querySelectorAll("select").length).toBeGreaterThan(0);
   });
 });
@@ -129,16 +127,14 @@ describe("视频分辨率与参考模式", () => {
     renderPanel();
 
     changeSelectByOptions("1080p", ["480p", "720p", "1080p"]);
-    const resolutionTrigger = screen.getByRole("combobox", { name: i18n.t("creativeConsole.resolution") });
+    const resolutionTrigger = screen.getByTestId("video-resolution-select");
     await waitFor(() => expect(resolutionTrigger).toHaveTextContent("1080p"));
 
-    openPopover(i18n.t("creativeConsole.referenceImage"));
-    const referenceInput = await screen.findByRole("textbox", { name: i18n.t("creativeConsole.referenceImage") });
+    openPopover("video-attachment-reference");
+    const referenceInput = await screen.findByTestId("video-attachment-url-reference");
     fireEvent.change(referenceInput, { target: { value: "https://a/ref.png" } });
 
-    await waitFor(() =>
-      expect(screen.getByRole("combobox", { name: i18n.t("creativeConsole.resolution") })).toHaveTextContent("720p"),
-    );
+    await waitFor(() => expect(screen.getByTestId("video-resolution-select")).toHaveTextContent("720p"));
     const resolutionOptions = Array.from(document.querySelectorAll("select")).find((node) =>
       Array.from(node.options).some((option) => option.value === "1080p"),
     );
@@ -151,11 +147,13 @@ describe("本地媒体上传", () => {
     apiMock.listVoices.mockResolvedValue([]);
     renderPanel();
 
-    openPopover(i18n.t("creativeConsole.firstFrameImage"));
+    openPopover("video-attachment-image");
     await pickFile("clip.mp4", "video/mp4");
 
-    expect(await screen.findByText(i18n.t("creativeConsole.errors.invalidImage"))).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: i18n.t("creativeConsole.firstFrameImage") })).toHaveTextContent(
+    expect(await screen.findByTestId("video-attachment-upload-error-image")).toHaveTextContent(
+      i18n.t("creativeConsole.errors.invalidImage"),
+    );
+    expect(screen.getByTestId("video-attachment-image")).toHaveTextContent(
       i18n.t("creativeConsole.firstFrameImageShort"),
     );
   });
@@ -164,40 +162,44 @@ describe("本地媒体上传", () => {
     mediaMock.uploadMediaInput.mockResolvedValue({ kind: "video", fileId: "video-1" });
     renderPanel();
 
-    openPopover(i18n.t("creativeConsole.firstFrameImage"));
+    openPopover("video-attachment-image");
     await pickFile("frame.png", "image/png");
 
-    expect(await screen.findByText(i18n.t("creativeConsole.errors.invalidImage"))).toBeInTheDocument();
+    expect(await screen.findByTestId("video-attachment-upload-error-image")).toHaveTextContent(
+      i18n.t("creativeConsole.errors.invalidImage"),
+    );
   });
 
   it("图片上传成功后占用首帧，参考图随之不可选", async () => {
     renderPanel();
 
-    openPopover(i18n.t("creativeConsole.firstFrameImage"));
+    openPopover("video-attachment-image");
     await pickFile("frame.png", "image/png");
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: i18n.t("creativeConsole.firstFrameImage") })).toHaveTextContent(
+      expect(screen.getByTestId("video-attachment-image")).toHaveTextContent(
         i18n.t("creativeConsole.firstFrameImageAdded"),
       ),
     );
-    expect(screen.getByRole("button", { name: i18n.t("creativeConsole.referenceImage") })).toBeDisabled();
+    expect(screen.getByTestId("video-attachment-reference")).toBeDisabled();
   });
 
   it("源视频类型不符时提示错误，上传成功后占用源视频", async () => {
     const { container } = renderPanel();
     const user = userEvent.setup({ delay: null });
-    await user.click(screen.getByRole("button", { name: i18n.t("creativeConsole.videoActions.edit") }));
+    await user.click(screen.getByTestId("video-action-edit"));
 
-    openPopover(i18n.t("creativeConsole.sourceVideo"));
-    await screen.findByRole("textbox", { name: i18n.t("creativeConsole.sourceVideo") });
-    await pickFile("audio.mp3", "audio/mpeg");
-    expect(await screen.findByText(i18n.t("creativeConsole.errors.invalidVideo"))).toBeInTheDocument();
+    openPopover("video-attachment-source");
+    await screen.findByTestId("video-attachment-source-url");
+    await pickFile("audio.mp3", "audio/mpeg", "video-attachment-source-upload-file");
+    expect(await screen.findByTestId("video-attachment-source-upload-error")).toHaveTextContent(
+      i18n.t("creativeConsole.errors.invalidVideo"),
+    );
 
     mediaMock.uploadMediaInput.mockResolvedValue({ kind: "video", fileId: "video-1" });
-    await pickFile("clip.mp4", "video/mp4");
+    await pickFile("clip.mp4", "video/mp4", "video-attachment-source-upload-file");
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: i18n.t("creativeConsole.sourceVideo") })).toHaveTextContent(
+      expect(screen.getByTestId("video-attachment-source")).toHaveTextContent(
         i18n.t("creativeConsole.sourceVideoAdded"),
       ),
     );
@@ -209,12 +211,14 @@ describe("本地媒体上传", () => {
     renderPanel();
 
     const user = userEvent.setup({ delay: null });
-    await user.click(screen.getByRole("button", { name: i18n.t("creativeConsole.videoActions.edit") }));
-    openPopover(i18n.t("creativeConsole.sourceVideo"));
-    await screen.findByRole("textbox", { name: i18n.t("creativeConsole.sourceVideo") });
-    await pickFile("clip.mp4", "video/mp4");
+    await user.click(screen.getByTestId("video-action-edit"));
+    openPopover("video-attachment-source");
+    await screen.findByTestId("video-attachment-source-url");
+    await pickFile("clip.mp4", "video/mp4", "video-attachment-source-upload-file");
 
-    expect(await screen.findByText(i18n.t("creativeConsole.errors.invalidVideo"))).toBeInTheDocument();
+    expect(await screen.findByTestId("video-attachment-source-upload-error")).toHaveTextContent(
+      i18n.t("creativeConsole.errors.invalidVideo"),
+    );
   });
 });
 
@@ -224,16 +228,14 @@ describe("视频任务状态", () => {
     renderPanel();
 
     const user = userEvent.setup({ delay: null });
-    await user.type(screen.getByPlaceholderText(i18n.t("creativeConsole.videoPlaceholder")), "海浪");
-    await user.click(screen.getByRole("button", { name: i18n.t("creativeConsole.generateVideo") }));
+    await user.type(screen.getByTestId("video-prompt"), "海浪");
+    await user.click(screen.getByTestId("video-submit"));
 
     await waitFor(() => expect(apiMock.getVideo).toHaveBeenCalled());
     expect(apiMock.getVideo.mock.calls[0][0]).toMatchObject({ apiKey: "k", requestId: "req-1" });
-    expect(await screen.findByText("req-1")).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText("30%")).toBeInTheDocument());
-    expect(
-      screen.queryByRole("link", { name: new RegExp(i18n.t("creativeConsole.openVideo")) }),
-    ).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("video-result-request-id")).toHaveTextContent("req-1"));
+    await waitFor(() => expect(screen.getByTestId("video-result-progress")).toHaveTextContent("30%"));
+    expect(screen.queryByTestId("video-result-open")).not.toBeInTheDocument();
   });
 
   it("任务失败时展示失败原因", async () => {
@@ -245,10 +247,10 @@ describe("视频任务状态", () => {
     renderPanel();
 
     const user = userEvent.setup({ delay: null });
-    await user.type(screen.getByPlaceholderText(i18n.t("creativeConsole.videoPlaceholder")), "海浪");
-    await user.click(screen.getByRole("button", { name: i18n.t("creativeConsole.generateVideo") }));
+    await user.type(screen.getByTestId("video-prompt"), "海浪");
+    await user.click(screen.getByTestId("video-submit"));
 
-    expect(await screen.findByText("生成失败原因")).toBeInTheDocument();
+    expect(await screen.findByTestId("video-result-failed")).toHaveTextContent("生成失败原因");
   });
 
   it("续写动作携带续写时长且复用源视频校验提示", async () => {
@@ -256,17 +258,15 @@ describe("视频任务状态", () => {
     renderPanel();
 
     const user = userEvent.setup({ delay: null });
-    await user.click(screen.getByRole("button", { name: i18n.t("creativeConsole.videoActions.extend") }));
-    await user.type(screen.getByPlaceholderText(i18n.t("creativeConsole.videoExtendPlaceholder")), "继续");
+    await user.click(screen.getByTestId("video-action-extend"));
+    await user.type(screen.getByTestId("video-prompt"), "继续");
     changeSelectByOptions("4", ["2", "4", "6", "8", "10"]);
 
-    openPopover(i18n.t("creativeConsole.sourceVideo"));
-    await screen.findByRole("textbox", { name: i18n.t("creativeConsole.sourceVideo") });
-    fireEvent.change(screen.getByRole("textbox", { name: i18n.t("creativeConsole.sourceVideo") }), {
-      target: { value: "https://a/v.mp4" },
-    });
+    openPopover("video-attachment-source");
+    const sourceInput = await screen.findByTestId("video-attachment-source-url");
+    fireEvent.change(sourceInput, { target: { value: "https://a/v.mp4" } });
 
-    const submit = await screen.findByRole("button", { name: i18n.t("creativeConsole.extendVideo") });
+    const submit = screen.getByTestId("video-submit");
     await waitFor(() => expect(submit).toBeEnabled());
     await user.click(submit);
 
@@ -275,6 +275,6 @@ describe("视频任务状态", () => {
         expect.objectContaining({ duration: 4, videoURL: "https://a/v.mp4" }),
       ),
     );
-    expect(await screen.findByText("续写被拒绝")).toBeInTheDocument();
+    expect(await screen.findByTestId("video-create-error")).toHaveTextContent("续写被拒绝");
   });
 });

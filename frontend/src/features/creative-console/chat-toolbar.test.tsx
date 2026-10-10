@@ -76,8 +76,10 @@ describe("聊天工具栏", () => {
     const slot = createSlot();
     renderToolbar(controller, slot);
 
-    const newButton = within(slot).getByRole("button", { name: i18n.t("creativeConsole.newConversation") });
-    const clearButton = within(slot).getByRole("button", { name: i18n.t("creativeConsole.clearCurrent") });
+    const newButton = within(slot).getByTestId("chat-new-conversation");
+    const clearButton = within(slot).getByTestId("chat-clear-conversation");
+    expect(newButton).toHaveAccessibleName(i18n.t("creativeConsole.newConversation"));
+    expect(clearButton).toHaveAccessibleName(i18n.t("creativeConsole.clearCurrent"));
     expect(newButton).toBeEnabled();
     expect(clearButton).toBeDisabled();
 
@@ -92,7 +94,7 @@ describe("聊天工具栏", () => {
     renderToolbar(controller, slot);
 
     const user = userEvent.setup({ delay: null });
-    await user.click(within(slot).getByRole("button", { name: i18n.t("creativeConsole.clearCurrent") }));
+    await user.click(within(slot).getByTestId("chat-clear-conversation"));
     expect(controller.clearConversation).toHaveBeenCalledTimes(1);
   });
 
@@ -101,19 +103,21 @@ describe("聊天工具栏", () => {
     const slot = createSlot();
     renderToolbar(controller, slot);
 
-    expect(within(slot).getByRole("button", { name: i18n.t("creativeConsole.newConversation") })).toBeDisabled();
-    expect(within(slot).getByRole("button", { name: i18n.t("creativeConsole.clearCurrent") })).toBeDisabled();
-    expect(within(slot).getByRole("button", { name: i18n.t("creativeConsole.history") })).toBeDisabled();
+    expect(within(slot).getByTestId("chat-new-conversation")).toBeDisabled();
+    expect(within(slot).getByTestId("chat-clear-conversation")).toBeDisabled();
+    expect(within(slot).getByTestId("chat-history-trigger")).toBeDisabled();
   });
 
   it("没有历史会话时下拉显示空态文案", async () => {
     const slot = createSlot();
     renderToolbar(createController({ sessions: [] }), slot);
 
-    const trigger = within(slot).getByRole("button", { name: i18n.t("creativeConsole.history") });
+    const trigger = within(slot).getByTestId("chat-history-trigger");
+    expect(trigger).toHaveAccessibleName(i18n.t("creativeConsole.history"));
     fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
 
-    expect(await screen.findByText(i18n.t("creativeConsole.noHistory"))).toBeInTheDocument();
+    const empty = await screen.findByTestId("chat-history-empty");
+    expect(empty).toHaveTextContent(i18n.t("creativeConsole.noHistory"));
   });
 
   it("历史下拉列出会话标题、模型与时间，点击后切换到该会话", async () => {
@@ -127,19 +131,21 @@ describe("聊天工具栏", () => {
     const slot = createSlot();
     renderToolbar(controller, slot);
 
-    fireEvent.pointerDown(within(slot).getByRole("button", { name: i18n.t("creativeConsole.history") }), {
+    fireEvent.pointerDown(within(slot).getByTestId("chat-history-trigger"), {
       button: 0,
       ctrlKey: false,
     });
 
-    const menu = await screen.findByRole("menu");
-    expect(within(menu).getByText("当前会话")).toBeInTheDocument();
-    expect(within(menu).getByText("更早会话")).toBeInTheDocument();
-    expect(within(menu).getAllByText(i18n.t("creativeConsole.model"), { exact: false }).length).toBeGreaterThan(0);
+    const menu = await screen.findByTestId("chat-history-menu");
+    expect(within(menu).getByTestId("chat-history-session-session-1")).toHaveTextContent("当前会话");
+    expect(within(menu).getByTestId("chat-history-session-session-2")).toHaveTextContent("更早会话");
+    expect(within(menu).getByTestId("chat-history-session-session-2")).toHaveTextContent(
+      i18n.t("creativeConsole.model"),
+    );
     expect(within(menu).getAllByRole("menuitem")).toHaveLength(2);
 
     const user = userEvent.setup({ delay: null });
-    await user.click(within(menu).getByText("更早会话"));
+    await user.click(within(menu).getByTestId("chat-history-session-session-2"));
     await waitFor(() => expect(controller.switchConversation).toHaveBeenCalledWith("session-2"));
   });
 });

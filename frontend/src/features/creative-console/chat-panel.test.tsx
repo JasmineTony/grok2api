@@ -69,8 +69,8 @@ function renderChat(options: { apiKey?: string; toolbarElement?: HTMLDivElement 
 
 async function sendMessage(text: string): Promise<void> {
   const user = userEvent.setup({ delay: null });
-  await user.type(screen.getByPlaceholderText(i18n.t("creativeConsole.chatPlaceholder")), text);
-  await user.click(screen.getByRole("button", { name: i18n.t("creativeConsole.send") }));
+  await user.type(screen.getByTestId("chat-prompt"), text);
+  await user.click(screen.getByTestId("chat-send"));
 }
 
 beforeEach(() => {
@@ -86,8 +86,9 @@ afterEach(() => {
 describe("创作台聊天面板", () => {
   it("空态显示欢迎语，输入为空时发送按钮禁用", () => {
     renderChat();
-    expect(screen.getByText(i18n.t("creativeConsole.welcome"))).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: i18n.t("creativeConsole.send") })).toBeDisabled();
+    expect(screen.getByTestId("chat-welcome-state")).toHaveTextContent(i18n.t("creativeConsole.welcome"));
+    expect(screen.getByTestId("chat-send")).toBeDisabled();
+    expect(screen.getByTestId("chat-prompt")).toHaveAttribute("placeholder", i18n.t("creativeConsole.chatPlaceholder"));
     expect(apiMock.createChatResponse).not.toHaveBeenCalled();
   });
 
@@ -97,7 +98,7 @@ describe("创作台聊天面板", () => {
     await sendMessage("你好");
 
     expect(screen.getByText("你好")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: i18n.t("creativeConsole.stopGenerating") }).length).toBeGreaterThan(0);
+    expect(screen.getByTestId("chat-stop")).toBeInTheDocument();
     expect(apiMock.createChatResponse).toHaveBeenCalledTimes(1);
 
     pending.update(snapshot("第一段"));
@@ -107,10 +108,8 @@ describe("创作台聊天面板", () => {
     await waitFor(() => expect(screen.getByText("第一段第二段")).toBeInTheDocument());
 
     const user = userEvent.setup({ delay: null });
-    await user.click(screen.getAllByRole("button", { name: i18n.t("creativeConsole.stopGenerating") })[0]);
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: i18n.t("creativeConsole.send") })).toBeInTheDocument(),
-    );
+    await user.click(screen.getByTestId("chat-stop"));
+    await waitFor(() => expect(screen.getByTestId("chat-send")).toBeInTheDocument());
     expect(screen.getByText("第一段第二段")).toBeInTheDocument();
   });
 
@@ -129,7 +128,7 @@ describe("创作台聊天面板", () => {
   it("Enter 发送、Shift+Enter 只换行", async () => {
     deferred();
     renderChat();
-    const input = screen.getByPlaceholderText(i18n.t("creativeConsole.chatPlaceholder"));
+    const input = screen.getByTestId("chat-prompt");
     fireEvent.change(input, { target: { value: "回车发送" } });
     fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
     expect(apiMock.createChatResponse).not.toHaveBeenCalled();
@@ -151,12 +150,12 @@ describe("创作台聊天面板", () => {
     await waitFor(() => expect(screen.getByText("回答二")).toBeInTheDocument());
 
     const user = userEvent.setup({ delay: null });
-    const deleteButtons = screen.getAllByRole("button", { name: i18n.t("creativeConsole.deleteMessage") });
+    const deleteButtons = screen.getAllByTestId(/^chat-message-delete-/);
     await user.click(deleteButtons[0]);
 
-    const dialog = await screen.findByRole("alertdialog");
-    expect(within(dialog).getByText(i18n.t("creativeConsole.deleteMessageConfirmTitle"))).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: i18n.t("creativeConsole.deleteMessage") }));
+    const dialog = await screen.findByTestId("chat-truncate-dialog");
+    expect(dialog).toHaveTextContent(i18n.t("creativeConsole.deleteMessageConfirmTitle"));
+    await user.click(within(dialog).getByTestId("chat-truncate-confirm"));
 
     await waitFor(() => expect(screen.queryByText("第一条")).not.toBeInTheDocument());
     expect(screen.queryByText("回答一")).not.toBeInTheDocument();
@@ -189,11 +188,12 @@ describe("创作台聊天面板", () => {
     expect(screen.getByText("历史回答")).toBeInTheDocument();
 
     const user = userEvent.setup({ delay: null });
-    await user.click(screen.getAllByRole("button", { name: i18n.t("creativeConsole.editMessage") })[1]);
-    const editArea = screen.getByRole("textbox", { name: i18n.t("creativeConsole.editMessage") });
+    await user.click(screen.getByTestId("chat-message-edit-action-a1"));
+    const editArea = screen.getByTestId("chat-message-edit-input-a1");
+    expect(editArea).toHaveAccessibleName(i18n.t("creativeConsole.editMessage"));
     await user.clear(editArea);
     await user.type(editArea, "本地改写的回答");
-    await user.click(screen.getByRole("button", { name: i18n.t("creativeConsole.saveEdit") }));
+    await user.click(screen.getByTestId("chat-message-edit-save-a1"));
 
     await waitFor(() => expect(screen.getByText("本地改写的回答")).toBeInTheDocument());
     expect(apiMock.createChatResponse).not.toHaveBeenCalled();
@@ -223,7 +223,7 @@ describe("创作台聊天面板", () => {
 
     renderChat({ apiKey: "" });
     const user = userEvent.setup({ delay: null });
-    await user.click(screen.getByRole("button", { name: i18n.t("creativeConsole.regenerate") }));
+    await user.click(screen.getByTestId("chat-message-regenerate-a1"));
     expect(apiMock.createChatResponse).not.toHaveBeenCalled();
   });
 
@@ -237,13 +237,12 @@ describe("创作台聊天面板", () => {
     await waitFor(() => expect(screen.getByText("已完成")).toBeInTheDocument());
 
     const user = userEvent.setup({ delay: null });
-    const clearButton = within(toolbarElement).getByRole("button", { name: i18n.t("creativeConsole.clearCurrent") });
+    const clearButton = within(toolbarElement).getByTestId("chat-clear-conversation");
     await user.click(clearButton);
 
     await waitFor(() => expect(screen.queryByText("待清空")).not.toBeInTheDocument());
-    expect(screen.getByText(i18n.t("creativeConsole.welcome"))).toBeInTheDocument();
+    expect(screen.getByTestId("chat-welcome-state")).toHaveTextContent(i18n.t("creativeConsole.welcome"));
 
-    const newButton = within(toolbarElement).getByRole("button", { name: i18n.t("creativeConsole.newConversation") });
-    expect(newButton).toBeEnabled();
+    expect(within(toolbarElement).getByTestId("chat-new-conversation")).toBeEnabled();
   });
 });

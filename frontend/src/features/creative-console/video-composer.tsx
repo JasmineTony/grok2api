@@ -34,7 +34,11 @@ export function VideoComposer({
   onModelChange: (model: string) => void;
 }): ReactNode {
   return (
-    <form className="w-full shrink-0 px-3 pb-2 sm:px-6 sm:pb-3" onSubmit={controller.submit}>
+    <form
+      className="w-full shrink-0 px-3 pb-2 sm:px-6 sm:pb-3"
+      onSubmit={controller.submit}
+      data-testid="video-composer"
+    >
       <div className={composerClassName}>
         <VideoActionSwitch controller={controller} />
         <Textarea
@@ -43,41 +47,63 @@ export function VideoComposer({
           onChange={(event) => controller.setPrompt(event.target.value)}
           placeholder={controller.placeholder}
           className="min-h-24 resize-none border-0 bg-transparent px-4 py-3 text-sm focus-visible:ring-0"
+          data-testid="video-prompt"
         />
         <div className="flex items-center justify-between gap-3 px-3 pb-3">
-          <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
-            <CompactModelSelect
-              value={controller.activeModel}
-              models={controller.activeModels}
-              onChange={onModelChange}
-            />
-            {controller.action === "generate" ? (
-              <>
-                <VideoImageAttachment kind="image" controller={controller} icon={<ImagePlus />} />
-                <VideoImageAttachment kind="reference" controller={controller} icon={<Images />} />
-                <ReferenceVoiceSelect controller={controller} />
-              </>
-            ) : (
-              <VideoSourceAttachment controller={controller} />
-            )}
-            <VideoShapeControls controller={controller} />
-          </div>
-          <Button type="submit" size="icon" aria-label={controller.submitLabel} disabled={!controller.canSubmit}>
+          <VideoComposerControls controller={controller} onModelChange={onModelChange} />
+          <Button
+            type="submit"
+            size="icon"
+            aria-label={controller.submitLabel}
+            disabled={!controller.canSubmit}
+            data-testid="video-submit"
+          >
             {controller.isSubmitting ? <Loader2 className="animate-spin" /> : <ArrowUp />}
           </Button>
         </div>
       </div>
       {controller.createError ? (
-        <div className="mt-1 px-2 text-[11px] text-destructive">{controller.createError}</div>
+        <div className="mt-1 px-2 text-[11px] text-destructive" data-testid="video-create-error">
+          {controller.createError}
+        </div>
       ) : null}
     </form>
+  );
+}
+
+function VideoComposerControls({
+  controller,
+  onModelChange,
+}: {
+  controller: CreativeVideoController;
+  onModelChange: (model: string) => void;
+}): ReactNode {
+  return (
+    <div className="flex min-w-0 items-center gap-1 overflow-x-auto" data-testid="video-composer-controls">
+      <CompactModelSelect
+        value={controller.activeModel}
+        models={controller.activeModels}
+        onChange={onModelChange}
+        testId="video-model-select"
+      />
+      {controller.action === "generate" ? (
+        <>
+          <VideoImageAttachment kind="image" controller={controller} icon={<ImagePlus />} />
+          <VideoImageAttachment kind="reference" controller={controller} icon={<Images />} />
+          <ReferenceVoiceSelect controller={controller} />
+        </>
+      ) : (
+        <VideoSourceAttachment controller={controller} />
+      )}
+      <VideoShapeControls controller={controller} />
+    </div>
   );
 }
 
 function VideoActionSwitch({ controller }: { controller: CreativeVideoController }): ReactNode {
   const { t } = useTranslation();
   return (
-    <div className="flex flex-wrap items-center gap-1 px-3 pt-3">
+    <div className="flex flex-wrap items-center gap-1 px-3 pt-3" data-testid="video-action-switch">
       {videoActionKeys.map((item) => (
         <Button
           key={item.value}
@@ -89,6 +115,7 @@ function VideoActionSwitch({ controller }: { controller: CreativeVideoController
             controller.action === item.value && "bg-secondary/70 text-foreground",
           )}
           onClick={() => controller.changeAction(item.value)}
+          data-testid={`video-action-${item.value}`}
         >
           {t(item.labelKey)}
         </Button>
@@ -109,6 +136,7 @@ function VideoShapeControls({ controller }: { controller: CreativeVideoControlle
         ariaLabel={t("creativeConsole.extendDuration")}
         suffix="s"
         icon={<Clock3 />}
+        testId="video-extend-duration-select"
       />
     );
   }
@@ -121,6 +149,7 @@ function VideoShapeControls({ controller }: { controller: CreativeVideoControlle
         ariaLabel={t("creativeConsole.duration")}
         suffix="s"
         icon={<Clock3 />}
+        testId="video-duration-select"
       />
       <CompactSelect
         value={controller.aspectRatio}
@@ -128,6 +157,7 @@ function VideoShapeControls({ controller }: { controller: CreativeVideoControlle
         onChange={controller.setAspectRatio}
         ariaLabel={t("creativeConsole.aspectRatio")}
         icon={<TvMinimal />}
+        testId="video-aspect-ratio-select"
       />
       <CompactSelect
         value={controller.selectedResolution}
@@ -135,6 +165,7 @@ function VideoShapeControls({ controller }: { controller: CreativeVideoControlle
         onChange={controller.setResolution}
         ariaLabel={t("creativeConsole.resolution")}
         icon={<ImageUpscale />}
+        testId="video-resolution-select"
       />
     </>
   );

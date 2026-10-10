@@ -17,7 +17,7 @@ export function ChatPanel({
 }: CreativePanelProps & { storageScope: string; toolbarElement: HTMLDivElement | null }): ReactNode {
   const controller = useCreativeChat({ apiKey, model, modelOptions, onModelChange, storageScope });
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden" data-testid="chat-panel">
       <ChatToolbar controller={controller} toolbarElement={toolbarElement} />
       <ChatMessageList controller={controller} />
       <ChatComposer controller={controller} />

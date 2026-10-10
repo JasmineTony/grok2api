@@ -33,6 +33,7 @@ export function ChatToolbar({
         onSelect={controller.startNewConversation}
         className="rounded-full"
         disabled={controller.isStreaming}
+        testId="chat-new-conversation"
       >
         <SquarePen />
       </IconActionButton>
@@ -41,6 +42,7 @@ export function ChatToolbar({
         onSelect={controller.clearConversation}
         className="rounded-full"
         disabled={controller.messages.length === 0 || controller.isStreaming}
+        testId="chat-clear-conversation"
       >
         <Trash2 />
       </IconActionButton>
@@ -62,14 +64,17 @@ function ChatHistoryMenu({ controller }: { controller: CreativeChatController })
           className="rounded-full"
           aria-label={t("creativeConsole.history")}
           disabled={controller.isStreaming}
+          data-testid="chat-history-trigger"
         >
           <History />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-80">
+      <DropdownMenuContent align="end" className="w-80" data-testid="chat-history-menu">
         <DropdownMenuLabel>{t("creativeConsole.history")}</DropdownMenuLabel>
         {controller.sessions.length === 0 ? (
-          <div className="px-2 py-5 text-center text-xs text-muted-foreground">{t("creativeConsole.noHistory")}</div>
+          <div className="px-2 py-5 text-center text-xs text-muted-foreground" data-testid="chat-history-empty">
+            {t("creativeConsole.noHistory")}
+          </div>
         ) : (
           controller.sessions.map((session) => (
             <ChatHistoryItem
@@ -96,7 +101,7 @@ function ChatHistoryItem({
 }): ReactNode {
   const { t, i18n } = useTranslation();
   return (
-    <DropdownMenuItem className="min-h-12 gap-2" onSelect={onSelect}>
+    <DropdownMenuItem className="min-h-12 gap-2" onSelect={onSelect} data-testid={`chat-history-session-${session.id}`}>
       <div className="min-w-0 flex-1">
         <div className="truncate text-xs">{session.title}</div>
         <div className="mt-0.5 truncate text-[10px] text-muted-foreground">

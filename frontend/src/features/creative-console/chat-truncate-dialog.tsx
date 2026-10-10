@@ -58,15 +58,16 @@ function ChatTruncateDialogContent({
   const { t } = useTranslation();
   const copy = truncateCopyKeys[action.kind];
   return (
-    <AlertDialogContent>
+    <AlertDialogContent data-testid="chat-truncate-dialog">
       <AlertDialogHeader>
         <AlertDialogTitle>{t(copy.title)}</AlertDialogTitle>
         <AlertDialogDescription>{t(copy.description, { count: action.trailingCount })}</AlertDialogDescription>
       </AlertDialogHeader>
       <AlertDialogFooter>
-        <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+        <AlertDialogCancel data-testid="chat-truncate-cancel">{t("common.cancel")}</AlertDialogCancel>
         <AlertDialogAction
           className={action.kind === "delete" ? "bg-destructive text-white hover:bg-destructive/90" : undefined}
+          data-testid="chat-truncate-confirm"
           onClick={(event) => {
             event.preventDefault();
             onConfirm();
