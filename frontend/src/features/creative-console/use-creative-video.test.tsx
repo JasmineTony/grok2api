@@ -2,10 +2,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { ModelRouteDTO } from "@/entities/model/types";
 import { VideoPanel } from "@/features/creative-console/video-panel";
+import { useCreativeVideo } from "@/features/creative-console/use-creative-video";
 import { i18n } from "@/shared/i18n";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ReactNode } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -40,6 +41,13 @@ const videoModels: ModelRouteDTO[] = [
 ] as ModelRouteDTO[];
 
 let queryClient: QueryClient;
+
+/** 状态查询自带 `retry: 2`，重试用例把退避压到 0，避免把 1s+2s 退避算进用例耗时。 */
+function createQueryClient(overrides: { retryDelay?: number } = {}): QueryClient {
+  return new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity, ...overrides } },
+  });
+}
 
 function wrapper({ children }: { children: ReactNode }) {
   return (
@@ -89,7 +97,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+  queryClient = createQueryClient();
   apiMock.createVideo.mockReset().mockResolvedValue("req-1");
   apiMock.editVideo.mockReset().mockResolvedValue("req-2");
   apiMock.extendVideo.mockReset().mockResolvedValue("req-3");
@@ -276,5 +284,47 @@ describe("视频任务状态", () => {
       ),
     );
     expect(await screen.findByTestId("video-create-error")).toHaveTextContent("续写被拒绝");
+  });
+
+  it("状态查询失败时展示错误，重试后恢复任务进度", async () => {
+    queryClient = createQueryClient({ retryDelay: 0 });
+    apiMock.getVideo.mockRejectedValue(new Error("状态查询失败"));
+    renderPanel();
+
+    const user = userEvent.setup({ delay: null });
+    await user.type(screen.getByTestId("video-prompt"), "海浪");
+    await user.click(screen.getByTestId("video-submit"));
+
+    expect(await screen.findByTestId("video-result-error")).toHaveTextContent("状态查询失败");
+
+    apiMock.getVideo.mockReset().mockResolvedValue({ status: "pending", progress: 30 });
+    await user.click(screen.getByTestId("video-result-retry"));
+
+    await waitFor(() => expect(screen.getByTestId("video-result-progress")).toHaveTextContent("30%"));
+    expect(screen.queryByTestId("video-result-error")).not.toBeInTheDocument();
+  });
+
+  it("任务被清空后手动重试状态查询，只用当前密钥且不再指向旧任务", async () => {
+    const onModelChange = vi.fn();
+    const { result } = renderHook(
+      () => useCreativeVideo({ apiKey: "k", model: "grok-imagine-video", modelOptions: videoModels, onModelChange }),
+      { wrapper },
+    );
+
+    act(() => result.current.setPrompt("海浪"));
+    await act(async () => {
+      result.current.submit({ preventDefault: vi.fn() } as unknown as FormEvent);
+    });
+    await waitFor(() => expect(apiMock.getVideo).toHaveBeenCalledTimes(1));
+    expect(apiMock.getVideo.mock.calls[0][0]).toMatchObject({ apiKey: "k", requestId: "req-1" });
+
+    act(() => result.current.changeAction("edit"));
+    expect(result.current.job).toBeNull();
+
+    await act(async () => {
+      result.current.retryStatus();
+    });
+    await waitFor(() => expect(apiMock.getVideo).toHaveBeenCalledTimes(2));
+    expect(apiMock.getVideo.mock.calls[1][0]).toMatchObject({ apiKey: "k", requestId: "" });
   });
 });

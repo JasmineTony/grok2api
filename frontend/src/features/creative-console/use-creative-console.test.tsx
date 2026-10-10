@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { useCreativeConsole } from "@/features/creative-console/use-creative-console";
+import { useCreativeConsole, type CreativeConsoleController } from "@/features/creative-console/use-creative-console";
 import { i18n } from "@/shared/i18n";
-import { renderHook, waitFor } from "@testing-library/react";
+import { render, renderHook, waitFor } from "@testing-library/react";
 import { StrictMode, type ReactNode } from "react";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -213,6 +213,29 @@ describe("密钥明文请求的去重与迟到失败", () => {
     await waitFor(() => expect(result.current.panelProps("chat").apiKey).toBe("secret-1"));
     expect(keysApiMock.getClientKeySecret).toHaveBeenCalledTimes(1);
     expect(keysApiMock.getClientKeySecret).toHaveBeenCalledWith("key-1");
+  });
+
+  it("挂载时密钥已就绪：严格模式重挂载 effect 只读取一次明文", async () => {
+    queryClient.setQueryData(["creative-console", "client-keys"], [key()]);
+    let latest: CreativeConsoleController | undefined;
+    function ConsoleHarness(): null {
+      latest = useCreativeConsole();
+      return null;
+    }
+
+    render(
+      <StrictMode>
+        <I18nextProvider i18n={i18n}>
+          <QueryClientProvider client={queryClient}>
+            <ConsoleHarness />
+          </QueryClientProvider>
+        </I18nextProvider>
+      </StrictMode>,
+    );
+
+    await waitFor(() => expect(latest?.panelProps("chat").apiKey).toBe("secret-1"));
+    expect(keysApiMock.listClientKeys).not.toHaveBeenCalled();
+    expect(keysApiMock.getClientKeySecret).toHaveBeenCalledTimes(1);
   });
 
   it("切换密钥后旧密钥的失败回调不回写错误", async () => {
