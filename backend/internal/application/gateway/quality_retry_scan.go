@@ -234,30 +234,33 @@ func observeQualityPayload(state *qualityScanState, payload []byte) {
 	}
 }
 
+// qualityChatEvent 是 Chat Completions 流中用于质量观测的事件负载。
+type qualityChatEvent struct {
+	ID      string `json:"id"`
+	Model   string `json:"model"`
+	Choices []struct {
+		Delta struct {
+			Content          string `json:"content"`
+			Reasoning        string `json:"reasoning"`
+			ReasoningContent string `json:"reasoning_content"`
+			ThinkingContent  string `json:"thinking_content"`
+			ToolCalls        []any  `json:"tool_calls"`
+			FunctionCall     any    `json:"function_call"`
+		} `json:"delta"`
+		FinishReason string `json:"finish_reason"`
+	} `json:"choices"`
+	Usage *struct {
+		PromptTokens            int64 `json:"prompt_tokens"`
+		CompletionTokens        int64 `json:"completion_tokens"`
+		TotalTokens             int64 `json:"total_tokens"`
+		CompletionTokensDetails struct {
+			ReasoningTokens int64 `json:"reasoning_tokens"`
+		} `json:"completion_tokens_details"`
+	} `json:"usage"`
+}
+
 func observeQualityChat(state *qualityScanState, payload []byte) {
-	var event struct {
-		ID      string `json:"id"`
-		Model   string `json:"model"`
-		Choices []struct {
-			Delta struct {
-				Content          string `json:"content"`
-				Reasoning        string `json:"reasoning"`
-				ReasoningContent string `json:"reasoning_content"`
-				ThinkingContent  string `json:"thinking_content"`
-				ToolCalls        []any  `json:"tool_calls"`
-				FunctionCall     any    `json:"function_call"`
-			} `json:"delta"`
-			FinishReason string `json:"finish_reason"`
-		} `json:"choices"`
-		Usage *struct {
-			PromptTokens            int64 `json:"prompt_tokens"`
-			CompletionTokens        int64 `json:"completion_tokens"`
-			TotalTokens             int64 `json:"total_tokens"`
-			CompletionTokensDetails struct {
-				ReasoningTokens int64 `json:"reasoning_tokens"`
-			} `json:"completion_tokens_details"`
-		} `json:"usage"`
-	}
+	var event qualityChatEvent
 	if json.Unmarshal(payload, &event) != nil {
 		return
 	}
@@ -318,25 +321,28 @@ func noteResponsesReasoningItem(state *qualityScanState, item qualityResponsesOu
 	noteEncryptedBytes(state, item.EncryptedContent)
 }
 
+// qualityResponsesEvent 是 Responses 流中用于质量观测的事件负载。
+type qualityResponsesEvent struct {
+	Type     string                     `json:"type"`
+	Delta    string                     `json:"delta"`
+	Item     qualityResponsesOutputItem `json:"item"`
+	Response *struct {
+		ID     string                       `json:"id"`
+		Model  string                       `json:"model"`
+		Output []qualityResponsesOutputItem `json:"output"`
+		Usage  *struct {
+			OutputTokens        int64 `json:"output_tokens"`
+			InputTokens         int64 `json:"input_tokens"`
+			TotalTokens         int64 `json:"total_tokens"`
+			OutputTokensDetails struct {
+				ReasoningTokens int64 `json:"reasoning_tokens"`
+			} `json:"output_tokens_details"`
+		} `json:"usage"`
+	} `json:"response"`
+}
+
 func observeQualityResponses(state *qualityScanState, payload []byte) {
-	var event struct {
-		Type     string                     `json:"type"`
-		Delta    string                     `json:"delta"`
-		Item     qualityResponsesOutputItem `json:"item"`
-		Response *struct {
-			ID     string                       `json:"id"`
-			Model  string                       `json:"model"`
-			Output []qualityResponsesOutputItem `json:"output"`
-			Usage  *struct {
-				OutputTokens        int64 `json:"output_tokens"`
-				InputTokens         int64 `json:"input_tokens"`
-				TotalTokens         int64 `json:"total_tokens"`
-				OutputTokensDetails struct {
-					ReasoningTokens int64 `json:"reasoning_tokens"`
-				} `json:"output_tokens_details"`
-			} `json:"usage"`
-		} `json:"response"`
-	}
+	var event qualityResponsesEvent
 	if json.Unmarshal(payload, &event) != nil {
 		return
 	}
@@ -415,28 +421,31 @@ func observeQualityResponsesOutputItem(state *qualityScanState, item qualityResp
 	return visibleRunes
 }
 
+// qualityAnthropicEvent 是 Anthropic Messages 流中用于质量观测的事件负载。
+type qualityAnthropicEvent struct {
+	Type         string `json:"type"`
+	ContentBlock struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+		Data string `json:"data"`
+	} `json:"content_block"`
+	Delta struct {
+		Type        string `json:"type"`
+		Text        string `json:"text"`
+		Thinking    string `json:"thinking"`
+		PartialJSON string `json:"partial_json"`
+		Signature   string `json:"signature"`
+	} `json:"delta"`
+	Usage *struct {
+		OutputTokens        int64 `json:"output_tokens"`
+		OutputTokensDetails struct {
+			ThinkingTokens int64 `json:"thinking_tokens"`
+		} `json:"output_tokens_details"`
+	} `json:"usage"`
+}
+
 func observeQualityAnthropic(state *qualityScanState, payload []byte) {
-	var event struct {
-		Type         string `json:"type"`
-		ContentBlock struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-			Data string `json:"data"`
-		} `json:"content_block"`
-		Delta struct {
-			Type        string `json:"type"`
-			Text        string `json:"text"`
-			Thinking    string `json:"thinking"`
-			PartialJSON string `json:"partial_json"`
-			Signature   string `json:"signature"`
-		} `json:"delta"`
-		Usage *struct {
-			OutputTokens        int64 `json:"output_tokens"`
-			OutputTokensDetails struct {
-				ThinkingTokens int64 `json:"thinking_tokens"`
-			} `json:"output_tokens_details"`
-		} `json:"usage"`
-	}
+	var event qualityAnthropicEvent
 	if json.Unmarshal(payload, &event) != nil {
 		return
 	}
@@ -523,8 +532,7 @@ func peekQualityStream(ctx context.Context, body io.ReadCloser, protocol string,
 
 		select {
 		case <-ctx.Done():
-			_ = pump.Close()
-			return io.NopCloser(bytes.NewReader(held.Bytes())), QualityWait, state.usage, state.responseID, qualityPeekAbortError(ctx, ctx.Err())
+			return abortQualityPeek(ctx, ctx.Err(), pump, &held, &state)
 		case <-holdTimer.C:
 			state.holdExpired = true
 			sig.HoldExpired = true
@@ -535,23 +543,37 @@ func peekQualityStream(ctx context.Context, body io.ReadCloser, protocol string,
 			if !ok {
 				return finishQualityPeek(&held, pump, &state, cfg)
 			}
-			if len(result.data) > 0 {
-				if held.Len()+len(result.data) > qualityHoldMaxBufferBytes {
-					_, _ = held.Write(result.data)
-					return newPrefixReplay(&held, pump), QualityDeliver, state.usage, state.responseID, nil
-				}
-				_, _ = held.Write(result.data)
-				ObserveQualityChunk(&state, result.data)
+			if deliver, verdict := bufferQualityChunk(&held, &state, result.data); deliver {
+				return newPrefixReplay(&held, pump), verdict, state.usage, state.responseID, nil
 			}
 			if result.err == io.EOF {
 				return finishQualityPeek(&held, pump, &state, cfg)
 			}
 			if result.err != nil {
-				_ = pump.Close()
-				return io.NopCloser(bytes.NewReader(held.Bytes())), QualityWait, state.usage, state.responseID, qualityPeekAbortError(ctx, result.err)
+				return abortQualityPeek(ctx, result.err, pump, &held, &state)
 			}
 		}
 	}
+}
+
+// bufferQualityChunk 累积并分析一个上游分片；超过缓冲上限时放行已缓冲内容。
+func bufferQualityChunk(held *bytes.Buffer, state *qualityScanState, data []byte) (bool, QualityVerdict) {
+	if len(data) == 0 {
+		return false, QualityWait
+	}
+	if held.Len()+len(data) > qualityHoldMaxBufferBytes {
+		_, _ = held.Write(data)
+		return true, QualityDeliver
+	}
+	_, _ = held.Write(data)
+	ObserveQualityChunk(state, data)
+	return false, QualityWait
+}
+
+// abortQualityPeek 关闭读取泵并回放已缓冲内容，向上层暴露取消或读取失败。
+func abortQualityPeek(ctx context.Context, cause error, pump *qualityReadPump, held *bytes.Buffer, state *qualityScanState) (io.ReadCloser, QualityVerdict, Usage, string, error) {
+	_ = pump.Close()
+	return io.NopCloser(bytes.NewReader(held.Bytes())), QualityWait, state.usage, state.responseID, qualityPeekAbortError(ctx, cause)
 }
 
 func finishQualityPeek(held *bytes.Buffer, pump *qualityReadPump, state *qualityScanState, cfg QualityRetryRuntime) (io.ReadCloser, QualityVerdict, Usage, string, error) {

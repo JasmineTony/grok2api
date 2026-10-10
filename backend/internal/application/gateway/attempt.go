@@ -71,84 +71,105 @@ func (r *failureAttemptRecorder) captureCredentialFailure(credential accountdoma
 	})
 }
 
+// httpAttemptFields 描述一次上游 HTTP 或传输尝试的审计字段。
+type httpAttemptFields struct {
+	source         audit.AttemptSource
+	stage          string
+	statusCode     *int
+	status         string
+	headers        map[string][]string
+	upstreamURL    string
+	body           []byte
+	bodyTruncated  bool
+	transportError string
+	errorChain     []audit.ErrorFrame
+	startedAt      time.Time
+	durationMS     int64
+}
+
+// buildAttempt 生成一条上游 HTTP/传输尝试的审计记录，统一字段口径。
+func (r *failureAttemptRecorder) buildAttempt(credential accountdomain.Credential, fields httpAttemptFields) audit.Attempt {
+	return audit.Attempt{
+		Source:                fields.source,
+		Stage:                 fields.stage,
+		AccountID:             auditAccountID(credential.ID),
+		AccountName:           credential.Name,
+		Method:                r.method,
+		RequestPath:           r.path,
+		UpstreamURL:           sanitizeUpstreamURL(fields.upstreamURL),
+		StartedAt:             fields.startedAt.UTC(),
+		DurationMS:            time.Since(fields.startedAt).Milliseconds(),
+		UpstreamStatusCode:    fields.statusCode,
+		UpstreamStatus:        fields.status,
+		ResponseHeaders:       fields.headers,
+		ResponseBody:          fields.body,
+		ResponseBodyTruncated: fields.bodyTruncated,
+		TransportError:        fields.transportError,
+		ErrorChain:            fields.errorChain,
+	}
+}
+
+// responseFailureFields 描述失败响应的诊断状态、响应头与保留正文。
+type responseFailureFields struct {
+	statusCode    int
+	status        string
+	headers       map[string][]string
+	body          []byte
+	bodyTruncated bool
+}
+
+// captureResponseFailureFields 收集失败响应的诊断字段。正文读取失败时返回错误，并已把已读前缀接回响应。
+func (r *failureAttemptRecorder) captureResponseFailureFields(response *provider.Response) (responseFailureFields, error) {
+	fields := responseFailureFields{
+		statusCode: response.StatusCode, status: response.Status,
+		headers: sanitizeDiagnosticHeaders(response.Header),
+	}
+	if response.Diagnostic != nil {
+		fields.statusCode = response.Diagnostic.StatusCode
+		fields.status = response.Diagnostic.Status
+		fields.headers = sanitizeDiagnosticHeaders(response.Diagnostic.Header)
+		fields.body, fields.bodyTruncated = r.captureBody(response.Diagnostic.Body, response.Diagnostic.BodyTruncated)
+		return fields, nil
+	}
+	body, replay, truncated, err := readResponseBody(response.Body)
+	response.Body = replay
+	fields.body, fields.bodyTruncated = r.captureBody(body, truncated)
+	return fields, err
+}
+
 func (r *failureAttemptRecorder) captureResponse(credential accountdomain.Credential, startedAt time.Time, response *provider.Response, requestErr error) error {
 	if response != nil {
 		r.captureRecoveredAttempts(credential, startedAt, response)
 	}
 	if requestErr != nil {
-		r.append(audit.Attempt{
-			Source:         audit.AttemptSourceTransport,
-			Stage:          transportStage(requestErr),
-			AccountID:      auditAccountID(credential.ID),
-			AccountName:    credential.Name,
-			Method:         r.method,
-			RequestPath:    r.path,
-			UpstreamURL:    sanitizeUpstreamURL(errorUpstreamURL(requestErr)),
-			StartedAt:      startedAt.UTC(),
-			DurationMS:     time.Since(startedAt).Milliseconds(),
-			TransportError: sanitizeDiagnosticText(requestErr.Error(), diagnosticTextLimit),
-			ErrorChain:     errorFrames(requestErr),
-		})
+		r.append(r.buildAttempt(credential, httpAttemptFields{
+			source: audit.AttemptSourceTransport, stage: transportStage(requestErr),
+			upstreamURL: errorUpstreamURL(requestErr), startedAt: startedAt,
+			transportError: sanitizeDiagnosticText(requestErr.Error(), diagnosticTextLimit),
+			errorChain:     errorFrames(requestErr),
+		}))
 		return requestErr
 	}
 	if response == nil || (response.StatusCode >= 200 && response.StatusCode < 300) {
 		return nil
 	}
-
-	statusCode := response.StatusCode
-	status := response.Status
-	headers := sanitizeDiagnosticHeaders(response.Header)
-	var body []byte
-	var bodyTruncated bool
-	if response.Diagnostic != nil {
-		statusCode = response.Diagnostic.StatusCode
-		status = response.Diagnostic.Status
-		headers = sanitizeDiagnosticHeaders(response.Diagnostic.Header)
-		body, bodyTruncated = r.captureBody(response.Diagnostic.Body, response.Diagnostic.BodyTruncated)
-	} else {
-		var err error
-		var replay io.ReadCloser
-		body, replay, bodyTruncated, err = readResponseBody(response.Body)
-		response.Body = replay
-		body, bodyTruncated = r.captureBody(body, bodyTruncated)
-		if err != nil {
-			r.append(audit.Attempt{
-				Source:                audit.AttemptSourceUpstreamHTTP,
-				Stage:                 "response_body",
-				AccountID:             auditAccountID(credential.ID),
-				AccountName:           credential.Name,
-				Method:                r.method,
-				RequestPath:           r.path,
-				UpstreamURL:           sanitizeUpstreamURL(response.UpstreamURL),
-				StartedAt:             startedAt.UTC(),
-				DurationMS:            time.Since(startedAt).Milliseconds(),
-				UpstreamStatusCode:    &statusCode,
-				UpstreamStatus:        status,
-				ResponseHeaders:       headers,
-				ResponseBody:          body,
-				ResponseBodyTruncated: bodyTruncated,
-				TransportError:        sanitizeDiagnosticText(err.Error(), diagnosticTextLimit),
-				ErrorChain:            errorFrames(err),
-			})
-			return err
-		}
+	fields, readErr := r.captureResponseFailureFields(response)
+	statusCode := fields.statusCode
+	if readErr != nil {
+		r.append(r.buildAttempt(credential, httpAttemptFields{
+			source: audit.AttemptSourceUpstreamHTTP, stage: "response_body",
+			statusCode: &statusCode, status: fields.status, headers: fields.headers,
+			upstreamURL: response.UpstreamURL, body: fields.body, bodyTruncated: fields.bodyTruncated, startedAt: startedAt,
+			transportError: sanitizeDiagnosticText(readErr.Error(), diagnosticTextLimit),
+			errorChain:     errorFrames(readErr),
+		}))
+		return readErr
 	}
-	r.append(audit.Attempt{
-		Source:                audit.AttemptSourceUpstreamHTTP,
-		Stage:                 "upstream_response",
-		AccountID:             auditAccountID(credential.ID),
-		AccountName:           credential.Name,
-		Method:                r.method,
-		RequestPath:           r.path,
-		UpstreamURL:           sanitizeUpstreamURL(response.UpstreamURL),
-		StartedAt:             startedAt.UTC(),
-		DurationMS:            time.Since(startedAt).Milliseconds(),
-		UpstreamStatusCode:    &statusCode,
-		UpstreamStatus:        status,
-		ResponseHeaders:       headers,
-		ResponseBody:          body,
-		ResponseBodyTruncated: bodyTruncated,
-	})
+	r.append(r.buildAttempt(credential, httpAttemptFields{
+		source: audit.AttemptSourceUpstreamHTTP, stage: "upstream_response",
+		statusCode: &statusCode, status: fields.status, headers: fields.headers,
+		upstreamURL: response.UpstreamURL, body: fields.body, bodyTruncated: fields.bodyTruncated, startedAt: startedAt,
+	}))
 	return nil
 }
 
@@ -176,73 +197,64 @@ func (r *failureAttemptRecorder) captureStreamFailure(credential accountdomain.C
 	})
 }
 
+// recoveredAttemptFields 收集单个恢复尝试的审计字段：保留正文、来源、状态码与脱敏错误链。
+func (r *failureAttemptRecorder) recoveredAttemptFields(credential accountdomain.Credential, response *provider.Response, recovered provider.RecoveredAttempt, startedAt time.Time) httpAttemptFields {
+	diagnostic := recovered.Diagnostic
+	fields := httpAttemptFields{
+		source: audit.AttemptSourceUpstreamHTTP, stage: recovered.Stage,
+		status: diagnostic.Status, headers: sanitizeDiagnosticHeaders(diagnostic.Header),
+		upstreamURL: recovered.UpstreamURL, startedAt: recovered.StartedAt,
+		durationMS: recovered.DurationMS, transportError: recovered.Result,
+	}
+	fields.body, fields.bodyTruncated = r.captureBody(diagnostic.Body, diagnostic.BodyTruncated)
+	if fields.stage == "" {
+		fields.stage = "recovered_upstream"
+	}
+	if diagnostic.StatusCode != 0 {
+		statusCode := diagnostic.StatusCode
+		fields.statusCode = &statusCode
+	} else {
+		fields.source = audit.AttemptSourceTransport
+	}
+	if fields.upstreamURL == "" {
+		fields.upstreamURL = response.UpstreamURL
+	}
+	if fields.startedAt.IsZero() {
+		fields.startedAt = startedAt
+		fields.durationMS = time.Since(startedAt).Milliseconds()
+	}
+	if fields.durationMS < 0 {
+		fields.durationMS = 0
+	}
+	fields.errorChain = make([]audit.ErrorFrame, 0, 1)
+	if recovered.Result != "" {
+		fields.errorChain = append(fields.errorChain, audit.ErrorFrame{Type: fields.stage, Message: sanitizeDiagnosticText(recovered.Result, 512)})
+	}
+	if recovered.Failure != nil {
+		failureText := sanitizeDiagnosticText(recovered.Failure.Error(), diagnosticTextLimit)
+		if fields.transportError == "" {
+			fields.transportError = failureText
+		} else {
+			fields.transportError = sanitizeDiagnosticText(fields.transportError+": "+failureText, diagnosticTextLimit)
+		}
+		fields.errorChain = append(fields.errorChain, errorFrames(recovered.Failure)...)
+		if len(fields.errorChain) > diagnosticErrorFrameLimit {
+			fields.errorChain = fields.errorChain[:diagnosticErrorFrameLimit]
+		}
+	}
+	fields.transportError = sanitizeDiagnosticText(fields.transportError, diagnosticTextLimit)
+	return fields
+}
+
 func (r *failureAttemptRecorder) captureRecoveredAttempts(credential accountdomain.Credential, startedAt time.Time, response *provider.Response) {
 	if response == nil {
 		return
 	}
 	for _, recovered := range response.RecoveredAttempts {
-		diagnostic := recovered.Diagnostic
-		body, truncated := r.captureBody(diagnostic.Body, diagnostic.BodyTruncated)
-		stage := recovered.Stage
-		if stage == "" {
-			stage = "recovered_upstream"
-		}
-		source := audit.AttemptSourceUpstreamHTTP
-		var statusCode *int
-		if diagnostic.StatusCode != 0 {
-			value := diagnostic.StatusCode
-			statusCode = &value
-		} else {
-			source = audit.AttemptSourceTransport
-		}
-		upstreamURL := recovered.UpstreamURL
-		if upstreamURL == "" {
-			upstreamURL = response.UpstreamURL
-		}
-		attemptStartedAt := recovered.StartedAt
-		durationMS := recovered.DurationMS
-		if attemptStartedAt.IsZero() {
-			attemptStartedAt = startedAt
-			durationMS = time.Since(startedAt).Milliseconds()
-		}
-		if durationMS < 0 {
-			durationMS = 0
-		}
-		transportError := recovered.Result
-		errorChain := make([]audit.ErrorFrame, 0, 1)
-		if recovered.Result != "" {
-			errorChain = append(errorChain, audit.ErrorFrame{Type: stage, Message: sanitizeDiagnosticText(recovered.Result, 512)})
-		}
-		if recovered.Failure != nil {
-			failureText := sanitizeDiagnosticText(recovered.Failure.Error(), diagnosticTextLimit)
-			if transportError == "" {
-				transportError = failureText
-			} else {
-				transportError = sanitizeDiagnosticText(transportError+": "+failureText, diagnosticTextLimit)
-			}
-			errorChain = append(errorChain, errorFrames(recovered.Failure)...)
-			if len(errorChain) > diagnosticErrorFrameLimit {
-				errorChain = errorChain[:diagnosticErrorFrameLimit]
-			}
-		}
-		r.append(audit.Attempt{
-			Source:                source,
-			Stage:                 stage,
-			AccountID:             auditAccountID(credential.ID),
-			AccountName:           credential.Name,
-			Method:                r.method,
-			RequestPath:           r.path,
-			UpstreamURL:           sanitizeUpstreamURL(upstreamURL),
-			StartedAt:             attemptStartedAt.UTC(),
-			DurationMS:            durationMS,
-			UpstreamStatusCode:    statusCode,
-			UpstreamStatus:        diagnostic.Status,
-			ResponseHeaders:       sanitizeDiagnosticHeaders(diagnostic.Header),
-			ResponseBody:          body,
-			ResponseBodyTruncated: truncated,
-			TransportError:        sanitizeDiagnosticText(transportError, diagnosticTextLimit),
-			ErrorChain:            errorChain,
-		})
+		fields := r.recoveredAttemptFields(credential, response, recovered, startedAt)
+		attempt := r.buildAttempt(credential, fields)
+		attempt.DurationMS = fields.durationMS
+		r.append(attempt)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/chenyme/grok2api/backend/internal/domain/audit"
 	"github.com/chenyme/grok2api/backend/internal/pkg/perfmetrics"
 )
 
@@ -46,4 +47,22 @@ func (b finalizationBudget) run(stage string, limit time.Duration, action func(c
 		Subsystem: "gateway", Operation: b.operation, Provider: b.provider, Stage: stage, Outcome: outcome,
 	}, time.Since(started))
 	return err
+}
+
+// persistFailureAudit 以独立超时落库失败审计，避免请求取消或收尾预算耗尽丢失记录。
+func (s *Service) persistFailureAudit(record audit.Record, requestID string) {
+	persistCtx, cancel := context.WithTimeout(context.Background(), finalizationTimeout)
+	defer cancel()
+	if err := s.audits.Create(persistCtx, record); err != nil {
+		s.logger.Error("request_usage_write_failed", "event_id", record.EventID, "request_id", requestID, "error", err)
+	}
+}
+
+// persistFinalizationAudit 通过收尾预算落库审计记录，失败只记录日志，不回滚已确认的用量。
+func (s *Service) persistFinalizationAudit(budget finalizationBudget, record audit.Record, requestID string) {
+	if err := budget.run("audit", finalizationAuditBudget, func(stageCtx context.Context) error {
+		return s.audits.Create(stageCtx, record)
+	}); err != nil {
+		s.logger.Error("request_usage_write_failed", "event_id", record.EventID, "request_id", requestID, "error", err)
+	}
 }

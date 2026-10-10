@@ -125,15 +125,31 @@ func (s *Selector) planCandidateIndexesWithHints(ctx context.Context, values []a
 	if indexes == nil {
 		length = len(values)
 	}
+	inFlight, err := s.resolveCandidateInFlight(ctx, values, indexes, length, concurrencyHints)
+	if err != nil {
+		return nil, err
+	}
+	plan := &candidatePlan{values: values, scores: s.scoreCandidatePlan(values, indexes, length, inFlight, now, tierOrder, preferFreeBuild)}
+	heap.Init(plan)
+	return plan, nil
+}
+
+// candidateIndexAt 在可空下标快照上定位真实候选下标，nil 表示直接使用位置值。
+func candidateIndexAt(indexes []int, position int) int {
+	if indexes == nil {
+		return position
+	}
+	return indexes[position]
+}
+
+// resolveCandidateInFlight 解析候选计划的动态并发数：无 hints 时整批读取，
+// 有 hints 时只补缺失账号，读到的快照回填 hints 供后续窗口复用。
+func (s *Selector) resolveCandidateInFlight(ctx context.Context, values []account.RoutingCandidate, indexes []int, length int, concurrencyHints map[int]int) ([]int, error) {
 	inFlight := make([]int, length)
 	if concurrencyHints == nil {
 		keys := make([]string, length)
 		for position := range length {
-			index := position
-			if indexes != nil {
-				index = indexes[position]
-			}
-			keys[position] = accountConcurrencyKey(values[index].Credential.ID)
+			keys[position] = accountConcurrencyKey(values[candidateIndexAt(indexes, position)].Credential.ID)
 		}
 		concurrencySnapshot, err := s.loadConcurrencySnapshot(ctx, keys)
 		if err != nil {
@@ -142,77 +158,78 @@ func (s *Selector) planCandidateIndexesWithHints(ctx context.Context, values []a
 		for position := range length {
 			inFlight[position] = concurrencySnapshot[keys[position]]
 		}
-	} else {
-		missingIndexes := make([]int, 0, length)
-		keys := make([]string, 0, length)
-		for position := range length {
-			index := position
-			if indexes != nil {
-				index = indexes[position]
-			}
-			if _, exists := concurrencyHints[index]; exists {
-				continue
-			}
-			missingIndexes = append(missingIndexes, index)
-			keys = append(keys, accountConcurrencyKey(values[index].Credential.ID))
-		}
-		if len(keys) > 0 {
-			concurrencySnapshot, err := s.loadConcurrencySnapshot(ctx, keys)
-			if err != nil {
-				return nil, err
-			}
-			for position, index := range missingIndexes {
-				concurrencyHints[index] = concurrencySnapshot[keys[position]]
-			}
-		}
-		for position := range length {
-			index := position
-			if indexes != nil {
-				index = indexes[position]
-			}
-			inFlight[position] = concurrencyHints[index]
-		}
+		return inFlight, nil
 	}
-
-	s.selectionMu.RLock()
-	scores := make([]candidateScore, 0, length)
+	missingIndexes := make([]int, 0, length)
+	keys := make([]string, 0, length)
 	for position := range length {
-		index := position
-		if indexes != nil {
-			index = indexes[position]
-		}
-		candidate := values[index]
-		limit := candidate.Credential.MaxConcurrent
-		if limit <= 0 {
-			limit = account.DefaultMaxConcurrent
-		}
-		// 已知满载的账号不进入计划，避免高优先级满载账号逐个 claim 失败后
-		// 才轮到仍有容量的低优先级账号。
-		if inFlight[position] >= limit {
+		index := candidateIndexAt(indexes, position)
+		if _, exists := concurrencyHints[index]; exists {
 			continue
 		}
-		score := candidateScore{
-			index: index, tier: tierOrderRank(tierOrder, candidate.Credential.WebTier),
-			webCatalogSupport: candidate.Credential.Provider == account.ProviderWeb && len(tierOrder) > 0 && webTierInOrder(tierOrder, candidate.Credential.WebTier),
-			preferFreeBuild:   preferFreeBuild && candidate.IsKnownFreeBuild(),
-			inFlight:          inFlight[position], lastSelected: s.lastSelectedAt[candidate.Credential.ID],
+		missingIndexes = append(missingIndexes, index)
+		keys = append(keys, accountConcurrencyKey(values[index].Credential.ID))
+	}
+	if len(keys) > 0 {
+		concurrencySnapshot, err := s.loadConcurrencySnapshot(ctx, keys)
+		if err != nil {
+			return nil, err
 		}
-		// 只有真实上游快照能够证明账号具备该模式额度。历史默认值和
-		// 本地预测值都属于未知能力，只保留为路由兜底。
-		if candidate.QuotaWindow != nil && candidate.QuotaWindow.Source == account.QuotaSourceUpstream {
-			score.quotaKnown = true
-			score.quotaAvailable = candidate.QuotaWindow.Remaining > 0
+		for position, index := range missingIndexes {
+			concurrencyHints[index] = concurrencySnapshot[keys[position]]
 		}
-		if candidate.Billing != nil {
-			score.remaining = candidate.Billing.Remaining()
-			score.billingFresh = now.Sub(candidate.Billing.SyncedAt) <= 30*time.Minute
+	}
+	for position := range length {
+		inFlight[position] = concurrencyHints[candidateIndexAt(indexes, position)]
+	}
+	return inFlight, nil
+}
+
+// scoreCandidatePlan 在同一读锁内为本轮候选生成排序分数，满载账号不进入计划。
+func (s *Selector) scoreCandidatePlan(values []account.RoutingCandidate, indexes []int, length int, inFlight []int, now time.Time, tierOrder []account.WebTier, preferFreeBuild bool) []candidateScore {
+	s.selectionMu.RLock()
+	defer s.selectionMu.RUnlock()
+	scores := make([]candidateScore, 0, length)
+	for position := range length {
+		score, eligible := s.scoreCandidateAt(values, indexes, position, inFlight[position], now, tierOrder, preferFreeBuild)
+		if !eligible {
+			continue
 		}
 		scores = append(scores, score)
 	}
-	s.selectionMu.RUnlock()
-	plan := &candidatePlan{values: values, scores: scores}
-	heap.Init(plan)
-	return plan, nil
+	return scores
+}
+
+// scoreCandidateAt 计算单个候选的路由分数；返回 false 表示本轮不参与 claim。
+func (s *Selector) scoreCandidateAt(values []account.RoutingCandidate, indexes []int, position, inFlight int, now time.Time, tierOrder []account.WebTier, preferFreeBuild bool) (candidateScore, bool) {
+	index := candidateIndexAt(indexes, position)
+	candidate := values[index]
+	limit := candidate.Credential.MaxConcurrent
+	if limit <= 0 {
+		limit = account.DefaultMaxConcurrent
+	}
+	// 已知满载的账号不进入计划，避免高优先级满载账号逐个 claim 失败后
+	// 才轮到仍有容量的低优先级账号。
+	if inFlight >= limit {
+		return candidateScore{}, false
+	}
+	score := candidateScore{
+		index: index, tier: tierOrderRank(tierOrder, candidate.Credential.WebTier),
+		webCatalogSupport: candidate.Credential.Provider == account.ProviderWeb && len(tierOrder) > 0 && webTierInOrder(tierOrder, candidate.Credential.WebTier),
+		preferFreeBuild:   preferFreeBuild && candidate.IsKnownFreeBuild(),
+		inFlight:          inFlight, lastSelected: s.lastSelectedAt[candidate.Credential.ID],
+	}
+	// 只有真实上游快照能够证明账号具备该模式额度。历史默认值和
+	// 本地预测值都属于未知能力，只保留为路由兜底。
+	if candidate.QuotaWindow != nil && candidate.QuotaWindow.Source == account.QuotaSourceUpstream {
+		score.quotaKnown = true
+		score.quotaAvailable = candidate.QuotaWindow.Remaining > 0
+	}
+	if candidate.Billing != nil {
+		score.remaining = candidate.Billing.Remaining()
+		score.billingFresh = now.Sub(candidate.Billing.SyncedAt) <= 30*time.Minute
+	}
+	return score, true
 }
 
 // loadConcurrencySnapshot 在极短窗口内合并相同候选池的并发快照读取。

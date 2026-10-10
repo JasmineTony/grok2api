@@ -3,8 +3,6 @@ package gateway
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -539,302 +536,6 @@ func (s *Service) CompactResponse(ctx context.Context, input Input) (*Result, er
 	input.Streaming = false
 	input.Operation = audit.OperationCompaction
 	return s.createResponseAt(ctx, input, "/responses/compact")
-}
-
-// resolvePublicModelRoutes supports both unprefixed downstream model names and explicitly sourced compatibility names.
-// Registered Provider aliases are stable compatibility contracts. allowModelAliases gates only dynamically generated
-// reasoning-effort aliases so existing clients keep working after the per-key discovery switch is introduced.
-func (s *Service) resolvePublicModelRoutes(ctx context.Context, publicModel string, allowModelAliases bool) ([]modeldomain.Route, string, error) {
-	routes, err := s.models.GetByPublicIDCandidates(ctx, publicModel)
-	if err == nil {
-		return routes, "", nil
-	}
-	if s.providers != nil {
-		if alias, ok := s.providers.ResolveModelAlias(publicModel); ok {
-			if alias.Provider != "" && alias.UpstreamModel != "" {
-				route, routeErr := s.models.GetByProviderUpstream(ctx, alias.Provider, alias.UpstreamModel)
-				if routeErr != nil {
-					return nil, "", routeErr
-				}
-				return []modeldomain.Route{route}, alias.ReasoningEffort, nil
-			}
-			routes, resolveErr := s.models.GetByPublicIDCandidates(ctx, alias.PublicModel)
-			return routes, alias.ReasoningEffort, resolveErr
-		}
-	}
-	// Dynamic effort-suffix aliases (e.g. grok-4.5-low) for any Provider that
-	// exposes the base model. Fixed-reasoning Providers may compatibility-accept
-	// an alias while their wire normalizer drops the unsupported effort.
-	if base, effort, ok := modeldomain.ParseReasoningModelAlias(publicModel); ok {
-		if !allowModelAliases {
-			return nil, "", err
-		}
-		routes, resolveErr := s.models.GetByPublicIDCandidates(ctx, base)
-		if resolveErr != nil {
-			return nil, "", resolveErr
-		}
-		eligible := make([]modeldomain.Route, 0, len(routes))
-		for _, route := range routes {
-			if modeldomain.SupportsReasoningEffortForProvider(route.Provider, route.PublicID, effort) ||
-				modeldomain.IsFixedReasoningForProvider(route.Provider, route.PublicID) {
-				eligible = append(eligible, route)
-			}
-		}
-		if len(eligible) == 0 {
-			return nil, "", repository.ErrNotFound
-		}
-		return eligible, effort, nil
-	}
-	return nil, "", err
-}
-
-// eligibleConversationRoutes filters route targets without choosing one. Keeping
-// this separate from ordering lets one public name form a schedulable target pool.
-func (s *Service) eligibleConversationRoutes(routes []modeldomain.Route, key clientkey.Key, operation audit.Operation, path string, requireStoredResponse bool, ownership *inferencedomain.ResponseOwnership) ([]modeldomain.Route, modeldomain.Route, error) {
-	if len(routes) == 0 || s.providers == nil {
-		return nil, modeldomain.Route{}, ErrModelNotFound
-	}
-	fallback := routes[0]
-	eligible := make([]modeldomain.Route, 0, len(routes))
-	accountScope := key.AccountScope()
-	matchedOwnership := ownership == nil
-	scopeMatched := false
-	allowed := false
-	conversationSupported := false
-	storedResponseUnsupported := false
-	for _, route := range routes {
-		if ownership != nil {
-			if ownership.ModelRouteID != 0 {
-				if route.ID != ownership.ModelRouteID {
-					continue
-				}
-			} else if route.Provider != ownership.Provider {
-				// Backward compatibility for ownership rows created before route IDs
-				// were persisted: retain the original Provider-scoped pin.
-				continue
-			}
-		}
-		matchedOwnership = true
-		fallback = route
-		if !accountScope.AllowsProvider(route.Provider) {
-			continue
-		}
-		scopeMatched = true
-		if !s.clientKeys.CanUseModel(key, route.ID) {
-			continue
-		}
-		allowed = true
-		if !s.providers.SupportsConversation(route.Provider, string(operation)) {
-			continue
-		}
-		conversationSupported = true
-		if path == "/responses/compact" && !s.providers.SupportsResponseCompaction(route.Provider) {
-			continue
-		}
-		if requireStoredResponse && !s.providers.SupportsStoredResponses(route.Provider) {
-			storedResponseUnsupported = true
-			continue
-		}
-		eligible = append(eligible, route)
-	}
-	if len(eligible) > 0 {
-		return eligible, fallback, nil
-	}
-	if !matchedOwnership {
-		return nil, fallback, ErrResponseAccountUnavailable
-	}
-	if !scopeMatched {
-		return nil, fallback, &SelectionUnavailableError{Reason: SelectionNoAccounts, Scope: accountScope}
-	}
-	if !allowed {
-		return nil, fallback, clientkeyapp.ErrModelNotAllowed
-	}
-	if storedResponseUnsupported {
-		return nil, fallback, ErrResponseStateUnsupported
-	}
-	if conversationSupported && path == "/responses/compact" {
-		return nil, fallback, ErrConversationUnsupported
-	}
-	return nil, fallback, ErrConversationUnsupported
-}
-
-// selectConversationRoute retains the legacy single-target helper for callers
-// that do not need target-pool ordering.
-func (s *Service) selectConversationRoute(routes []modeldomain.Route, key clientkey.Key, operation audit.Operation, path string, requireStoredResponse bool, ownership *inferencedomain.ResponseOwnership) (modeldomain.Route, error) {
-	eligible, fallback, err := s.eligibleConversationRoutes(routes, key, operation, path, requireStoredResponse, ownership)
-	if err != nil {
-		return fallback, err
-	}
-	return eligible[0], nil
-}
-
-// orderConversationRouteTargets randomizes targets within the same Provider by
-// rendezvous score. Provider priority remains stable, while a session seed keeps
-// Codex/Claude continuations on the same target without global mutable state.
-func orderConversationRouteTargets(routes []modeldomain.Route, seed string) []modeldomain.Route {
-	ordered := append([]modeldomain.Route(nil), routes...)
-	sort.SliceStable(ordered, func(left, right int) bool {
-		leftPriority := routeProviderPriority(ordered[left].Provider)
-		rightPriority := routeProviderPriority(ordered[right].Provider)
-		if leftPriority != rightPriority {
-			return leftPriority < rightPriority
-		}
-		leftScore := routeTargetScore(seed, ordered[left].ID)
-		rightScore := routeTargetScore(seed, ordered[right].ID)
-		if leftScore != rightScore {
-			return leftScore > rightScore
-		}
-		return ordered[left].ID < ordered[right].ID
-	})
-	return ordered
-}
-
-func routeTargetScore(seed string, routeID uint64) uint64 {
-	digest := sha256.Sum256([]byte(seed + ":" + strconv.FormatUint(routeID, 10)))
-	return binary.BigEndian.Uint64(digest[:8])
-}
-
-func routeProviderPriority(providerValue accountdomain.Provider) int {
-	switch providerValue {
-	case accountdomain.ProviderBuild:
-		return 0
-	case accountdomain.ProviderWeb:
-		return 1
-	case accountdomain.ProviderConsole:
-		return 2
-	default:
-		return 3
-	}
-}
-
-func routeTargetSeed(input Input) string {
-	// Match the Build account-affinity precedence so Codex and Claude Code keep
-	// both the route target and account stable across one logical session.
-	anchor := strings.TrimSpace(input.PromptCacheSeed)
-	if anchor == "" {
-		anchor = strings.TrimSpace(input.PromptCacheKey)
-	}
-	if anchor == "" {
-		system, firstUser, _ := extractMessageAnchors(input.Body)
-		system = truncateAnchor(system, 100)
-		firstUser = truncateAnchor(firstUser, 200)
-		if firstUser != "" {
-			anchor = "soft:" + system + ":" + firstUser
-		}
-	}
-	if anchor == "" {
-		anchor = strings.TrimSpace(input.RequestID)
-	}
-	return strconv.FormatUint(input.ClientKey.ID, 10) + ":" + anchor
-}
-
-// selectMediaRoute selects a same-name route that satisfies media capability, key permissions, and Provider support.
-func (s *Service) selectMediaRoute(routes []modeldomain.Route, key clientkey.Key, capability modeldomain.Capability, providerSupported func(accountdomain.Provider) bool) (modeldomain.Route, error) {
-	eligible, fallback, err := s.eligibleMediaRoutes(routes, key, capability, providerSupported)
-	if err != nil {
-		return fallback, err
-	}
-	return eligible[0], nil
-}
-
-func (s *Service) eligibleMediaRoutes(routes []modeldomain.Route, key clientkey.Key, capability modeldomain.Capability, providerSupported func(accountdomain.Provider) bool) ([]modeldomain.Route, modeldomain.Route, error) {
-	if len(routes) == 0 {
-		return nil, modeldomain.Route{}, ErrModelNotFound
-	}
-	fallback := routes[0]
-	eligible := make([]modeldomain.Route, 0, len(routes))
-	accountScope := key.AccountScope()
-	capabilityMatched := false
-	scopeMatched := false
-	allowed := false
-	for _, route := range routes {
-		if route.Capability != capability {
-			continue
-		}
-		fallback = route
-		capabilityMatched = true
-		if !accountScope.AllowsProvider(route.Provider) {
-			continue
-		}
-		scopeMatched = true
-		if !s.clientKeys.CanUseModel(key, route.ID) {
-			continue
-		}
-		allowed = true
-		if providerSupported(route.Provider) {
-			eligible = append(eligible, route)
-		}
-	}
-	if len(eligible) > 0 {
-		return eligible, fallback, nil
-	}
-	if !capabilityMatched {
-		return nil, fallback, ErrModelNotFound
-	}
-	if !scopeMatched {
-		return nil, fallback, &SelectionUnavailableError{Reason: SelectionNoAccounts, Scope: accountScope}
-	}
-	if !allowed {
-		return nil, fallback, clientkeyapp.ErrModelNotAllowed
-	}
-	return nil, fallback, ErrNoAvailableAccount
-}
-
-// selectSchedulableMediaRoute resolves a concrete same-name media target and
-// its immutable account plan together. A cooling or exhausted first target
-// therefore cannot hide a healthy target from another Provider.
-func (s *Service) selectSchedulableMediaRoute(ctx context.Context, routes []modeldomain.Route, key clientkey.Key, capability modeldomain.Capability, consumesQuota bool, providerSupported func(accountdomain.Provider) bool) (modeldomain.Route, *selectionSession, error) {
-	return s.selectSchedulableMediaRouteWithQuotaMode(ctx, routes, key, capability, consumesQuota, providerSupported, nil)
-}
-
-func (s *Service) selectSchedulableMediaRouteWithQuotaMode(ctx context.Context, routes []modeldomain.Route, key clientkey.Key, capability modeldomain.Capability, consumesQuota bool, providerSupported func(accountdomain.Provider) bool, resolveQuotaMode func(modeldomain.Route) string) (modeldomain.Route, *selectionSession, error) {
-	eligible, fallback, err := s.eligibleMediaRoutes(routes, key, capability, providerSupported)
-	if err != nil {
-		return fallback, nil, err
-	}
-	return s.selectSchedulableEligibleMediaRouteWithQuotaMode(ctx, eligible, key, consumesQuota, resolveQuotaMode)
-}
-
-// selectSchedulableEligibleMediaRouteWithQuotaMode selects an account plan
-// from routes that already passed capability, client-key, and Provider support
-// checks. Callers may apply request-specific route constraints between the
-// eligibility and scheduling phases without evaluating disallowed routes.
-func (s *Service) selectSchedulableEligibleMediaRouteWithQuotaMode(ctx context.Context, eligible []modeldomain.Route, key clientkey.Key, consumesQuota bool, resolveQuotaMode func(modeldomain.Route) string) (modeldomain.Route, *selectionSession, error) {
-	if len(eligible) == 0 {
-		return modeldomain.Route{}, nil, ErrNoAvailableAccount
-	}
-	var firstSelectionErr error
-	for _, route := range eligible {
-		quotaMode := ""
-		if consumesQuota {
-			if resolveQuotaMode != nil {
-				quotaMode = resolveQuotaMode(route)
-			} else {
-				quotaMode = s.providers.QuotaMode(route.Provider, route.UpstreamModel)
-			}
-		}
-		session, selectionErr := s.selector.beginSelectionSessionForKey(
-			ctx,
-			route.Provider,
-			route.ID,
-			route.UpstreamModel,
-			quotaMode,
-			"",
-			nil,
-			false,
-			key.AccountScope(),
-		)
-		if selectionErr == nil {
-			return route, session, nil
-		}
-		if firstSelectionErr == nil {
-			firstSelectionErr = selectionErr
-		}
-	}
-	if firstSelectionErr == nil {
-		firstSelectionErr = ErrNoAvailableAccount
-	}
-	return eligible[0], nil, firstSelectionErr
 }
 
 func (s *Service) createResponseAt(ctx context.Context, input Input, path string) (*Result, error) {
@@ -1934,29 +1635,121 @@ func (s *Service) DeleteResponse(ctx context.Context, input ResourceInput) (*Res
 	return s.forwardOwnedResponse(ctx, input, http.MethodDelete)
 }
 
-func (s *Service) forwardOwnedResponse(ctx context.Context, input ResourceInput, method string) (*Result, error) {
+// ownedResponseTarget 固定一次已归属 Response 转发的目标账号与适配器。
+type ownedResponseTarget struct {
+	providerName accountdomain.Provider
+	accountID    uint64
+	accountScope clientkey.AccountScope
+	adapter      provider.ResponseAdapter
+	operation    string
+}
+
+// ownedResponseForward 固定一次 Response 资源转发的调用上下文。
+type ownedResponseForward struct {
+	adapter         provider.ResponseAdapter
+	lease           *accountLease
+	physicalCallCtx context.Context
+	method          string
+	path            string
+}
+
+// resolveOwnedResponseTarget 校验 Response 归属、账号范围与 Provider 支持，并返回转发目标。
+func (s *Service) resolveOwnedResponseTarget(ctx context.Context, input ResourceInput, method string) (ownedResponseTarget, error) {
 	ownership, err := s.responses.Get(ctx, input.ResponseID, input.ClientKey.ID, time.Now().UTC())
 	if err != nil {
-		return nil, ErrResponseNotFound
+		return ownedResponseTarget{}, ErrResponseNotFound
 	}
 	if !s.providers.SupportsStoredResponses(ownership.Provider) {
 		_ = s.responses.Delete(ctx, input.ResponseID, input.ClientKey.ID)
-		return nil, ErrResponseNotFound
+		return ownedResponseTarget{}, ErrResponseNotFound
 	}
 	accountScope := input.ClientKey.AccountScope()
 	if !accountScope.AllowsProvider(ownership.Provider) {
-		return nil, &SelectionUnavailableError{Reason: SelectionNoAccounts, Scope: accountScope}
+		return ownedResponseTarget{}, &SelectionUnavailableError{Reason: SelectionNoAccounts, Scope: accountScope}
 	}
 	adapter, ok := s.providers.Responses(ownership.Provider)
 	if !ok {
-		return nil, ErrResponseAccountUnavailable
+		return ownedResponseTarget{}, ErrResponseAccountUnavailable
 	}
 	operation := "response_get"
 	if method == http.MethodDelete {
 		operation = "response_delete"
 	}
-	physicalCallCtx := infraegress.WithPhysicalCallTrace(ctx, string(ownership.Provider), operation)
-	lease, err := s.selector.AcquirePinnedForKey(ctx, ownership.Provider, ownership.AccountID, 0, "", "", false, accountScope)
+	return ownedResponseTarget{
+		providerName: ownership.Provider, accountID: ownership.AccountID,
+		accountScope: accountScope, adapter: adapter, operation: operation,
+	}, nil
+}
+
+// attemptOwnedResponseForward 转发一次资源请求；401 时按既有语义刷新凭据并重放一次。
+func (s *Service) attemptOwnedResponseForward(ctx context.Context, forward ownedResponseForward, credential accountdomain.Credential) (*provider.Response, accountdomain.Credential, error) {
+	response, err := forward.adapter.ForwardResponse(forward.physicalCallCtx, provider.ResponseResourceRequest{Credential: credential, Method: forward.method, Path: forward.path})
+	if err != nil {
+		if isSSOCredentialRejected(err, credential) {
+			s.markSSOCredentialRejected(ctx, credential, fmt.Sprintf("%s SSO credential rejected", credential.Provider))
+		}
+		forward.lease.Release()
+		return nil, credential, err
+	}
+	if response.StatusCode != http.StatusUnauthorized {
+		return response, credential, nil
+	}
+	response.Body.Close()
+	refreshed, refreshErr := s.ensureOwnedResponseRefresh(ctx, forward, credential)
+	if refreshErr != nil {
+		return nil, credential, refreshErr
+	}
+	response, err = forward.adapter.ForwardResponse(forward.physicalCallCtx, provider.ResponseResourceRequest{Credential: refreshed, Method: forward.method, Path: forward.path})
+	if err != nil {
+		forward.lease.Release()
+		return nil, refreshed, err
+	}
+	return response, refreshed, nil
+}
+
+// ensureOwnedResponseRefresh 判定 401 账号是否永久不可刷新，否则刷新凭据供重放使用。
+func (s *Service) ensureOwnedResponseRefresh(ctx context.Context, forward ownedResponseForward, credential accountdomain.Credential) (accountdomain.Credential, error) {
+	if credential.AuthType == accountdomain.AuthTypeSSO {
+		s.markSSOCredentialRejected(ctx, credential, fmt.Sprintf("%s SSO credential rejected", credential.Provider))
+		forward.lease.Release()
+		return credential, ErrResponseAccountUnavailable
+	}
+	if s.markPermanentlyUnrefreshableCredentialRejected(ctx, credential) {
+		forward.lease.Release()
+		return credential, fmt.Errorf("%w: %w", ErrResponseAccountUnavailable, accountapp.ErrCredentialRefreshPermanent)
+	}
+	refreshed, refreshErr := s.accounts.EnsureCredential(ctx, credential, true)
+	if refreshErr != nil {
+		if errors.Is(refreshErr, accountapp.ErrCredentialRefreshPermanent) {
+			s.markCredentialRejectedAfterPermanentRefresh(ctx, credential)
+		}
+		forward.lease.Release()
+		return credential, refreshErr
+	}
+	return refreshed, nil
+}
+
+// applyOwnedResponseOutcome 记录成功观测，并在资源已删除或消失时清理本地归属。
+func (s *Service) applyOwnedResponseOutcome(ctx context.Context, input ResourceInput, method string, response *provider.Response, credential accountdomain.Credential) {
+	if response.StatusCode >= 200 && response.StatusCode < 300 {
+		s.selector.markSuccess(ctx, credential, false)
+		if method == http.MethodDelete {
+			_ = s.responses.Delete(ctx, input.ResponseID, input.ClientKey.ID)
+		}
+		return
+	}
+	if response.StatusCode == http.StatusNotFound || response.StatusCode == http.StatusGone {
+		_ = s.responses.Delete(ctx, input.ResponseID, input.ClientKey.ID)
+	}
+}
+
+func (s *Service) forwardOwnedResponse(ctx context.Context, input ResourceInput, method string) (*Result, error) {
+	target, err := s.resolveOwnedResponseTarget(ctx, input, method)
+	if err != nil {
+		return nil, err
+	}
+	physicalCallCtx := infraegress.WithPhysicalCallTrace(ctx, string(target.providerName), target.operation)
+	lease, err := s.selector.AcquirePinnedForKey(ctx, target.providerName, target.accountID, 0, "", "", false, target.accountScope)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrResponseAccountUnavailable, err)
 	}
@@ -1969,48 +1762,12 @@ func (s *Service) forwardOwnedResponse(ctx context.Context, input ResourceInput,
 	if input.RawQuery != "" {
 		path += "?" + input.RawQuery
 	}
-	response, err := adapter.ForwardResponse(physicalCallCtx, provider.ResponseResourceRequest{Credential: credential, Method: method, Path: path})
+	forward := ownedResponseForward{adapter: target.adapter, lease: lease, physicalCallCtx: physicalCallCtx, method: method, path: path}
+	response, credential, err := s.attemptOwnedResponseForward(ctx, forward, credential)
 	if err != nil {
-		if isSSOCredentialRejected(err, credential) {
-			s.markSSOCredentialRejected(ctx, credential, fmt.Sprintf("%s SSO credential rejected", credential.Provider))
-		}
-		lease.Release()
 		return nil, err
 	}
-	if response.StatusCode == http.StatusUnauthorized {
-		response.Body.Close()
-		if credential.AuthType == accountdomain.AuthTypeSSO {
-			s.markSSOCredentialRejected(ctx, credential, fmt.Sprintf("%s SSO credential rejected", credential.Provider))
-			lease.Release()
-			return nil, ErrResponseAccountUnavailable
-		}
-		if s.markPermanentlyUnrefreshableCredentialRejected(ctx, credential) {
-			lease.Release()
-			return nil, fmt.Errorf("%w: %w", ErrResponseAccountUnavailable, accountapp.ErrCredentialRefreshPermanent)
-		}
-		refreshed, refreshErr := s.accounts.EnsureCredential(ctx, credential, true)
-		if refreshErr != nil {
-			if errors.Is(refreshErr, accountapp.ErrCredentialRefreshPermanent) {
-				s.markCredentialRejectedAfterPermanentRefresh(ctx, credential)
-			}
-			lease.Release()
-			return nil, refreshErr
-		}
-		response, err = adapter.ForwardResponse(physicalCallCtx, provider.ResponseResourceRequest{Credential: refreshed, Method: method, Path: path})
-		credential = refreshed
-		if err != nil {
-			lease.Release()
-			return nil, err
-		}
-	}
-	if response.StatusCode >= 200 && response.StatusCode < 300 {
-		s.selector.markSuccess(ctx, credential, false)
-		if method == http.MethodDelete {
-			_ = s.responses.Delete(ctx, input.ResponseID, input.ClientKey.ID)
-		}
-	} else if response.StatusCode == http.StatusNotFound || response.StatusCode == http.StatusGone {
-		_ = s.responses.Delete(ctx, input.ResponseID, input.ClientKey.ID)
-	}
+	s.applyOwnedResponseOutcome(ctx, input, method, response, credential)
 	var once sync.Once
 	release := func() { once.Do(lease.Release) }
 	finalize := func(Usage, string, string) { release() }

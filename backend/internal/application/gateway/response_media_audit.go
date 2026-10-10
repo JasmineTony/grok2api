@@ -130,6 +130,43 @@ func decodeMediaJSONValue(decoder *json.Decoder) (*mediaJSONValue, error) {
 	}
 }
 
+// decodeMediaJSONObjectField 解析对象中一个已知键的值；未知键只做跳过，不保留正文。
+func decodeMediaJSONObjectField(decoder *json.Decoder, key string, object *mediaJSONObject) error {
+	var err error
+	switch key {
+	case "type":
+		object.typeName, err = decodeMediaShortString(decoder)
+	case "role":
+		object.role, err = decodeMediaShortString(decoder)
+	case "text":
+		object.textBytes, err = decodeMediaStringBytes(decoder)
+	case "image_url":
+		object.imageURLBytes, err = decodeMediaImageReference(decoder)
+	case "url":
+		object.urlBytes, err = decodeMediaDataURIBytes(decoder)
+	case "data":
+		object.dataBytes, err = decodeMediaBase64Bytes(decoder)
+	case "source":
+		var value *mediaJSONValue
+		value, err = decodeMediaJSONValue(decoder)
+		if value != nil && value.object != nil {
+			object.sourceType = value.object.typeName
+			object.sourceBytes = value.object.dataBytes
+		}
+	case "content":
+		object.content, err = decodeMediaJSONValue(decoder)
+	case "output":
+		object.output, err = decodeMediaJSONValue(decoder)
+	case "input":
+		object.input, err = decodeMediaJSONValue(decoder)
+	case "messages":
+		object.messages, err = decodeMediaJSONValue(decoder)
+	default:
+		err = skipMediaJSONValue(decoder)
+	}
+	return err
+}
+
 func decodeMediaJSONObject(decoder *json.Decoder) (*mediaJSONObject, error) {
 	object := &mediaJSONObject{}
 	for decoder.More() {
@@ -141,38 +178,7 @@ func decodeMediaJSONObject(decoder *json.Decoder) (*mediaJSONObject, error) {
 		if !ok {
 			return nil, fmt.Errorf("JSON object key is not a string")
 		}
-		switch key {
-		case "type":
-			object.typeName, err = decodeMediaShortString(decoder)
-		case "role":
-			object.role, err = decodeMediaShortString(decoder)
-		case "text":
-			object.textBytes, err = decodeMediaStringBytes(decoder)
-		case "image_url":
-			object.imageURLBytes, err = decodeMediaImageReference(decoder)
-		case "url":
-			object.urlBytes, err = decodeMediaDataURIBytes(decoder)
-		case "data":
-			object.dataBytes, err = decodeMediaBase64Bytes(decoder)
-		case "source":
-			var value *mediaJSONValue
-			value, err = decodeMediaJSONValue(decoder)
-			if value != nil && value.object != nil {
-				object.sourceType = value.object.typeName
-				object.sourceBytes = value.object.dataBytes
-			}
-		case "content":
-			object.content, err = decodeMediaJSONValue(decoder)
-		case "output":
-			object.output, err = decodeMediaJSONValue(decoder)
-		case "input":
-			object.input, err = decodeMediaJSONValue(decoder)
-		case "messages":
-			object.messages, err = decodeMediaJSONValue(decoder)
-		default:
-			err = skipMediaJSONValue(decoder)
-		}
-		if err != nil {
+		if err := decodeMediaJSONObjectField(decoder, key, object); err != nil {
 			return nil, err
 		}
 	}

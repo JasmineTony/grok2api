@@ -5,21 +5,17 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	accountdomain "github.com/chenyme/grok2api/backend/internal/domain/account"
 	"github.com/chenyme/grok2api/backend/internal/domain/audit"
 	"github.com/chenyme/grok2api/backend/internal/domain/clientkey"
 	modeldomain "github.com/chenyme/grok2api/backend/internal/domain/model"
-	infraegress "github.com/chenyme/grok2api/backend/internal/infra/egress"
-	"github.com/chenyme/grok2api/backend/internal/pkg/requestmeta"
 	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 )
 
@@ -209,6 +205,32 @@ func (s *Service) TranscribeSpeech(ctx context.Context, input STTInput) (*Result
 	})
 }
 
+// sttWordList 转换词条列表；field 决定官方兼容字段名（词条数组用 word，正文用 text）。
+func sttWordList(field string, words []provider.STTWord) []map[string]any {
+	items := make([]map[string]any, 0, len(words))
+	for _, word := range words {
+		item := map[string]any{field: word.Text, "start": word.Start, "end": word.End}
+		if word.Speaker != nil {
+			item["speaker"] = *word.Speaker
+		}
+		items = append(items, item)
+	}
+	return items
+}
+
+// sttChannelList 转换多声道结果，每个声道保留自己的词条列表。
+func sttChannelList(channels []provider.STTChannel) []map[string]any {
+	items := make([]map[string]any, 0, len(channels))
+	for _, channel := range channels {
+		item := map[string]any{"index": channel.Index, "text": channel.Text}
+		if len(channel.Words) > 0 {
+			item["words"] = sttWordList("text", channel.Words)
+		}
+		items = append(items, item)
+	}
+	return items
+}
+
 func formatSTTResponse(result provider.STTResult, responseFormat string) *provider.Response {
 	switch responseFormat {
 	case "text":
@@ -222,15 +244,7 @@ func formatSTTResponse(result provider.STTResult, responseFormat string) *provid
 	case "verbose_json":
 		payload := map[string]any{"task": "transcribe", "text": result.Text, "language": result.Language, "duration": result.Duration}
 		if len(result.Words) > 0 {
-			words := make([]map[string]any, 0, len(result.Words))
-			for _, word := range result.Words {
-				item := map[string]any{"word": word.Text, "start": word.Start, "end": word.End}
-				if word.Speaker != nil {
-					item["speaker"] = *word.Speaker
-				}
-				words = append(words, item)
-			}
-			payload["words"] = words
+			payload["words"] = sttWordList("word", result.Words)
 		}
 		return jsonVoiceResponse(http.StatusOK, payload)
 	}
@@ -242,274 +256,12 @@ func formatSTTResponse(result provider.STTResult, responseFormat string) *provid
 	}
 	payload := map[string]any{"text": result.Text, "language": result.Language, "duration": result.Duration}
 	if len(result.Words) > 0 {
-		words := make([]map[string]any, 0, len(result.Words))
-		for _, word := range result.Words {
-			item := map[string]any{"text": word.Text, "start": word.Start, "end": word.End}
-			if word.Speaker != nil {
-				item["speaker"] = *word.Speaker
-			}
-			words = append(words, item)
-		}
-		payload["words"] = words
+		payload["words"] = sttWordList("text", result.Words)
 	}
 	if len(result.Channels) > 0 {
-		channels := make([]map[string]any, 0, len(result.Channels))
-		for _, channel := range result.Channels {
-			item := map[string]any{"index": channel.Index, "text": channel.Text}
-			if len(channel.Words) > 0 {
-				words := make([]map[string]any, 0, len(channel.Words))
-				for _, word := range channel.Words {
-					wordItem := map[string]any{"text": word.Text, "start": word.Start, "end": word.End}
-					if word.Speaker != nil {
-						wordItem["speaker"] = *word.Speaker
-					}
-					words = append(words, wordItem)
-				}
-				item["words"] = words
-			}
-			channels = append(channels, item)
-		}
-		payload["channels"] = channels
+		payload["channels"] = sttChannelList(result.Channels)
 	}
 	return jsonVoiceResponse(http.StatusOK, payload)
-}
-
-func (s *Service) executeVoice(
-	ctx context.Context,
-	requestID string,
-	key clientkey.Key,
-	publicModel string,
-	operation audit.Operation,
-	capability modeldomain.Capability,
-	consumesQuota bool,
-	reservation audit.PricingResult,
-	method string,
-	path string,
-	headers map[string][]string,
-	supports voiceProviderSupport,
-	execute func(context.Context, accountdomain.Provider, accountdomain.Credential, string) (voiceExecutionResult, error),
-) (*Result, error) {
-	ctx, egressTrace := infraegress.WithTrace(ctx)
-	startedAt := time.Now()
-	eventID := newAuditEventID()
-	routes, err := s.models.GetByPublicIDCandidates(ctx, publicModel)
-	if err != nil {
-		return nil, ErrModelNotFound
-	}
-	route, preselectedSession, err := s.selectSchedulableMediaRoute(ctx, routes, key, capability, consumesQuota, supports)
-	if err != nil {
-		// Keep selection failures observable in request audits when no same-name
-		// target is schedulable; capability/scope failures still return directly.
-		route, err = s.selectMediaRoute(routes, key, capability, supports)
-		if err != nil {
-			return nil, err
-		}
-		preselectedSession = nil
-	}
-	externalModel := modeldomain.ExternalPublicID(route.Provider, route.PublicID)
-	auditBase := audit.Record{
-		EventID: eventID, RequestID: requestID, ClientKeyID: key.ID, ClientKeyName: key.Name,
-		ClientIP:     requestmeta.ClientIP(ctx),
-		ModelRouteID: route.ID, ModelPublicID: externalModel, ModelUpstreamModel: modeldomain.DisplayUpstreamModel(route.Provider, route.UpstreamModel),
-		Provider: string(route.Provider), Operation: operation, UsageSource: audit.UsageSourceNone,
-		RequestMethod: method, RequestPath: path, RequestHeaders: headers,
-	}
-	if err := s.checkLedgerReady(); err != nil {
-		return nil, err
-	}
-	if reservation.CostInUSDTicks > 0 {
-		if _, err := s.clientKeys.ReserveBilling(ctx, key, eventID, reservation.CostInUSDTicks, mediaBillingReservationTTL); err != nil {
-			return nil, err
-		}
-	}
-	writeFailureAudit := func(statusCode int, errorCode string, credential *accountdomain.Credential) {
-		record := auditBase
-		record.StatusCode = statusCode
-		record.ErrorCode = errorCode
-		record.DurationMS = time.Since(startedAt).Milliseconds()
-		record.CreatedAt = time.Now().UTC()
-		if credential != nil {
-			accountID := credential.ID
-			record.AccountID = &accountID
-			record.AccountName = credential.Name
-		}
-		applyAuditEgress(&record, egressTrace, route.Provider)
-		persistCtx, cancel := context.WithTimeout(context.Background(), finalizationTimeout)
-		defer cancel()
-		if auditErr := s.audits.Create(persistCtx, record); auditErr != nil {
-			s.logger.Error("request_usage_write_failed", "event_id", record.EventID, "request_id", requestID, "error", auditErr)
-		}
-	}
-	quotaMode := ""
-	if consumesQuota {
-		quotaMode = s.providers.QuotaMode(route.Provider, route.UpstreamModel)
-	}
-	attemptPolicy := newRoutingAttemptPolicy(int(s.maxAttempts.Load()))
-	excluded := make(map[uint64]bool)
-	selection := preselectedSession
-	var lease *accountLease
-	var credential accountdomain.Credential
-	var response *provider.Response
-	var completedPricing audit.PricingResult
-	var responseRequestScoped bool
-	var lastCredentialFailure *accountdomain.Credential
-	var lastCredentialError error
-	for attempt := 0; attemptPolicy.allows(attempt); attempt++ {
-		if selection == nil {
-			selection, err = s.selector.beginSelectionSessionForKey(ctx, route.Provider, route.ID, route.UpstreamModel, quotaMode, "", excluded, false, key.AccountScope())
-		}
-		if err == nil {
-			lease, err = selection.Acquire(ctx, excluded, false)
-		}
-		if err != nil {
-			errorCode := "upstream_unavailable"
-			var selectionFailure *SelectionUnavailableError
-			if errors.As(err, &selectionFailure) {
-				errorCode = selectionFailure.Code()
-			}
-			writeFailureAudit(http.StatusServiceUnavailable, errorCode, lastCredentialFailure)
-			return nil, fmt.Errorf("%w: %w", ErrNoAvailableAccount, err)
-		}
-		excluded[lease.Credential.ID] = true
-		credential, err = s.accounts.EnsureCredential(ctx, lease.Credential, false)
-		if err != nil {
-			failedCredential := lease.Credential
-			lastCredentialFailure = &failedCredential
-			lastCredentialError = err
-			lease.Release()
-			continue
-		}
-		lease.markSelectorUpstreamStarted()
-		responseRequestScoped = false
-		execution, executionErr := execute(ctx, route.Provider, credential, route.UpstreamModel)
-		response, completedPricing, err = execution.response, execution.pricing, executionErr
-		if err != nil {
-			if _, ok := provider.ErrorHTTPStatus(err); ok {
-				responseRequestScoped = provider.IsRequestScopedError(err)
-				response, err = voiceErrorResponse(err)
-			} else if isSSOCredentialRejected(err, credential) {
-				s.markSSOCredentialRejected(ctx, credential, fmt.Sprintf("%s SSO credential rejected", credential.Provider))
-				failedCredential := credential
-				lastCredentialFailure = &failedCredential
-				lastCredentialError = provider.ErrUnauthorized
-				lease.Release()
-				continue
-			} else {
-				failure := newTransportUpstreamFailure(err, credential.ID, credential.Name)
-				lastCredentialError = failure
-				if ctx.Err() == nil && isRetryableTransportFailure(credential.Provider, err) && attemptPolicy.hasNext(attempt) {
-					// Transport failures are normally tied to the selected egress. Retry the
-					// same account after the adapter has invalidated/rebuilt that transport,
-					// without cooling an otherwise healthy credential.
-					delete(excluded, credential.ID)
-					if selection != nil {
-						selection.RetryAccount(credential.ID)
-					}
-					lease.Release()
-					continue
-				}
-				lease.Release()
-				writeFailureAudit(failure.HTTPStatus, failure.AuditCode(), &credential)
-				return nil, failure
-			}
-			if err != nil {
-				lease.Release()
-				writeFailureAudit(http.StatusBadGateway, "upstream_unavailable", &credential)
-				return nil, err
-			}
-		}
-		if response.StatusCode == http.StatusUnauthorized && credential.AuthType == accountdomain.AuthTypeSSO {
-			_, _ = readRetryableBody(response.Body)
-			s.markSSOCredentialRejected(ctx, credential, fmt.Sprintf("%s SSO credential rejected", credential.Provider))
-			failedCredential := credential
-			lastCredentialFailure = &failedCredential
-			lastCredentialError = provider.ErrUnauthorized
-			response = nil
-			lease.Release()
-			continue
-		}
-		if s.providers.RetryForbiddenAsEgress(credential.Provider) && response.StatusCode == http.StatusForbidden && !responseRequestScoped && attempt == 0 && attemptPolicy.hasNext(attempt) {
-			_, _ = readRetryableBody(response.Body)
-			delete(excluded, credential.ID)
-			if selection != nil {
-				selection.RetryAccount(credential.ID)
-			}
-			lease.Release()
-			continue
-		}
-		if response.StatusCode == http.StatusPaymentRequired || response.StatusCode == http.StatusTooManyRequests {
-			retryAfter := parseRetryAfter(response.Header.Get("Retry-After"), time.Now().UTC())
-			if quotaKind, _ := s.providers.QuotaKind(credential.Provider); quotaKind == provider.QuotaRemoteWindow && lease.QuotaMode != "" {
-				state, reconcileErr := s.accounts.ReconcileRateLimit(ctx, credential.ID, lease.QuotaMode, retryAfter)
-				s.applyRateLimitReconciliation(ctx, credential, response.StatusCode, retryAfter, state, reconcileErr)
-			} else {
-				s.selector.MarkFailure(ctx, credential, response.StatusCode, retryAfter)
-			}
-			if attemptPolicy.hasNext(attempt) {
-				_, _ = readRetryableBody(response.Body)
-				lease.Release()
-				continue
-			}
-		}
-		if response.StatusCode >= http.StatusInternalServerError && attemptPolicy.hasNext(attempt) {
-			_, _ = readRetryableBody(response.Body)
-			lease.Release()
-			continue
-		}
-		break
-	}
-	if response == nil {
-		writeFailureAudit(http.StatusServiceUnavailable, "upstream_unavailable", lastCredentialFailure)
-		if lastCredentialError == nil {
-			lastCredentialError = ErrNoAvailableAccount
-		}
-		return nil, fmt.Errorf("%w: %w", ErrNoAvailableAccount, lastCredentialError)
-	}
-	accountID := credential.ID
-	var once sync.Once
-	finalize := func(_ Usage, _ string, errorCode string) {
-		once.Do(func() {
-			successful := auditRequestSucceeded(response.StatusCode, errorCode)
-			lease.completeSelectorObservation(successful)
-			lease.Release()
-			budget := newFinalizationBudget(string(operation), string(route.Provider))
-			record := auditBase
-			record.AccountID, record.AccountName, record.StatusCode = &accountID, credential.Name, response.StatusCode
-			record.ErrorCode = errorCode
-			record.DurationMS, record.CreatedAt = time.Since(startedAt).Milliseconds(), time.Now().UTC()
-			applyAuditEgress(&record, egressTrace, route.Provider)
-			if successful && completedPricing.CostInUSDTicks > 0 {
-				record.EstimatedCostInUSDTicks = completedPricing.CostInUSDTicks
-				record.PricingModel = completedPricing.Model
-				record.PricingVersion = audit.OfficialPricingAsOf
-			}
-			if successful && response.QuotaUnits > 0 && quotaMode != "" && quotaMode != "weekly" {
-				units := response.QuotaUnits
-				var updated bool
-				err := budget.run("quota_decrement", finalizationQuotaBudget, func(stageCtx context.Context) error {
-					var decrementErr error
-					updated, decrementErr = s.accounts.DecrementQuota(stageCtx, accountID, quotaMode, units)
-					return decrementErr
-				})
-				if err != nil {
-					s.logger.Warn("voice_quota_decrement_failed", "provider", route.Provider, "account_id", accountID, "mode", quotaMode, "units", units, "error", err)
-				} else if updated {
-					s.selector.ConsumeQuota(route.Provider, accountID, quotaMode, units)
-				}
-			}
-			if successful && response.QuotaUnits > 0 && quotaMode != "" {
-				if quotaKind, _ := s.providers.QuotaKind(route.Provider); quotaKind == provider.QuotaRemoteWindow {
-					s.accounts.QueueQuotaRefresh(accountID, quotaMode)
-				}
-			}
-			if err := budget.run("audit", finalizationAuditBudget, func(stageCtx context.Context) error {
-				return s.audits.Create(stageCtx, record)
-			}); err != nil {
-				s.logger.Error("request_usage_write_failed", "event_id", record.EventID, "request_id", requestID, "error", err)
-			}
-		})
-	}
-	return &Result{StatusCode: response.StatusCode, Status: response.Status, Header: response.Header, Body: &finalizingBody{ReadCloser: response.Body, finalize: func() { finalize(Usage{}, "", "stream_closed") }}, Finalize: finalize}, nil
 }
 
 func jsonVoiceResponse(status int, value any) *provider.Response {
