@@ -96,15 +96,10 @@ func (s *Service) executeVoice(
 	if err := s.checkLedgerReady(); err != nil {
 		return nil, err
 	}
-	if reservation.CostInUSDTicks > 0 {
-		if _, err := s.clientKeys.ReserveBilling(ctx, key, eventID, reservation.CostInUSDTicks, mediaBillingReservationTTL); err != nil {
-			return nil, err
-		}
+	if err := s.reserveVoiceBilling(ctx, key, eventID, reservation); err != nil {
+		return nil, err
 	}
-	quotaMode := ""
-	if consumesQuota {
-		quotaMode = s.providers.QuotaMode(route.Provider, route.UpstreamModel)
-	}
+	quotaMode := s.voiceQuotaMode(route, consumesQuota)
 	state, err := s.runVoiceAttempts(ctx, voiceExecutionPlan{
 		key: key, route: route, quotaMode: quotaMode, preselected: preselectedSession,
 		policy: newRoutingAttemptPolicy(int(s.maxAttempts.Load())), execute: execute,
@@ -116,16 +111,37 @@ func (s *Service) executeVoice(
 	if state.outcome.response == nil {
 		return nil, s.reportVoiceSelectionFailure(auditCtx, state.outcome)
 	}
-	finalization := &voiceFinalization{
+	return buildVoiceResult(&voiceFinalization{
 		service: s, auditCtx: auditCtx, operation: operation, route: route,
 		credential: state.outcome.credential, response: state.outcome.response, lease: state.outcome.lease,
 		accountID: state.outcome.credential.ID, completedPricing: state.completedPricing, quotaMode: quotaMode,
+	}), nil
+}
+
+// reserveVoiceBilling 按定价结果预留语音请求额度；未定价时不预留。
+func (s *Service) reserveVoiceBilling(ctx context.Context, key clientkey.Key, eventID string, reservation audit.PricingResult) error {
+	if reservation.CostInUSDTicks <= 0 {
+		return nil
 	}
+	_, err := s.clientKeys.ReserveBilling(ctx, key, eventID, reservation.CostInUSDTicks, mediaBillingReservationTTL)
+	return err
+}
+
+// voiceQuotaMode 只在请求确实消耗额度时解析上游额度模式。
+func (s *Service) voiceQuotaMode(route modeldomain.Route, consumesQuota bool) string {
+	if !consumesQuota {
+		return ""
+	}
+	return s.providers.QuotaMode(route.Provider, route.UpstreamModel)
+}
+
+// buildVoiceResult 基于结算载体构造客户端可见结果。
+func buildVoiceResult(finalization *voiceFinalization) *Result {
 	return &Result{
 		StatusCode: finalization.response.StatusCode, Status: finalization.response.Status, Header: finalization.response.Header,
 		Body:     &finalizingBody{ReadCloser: finalization.response.Body, finalize: func() { finalization.finalize(Usage{}, "", "stream_closed") }},
 		Finalize: finalization.finalize,
-	}, nil
+	}
 }
 
 // reportVoiceSelectionFailure 落库账号选择失败的审计并返回统一错误。
@@ -141,19 +157,21 @@ func (s *Service) reportVoiceSelectionFailure(auditCtx mediaAuditContext, outcom
 // runVoiceAttempts 按运行时尝试策略依次获取账号并执行语音上游请求。
 func (s *Service) runVoiceAttempts(ctx context.Context, plan voiceExecutionPlan) (voiceAttemptState, error) {
 	state := voiceAttemptState{excluded: make(map[uint64]bool), selection: plan.preselected}
-	var err error
 	for attempt := 0; plan.policy.allows(attempt); attempt++ {
+		// acquireErr 每轮独立：selection 只在第 1 轮建立，其后轮次的租约获取不应受
+		// 上一轮上游错误（carriedErr）影响，否则存在健康账号时也会直接判定池耗尽。
+		var acquireErr error
 		if state.selection == nil {
-			state.selection, err = s.selector.beginSelectionSessionForKey(ctx, plan.route.Provider, plan.route.ID, plan.route.UpstreamModel, plan.quotaMode, "", state.excluded, false, plan.key.AccountScope())
+			state.selection, acquireErr = s.selector.beginSelectionSessionForKey(ctx, plan.route.Provider, plan.route.ID, plan.route.UpstreamModel, plan.quotaMode, "", state.excluded, false, plan.key.AccountScope())
 		}
-		if err == nil {
-			state.outcome.lease, err = state.selection.Acquire(ctx, state.excluded, false)
+		if acquireErr == nil {
+			state.outcome.lease, acquireErr = state.selection.Acquire(ctx, state.excluded, false)
 		}
-		if err != nil {
+		if acquireErr != nil {
 			state.outcome.failureStatus = http.StatusServiceUnavailable
-			state.outcome.failureCode = selectionFailureCode(err)
+			state.outcome.failureCode = selectionFailureCode(acquireErr)
 			state.outcome.failureCredential = state.outcome.lastCredentialFailure
-			return state, fmt.Errorf("%w: %w", ErrNoAvailableAccount, err)
+			return state, fmt.Errorf("%w: %w", ErrNoAvailableAccount, acquireErr)
 		}
 		state.excluded[state.outcome.lease.Credential.ID] = true
 		if !s.ensureVoiceAttemptCredential(ctx, &state) {
@@ -162,10 +180,9 @@ func (s *Service) runVoiceAttempts(ctx context.Context, plan voiceExecutionPlan)
 		state.outcome.lease.markSelectorUpstreamStarted()
 		state.responseRequestScoped = false
 		execution, executionErr := plan.execute(ctx, plan.route.Provider, state.outcome.credential, plan.route.UpstreamModel)
-		state.outcome.response, state.completedPricing, err = execution.response, execution.pricing, executionErr
-		if err != nil {
-			retry, carriedErr, fatalErr := s.applyVoiceExecutionError(ctx, plan, &state, executionErr, attempt)
-			err = carriedErr
+		state.outcome.response, state.completedPricing = execution.response, execution.pricing
+		if executionErr != nil {
+			retry, fatalErr := s.applyVoiceExecutionError(ctx, plan, &state, executionErr, attempt)
 			if fatalErr != nil {
 				return state, fatalErr
 			}
@@ -195,20 +212,20 @@ func (s *Service) ensureVoiceAttemptCredential(ctx context.Context, state *voice
 	return true
 }
 
-// applyVoiceExecutionError 归类上游执行错误。返回的 carriedErr 是既有循环变量 err 在该分支后的值，
-// 决定下一次迭代是否仍能获取租约；fatalErr 非空表示终态失败并已填好审计字段。
-func (s *Service) applyVoiceExecutionError(ctx context.Context, plan voiceExecutionPlan, state *voiceAttemptState, executionErr error, attempt int) (bool, error, error) {
+// applyVoiceExecutionError 归类上游执行错误。retry 为 true 表示调用方应换号/重试下一轮；
+// 返回的错误非空表示终态失败并已填好审计字段。租约释放在本函数内完成。
+func (s *Service) applyVoiceExecutionError(ctx context.Context, plan voiceExecutionPlan, state *voiceAttemptState, executionErr error, attempt int) (bool, error) {
 	if _, ok := provider.ErrorHTTPStatus(executionErr); ok {
-		// 上游返回可映射的 HTTP 状态：转为客户端可见的错误响应，err 随之被清除。
+		// 上游返回可映射的 HTTP 状态：转为客户端可见的错误响应，交由响应码分支继续处理。
 		state.responseRequestScoped = provider.IsRequestScopedError(executionErr)
 		response, err := voiceErrorResponse(executionErr)
 		if err != nil {
 			state.outcome.lease.Release()
 			state.outcome.failureStatus, state.outcome.failureCode, state.outcome.failureCredential = http.StatusBadGateway, "upstream_unavailable", &state.outcome.credential
-			return false, executionErr, err
+			return false, err
 		}
 		state.outcome.response = response
-		return false, nil, nil
+		return false, nil
 	}
 	if isSSOCredentialRejected(executionErr, state.outcome.credential) {
 		s.markSSOCredentialRejected(ctx, state.outcome.credential, fmt.Sprintf("%s SSO credential rejected", state.outcome.credential.Provider))
@@ -216,7 +233,7 @@ func (s *Service) applyVoiceExecutionError(ctx context.Context, plan voiceExecut
 		state.outcome.lastCredentialFailure = &failedCredential
 		state.outcome.lastCredentialError = provider.ErrUnauthorized
 		state.outcome.lease.Release()
-		return true, executionErr, nil
+		return true, nil
 	}
 	failure := newTransportUpstreamFailure(executionErr, state.outcome.credential.ID, state.outcome.credential.Name)
 	state.outcome.lastCredentialError = failure
@@ -226,11 +243,11 @@ func (s *Service) applyVoiceExecutionError(ctx context.Context, plan voiceExecut
 		// without cooling an otherwise healthy credential.
 		retryExcludedAccount(state.excluded, state.selection, state.outcome.credential.ID)
 		state.outcome.lease.Release()
-		return true, executionErr, nil
+		return true, nil
 	}
 	state.outcome.lease.Release()
 	state.outcome.failureStatus, state.outcome.failureCode, state.outcome.failureCredential = failure.HTTPStatus, failure.AuditCode(), &state.outcome.credential
-	return false, executionErr, failure
+	return false, failure
 }
 
 // retryVoiceAttemptAfterResponse 处理已收到上游响应的可重试状态码，返回是否需要换号重试。
