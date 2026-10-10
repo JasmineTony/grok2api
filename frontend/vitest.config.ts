@@ -12,57 +12,67 @@ export default mergeConfig(
   defineConfig({
     test: {
       environment: "jsdom",
-      // 限制并行度：默认按核心数起 worker，在 8 逻辑核机器上跑 24 个文件 + 覆盖率插桩时
-      // 会把交互型用例压到 5s 默认超时之上（实测 24 worker 18 失败、4 worker 5 失败、1 worker 全过），
-      // 属于 CPU 饱和而非逻辑缺陷。这里固定 4，使本地与 CI 结果可复现；
-      // 不通过放宽断言或删除用例来掩盖。
-      maxWorkers: 4,
+      // 并行度与超时口径：交互型用例 + 覆盖率插桩在满载时会把单个用例压到 5s 默认超时之上，
+      // 属 CPU 饱和/GC 压力，不是逻辑挂起。实测证据：
+      //  - 24 文件 / 245 用例：24 worker 18 失败、4 worker 5 失败、1 worker 全过（阶段 5）
+      //  - 63 文件 / 682 用例：4 worker 1 个超时；2 worker 全过（阶段 6 早期）
+      //  - 155 文件 / 800+ 用例：2 worker 下 2 个用例超时，同文件单跑 21/21 全过（阶段 6 末）
+      // 单用例实测 wall time 本就可达 2–3.2s（egress 交互用例），因此 5s 默认值对重型交互用例过紧。
+      // 这里按真实成本设定超时，不通过删除用例、放宽断言或无条件重试来掩盖失败。
+      maxWorkers: 2,
+      testTimeout: 10000,
       setupFiles: ["./src/test/setup.ts"],
       // 只接管 *.test.tsx（React 组件测试）；既有 *.test.ts 仍由 `pnpm test` 的 node:test 运行。
       include: ["src/**/*.test.tsx"],
       coverage: {
         provider: "v8",
         reporter: ["text", "lcov"],
-        // 覆盖率门槛按 ratchet 逐阶段扩大：只纳入已达 76% 的文件；未达标文件必须显式登记，不得静默排除。
-        // 阶段 4 现状：client-keys 与 models 的新模块均已达标并纳入；
-        // accounts 拆分出的多数新模块（各弹窗、批量任务、导出等）实测仅 0–45%，
-        // 因此**未**纳入门槛，属已登记的未达标项（见 frontend/AUDIT.md 阶段 4 小节），
-        // 其行为由账号集成测试覆盖，但不能据此声称满足 TEST-1。
+        // 覆盖率口径（AGENTS.md TEST-1 / TEST-2）：
+        // 阶段 3–5 用「手工维护达标文件清单」，导致未列入的模块（accounts、settings 页面、quality-guard 页面）
+        // 长期不可见。阶段 6 起改为「按已重构模块整目录纳入 + 例外逐项登记原因」：
+        // 整目录纳入使模块内新增文件自动受门槛约束，例外只用于口径原因（测试分层/barrel/测试支撑），
+        // 与 frontend/AUDIT.md 的「未达标登记」一一对应，不静默排除。
         include: [
-          "src/shared/hooks/use-chart.ts",
-          "src/features/accounts/account-quota.tsx",
-          "src/features/settings/use-settings.ts",
-          "src/features/system/use-version-update.ts",
-          "src/shared/api/client.ts",
-          "src/shared/auth/auth-store.ts",
-          "src/shared/auth/use-auth.ts",
+          "src/app/**",
+          "src/features/accounts/**",
+          "src/features/audits/**",
+          "src/features/client-keys/**",
+          "src/features/creative-console/**",
+          "src/features/dashboard/**",
+          "src/features/docs/**",
+          "src/features/media/**",
+          "src/features/models/**",
+          "src/features/quality-guard/**",
+          "src/features/settings/**",
+          "src/features/system/**",
+          "src/shared/api/**",
+          "src/shared/auth/**",
+          "src/shared/hooks/**",
           "src/shared/components/virtual-table-body.tsx",
-          "src/shared/hooks/use-debounced-value.ts",
-          "src/features/models/use-model-bulk-mutations.ts",
-          "src/features/models/use-model-dialogs.ts",
-          "src/features/models/use-model-form.ts",
-          "src/features/models/use-model-list.ts",
-          "src/features/models/use-model-save-mutation.ts",
-          "src/features/models/use-model-selection.ts",
-          "src/features/client-keys/client-key-billing-usage.tsx",
-          "src/features/client-keys/client-key-delete-dialogs.tsx",
-          "src/features/client-keys/client-key-form-dialog.tsx",
-          "src/features/client-keys/client-key-form-fields.tsx",
-          "src/features/client-keys/client-key-form-schema.ts",
-          "src/features/client-keys/client-key-model-options.tsx",
-          "src/features/client-keys/client-key-scope-fields.tsx",
-          "src/features/client-keys/client-key-scope-select.tsx",
-          "src/features/client-keys/client-key-scope-summary.ts",
-          "src/features/client-keys/client-key-secret-dialog.tsx",
-          "src/features/client-keys/client-key-status.tsx",
-          "src/features/client-keys/client-keys-api.ts",
-          "src/features/client-keys/client-keys-page.tsx",
-          "src/features/client-keys/client-keys-table.tsx",
-          "src/features/client-keys/client-keys-toolbar.tsx",
         ],
-        // 业务 UI 门槛 76%（AGENTS.md TEST-1）；自定义 hook 按 AGENTS.md TEST-2 单独收紧到 100%。
-        // hook 与展示组件已拆分（shared/hooks/use-chart.ts / use-version-update.ts），
-        // 否则文件级阈值会把无关的渲染分支一并纳入 100% 要求。
+        exclude: [
+          "src/**/*.d.ts",
+          // 测试本身不参与业务代码覆盖率
+          "src/**/*.test.ts",
+          "src/**/*.test.tsx",
+          // 测试支撑（fixture / 路由桩），非业务代码
+          "src/**/*-test-support.ts",
+          "src/**/*-test-support.tsx",
+          "src/test/**",
+          // 纯逻辑模块：测试位于 node:test 层（同名 *.test.ts，由 `pnpm test` 运行），
+          // jsdom 覆盖率运行不统计它们；用例数与断言见 frontend/AUDIT.md「测试分层」。
+          "src/features/audits/audit-format.ts",
+          "src/features/audits/audit-detail-format.ts",
+          "src/features/audits/audit-usage.ts",
+          "src/features/dashboard/dashboard-trend-buckets.ts",
+          "src/features/dashboard/dashboard-trend-series.ts",
+          "src/features/docs/api-docs-examples.ts",
+          "src/features/docs/endpoint-definitions.ts",
+          // 纯 re-export barrel：无可执行语句，报 0/0/0/0 属统计假象
+          "src/features/creative-console/creative-console-api.ts",
+        ],
+        // 业务 UI 门槛 76%（TEST-1）；自定义 hook 按 TEST-2 单独收紧到 100%。
+        // hook 与展示组件必须分离，否则文件级 100% 会把无关渲染分支一并纳入。
         thresholds: {
           lines: 76,
           functions: 76,
