@@ -443,3 +443,16 @@
 | 生产构建       | `pnpm build`              | Passed（1.32s）                                                                                 |
 | 体积预算       | `pnpm check:budget`       | Passed（首屏 249.99 / 260；全部 JS 620.66 / 650；CSS 16.65 / 20；最大 chunk 458.55 / 500 原始） |
 | 真实全栈 E2E   | `pnpm test:e2e`           | Passed（16 passed / 0 failed / 36.8s / 4 workers / `retries: 0`）                               |
+
+### 13.6 CI 首次运行暴露并修复的 E2E 隔离缺陷（P1）
+
+PR #1 上的 CI run `38043685073`（sha `8534d1a6`）Verify job：后端 Test / Assert required integration tests ran / **Race** / Vet / Swagger diff 与前端 `pnpm verify` 全部 **success**，「Run full-stack E2E」**failure（1 failed / 15 passed）**。
+
+| 观测项   | 事实                                                                                                                                                                                                                                                                                                                                              |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 失败用例 | `e2e/client-keys.e2e.ts`「删除密钥：确认后行与真实服务端记录同时消失」                                                                                                                                                                                                                                                                            |
+| 失败断言 | `expect(page.getByTestId("client-keys-empty")).toContainText(/^(暂无数据\|No data)$/)`（第 171 行），`element(s) not found`，15s 超时                                                                                                                                                                                                             |
+| 根因     | 该断言要求**整个列表**为空，而 Playwright 每个 worker 共享同一临时后端与 SQLite。本地 4 worker 下「编辑密钥」与「删除密钥」被分到不同 worker 恰好通过；CI 2 worker 下两者同 worker，「编辑密钥」留下的密钥使列表非空 → 空态元素不存在。同文件另有 2 处同类隐式依赖（创建用例的空态断言与按整库为空的 API 断言、编辑用例切回「可用」筛选后的空态） |
+| 修复     | 新增 `searchKeys` 助手，用唯一搜索词把列表收敛到确定集合后再断言空态；按整库为空的 API 断言改为按唯一名称查询。断言仍针对用户可见结果与真实服务端事实，未放宽、未删除断言                                                                                                                                                                         |
+| 验证     | `npx playwright test --workers=2`（复现 CI 条件）**16 passed / 0 failed / 58.7s**；`pnpm typecheck:e2e` exit 0                                                                                                                                                                                                                                    |
+| 结论     | 这是**测试隔离缺陷**，不是产品缺陷；此前「本地 4 worker 16/16 通过」不构成 CI 通过的证据，worker 调度顺序曾使断言偶然成立                                                                                                                                                                                                                         |
