@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chenyme/grok2api/backend/internal/domain/account"
 	"github.com/chenyme/grok2api/backend/internal/ports/provider"
@@ -339,5 +340,112 @@ func TestPrepareImagineConnectionPayloads(t *testing.T) {
 	}
 	if !bytes.Contains(encoded, []byte(`"requestId":"img-1"`)) || !bytes.Contains(encoded, []byte(`"num_generations":2`)) {
 		t.Fatalf("request 载荷 = %s", encoded)
+	}
+}
+
+func TestDecodeSSOTokenPollResponse(t *testing.T) {
+	token, pending, slowDown, err := decodeSSOTokenPollResponse(http.StatusOK, []byte(`{"access_token":"a","refresh_token":"r","id_token":"i","expires_in":0}`))
+	if err != nil || pending || slowDown {
+		t.Fatalf("token = %+v pending=%v slowDown=%v err=%v", token, pending, slowDown, err)
+	}
+	if token.AccessToken != "a" || token.RefreshToken != "r" || token.IDToken != "i" {
+		t.Fatalf("token = %+v", token)
+	}
+	// expires_in 缺省必须回退为 3600 秒，避免过期时间落在当前时刻。
+	if until := time.Until(token.ExpiresAt); until < 59*time.Minute || until > 61*time.Minute {
+		t.Fatalf("ExpiresAt = %v (until=%v)", token.ExpiresAt, until)
+	}
+	if _, pending, _, err := decodeSSOTokenPollResponse(http.StatusBadRequest, []byte(`{"error":"authorization_pending"}`)); err != nil || !pending {
+		t.Fatalf("authorization_pending: pending=%v err=%v", pending, err)
+	}
+	if _, _, slowDown, err := decodeSSOTokenPollResponse(http.StatusBadRequest, []byte(`{"error":"slow_down"}`)); err != nil || !slowDown {
+		t.Fatalf("slow_down: slowDown=%v err=%v", slowDown, err)
+	}
+	if _, _, _, err := decodeSSOTokenPollResponse(http.StatusBadRequest, []byte(`{"error":"access_denied"}`)); !errors.Is(err, provider.ErrAuthorizationDenied) {
+		t.Fatalf("access_denied err = %v", err)
+	}
+	if _, _, _, err := decodeSSOTokenPollResponse(http.StatusForbidden, []byte(`{"error":"invalid_grant"}`)); err == nil || !strings.Contains(err.Error(), "403") {
+		t.Fatalf("4xx err = %v", err)
+	}
+	if _, _, _, err := decodeSSOTokenPollResponse(http.StatusOK, []byte(`{`)); err == nil || !strings.Contains(err.Error(), "解析 xAI OAuth Token") {
+		t.Fatalf("非法 JSON err = %v", err)
+	}
+	// 2xx 但没有 access_token 不是成功响应，必须继续走错误分支。
+	if _, _, _, err := decodeSSOTokenPollResponse(http.StatusOK, []byte(`{"expires_in":10}`)); err == nil {
+		t.Fatalf("缺失 access_token 的 2xx 应返回错误")
+	}
+}
+
+func TestDownloadVideoContentType(t *testing.T) {
+	cases := []struct {
+		header string
+		want   string
+	}{
+		{"video/mp4", "video/mp4"},
+		{"video/MP4; charset=binary", "video/mp4"},
+		{"application/octet-stream", "video/mp4"},
+		{"", "video/mp4"},
+		{" text/html; charset=utf-8 ", ""},
+		{"image/png", ""},
+	}
+	for _, item := range cases {
+		header := http.Header{}
+		if item.header != "" {
+			header.Set("Content-Type", item.header)
+		}
+		if got := downloadVideoContentType(header); got != item.want {
+			t.Errorf("Content-Type %q = %q, want %q", item.header, got, item.want)
+		}
+	}
+}
+
+func TestParseWebQuotaModeWindow(t *testing.T) {
+	credential := account.Credential{ID: 7}
+	window, err := parseWebQuotaModeWindow("grok-4", credential, []byte(`{"windowSizeSeconds":7200,"remainingQueries":-3,"totalQueries":40}`))
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if window.Mode != "grok-4" || window.AccountID != 7 || window.Total != 40 || window.Remaining != 0 || window.WindowSeconds != 7200 {
+		t.Fatalf("window = %+v", window)
+	}
+	if window.ResetAt == nil || window.SyncedAt == nil || window.Source != account.QuotaSourceUpstream {
+		t.Fatalf("window 时间与来源 = %+v", window)
+	}
+	// 缺少 windowSizeSeconds 时回退 7200 秒。
+	window, err = parseWebQuotaModeWindow("grok-4", credential, []byte(`{"windowSizeSeconds":0,"remainingQueries":5,"totalQueries":40}`))
+	if err != nil || window.WindowSeconds != 7200 {
+		t.Fatalf("默认窗口 = %+v err = %v", window, err)
+	}
+	if _, err := parseWebQuotaModeWindow("grok-4", credential, []byte(`{"totalQueries":0}`)); err == nil {
+		t.Fatal("totalQueries<=0 应返回错误")
+	}
+	if _, err := parseWebQuotaModeWindow("grok-4", credential, []byte(`{`)); err == nil {
+		t.Fatal("非法 JSON 应返回错误")
+	}
+}
+
+func TestResolveSSORedirectTarget(t *testing.T) {
+	redirect := func(location string) *http.Response {
+		response := &http.Response{Header: http.Header{}}
+		if location != "" {
+			response.Header.Set("Location", location)
+		}
+		return response
+	}
+	target, err := resolveSSORedirectTarget(redirect(" https://auth.x.ai/next "), "https://x.ai/start")
+	if err != nil || target != "https://auth.x.ai/next" {
+		t.Fatalf("target = %q err = %v", target, err)
+	}
+	// 相对 Location 必须基于当前 URL 解析。
+	target, err = resolveSSORedirectTarget(redirect("/after"), "https://accounts.x.ai/before?q=1")
+	if err != nil || target != "https://accounts.x.ai/after" {
+		t.Fatalf("相对跳转 target = %q err = %v", target, err)
+	}
+	if target, err := resolveSSORedirectTarget(redirect(""), "https://x.ai/start"); err == nil || target != "https://x.ai/start" {
+		t.Fatalf("缺少 Location target = %q err = %v", target, err)
+	}
+	// 不受信域名必须返回已解析的新 URL，调用方据此上报，不能回退成旧 URL。
+	if target, err := resolveSSORedirectTarget(redirect("https://evil.test/steal"), "https://x.ai/start"); err == nil || target != "https://evil.test/steal" {
+		t.Fatalf("非受信域名 target = %q err = %v", target, err)
 	}
 }

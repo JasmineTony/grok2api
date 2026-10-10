@@ -335,11 +335,8 @@ func (a *Adapter) DownloadVideo(ctx context.Context, credential account.Credenti
 		lease.Release()
 		return nil, "", 0, fmt.Errorf("下载视频返回 %d", response.StatusCode)
 	}
-	contentType := strings.ToLower(strings.TrimSpace(strings.Split(response.Header.Get("Content-Type"), ";")[0]))
-	if contentType == "" || contentType == "application/octet-stream" {
-		contentType = "video/mp4"
-	}
-	if !strings.HasPrefix(contentType, "video/") {
+	contentType := downloadVideoContentType(response.Header)
+	if contentType == "" {
 		_ = response.Body.Close()
 		lease.Release()
 		return nil, "", 0, fmt.Errorf("上游视频 Content-Type 无效")
@@ -353,6 +350,18 @@ func (a *Adapter) DownloadVideo(ctx context.Context, credential account.Credenti
 		lease.Release()
 	}
 	return providerregistry.NewCompletionReadCloser(response.Body, onFinished), contentType, response.ContentLength, nil
+}
+
+// downloadVideoContentType 规范化下载响应 Content-Type；非视频类型返回空字符串。
+func downloadVideoContentType(header http.Header) string {
+	contentType := strings.ToLower(strings.TrimSpace(strings.Split(header.Get("Content-Type"), ";")[0]))
+	if contentType == "" || contentType == "application/octet-stream" {
+		return "video/mp4"
+	}
+	if !strings.HasPrefix(contentType, "video/") {
+		return ""
+	}
+	return contentType
 }
 
 // collectVideoStreamFrame 处理单个流式帧：上报进度、记录视频 id，
