@@ -11,11 +11,15 @@ export function VideoPanel({ apiKey, model, modelOptions, onModelChange }: Creat
   const { t } = useTranslation();
   const controller = useCreativeVideo({ apiKey, model, modelOptions, onModelChange });
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden" data-testid="video-panel">
       <div className="min-h-0 flex-1 overflow-y-auto py-6">
         <div className="flex min-h-full w-full flex-col justify-center px-3 sm:px-6">
-          {!controller.job && !controller.isSubmitting ? <WelcomeState title={controller.welcome} /> : null}
-          {controller.isSubmitting ? <LoadingResult text={t("creativeConsole.submittingVideo")} /> : null}
+          {!controller.job && !controller.isSubmitting ? (
+            <WelcomeState title={controller.welcome} testId="video-welcome-state" />
+          ) : null}
+          {controller.isSubmitting ? (
+            <LoadingResult text={t("creativeConsole.submittingVideo")} testId="video-loading-state" />
+          ) : null}
           {controller.job ? (
             <VideoResult
               requestId={controller.job.requestId}

@@ -78,10 +78,14 @@ describe("创作台图像面板", () => {
       },
     );
 
-    expect(screen.getByText(i18n.t("creativeConsole.welcomeImage"))).toBeInTheDocument();
+    expect(screen.getByTestId("image-welcome-state")).toHaveTextContent(i18n.t("creativeConsole.welcomeImage"));
     const user = userEvent.setup({ delay: null });
-    await user.type(screen.getByPlaceholderText(i18n.t("creativeConsole.imagePlaceholder")), "一只猫");
-    await user.click(screen.getByRole("button", { name: i18n.t("creativeConsole.generateImage") }));
+    await user.type(screen.getByTestId("image-prompt"), "一只猫");
+    expect(screen.getByTestId("image-prompt")).toHaveAttribute(
+      "placeholder",
+      i18n.t("creativeConsole.imagePlaceholder"),
+    );
+    await user.click(screen.getByTestId("image-generate"));
 
     await waitFor(() =>
       expect(screen.getByAltText(i18n.t("creativeConsole.generatedImageAlt", { index: 1 }))).toBeInTheDocument(),
@@ -89,10 +93,8 @@ describe("创作台图像面板", () => {
     expect(apiMock.generateImage).toHaveBeenCalledWith(
       expect.objectContaining({ prompt: "一只猫", count: 1, aspectRatio: "1:1", resolution: "1k", quality: "medium" }),
     );
-    expect(screen.getByRole("link", { name: i18n.t("creativeConsole.open") })).toHaveAttribute(
-      "href",
-      "/v1/media/images/a.png",
-    );
+    expect(screen.getByTestId("image-result-open-1")).toHaveAccessibleName(i18n.t("creativeConsole.open"));
+    expect(screen.getByTestId("image-result-open-1")).toHaveAttribute("href", "/v1/media/images/a.png");
   });
 
   it("生成失败展示接口错误文案", async () => {
@@ -101,9 +103,9 @@ describe("创作台图像面板", () => {
       wrapper,
     });
     const user = userEvent.setup({ delay: null });
-    await user.type(screen.getByPlaceholderText(i18n.t("creativeConsole.imagePlaceholder")), "一只猫");
-    await user.click(screen.getByRole("button", { name: i18n.t("creativeConsole.generateImage") }));
-    await waitFor(() => expect(screen.getByText("上游拒绝")).toBeInTheDocument());
+    await user.type(screen.getByTestId("image-prompt"), "一只猫");
+    await user.click(screen.getByTestId("image-generate"));
+    await waitFor(() => expect(screen.getByTestId("image-error")).toHaveTextContent("上游拒绝"));
   });
 });
 
@@ -119,20 +121,18 @@ describe("创作台视频面板", () => {
       wrapper,
     });
 
-    expect(screen.getByText(i18n.t("creativeConsole.welcomeVideo"))).toBeInTheDocument();
+    expect(screen.getByTestId("video-welcome-state")).toHaveTextContent(i18n.t("creativeConsole.welcomeVideo"));
     const user = userEvent.setup({ delay: null });
-    await user.type(screen.getByPlaceholderText(i18n.t("creativeConsole.videoPlaceholder")), "海浪");
-    await user.click(screen.getByRole("button", { name: i18n.t("creativeConsole.generateVideo") }));
+    await user.type(screen.getByTestId("video-prompt"), "海浪");
+    await user.click(screen.getByTestId("video-submit"));
 
     await waitFor(() => expect(apiMock.createVideo).toHaveBeenCalledTimes(1));
     expect(apiMock.createVideo).toHaveBeenCalledWith(
       expect.objectContaining({ prompt: "海浪", duration: 6, aspectRatio: "16:9", resolution: "720p" }),
     );
-    await waitFor(() => expect(screen.getByText("req-1")).toBeInTheDocument());
-    expect(screen.getByRole("link", { name: new RegExp(i18n.t("creativeConsole.openVideo")) })).toHaveAttribute(
-      "href",
-      "/v1/media/images/v.mp4",
-    );
+    await waitFor(() => expect(screen.getByTestId("video-result-request-id")).toHaveTextContent("req-1"));
+    expect(screen.getByTestId("video-result-open")).toHaveTextContent(i18n.t("creativeConsole.openVideo"));
+    expect(screen.getByTestId("video-result-open")).toHaveAttribute("href", "/v1/media/images/v.mp4");
   });
 
   it("生成失败展示错误并保留在生成状态之外", async () => {
@@ -141,10 +141,10 @@ describe("创作台视频面板", () => {
       wrapper,
     });
     const user = userEvent.setup({ delay: null });
-    await user.type(screen.getByPlaceholderText(i18n.t("creativeConsole.videoPlaceholder")), "海浪");
-    await user.click(screen.getByRole("button", { name: i18n.t("creativeConsole.generateVideo") }));
-    await waitFor(() => expect(screen.getByText("视频被拒绝")).toBeInTheDocument());
-    expect(screen.getByText(i18n.t("creativeConsole.welcomeVideo"))).toBeInTheDocument();
+    await user.type(screen.getByTestId("video-prompt"), "海浪");
+    await user.click(screen.getByTestId("video-submit"));
+    await waitFor(() => expect(screen.getByTestId("video-create-error")).toHaveTextContent("视频被拒绝"));
+    expect(screen.getByTestId("video-welcome-state")).toHaveTextContent(i18n.t("creativeConsole.welcomeVideo"));
   });
 });
 
@@ -160,11 +160,14 @@ describe("创作台语音面板", () => {
       { wrapper },
     );
 
-    expect(screen.getByText(i18n.t("creativeConsole.welcomeVoice"))).toBeInTheDocument();
+    expect(screen.getByTestId("voice-welcome-state")).toHaveTextContent(i18n.t("creativeConsole.welcomeVoice"));
     const user = userEvent.setup({ delay: null });
-    await user.type(screen.getByPlaceholderText(i18n.t("creativeConsole.voicePlaceholder")), "朗读这段话");
-    const ttsSubmit = screen.getAllByRole("button", { name: i18n.t("creativeConsole.synthesize") }).at(-1);
-    await user.click(ttsSubmit as HTMLElement);
+    await user.type(screen.getByTestId("voice-prompt"), "朗读这段话");
+    expect(screen.getByTestId("voice-prompt")).toHaveAttribute(
+      "placeholder",
+      i18n.t("creativeConsole.voicePlaceholder"),
+    );
+    await user.click(screen.getByTestId("voice-synthesize"));
 
     await waitFor(() => expect(container.querySelector("audio")).not.toBeNull());
     expect(apiMock.synthesizeSpeech).toHaveBeenCalledWith(
@@ -179,16 +182,15 @@ describe("创作台语音面板", () => {
     });
 
     const user = userEvent.setup({ delay: null });
-    await user.click(screen.getAllByRole("button", { name: i18n.t("creativeConsole.transcribe") })[0]);
+    await user.click(screen.getByTestId("voice-submode-stt"));
     expect(apiMock.transcribeSpeech).not.toHaveBeenCalled();
 
     const file = new File(["audio"], "a.mp3", { type: "audio/mpeg" });
-    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const fileInput = screen.getByTestId("voice-audio-input") as HTMLInputElement;
     fireEvent.change(fileInput, { target: { files: [file] } });
-    const sttSubmit = screen.getAllByRole("button", { name: i18n.t("creativeConsole.transcribe") }).at(-1);
-    await user.click(sttSubmit as HTMLElement);
+    await user.click(screen.getByTestId("voice-transcribe"));
 
-    await waitFor(() => expect(screen.getByText("识别结果")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId("voice-stt-transcript")).toHaveTextContent("识别结果"));
     expect(apiMock.transcribeSpeech).toHaveBeenCalledWith(expect.objectContaining({ file, language: "zh" }));
   });
 });

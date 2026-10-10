@@ -67,19 +67,17 @@ function openSelect(trigger: HTMLElement): void {
   fireEvent.keyDown(trigger, { key: "ArrowDown" });
 }
 
-/** 弹层通过 portal 挂到 body，文件输入框不在 render 容器里。 */
-function uploadInput(): HTMLInputElement {
-  const input = document.querySelector('input[type="file"]');
-  if (!input) throw new Error("缺少文件输入框");
-  return input as HTMLInputElement;
+/** 弹层通过 portal 挂到 body，用 testid 定位文件输入框。 */
+function uploadInput(testId = "video-attachment-upload-image-file"): HTMLInputElement {
+  return screen.getByTestId(testId) as HTMLInputElement;
 }
 
 describe("视频首帧图与参考图附件", () => {
   it("两种附件共用弹层结构，文案与占用状态按用途区分", () => {
     renderNode(<VideoImageAttachment kind="image" controller={createController()} icon={<ImagePlus />} />);
-    expect(screen.getByRole("button", { name: i18n.t("creativeConsole.firstFrameImage") })).toHaveTextContent(
-      i18n.t("creativeConsole.firstFrameImageShort"),
-    );
+    const trigger = screen.getByTestId("video-attachment-image");
+    expect(trigger).toHaveAccessibleName(i18n.t("creativeConsole.firstFrameImage"));
+    expect(trigger).toHaveTextContent(i18n.t("creativeConsole.firstFrameImageShort"));
   });
 
   it("参考图占用时按钮展示已添加文案", () => {
@@ -90,9 +88,9 @@ describe("视频首帧图与参考图附件", () => {
         icon={<ImagePlus />}
       />,
     );
-    expect(screen.getByRole("button", { name: i18n.t("creativeConsole.referenceImage") })).toHaveTextContent(
-      i18n.t("creativeConsole.referenceImageAdded"),
-    );
+    const trigger = screen.getByTestId("video-attachment-reference");
+    expect(trigger).toHaveAccessibleName(i18n.t("creativeConsole.referenceImage"));
+    expect(trigger).toHaveTextContent(i18n.t("creativeConsole.referenceImageAdded"));
   });
 
   it("首帧图在参考模式下禁用，参考图已有首帧时禁用", () => {
@@ -103,7 +101,7 @@ describe("视频首帧图与参考图附件", () => {
         icon={<ImagePlus />}
       />,
     );
-    expect(screen.getByRole("button", { name: i18n.t("creativeConsole.firstFrameImage") })).toBeDisabled();
+    expect(screen.getByTestId("video-attachment-image")).toBeDisabled();
 
     renderNode(
       <VideoImageAttachment
@@ -112,21 +110,22 @@ describe("视频首帧图与参考图附件", () => {
         icon={<ImagePlus />}
       />,
     );
-    expect(screen.getByRole("button", { name: i18n.t("creativeConsole.referenceImage") })).toBeDisabled();
+    expect(screen.getByTestId("video-attachment-reference")).toBeDisabled();
   });
 
   it("弹层内的 URL 输入回写控制器，占用时可清除当前附件", async () => {
     const controller = createController({ imageURL: "https://a/1.png", hasFirstFrame: true });
     renderNode(<VideoImageAttachment kind="image" controller={controller} icon={<ImagePlus />} />);
 
-    openPopover(screen.getByRole("button", { name: i18n.t("creativeConsole.firstFrameImage") }));
-    const input = await screen.findByRole("textbox", { name: i18n.t("creativeConsole.firstFrameImage") });
+    openPopover(screen.getByTestId("video-attachment-image"));
+    const input = await screen.findByTestId("video-attachment-url-image");
+    expect(input).toHaveAccessibleName(i18n.t("creativeConsole.firstFrameImage"));
     expect(input).toHaveValue("https://a/1.png");
 
     fireEvent.change(input, { target: { value: "https://a/2.png" } });
     expect(controller.setAttachmentURL).toHaveBeenCalledWith("image", "https://a/2.png");
 
-    fireEvent.click(await screen.findByRole("button", { name: i18n.t("creativeConsole.clearFirstFrameImage") }));
+    fireEvent.click(await screen.findByTestId("video-attachment-clear-image"));
     expect(controller.clearAttachment).toHaveBeenCalledWith("image");
   });
 
@@ -134,11 +133,11 @@ describe("视频首帧图与参考图附件", () => {
     const controller = createController();
     renderNode(<VideoImageAttachment kind="image" controller={controller} icon={<ImagePlus />} />);
 
-    openPopover(screen.getByRole("button", { name: i18n.t("creativeConsole.firstFrameImage") }));
+    openPopover(screen.getByTestId("video-attachment-image"));
     const input = uploadInput();
     const clickSpy = vi.spyOn(input, "click");
 
-    fireEvent.click(await screen.findByRole("button", { name: i18n.t("creativeConsole.uploadImage") }));
+    fireEvent.click(await screen.findByTestId("video-attachment-upload-image"));
     expect(clickSpy).toHaveBeenCalledTimes(1);
 
     const file = new File(["x"], "a.png", { type: "image/png" });
@@ -154,9 +153,9 @@ describe("视频首帧图与参考图附件", () => {
     const controller = createController({ uploadPending: true, uploadError: "图片格式不支持" });
     renderNode(<VideoImageAttachment kind="image" controller={controller} icon={<ImagePlus />} />);
 
-    openPopover(screen.getByRole("button", { name: i18n.t("creativeConsole.firstFrameImage") }));
-    expect(await screen.findByRole("button", { name: i18n.t("creativeConsole.uploadImage") })).toBeDisabled();
-    expect(screen.getByText("图片格式不支持")).toBeInTheDocument();
+    openPopover(screen.getByTestId("video-attachment-image"));
+    expect(await screen.findByTestId("video-attachment-upload-image")).toBeDisabled();
+    expect(screen.getByTestId("video-attachment-upload-error-image")).toHaveTextContent("图片格式不支持");
     expect(controller.pickAttachmentFile).not.toHaveBeenCalled();
   });
 });
@@ -164,12 +163,12 @@ describe("视频首帧图与参考图附件", () => {
 describe("视频源视频附件", () => {
   it("没有源视频时展示短文案，选择 URL 后按钮进入已添加状态", () => {
     renderNode(<VideoSourceAttachment controller={createController()} />);
-    expect(screen.getByRole("button", { name: i18n.t("creativeConsole.sourceVideo") })).toHaveTextContent(
-      i18n.t("creativeConsole.sourceVideoShort"),
-    );
+    const trigger = screen.getByTestId("video-attachment-source");
+    expect(trigger).toHaveAccessibleName(i18n.t("creativeConsole.sourceVideo"));
+    expect(trigger).toHaveTextContent(i18n.t("creativeConsole.sourceVideoShort"));
 
     renderNode(<VideoSourceAttachment controller={createController({ sourceVideoURL: "https://a/v.mp4" })} />);
-    expect(screen.getAllByRole("button", { name: i18n.t("creativeConsole.sourceVideo") })[1]).toHaveTextContent(
+    expect(screen.getAllByTestId("video-attachment-source")[1]).toHaveTextContent(
       i18n.t("creativeConsole.sourceVideoAdded"),
     );
   });
@@ -178,14 +177,15 @@ describe("视频源视频附件", () => {
     const controller = createController({ sourceVideoFileID: "file-9" });
     renderNode(<VideoSourceAttachment controller={controller} />);
 
-    openPopover(screen.getByRole("button", { name: i18n.t("creativeConsole.sourceVideo") }));
-    const input = await screen.findByRole("textbox", { name: i18n.t("creativeConsole.sourceVideo") });
+    openPopover(screen.getByTestId("video-attachment-source"));
+    const input = await screen.findByTestId("video-attachment-source-url");
+    expect(input).toHaveAccessibleName(i18n.t("creativeConsole.sourceVideo"));
     expect(input).toHaveAttribute("placeholder", i18n.t("creativeConsole.sourceVideoAdded"));
 
     fireEvent.change(input, { target: { value: "https://a/v.mp4" } });
     expect(controller.setSourceVideoURL).toHaveBeenCalledWith("https://a/v.mp4");
 
-    fireEvent.click(await screen.findByRole("button", { name: i18n.t("creativeConsole.clearSourceVideo") }));
+    fireEvent.click(await screen.findByTestId("video-attachment-source-clear"));
     expect(controller.clearSourceVideo).toHaveBeenCalledTimes(1);
   });
 
@@ -193,10 +193,10 @@ describe("视频源视频附件", () => {
     const controller = createController({ videoUploadError: "视频格式不支持" });
     renderNode(<VideoSourceAttachment controller={controller} />);
 
-    openPopover(screen.getByRole("button", { name: i18n.t("creativeConsole.sourceVideo") }));
-    const input = uploadInput();
+    openPopover(screen.getByTestId("video-attachment-source"));
+    const input = screen.getByTestId("video-attachment-source-upload-file");
     expect(input).toHaveAttribute("accept", "video/mp4,video/webm,video/quicktime");
-    expect(screen.getByText("视频格式不支持")).toBeInTheDocument();
+    expect(screen.getByTestId("video-attachment-source-upload-error")).toHaveTextContent("视频格式不支持");
 
     const file = new File(["v"], "v.mp4", { type: "video/mp4" });
     fireEvent.change(input, { target: { files: [file] } });
@@ -206,8 +206,8 @@ describe("视频源视频附件", () => {
   it("视频上传中禁用上传按钮", async () => {
     renderNode(<VideoSourceAttachment controller={createController({ videoUploadPending: true })} />);
 
-    openPopover(screen.getByRole("button", { name: i18n.t("creativeConsole.sourceVideo") }));
-    expect(await screen.findByRole("button", { name: i18n.t("creativeConsole.uploadVideo") })).toBeDisabled();
+    openPopover(screen.getByTestId("video-attachment-source"));
+    expect(await screen.findByTestId("video-attachment-source-upload")).toBeDisabled();
   });
 });
 
@@ -220,7 +220,8 @@ describe("参考音色选择", () => {
   it("使用控制器返回的音色列表打开弹层，并展示当前选项", async () => {
     renderNode(<ReferenceVoiceSelect controller={createController({ voices, referenceVoiceId: "ara" })} />);
 
-    const trigger = screen.getByRole("combobox", { name: `${i18n.t("creativeConsole.referenceVoice")}` });
+    const trigger = screen.getByTestId("video-reference-voice-select");
+    expect(trigger).toHaveAccessibleName(i18n.t("creativeConsole.referenceVoice"));
     expect(trigger).toHaveTextContent("Ara");
     openSelect(trigger);
 
@@ -231,7 +232,7 @@ describe("参考音色选择", () => {
   it("没有可用音色时回退到默认音色，并保留不使用参考音色选项", async () => {
     renderNode(<ReferenceVoiceSelect controller={createController({ voices: [], hasReferenceAudio: true })} />);
 
-    const trigger = screen.getByRole("combobox", { name: i18n.t("creativeConsole.referenceVoice") });
+    const trigger = screen.getByTestId("video-reference-voice-select");
     openSelect(trigger);
 
     expect(
@@ -244,7 +245,7 @@ describe("参考音色选择", () => {
   it("已有首帧图时参考音色不可选，也不会打开弹层", () => {
     renderNode(<ReferenceVoiceSelect controller={createController({ voices, hasFirstFrame: true })} />);
 
-    const trigger = screen.getByRole("combobox", { name: i18n.t("creativeConsole.referenceVoice") });
+    const trigger = screen.getByTestId("video-reference-voice-select");
     expect(trigger).toBeDisabled();
     openSelect(trigger);
     expect(screen.queryByRole("option", { name: "Ara" })).not.toBeInTheDocument();

@@ -33,6 +33,7 @@ export function CreativeConsoleHeader({
               key={tab.value}
               className="flex-1 gap-1.5 rounded-full px-3 lg:min-w-20 [&_svg]:size-3.5"
               value={tab.value}
+              data-testid={`creative-mode-tab-${tab.value}`}
             >
               {tab.icon}
               {t(tab.labelKey)}
@@ -55,12 +56,26 @@ export function CreativeConsoleAlerts({ controller }: { controller: CreativeCons
   const { t } = useTranslation();
   const noActiveKeys = !controller.keysPending && !controller.keysError && controller.activeKeys.length === 0;
   return (
-    <div className="shrink-0 space-y-2 px-3">
-      {controller.keysError ? <RetryableError message={controller.keysError} onRetry={controller.retryKeys} /> : null}
-      {noActiveKeys ? <InlineError message={t("creativeConsole.errors.noKeys")} /> : null}
-      {controller.keyError ? <InlineError message={controller.keyError} /> : null}
+    <div className="shrink-0 space-y-2 px-3" data-testid="creative-console-alerts">
+      {controller.keysError ? (
+        <RetryableError
+          message={controller.keysError}
+          onRetry={controller.retryKeys}
+          testId="creative-console-keys-error"
+          retryTestId="creative-console-keys-retry"
+        />
+      ) : null}
+      {noActiveKeys ? (
+        <InlineError message={t("creativeConsole.errors.noKeys")} testId="creative-console-no-keys" />
+      ) : null}
+      {controller.keyError ? <InlineError message={controller.keyError} testId="creative-console-key-error" /> : null}
       {controller.modelsError ? (
-        <RetryableError message={controller.modelsError} onRetry={controller.retryModels} />
+        <RetryableError
+          message={controller.modelsError}
+          onRetry={controller.retryModels}
+          testId="creative-console-models-error"
+          retryTestId="creative-console-models-retry"
+        />
       ) : null}
     </div>
   );
@@ -78,6 +93,7 @@ function CreativeKeySelect({ controller }: { controller: CreativeConsoleControll
         id="creative-key"
         className="min-w-0 flex-1 bg-secondary/55 lg:w-64 lg:flex-none"
         aria-label={t("creativeConsole.clientKey")}
+        data-testid="creative-key-select"
       >
         <SelectValue placeholder={controller.keysPending ? t("common.loading") : t("creativeConsole.selectKey")} />
       </SelectTrigger>

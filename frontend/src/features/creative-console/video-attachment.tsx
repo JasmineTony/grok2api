@@ -64,6 +64,7 @@ export function VideoImageAttachment({ kind, controller, icon }: ImageAttachment
           className={cn("h-8 gap-1.5 px-2 font-normal", occupied && "bg-secondary/70 text-foreground")}
           aria-label={t(copy.titleKey)}
           disabled={locked}
+          data-testid={`video-attachment-${kind}`}
         >
           {icon}
           {occupied ? t(copy.addedKey) : t(copy.shortKey)}
@@ -99,7 +100,7 @@ function VideoImageAttachmentContent({
   const { t } = useTranslation();
   const occupied = kind === "image" ? controller.hasFirstFrame : controller.hasReferenceImage;
   return (
-    <PopoverContent align="start" className="w-80 p-3">
+    <PopoverContent align="start" className="w-80 p-3" data-testid={`video-attachment-popover-${kind}`}>
       <div className="mb-2 text-xs font-medium">{t(copy.titleKey)}</div>
       <AttachmentUrlField
         kind={kind}
@@ -116,6 +117,8 @@ function VideoImageAttachmentContent({
         pending={controller.uploadPending}
         error={controller.uploadError}
         onPickFile={(file) => controller.pickAttachmentFile(kind, file)}
+        testId={`video-attachment-upload-${kind}`}
+        errorTestId={`video-attachment-upload-error-${kind}`}
       />
     </PopoverContent>
   );
@@ -128,6 +131,8 @@ function AttachmentUploadButton({
   pending,
   error,
   onPickFile,
+  testId,
+  errorTestId,
 }: {
   inputRef: RefObject<HTMLInputElement | null>;
   accept: string;
@@ -135,21 +140,13 @@ function AttachmentUploadButton({
   pending: boolean;
   error: string;
   onPickFile: (file: File) => void;
+  testId: string;
+  errorTestId: string;
 }): ReactNode {
   const { t } = useTranslation();
   return (
     <>
-      <input
-        ref={inputRef}
-        type="file"
-        accept={accept}
-        className="hidden"
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          if (file) onPickFile(file);
-          event.target.value = "";
-        }}
-      />
+      <AttachmentFileInput inputRef={inputRef} accept={accept} onPickFile={onPickFile} testId={`${testId}-file`} />
       <Button
         type="button"
         variant="secondary"
@@ -157,12 +154,44 @@ function AttachmentUploadButton({
         className="mt-2 w-full"
         disabled={pending}
         onClick={() => inputRef.current?.click()}
+        data-testid={testId}
       >
         {pending ? <Loader2 className="animate-spin" /> : <Upload />}
         {t(labelKey)}
       </Button>
-      {error ? <p className="mt-1 text-[11px] text-destructive">{error}</p> : null}
+      {error ? (
+        <p className="mt-1 text-[11px] text-destructive" data-testid={errorTestId}>
+          {error}
+        </p>
+      ) : null}
     </>
+  );
+}
+
+function AttachmentFileInput({
+  inputRef,
+  accept,
+  onPickFile,
+  testId,
+}: {
+  inputRef: RefObject<HTMLInputElement | null>;
+  accept: string;
+  onPickFile: (file: File) => void;
+  testId: string;
+}): ReactNode {
+  return (
+    <input
+      ref={inputRef}
+      type="file"
+      accept={accept}
+      className="hidden"
+      data-testid={testId}
+      onChange={(event) => {
+        const file = event.target.files?.[0];
+        if (file) onPickFile(file);
+        event.target.value = "";
+      }}
+    />
   );
 }
 
@@ -179,6 +208,7 @@ export function VideoSourceAttachment({ controller }: { controller: CreativeVide
           size="sm"
           className={cn("h-8 gap-1.5 px-2 font-normal", hasSource && "bg-secondary/70 text-foreground")}
           aria-label={t("creativeConsole.sourceVideo")}
+          data-testid="video-attachment-source"
         >
           <Video />
           {hasSource ? t("creativeConsole.sourceVideoAdded") : t("creativeConsole.sourceVideoShort")}
@@ -208,6 +238,7 @@ export function ReferenceVoiceSelect({ controller }: { controller: CreativeVideo
           controller.hasReferenceAudio && "bg-secondary/70",
         )}
         aria-label={t("creativeConsole.referenceVoice")}
+        data-testid="video-reference-voice-select"
       >
         <AudioLines className="size-3.5" />
         <SelectValue placeholder={t("creativeConsole.referenceVoiceShort")} />
@@ -249,6 +280,7 @@ function AttachmentUrlField({
         onChange={(event) => controller.setAttachmentURL(kind, event.target.value)}
         placeholder={hasFile ? t(copy.addedKey) : "https://..."}
         aria-label={t(copy.titleKey)}
+        data-testid={`video-attachment-url-${kind}`}
       />
       {occupied ? (
         <Button
@@ -258,6 +290,7 @@ function AttachmentUrlField({
           className="shrink-0"
           aria-label={t(copy.clearKey)}
           onClick={() => controller.clearAttachment(kind)}
+          data-testid={`video-attachment-clear-${kind}`}
         >
           <X />
         </Button>
@@ -277,7 +310,7 @@ function VideoSourceAttachmentContent({
 }): ReactNode {
   const { t } = useTranslation();
   return (
-    <PopoverContent align="start" className="w-80 p-3">
+    <PopoverContent align="start" className="w-80 p-3" data-testid="video-attachment-source-popover">
       <div className="mb-2 text-xs font-medium">{t("creativeConsole.sourceVideo")}</div>
       <div className="flex items-center gap-2">
         <Input
@@ -287,6 +320,7 @@ function VideoSourceAttachmentContent({
           onChange={(event) => controller.setSourceVideoURL(event.target.value)}
           placeholder={controller.sourceVideoFileID ? t("creativeConsole.sourceVideoAdded") : "https://..."}
           aria-label={t("creativeConsole.sourceVideo")}
+          data-testid="video-attachment-source-url"
         />
         {hasSource ? (
           <Button
@@ -296,6 +330,7 @@ function VideoSourceAttachmentContent({
             className="shrink-0"
             aria-label={t("creativeConsole.clearSourceVideo")}
             onClick={controller.clearSourceVideo}
+            data-testid="video-attachment-source-clear"
           >
             <X />
           </Button>
@@ -308,6 +343,8 @@ function VideoSourceAttachmentContent({
         pending={controller.videoUploadPending}
         error={controller.videoUploadError}
         onPickFile={controller.pickSourceVideo}
+        testId="video-attachment-source-upload"
+        errorTestId="video-attachment-source-upload-error"
       />
     </PopoverContent>
   );

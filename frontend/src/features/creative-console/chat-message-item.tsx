@@ -44,13 +44,18 @@ export function ChatMessageItem(props: ChatMessageItemProps): ReactNode {
   const { message, loading = false, busy = false, editing = false } = props;
   const isUser = message.role === "user";
   return (
-    <Message align={isUser ? "end" : "start"}>
+    <Message align={isUser ? "end" : "start"} data-testid={`chat-message-${message.id}`}>
       <MessageContent className={cn(!isUser && "w-full max-w-full")}>
-        {!isUser && message.reasoning ? <AssistantReasoning reasoning={message.reasoning} /> : null}
+        {!isUser && message.reasoning ? (
+          <AssistantReasoning reasoning={message.reasoning} messageId={message.id} />
+        ) : null}
         {!isUser && message.tools?.length ? <ToolActivityList tools={message.tools} /> : null}
         <ChatMessageBody {...props} isUser={isUser} />
         {loading ? (
-          <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
+          <div
+            className="flex items-center gap-2 py-1 text-xs text-muted-foreground"
+            data-testid={`chat-message-streaming-${message.id}`}
+          >
             <Spinner />
             {t("creativeConsole.streaming")}
           </div>
@@ -61,6 +66,7 @@ export function ChatMessageItem(props: ChatMessageItemProps): ReactNode {
             canRegenerate={!isUser && (!busy || loading)}
             canEdit={!loading && !busy}
             canDelete={!loading && !busy}
+            messageId={message.id}
             onStop={props.onStop}
             onRegenerate={props.onRegenerate}
             onStartEdit={props.onStartEdit}
@@ -91,13 +97,17 @@ function ChatMessageBody({
         onKeyDown={onEditKeyDown}
         onCancel={onCancelEdit}
         onSave={onSaveEdit}
+        messageId={message.id}
       />
     );
   }
   if (!message.content && !isUser) return null;
   if (isUser) {
     return (
-      <div className="whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-secondary px-4 py-2.5 text-sm leading-6">
+      <div
+        className="whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-secondary px-4 py-2.5 text-sm leading-6"
+        data-testid={`chat-message-body-${message.id}`}
+      >
         {message.content}
       </div>
     );
@@ -112,6 +122,7 @@ function ChatMessageEditForm({
   onKeyDown,
   onCancel,
   onSave,
+  messageId,
 }: {
   isUser: boolean;
   draft: string;
@@ -119,10 +130,11 @@ function ChatMessageEditForm({
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onCancel: () => void;
   onSave: () => void;
+  messageId: string;
 }): ReactNode {
   const { t } = useTranslation();
   return (
-    <div className={cn("w-full space-y-2", isUser ? "max-w-full" : "")}>
+    <div className={cn("w-full space-y-2", isUser ? "max-w-full" : "")} data-testid={`chat-message-edit-${messageId}`}>
       <Textarea
         value={draft}
         onChange={(event) => onDraftChange(event.target.value)}
@@ -130,18 +142,50 @@ function ChatMessageEditForm({
         className="min-h-24 resize-y bg-background/70 text-sm"
         autoFocus
         aria-label={t("creativeConsole.editMessage")}
+        data-testid={`chat-message-edit-input-${messageId}`}
       />
       {!isUser ? (
         <p className="text-[11px] leading-4 text-muted-foreground">{t("creativeConsole.localEditNote")}</p>
       ) : null}
-      <div className={cn("flex items-center gap-2", isUser && "justify-end")}>
-        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
-          {t("creativeConsole.cancelEdit")}
-        </Button>
-        <Button type="button" size="sm" onClick={onSave} disabled={!draft.trim()}>
-          {isUser ? t("creativeConsole.saveAndRegenerate") : t("creativeConsole.saveEdit")}
-        </Button>
-      </div>
+      <ChatMessageEditActions isUser={isUser} draft={draft} messageId={messageId} onCancel={onCancel} onSave={onSave} />
+    </div>
+  );
+}
+
+function ChatMessageEditActions({
+  isUser,
+  draft,
+  messageId,
+  onCancel,
+  onSave,
+}: {
+  isUser: boolean;
+  draft: string;
+  messageId: string;
+  onCancel: () => void;
+  onSave: () => void;
+}): ReactNode {
+  const { t } = useTranslation();
+  return (
+    <div className={cn("flex items-center gap-2", isUser && "justify-end")}>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={onCancel}
+        data-testid={`chat-message-edit-cancel-${messageId}`}
+      >
+        {t("creativeConsole.cancelEdit")}
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        onClick={onSave}
+        disabled={!draft.trim()}
+        data-testid={`chat-message-edit-save-${messageId}`}
+      >
+        {isUser ? t("creativeConsole.saveAndRegenerate") : t("creativeConsole.saveEdit")}
+      </Button>
     </div>
   );
 }
@@ -151,21 +195,24 @@ type ChatMessageActionsProps = {
   canRegenerate: boolean;
   canEdit: boolean;
   canDelete: boolean;
+  messageId: string;
   onStop: () => void;
   onRegenerate: () => void;
   onStartEdit: () => void;
   onDelete: () => void;
 };
 
-type MessageAction = { label: string; onSelect: () => void; icon: ReactNode; destructive?: boolean };
+type MessageAction = { label: string; testId: string; onSelect: () => void; icon: ReactNode; destructive?: boolean };
 
 type Translate = (key: string) => string;
 
 function buildMessageActions(props: ChatMessageActionsProps, t: Translate): MessageAction[] {
   const actions: MessageAction[] = [];
+  const suffix = props.messageId;
   if (props.canStop) {
     actions.push({
       label: t("creativeConsole.stopGenerating"),
+      testId: `chat-message-stop-${suffix}`,
       onSelect: props.onStop,
       icon: <Square className="size-3.5 fill-current" />,
     });
@@ -173,6 +220,7 @@ function buildMessageActions(props: ChatMessageActionsProps, t: Translate): Mess
   if (props.canRegenerate) {
     actions.push({
       label: t("creativeConsole.regenerate"),
+      testId: `chat-message-regenerate-${suffix}`,
       onSelect: props.onRegenerate,
       icon: <RefreshCw className="size-3.5" />,
     });
@@ -180,6 +228,7 @@ function buildMessageActions(props: ChatMessageActionsProps, t: Translate): Mess
   if (props.canEdit) {
     actions.push({
       label: t("creativeConsole.editMessage"),
+      testId: `chat-message-edit-action-${suffix}`,
       onSelect: props.onStartEdit,
       icon: <Pencil className="size-3.5" />,
     });
@@ -187,6 +236,7 @@ function buildMessageActions(props: ChatMessageActionsProps, t: Translate): Mess
   if (props.canDelete) {
     actions.push({
       label: t("creativeConsole.deleteMessage"),
+      testId: `chat-message-delete-${suffix}`,
       onSelect: props.onDelete,
       icon: <Trash2 className="size-3.5" />,
       destructive: true,
@@ -205,6 +255,7 @@ function MessageActionButtons({ actions }: { actions: MessageAction[] }): ReactN
           onSelect={action.onSelect}
           className="size-7 rounded-full"
           destructive={action.destructive}
+          testId={action.testId}
         >
           {action.icon}
         </IconActionButton>
@@ -224,10 +275,13 @@ function ChatMessageActions(props: ChatMessageActionsProps): ReactNode {
   );
 }
 
-function AssistantReasoning({ reasoning }: { reasoning: string }): ReactNode {
+function AssistantReasoning({ reasoning, messageId }: { reasoning: string; messageId: string }): ReactNode {
   const { t } = useTranslation();
   return (
-    <div className="w-full rounded-xl bg-secondary/45 px-3 py-2.5 text-xs text-muted-foreground">
+    <div
+      className="w-full rounded-xl bg-secondary/45 px-3 py-2.5 text-xs text-muted-foreground"
+      data-testid={`chat-message-reasoning-${messageId}`}
+    >
       <div className="mb-1.5 flex items-center gap-1.5 font-medium text-foreground/75">
         <BrainCircuit className="size-3.5" />
         {t("creativeConsole.thinkingProcess")}
@@ -239,7 +293,7 @@ function AssistantReasoning({ reasoning }: { reasoning: string }): ReactNode {
 
 function ToolActivityList({ tools }: { tools: ChatToolActivity[] }): ReactNode {
   return (
-    <div className="flex w-full flex-col gap-1.5">
+    <div className="flex w-full flex-col gap-1.5" data-testid="chat-tool-activity-list">
       {tools.map((tool) => (
         <ToolActivityItem key={tool.id} tool={tool} />
       ))}
@@ -257,7 +311,10 @@ function ToolActivityItem({ tool }: { tool: ChatToolActivity }): ReactNode {
       ? t("creativeConsole.toolNames.xSearch")
       : tool.name;
   return (
-    <div className="flex min-w-0 items-start gap-2 rounded-xl bg-secondary/45 px-3 py-2.5 text-xs">
+    <div
+      className="flex min-w-0 items-start gap-2 rounded-xl bg-secondary/45 px-3 py-2.5 text-xs"
+      data-testid={`chat-tool-activity-${tool.id}`}
+    >
       <span className="mt-0.5 text-muted-foreground">
         {isWebSearch ? (
           <Globe className="size-3.5" />

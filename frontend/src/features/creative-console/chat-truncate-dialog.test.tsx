@@ -34,14 +34,15 @@ describe("聊天截断确认框", () => {
   it("删除动作展示待删除条数，确认后委托二次确认回调", async () => {
     const controller = renderDialog({ kind: "delete", messageId: "m1", trailingCount: 2 });
 
-    const dialog = screen.getByRole("alertdialog");
-    expect(dialog).toBeInTheDocument();
+    const dialog = screen.getByTestId("chat-truncate-dialog");
+    expect(dialog).toHaveAccessibleName(i18n.t("creativeConsole.deleteMessageConfirmTitle"));
     expect(screen.getByText(i18n.t("creativeConsole.deleteMessageConfirmTitle"))).toBeInTheDocument();
     expect(
       screen.getByText(new RegExp(i18n.t("creativeConsole.deleteMessageConfirmDescription", { count: 2 }))),
     ).toBeInTheDocument();
 
-    const confirm = screen.getByRole("button", { name: i18n.t("creativeConsole.deleteMessage") });
+    const confirm = screen.getByTestId("chat-truncate-confirm");
+    expect(confirm).toHaveAccessibleName(i18n.t("creativeConsole.deleteMessage"));
     expect(confirm.className).toContain("bg-destructive");
 
     const user = userEvent.setup({ delay: null });
@@ -53,7 +54,8 @@ describe("聊天截断确认框", () => {
     const controller = renderDialog({ kind: "regenerate", messageId: "a1", trailingCount: 1 });
 
     expect(screen.getByText(i18n.t("creativeConsole.regenerateTruncateTitle"))).toBeInTheDocument();
-    const confirm = screen.getByRole("button", { name: i18n.t("creativeConsole.regenerate") });
+    const confirm = screen.getByTestId("chat-truncate-confirm");
+    expect(confirm).toHaveAccessibleName(i18n.t("creativeConsole.regenerate"));
     expect(confirm.className).not.toContain("bg-destructive");
 
     const user = userEvent.setup({ delay: null });
@@ -70,7 +72,8 @@ describe("聊天截断确认框", () => {
     });
 
     expect(screen.getByText(i18n.t("creativeConsole.editUserTruncateTitle"))).toBeInTheDocument();
-    const confirm = screen.getByRole("button", { name: i18n.t("creativeConsole.saveAndRegenerate") });
+    const confirm = screen.getByTestId("chat-truncate-confirm");
+    expect(confirm).toHaveAccessibleName(i18n.t("creativeConsole.saveAndRegenerate"));
 
     const user = userEvent.setup({ delay: null });
     await user.click(confirm);
@@ -81,7 +84,7 @@ describe("聊天截断确认框", () => {
     const controller = renderDialog({ kind: "delete", messageId: "m1", trailingCount: 1 });
 
     const user = userEvent.setup({ delay: null });
-    await user.click(screen.getByRole("button", { name: i18n.t("common.cancel") }));
+    await user.click(screen.getByTestId("chat-truncate-cancel"));
 
     expect(controller.setPendingTruncate).toHaveBeenCalledWith(null);
     expect(controller.confirmPendingTruncate).not.toHaveBeenCalled();

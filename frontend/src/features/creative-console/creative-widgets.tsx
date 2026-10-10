@@ -9,37 +9,55 @@ import type { ModelRouteDTO } from "@/entities/model/types";
 import { cn } from "@/shared/lib/cn";
 import { RefreshCw } from "lucide-react";
 
-export function WelcomeState({ title }: { title: string }): ReactNode {
+export function WelcomeState({ title, testId }: { title: string; testId?: string }): ReactNode {
   return (
-    <div className="flex min-h-[20rem] items-center justify-center px-6 text-center">
+    <div className="flex min-h-[20rem] items-center justify-center px-6 text-center" data-testid={testId}>
       <h2 className="max-w-2xl text-xl font-medium tracking-tight text-muted-foreground sm:text-2xl">{title}</h2>
     </div>
   );
 }
 
-export function LoadingResult({ text }: { text: string }): ReactNode {
+export function LoadingResult({ text, testId }: { text: string; testId?: string }): ReactNode {
   return (
-    <div className="flex min-h-[20rem] items-center justify-center gap-3 text-xs text-muted-foreground">
+    <div
+      className="flex min-h-[20rem] items-center justify-center gap-3 text-xs text-muted-foreground"
+      data-testid={testId}
+    >
       <Spinner className="size-5" />
       {text}
     </div>
   );
 }
 
-export function InlineError({ message }: { message: string }): ReactNode {
+export function InlineError({ message, testId }: { message: string; testId?: string }): ReactNode {
   return (
-    <div role="alert" className="rounded-md bg-destructive/8 px-3 py-2 text-xs leading-5 text-destructive">
+    <div
+      role="alert"
+      className="rounded-md bg-destructive/8 px-3 py-2 text-xs leading-5 text-destructive"
+      data-testid={testId}
+    >
       {message}
     </div>
   );
 }
 
-export function RetryableError({ message, onRetry }: { message: string; onRetry: () => void }): ReactNode {
+export function RetryableError({
+  message,
+  onRetry,
+  testId,
+  retryTestId,
+}: {
+  message: string;
+  onRetry: () => void;
+  testId?: string;
+  retryTestId?: string;
+}): ReactNode {
   const { t } = useTranslation();
   return (
     <div
       role="alert"
       className="flex flex-col gap-2 rounded-md bg-destructive/8 px-3 py-2 text-xs leading-5 text-destructive sm:flex-row sm:items-center sm:justify-between"
+      data-testid={testId}
     >
       <span>{message}</span>
       <Button
@@ -48,6 +66,7 @@ export function RetryableError({ message, onRetry }: { message: string; onRetry:
         size="sm"
         className="self-start text-destructive hover:text-destructive sm:self-auto"
         onClick={onRetry}
+        data-testid={retryTestId}
       >
         <RefreshCw />
         {t("common.retry")}
@@ -56,9 +75,19 @@ export function RetryableError({ message, onRetry }: { message: string; onRetry:
   );
 }
 
-export function MetaItem({ label, value, mono = false }: { label: string; value: string; mono?: boolean }): ReactNode {
+export function MetaItem({
+  label,
+  value,
+  mono = false,
+  testId,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  testId?: string;
+}): ReactNode {
   return (
-    <div className="min-w-0 py-2">
+    <div className="min-w-0 py-2" data-testid={testId}>
       <div className="mb-1 text-[11px] text-muted-foreground">{label}</div>
       <div className={cn("truncate text-xs", mono && "font-mono")} title={value}>
         {value}
@@ -71,10 +100,12 @@ export function CompactModelSelect({
   value,
   models,
   onChange,
+  testId,
 }: {
   value: string;
   models: ModelRouteDTO[];
   onChange: (model: string) => void;
+  testId?: string;
 }): ReactNode {
   const { t } = useTranslation();
   return (
@@ -82,6 +113,7 @@ export function CompactModelSelect({
       <SelectTrigger
         className="h-8 w-auto max-w-56 gap-1 border-0 bg-transparent px-2 shadow-none hover:bg-secondary/70 focus:bg-secondary/70 focus:ring-0"
         aria-label={t("creativeConsole.model")}
+        data-testid={testId}
       >
         <SelectValue
           placeholder={models.length === 0 ? t("creativeConsole.noModels") : t("creativeConsole.selectModel")}
@@ -105,6 +137,7 @@ export function CompactSelect({
   ariaLabel,
   suffix,
   icon,
+  testId,
 }: {
   value: string;
   options: readonly string[];
@@ -112,12 +145,14 @@ export function CompactSelect({
   ariaLabel: string;
   suffix?: string;
   icon?: ReactNode;
+  testId?: string;
 }): ReactNode {
   return (
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger
         className="h-8 w-auto gap-1.5 border-0 bg-transparent px-2 shadow-none hover:bg-secondary/70 focus:bg-secondary/70 focus:ring-0 [&>svg]:size-3.5 [&>svg]:shrink-0"
         aria-label={ariaLabel}
+        data-testid={testId}
       >
         {icon}
         <SelectValue />
@@ -142,6 +177,7 @@ export function CompactIconSelect({
   icon,
   active = false,
   disabled = false,
+  testId,
 }: {
   value: string;
   options: Array<{ value: string; label: string }>;
@@ -150,6 +186,7 @@ export function CompactIconSelect({
   icon: ReactNode;
   active?: boolean;
   disabled?: boolean;
+  testId?: string;
 }): ReactNode {
   const selectedLabel = options.find((option) => option.value === value)?.label ?? ariaLabel;
   return (
@@ -162,6 +199,7 @@ export function CompactIconSelect({
               active && "bg-secondary/70 text-foreground",
             )}
             aria-label={`${ariaLabel}: ${selectedLabel}`}
+            data-testid={testId}
           >
             <span className="flex items-center [&_svg]:size-3.5">{icon}</span>
           </SelectTrigger>
@@ -197,6 +235,7 @@ export function IconActionButton({
   className,
   destructive = false,
   disabled = false,
+  testId,
 }: {
   label: string;
   onSelect: () => void;
@@ -204,6 +243,7 @@ export function IconActionButton({
   className?: string;
   destructive?: boolean;
   disabled?: boolean;
+  testId?: string;
 }): ReactNode {
   return (
     <Tooltip>
@@ -216,6 +256,7 @@ export function IconActionButton({
           aria-label={label}
           onClick={onSelect}
           disabled={disabled}
+          data-testid={testId}
         >
           {children}
         </Button>

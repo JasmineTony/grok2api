@@ -21,11 +21,19 @@ export function ChatMessageList({ controller }: { controller: CreativeChatContro
   return (
     <MessageScrollerProvider autoScroll defaultScrollPosition="end">
       <MessageScroller className="min-h-0 flex-1">
-        <MessageScrollerViewport aria-label={t("creativeConsole.messageList")}>
-          <MessageScrollerContent className={cn("w-full px-3 py-6 sm:px-6", empty && "justify-center")}>
-            {empty ? <WelcomeState title={t("creativeConsole.welcome")} /> : null}
+        <MessageScrollerViewport aria-label={t("creativeConsole.messageList")} data-testid="chat-message-viewport">
+          <MessageScrollerContent
+            className={cn("w-full px-3 py-6 sm:px-6", empty && "justify-center")}
+            data-testid="chat-message-list"
+          >
+            {empty ? <WelcomeState title={t("creativeConsole.welcome")} testId="chat-welcome-state" /> : null}
             {controller.messages.map((message) => (
-              <MessageScrollerItem key={message.id} messageId={message.id} scrollAnchor={message.role === "user"}>
+              <MessageScrollerItem
+                key={message.id}
+                messageId={message.id}
+                scrollAnchor={message.role === "user"}
+                data-testid={`chat-message-row-${message.id}`}
+              >
                 <ChatMessageItem
                   message={message}
                   loading={controller.isStreaming && controller.streamingMessageId === message.id}
@@ -45,7 +53,7 @@ export function ChatMessageList({ controller }: { controller: CreativeChatContro
             ))}
           </MessageScrollerContent>
         </MessageScrollerViewport>
-        <MessageScrollerButton aria-label={t("creativeConsole.scrollToLatest")} />
+        <MessageScrollerButton aria-label={t("creativeConsole.scrollToLatest")} data-testid="chat-scroll-to-latest" />
       </MessageScroller>
     </MessageScrollerProvider>
   );
