@@ -38,10 +38,10 @@ go run ./cmd/grok2api --config /path/to/config.yaml --listen 0.0.0.0:8000
 
 PostgreSQL DSN 也可通过非空的 `GROK2API_DATABASE_URL` 注入；它的优先级高于 YAML，并会自动将数据库驱动切换为 `postgres`。空值不覆盖 YAML，程序不会隐式读取通用的 `DATABASE_URL`。
 
-| 场景 | 数据库 | 运行态存储 |
-| --- | --- | --- |
-| 本地开发 / 单实例 | SQLite | Memory |
-| 多实例部署 | PostgreSQL | Redis |
+| 场景              | 数据库     | 运行态存储 |
+| ----------------- | ---------- | ---------- |
+| 本地开发 / 单实例 | SQLite     | Memory     |
+| 多实例部署        | PostgreSQL | Redis      |
 
 关系型数据库保存账号、凭据、模型、额度、客户端密钥、审计和媒体任务；Redis 仅承载限流、并发租约、粘滞路由、分布式锁和事件通知。敏感凭据使用 `credentialEncryptionKey` 加密，该密钥必须长期保留且不得提交到版本库。
 
@@ -77,8 +77,12 @@ internal/repository/ 持久化接口
 ## 验证
 
 ```bash
-go test ./...
-go test -race ./...
-go vet ./...
-go build ./cmd/grok2api
+go test ./... -count=1     # 全量（含 PostgreSQL/Redis 集成用例；本机无隔离服务时会跳过）
+go vet ./...               # 静态检查
+go build ./...             # 全量编译
+go test -race ./...        # 需支持 cgo 的 Linux/CI 工具链
+go test ./... -run '^$' -bench . -benchmem -count=5   # 基准（选号/投影/分页聚合）
 ```
+
+集成用例在缺少 `TEST_POSTGRES_*` / Redis 环境时会 **Skip**，Skip 不等于通过：CI 提供隔离服务后必须 0 skip。
+函数级结构约束（REV-2）的存量台账见 [`AUDIT.md`](./AUDIT.md) §12.2。
