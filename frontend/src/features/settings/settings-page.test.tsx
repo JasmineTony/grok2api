@@ -211,6 +211,24 @@ describe("设置页加载状态", () => {
     expect(screen.queryByRole("heading", { name: i18n.t("settings.title") })).not.toBeInTheDocument();
   });
 
+  it("点击重试会重新拉取配置并渲染表单", async () => {
+    let attempt = 0;
+    installSettingsApi(() => {
+      attempt += 1;
+      if (attempt === 1) throw new ApiError(500, "requestFailed", "settings unavailable");
+      return settingsPayload();
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByText("settings unavailable")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: i18n.t("common.retry") }));
+
+    expect(await screen.findByRole("heading", { name: i18n.t("settings.title") })).toBeInTheDocument();
+    expect(screen.queryByText("settings unavailable")).not.toBeInTheDocument();
+    expect(attempt).toBe(2);
+  });
+
   it("旧后端缺失 accounts/segmentedSelector 时用默认值补齐表单", async () => {
     installSettingsApi(() => {
       const payload = settingsPayload();

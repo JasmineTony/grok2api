@@ -745,3 +745,50 @@ describe("订阅源高级选项", () => {
     expect(nodeTrigger).toHaveTextContent("东京出口");
   });
 });
+
+describe("出口自动化参数与失效兜底节点", () => {
+  it("兜底策略指向已失效节点时展示不可用选项并可改选可用节点", async () => {
+    installRoutes(
+      baseRoutes({
+        nodes: () => egressNodeListWire([egressNodeWire({ id: "node-1", scope: "grok_web", name: "东京出口" })]),
+        operations: () =>
+          egressOperationsWire({
+            fallbacks: {
+              grok_build: { mode: "none" },
+              grok_web: { mode: "fixed", nodeId: "node-9" },
+              grok_console: { mode: "none" },
+              grok_web_asset: { mode: "none" },
+              grok_console_asset: { mode: "none" },
+            },
+          }),
+      }),
+    );
+    renderEgressNodes();
+    const row = await screen.findByTestId("egress-fallback-row-grok_web");
+    const nodeTrigger = await within(row).findByRole("combobox", {
+      name: i18n.t("settings.egress.fallbackNode", { scope: i18n.t("settings.egress.scopeWeb") }),
+    });
+
+    expect(nodeTrigger).toHaveTextContent(i18n.t("settings.egress.fallbackNodeUnavailable"));
+    expect(screen.getByTestId("egress-automation-save")).toBeDisabled();
+
+    nodeTrigger.focus();
+    fireEvent.keyDown(nodeTrigger, { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("option", { name: /东京出口/ }));
+
+    await waitFor(() => expect(nodeTrigger).toHaveTextContent("东京出口"));
+    await waitFor(() => expect(screen.getByTestId("egress-automation-save")).toBeEnabled());
+  });
+
+  it("切换探测提供方写入草稿并允许保存", async () => {
+    installRoutes(baseRoutes({ nodes: () => egressNodeListWire([]) }));
+    renderEgressNodes();
+    const trigger = await screen.findByLabelText(i18n.t("settings.egress.probeProvider"));
+
+    expect(screen.getByTestId("egress-automation-save")).toBeDisabled();
+    await chooseRadixOption(trigger, "IPinfo");
+
+    await waitFor(() => expect(trigger).toHaveTextContent("IPinfo"));
+    await waitFor(() => expect(screen.getByTestId("egress-automation-save")).toBeEnabled());
+  });
+});

@@ -140,4 +140,20 @@ describe("WebAccountSettingsDialogs 关闭与确认语义", () => {
       action: "acceptTerms",
     });
   });
+  it("Esc 关闭请求在空闲时回调、在进行中时被阻塞", async () => {
+    const idle = renderDialogs({ confirmationTarget: { account: account(), action: "acceptTerms" } });
+    await screen.findByRole("alertdialog");
+    await idle.user.keyboard("{Escape}");
+    await waitFor(() => expect(idle.props.onConfirmationClose).toHaveBeenCalledTimes(1));
+    idle.unmount();
+
+    const pending = renderDialogs({
+      confirmationTarget: { account: account(), action: "acceptTerms" },
+      confirmationPending: true,
+    });
+    await screen.findByRole("alertdialog");
+    await pending.user.keyboard("{Escape}");
+    expect(pending.props.onConfirmationClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+  });
 });
