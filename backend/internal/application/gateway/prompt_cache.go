@@ -196,6 +196,28 @@ func anchorsFromRoleMessages(raw json.RawMessage) (system, firstUser, firstAssis
 	return system, firstUser, firstAssistant
 }
 
+// messageAnchorRole 返回输入项的类型与角色标识，取值口径与 Provider 归一化一致。
+func messageAnchorRole(item map[string]json.RawMessage) (typeName, role string) {
+	var rawType, rawRole string
+	_ = json.Unmarshal(item["type"], &rawType)
+	_ = json.Unmarshal(item["role"], &rawRole)
+	return strings.TrimSpace(rawType), strings.ToLower(strings.TrimSpace(rawRole))
+}
+
+// messageAnchorContent 提取输入项正文；支持 content 数组/字符串与顶层 text 字符串。
+func messageAnchorContent(item map[string]json.RawMessage) string {
+	content := flattenMessageContent(item["content"])
+	if content != "" {
+		return content
+	}
+	// Support content objects whose text field is a string.
+	var text string
+	if json.Unmarshal(item["text"], &text) == nil {
+		return strings.TrimSpace(text)
+	}
+	return ""
+}
+
 func anchorsFromResponsesInput(raw json.RawMessage) (system, firstUser, firstAssistant string) {
 	// Shorthand form: input is a direct string.
 	var asString string
@@ -207,23 +229,12 @@ func anchorsFromResponsesInput(raw json.RawMessage) (system, firstUser, firstAss
 		return "", "", ""
 	}
 	for _, item := range items {
-		var typeName, role string
-		_ = json.Unmarshal(item["type"], &typeName)
-		_ = json.Unmarshal(item["role"], &role)
-		typeName = strings.TrimSpace(typeName)
-		role = strings.ToLower(strings.TrimSpace(role))
+		typeName, role := messageAnchorRole(item)
 		// Top-level instructions handle the system anchor; this branch extracts messages.
 		if typeName != "" && typeName != "message" {
 			continue
 		}
-		content := flattenMessageContent(item["content"])
-		if content == "" {
-			// Support content objects whose text field is a string.
-			var text string
-			if json.Unmarshal(item["text"], &text) == nil {
-				content = strings.TrimSpace(text)
-			}
-		}
+		content := messageAnchorContent(item)
 		if content == "" {
 			continue
 		}

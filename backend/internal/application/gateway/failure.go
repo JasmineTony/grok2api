@@ -96,6 +96,105 @@ func clientCredentialErrorCode(status int, upstreamCode string) string {
 	return "upstream_unavailable"
 }
 
+// classifyUnauthorized 标记 401：账号凭据被拒，必要时判定为确定性封锁。
+func (failure *UpstreamFailure) classifyUnauthorized(metadataText string) {
+	failure.Code = "upstream_unauthorized"
+	failure.PublicMessage = "上游账号认证失败"
+	failure.AccountScoped = true
+	failure.CredentialRejected = true
+	failure.AccountBlocked = isDefinitiveAccountBlock(metadataText)
+}
+
+// classifyPaymentRequired 标记 402：额度耗尽。付费/免费恢复类型由选择器按账号结算快照决定。
+func (failure *UpstreamFailure) classifyPaymentRequired(metadataText string) {
+	failure.Code = "upstream_payment_required"
+	failure.PublicMessage = "上游账号额度不足"
+	failure.AccountScoped = true
+	failure.QuotaExhausted = true
+	// spending-limit is account-scoped, but its paid/free recovery kind depends on
+	// the selected account's billing snapshot and must be decided by the selector.
+	failure.FreeQuotaExhausted = isFreeQuotaExhaustion(metadataText)
+	failure.SpendingLimitBlocked = isPaidQuotaExhaustion(metadataText)
+}
+
+// classifyForbidden 标记 403：区分请求级拒绝（DPoP/安全拒答/参数问题）与账号级封锁。
+func (failure *UpstreamFailure) classifyForbidden(upstreamCode, upstreamMessage, metadataText string, body []byte) {
+	failure.Code = "upstream_forbidden"
+	failure.PublicMessage = "上游拒绝了该请求"
+	// Console's DPoP requirement is an upstream auth-scheme rollout, not a
+	// property of the selected SSO account. Rotating accounts or browser
+	// egress cannot make the same Bearer-anonymous request valid.
+	if isDPoPProofRequired(upstreamCode) {
+		failure.RequestScopedForbidden = true
+		return
+	}
+	// Safety denials are request-scoped: inspect both structured metadata and the raw body
+	// so SAFETY_CHECK_TYPE_* markers still match when they only appear in nested text.
+	if isSafetyRejection(metadataText) || isSafetyRejection(string(body)) {
+		failure.SafetyRejection = true
+		return
+	}
+	if isRequestScopedForbidden(upstreamCode, metadataText) {
+		failure.RequestScopedForbidden = true
+		return
+	}
+	failure.AccountBlocked = isDefinitiveAccountBlock(metadataText)
+	// Some upstream envelopes expose the human-readable denial through a
+	// nested error/message field that is only retained in the normalized
+	// metadata text. Classify the complete metadata, not one extractor slot.
+	failure.PermanentAccountDenial = isPermanentAccountDenial(strings.ToLower(upstreamMessage)) || strings.Contains(metadataText, "access to the chat endpoint is denied")
+	failure.ModelQuotaExhausted = isModelQuotaExhaustion(metadataText)
+	failure.FreeQuotaExhausted = failure.ModelQuotaExhausted || isFreeQuotaExhaustion(metadataText)
+	failure.QuotaExhausted = failure.FreeQuotaExhausted || isCreditQuotaExhaustion(metadataText)
+	failure.SpendingLimitBlocked = isPaidQuotaExhaustion(metadataText)
+	failure.CredentialRejected = !failure.QuotaExhausted && containsAny(metadataText, "authentication", "unauthorized", "invalid token", "token expired")
+	failure.AccountScoped = failure.AccountBlocked || failure.PermanentAccountDenial || failure.QuotaExhausted || failure.CredentialRejected || isAccountScopedForbidden(metadataText)
+}
+
+// classifyBadRequest 标记 400：请求级参数问题保留上游文案。
+func (failure *UpstreamFailure) classifyBadRequest(upstreamCode, upstreamMessage, metadataText string) {
+	if isRequestScopedForbidden(upstreamCode, metadataText) {
+		failure.Code = "invalid_argument"
+		failure.RequestScopedForbidden = true
+		if upstreamMessage != "" {
+			failure.PublicMessage = upstreamMessage
+		} else {
+			failure.PublicMessage = "请求参数无效"
+		}
+		return
+	}
+	failure.Code = "upstream_error"
+	if upstreamMessage != "" {
+		failure.PublicMessage = upstreamMessage
+	}
+}
+
+// classifyRateLimited 标记 429：账号级限流，并区分订阅级与模型级免费额度信号。
+func (failure *UpstreamFailure) classifyRateLimited(metadataText string) {
+	failure.Code = "upstream_rate_limited"
+	failure.PublicMessage = "上游请求频率受限"
+	failure.AccountScoped = true
+	// Subscription-level free usage and explicit per-model free usage are
+	// distinct so the gateway can preserve their different recovery scopes.
+	failure.FreeQuotaExhausted = isFreeQuotaExhaustion(metadataText)
+	failure.ModelQuotaExhausted = isModelQuotaExhaustion(metadataText)
+	failure.QuotaExhausted = failure.FreeQuotaExhausted || isPaidQuotaExhaustion(metadataText)
+}
+
+// classifyOtherStatus 处理其余 4xx/5xx：保留上游文案，5xx 标记为上游服务异常。
+func (failure *UpstreamFailure) classifyOtherStatus(status int, upstreamMessage string) {
+	if status >= 400 && status < 500 {
+		failure.Code = "upstream_error"
+		failure.PublicMessage = "上游拒绝了该请求"
+		if upstreamMessage != "" {
+			failure.PublicMessage = upstreamMessage
+		}
+		return
+	}
+	failure.Code = "upstream_server_error"
+	failure.PublicMessage = "上游服务暂时异常"
+}
+
 func newHTTPUpstreamFailure(status int, body []byte, accountID uint64, accountName string) *UpstreamFailure {
 	upstreamCode, upstreamType, upstreamMessage := extractUpstreamErrorMetadata(body)
 	failure := &UpstreamFailure{
@@ -108,86 +207,17 @@ func newHTTPUpstreamFailure(status int, body []byte, accountID uint64, accountNa
 	metadataText := strings.ToLower(strings.Join([]string{upstreamCode, upstreamType, upstreamMessage}, " "))
 	switch status {
 	case http.StatusUnauthorized:
-		failure.Code = "upstream_unauthorized"
-		failure.PublicMessage = "上游账号认证失败"
-		failure.AccountScoped = true
-		failure.CredentialRejected = true
-		failure.AccountBlocked = isDefinitiveAccountBlock(metadataText)
+		failure.classifyUnauthorized(metadataText)
 	case http.StatusPaymentRequired:
-		failure.Code = "upstream_payment_required"
-		failure.PublicMessage = "上游账号额度不足"
-		failure.AccountScoped = true
-		failure.QuotaExhausted = true
-		// spending-limit is account-scoped, but its paid/free recovery kind depends on
-		// the selected account's billing snapshot and must be decided by the selector.
-		failure.FreeQuotaExhausted = isFreeQuotaExhaustion(metadataText)
-		failure.SpendingLimitBlocked = isPaidQuotaExhaustion(metadataText)
+		failure.classifyPaymentRequired(metadataText)
 	case http.StatusForbidden:
-		failure.Code = "upstream_forbidden"
-		failure.PublicMessage = "上游拒绝了该请求"
-		// Console's DPoP requirement is an upstream auth-scheme rollout, not a
-		// property of the selected SSO account. Rotating accounts or browser
-		// egress cannot make the same Bearer-anonymous request valid.
-		if isDPoPProofRequired(upstreamCode) {
-			failure.RequestScopedForbidden = true
-			break
-		}
-		// Safety denials are request-scoped: inspect both structured metadata and the raw body
-		// so SAFETY_CHECK_TYPE_* markers still match when they only appear in nested text.
-		if isSafetyRejection(metadataText) || isSafetyRejection(string(body)) {
-			failure.SafetyRejection = true
-			break
-		}
-		if isRequestScopedForbidden(upstreamCode, metadataText) {
-			failure.RequestScopedForbidden = true
-			break
-		}
-		failure.AccountBlocked = isDefinitiveAccountBlock(metadataText)
-		// Some upstream envelopes expose the human-readable denial through a
-		// nested error/message field that is only retained in the normalized
-		// metadata text. Classify the complete metadata, not one extractor slot.
-		failure.PermanentAccountDenial = isPermanentAccountDenial(strings.ToLower(upstreamMessage)) || strings.Contains(metadataText, "access to the chat endpoint is denied")
-		failure.ModelQuotaExhausted = isModelQuotaExhaustion(metadataText)
-		failure.FreeQuotaExhausted = failure.ModelQuotaExhausted || isFreeQuotaExhaustion(metadataText)
-		failure.QuotaExhausted = failure.FreeQuotaExhausted || isCreditQuotaExhaustion(metadataText)
-		failure.SpendingLimitBlocked = isPaidQuotaExhaustion(metadataText)
-		failure.CredentialRejected = !failure.QuotaExhausted && containsAny(metadataText, "authentication", "unauthorized", "invalid token", "token expired")
-		failure.AccountScoped = failure.AccountBlocked || failure.PermanentAccountDenial || failure.QuotaExhausted || failure.CredentialRejected || isAccountScopedForbidden(metadataText)
+		failure.classifyForbidden(upstreamCode, upstreamMessage, metadataText, body)
 	case http.StatusBadRequest:
-		if isRequestScopedForbidden(upstreamCode, metadataText) {
-			failure.Code = "invalid_argument"
-			failure.RequestScopedForbidden = true
-			if upstreamMessage != "" {
-				failure.PublicMessage = upstreamMessage
-			} else {
-				failure.PublicMessage = "请求参数无效"
-			}
-			break
-		}
-		failure.Code = "upstream_error"
-		if upstreamMessage != "" {
-			failure.PublicMessage = upstreamMessage
-		}
+		failure.classifyBadRequest(upstreamCode, upstreamMessage, metadataText)
 	case http.StatusTooManyRequests:
-		failure.Code = "upstream_rate_limited"
-		failure.PublicMessage = "上游请求频率受限"
-		failure.AccountScoped = true
-		// Subscription-level free usage and explicit per-model free usage are
-		// distinct so the gateway can preserve their different recovery scopes.
-		failure.FreeQuotaExhausted = isFreeQuotaExhaustion(metadataText)
-		failure.ModelQuotaExhausted = isModelQuotaExhaustion(metadataText)
-		failure.QuotaExhausted = failure.FreeQuotaExhausted || isPaidQuotaExhaustion(metadataText)
+		failure.classifyRateLimited(metadataText)
 	default:
-		if status >= 400 && status < 500 {
-			failure.Code = "upstream_error"
-			failure.PublicMessage = "上游拒绝了该请求"
-			if upstreamMessage != "" {
-				failure.PublicMessage = upstreamMessage
-			}
-		} else {
-			failure.Code = "upstream_server_error"
-			failure.PublicMessage = "上游服务暂时异常"
-		}
+		failure.classifyOtherStatus(status, upstreamMessage)
 	}
 	fingerprintPart := normalizeFailureCode(firstNonEmptyFailure(upstreamCode, upstreamType, upstreamMessage))
 	if fingerprintPart == "" {
