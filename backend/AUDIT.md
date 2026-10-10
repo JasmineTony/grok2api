@@ -321,6 +321,7 @@ ERROR: failed to push ghcr.io/jasminetony/grok2api:main-arm64: denied: permissio
 
 根因：`JasmineTony/grok2api` 于 2026-10-09T10:34:12Z 重建，而 GHCR 包由旧仓库实例创建、成为孤立包，新仓库的 `GITHUB_TOKEN` 无写权限；仓库 `default_workflow_permissions = read`。工作流 YAML 正确（`packages: write` 已声明），改代码无法修复。**2026-10-10 复核确认**：run `37921816518`（`main`，`7c0493a2`）与 run `38054220100`（tag `v0.1.1`，`b2123a7d`）的 Publish job 日志中 `GITHUB_TOKEN Permissions` 段均已列出 `Packages: write`，却仍以同一条 `permission_denied: write_package` 失败——拒绝发生在**包级授权**，不是 token 权限或工作流声明。另需注意：本仓库只在 `main` 与 `v*.*.*` tag 上触发 push 事件，因此 `maint/modular-quality-audit` 分支上的历史 `GHCR Image` 运行全部是 PR 事件（`Publish`/`Merge` 按 `if` 条件 skipped），从未真正执行过镜像推送，早期「main 的持久阻塞」只在 `main` 推送时可见。
 
+**2026-10-10 已解除（实测）**：`GET /users/JasmineTony/packages/container/grok2api` 显示 `repository = null`、162 个版本全部来自重建前的旧实例，证实「孤立包」。经维护线负责人授权，用带 `read:packages` + `delete:packages` 的 OAuth device flow 凭据执行 `DELETE /users/JasmineTony/packages/container/grok2api` → **HTTP 204**（复查 404），再由 CI 重建：新包 2026-10-10T13:57:17Z 创建、`visibility=public`、`repository=JasmineTony/grok2api`。随后重跑 run `38054220100` 的失败任务，`Publish image (amd64)` 与 `(arm64)` 成功；重跑 run `38055278879`（`main`）后 `Publish` 与 `Merge image` 全部 success。注册表实测 9 个 tag（`v0.1.1`、`v0.1.1-amd64`、`v0.1.1-arm64`、`main`、`main-amd64`、`main-arm64`、`latest`、`latest-amd64`、`latest-arm64`），`v0.1.1`/`main`/`latest` 均为 linux/amd64 + linux/arm64 的 `application/vnd.oci.image.index.v1+json`，匿名拉取 HTTP 200。**原「修复方式」中的 UI 连接仓库路径仍然有效，但本次采用删除孤立包并重建，无需人工 UI 操作。**
 先前观察到的 `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` 是第一层**瞬时**原因（pnpm 12 内置 24h 供应链策略），重跑后已自愈；本分支已在 `frontend/pnpm-workspace.yaml` 显式固定 `minimumReleaseAge: 1440`（值不变）使该策略可审查。
 
 修复方式：Packages → grok2api → Package settings → Connect repository → 选 `JasmineTony/grok2api`；或删除孤立包；然后重跑 main 的失败任务。
@@ -491,7 +492,7 @@ ERROR: failed to push ghcr.io/jasminetony/grok2api:main-arm64: denied: permissio
 
 ## 14. 发布登记：v0.1.1（2026-10-10）
 
-维护线首次发布，按 `AGENTS.md` §8 流程执行。**后端验收为 `Passed`；镜像发布为 `Failed`/`Blocked`，未记为通过。**
+维护线首次发布，按 `AGENTS.md` §8 流程执行。**后端验收、CI Verify 与容器镜像发布均为 `Passed`；tag 推送的 `Merge image` job 为 `Failed`（工作流缺陷，见下表末行与 `frontend/AUDIT.md` §14）。**
 
 | 项目          | 事实                                                                                                                                                                                                                                                                                          |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -499,5 +500,6 @@ ERROR: failed to push ghcr.io/jasminetony/grok2api:main-arm64: denied: permissio
 | tag / Release | annotated `v0.1.1`（tag 对象 `db20ef9638fc27cee5bc915dc7afa84724a34610`）；Release https://github.com/JasmineTony/grok2api/releases/tag/v0.1.1 （本仓库首个 Release，非草稿、非预发布）                                                                                                          |
 | 本机验证      | `go build ./...`、`go vet ./...`、`go test ./... -count=1` 均 **exit 0**（75 包：64 ok / 11 无测试文件 / 0 FAIL）；21 个 PostgreSQL·Redis 集成用例因本机无隔离服务 **Skipped**（非 Passed），`-race` 本机 **Blocked**（无 cgo），两者由 Linux CI 覆盖                                       |
 | 远端 CI       | run `38054220100`（tag `v0.1.1`）与 run `38054197912`（`main`）的 Verify job **18 步全部 success**：Test backend、Assert required integration tests ran（PostgreSQL/Redis 用例 **0 跳过**）、Race backend、Vet backend、Swagger 精确 diff、前端 `pnpm verify`、全栈 E2E                            |
-| 镜像发布      | **Failed（Blocked）**：`Publish image (amd64/arm64)` → `denied: permission_denied: write_package`；`Merge image` skipped。根因、复核证据与补救步骤见 §11                                                                                                                                        |
+| 镜像发布      | **Passed**：删除未链接的孤立包（HTTP 204）后，run `38054220100` attempt 2 的 `Publish image (amd64/arm64)` 成功，run `38055278879`（`main`）attempt 2 全绿；注册表实测 `ghcr.io/jasminetony/grok2api` 9 个 tag，`v0.1.1` / `main` / `latest` 均为 amd64 + arm64 多架构索引，匿名拉取 HTTP 200。详见 §11 与 `frontend/AUDIT.md` §14 |
+| 新增缺陷（P1）| tag 推送时 `Merge image` 必然失败：`docker/metadata-action` 默认 `flavor: latest=auto` 会为 semver tag 额外生成 `latest`，而 `latest-amd64`/`latest-arm64` 只在 `main` 推送时存在 → `docker buildx imagetools create` 报 `latest-arm64: not found`。修复：给两个 `Docker metadata` 步骤加 `flavor: latest=false`（需 `workflow` scope，**尚未修复**）。完整证据见 `frontend/AUDIT.md` §14 |
 | 回滚点        | 源码与配置随提交回退到 `7c0493a2`（发布前的 `main`）；tag `v0.1.1` 与对应 Release 需一并删除。本次不涉及生产数据迁移，无需数据回滚                                                                                              |
