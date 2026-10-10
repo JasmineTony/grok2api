@@ -140,7 +140,7 @@
 
 - `7c0493a2` 历史基线：前端 18 个源码文件 >600 行（accounts 3864、creative-console 3018、i18n 4150、settings 1604、quality-guard 1579、egress-nodes 1560 等）。旧“11个”记录已失效。
 - 阶段 3–6 整改后（`frontend/structure-baseline.json` 是唯一机器可读基线）：**超限文件 0 个**；超限函数由 80 降至 29（全部为存量，逐项清单见该基线文件的 `functions` 字段）。后端不在结构门禁扫描范围（REV-1 仅约束前端），其函数级 REV-2 存量由 `backend/AUDIT.md` §12.2 登记：三包由 HEAD 基线 **88 降至 7**（gateway 7 / inference 0 / provider-web 0）。其中 `createResponseAt` 908 行已登记为不强行拆；扣除后剩 6 个——3 个多锁段/状态机量级（`runVideoJob` 284、`OpenVoiceWebSocket` 247、`acquire` 246）与 3 个轻微超限（`executeImage` 57、`executeVoice` 54、`CreateVideo` 52），均未记为「已通过」。
-- 覆盖率口径自阶段 6 起为「已重构模块整目录纳入 + 例外逐项登记原因」，不再手工维护达标清单；例外只允许用于测试分层、纯 re-export barrel、测试支撑，禁止把业务代码排除来达标。阶段 7 实测（`pnpm verify` 中的 `test:ui:coverage`，110 文件 / 1357 用例全过）：全局 statements **97.34** / branches **93.25** / functions **97.32** / lines **98.09**，四项均高于 TEST-1 的 76% 门槛；**逐文件口径仍有 8 个文件在分支或函数指标上 <76%**（这 8 个文件的语句与行均 ≥76%，最低语句 77.77），另有 5 个不含可执行语句的类型/DTO 模块报 0/0/0/0 属统计假象。TEST-2 的逐文件 100% 阈值已扩到 **19 个自定义 hook**；唯一未纳入的是 `use-account-cleanup-flow.ts`（分支 97.06，剩 1 个不可驱动分支）。未达标项逐项登记在 `frontend/AUDIT.md` §11.6 与 §13.3，不静默排除。
+- 覆盖率口径自阶段 6 起为「已重构模块整目录纳入 + 例外逐项登记原因」，不再手工维护达标清单；例外只允许用于测试分层、纯 re-export barrel、测试支撑，禁止把业务代码排除来达标。阶段 7 最终实测（`pnpm verify` 中的 `test:ui:coverage`，113 文件 / 1388 用例全过）：全局 statements **97.65** / branches **93.76** / functions **97.94** / lines **98.36**，且**逐文件四项全部 ≥76%**（阶段 6 登记的「约 32 个文件 <76%」已归零）；另有 5 个不含可执行语句的类型/DTO 模块报 0/0/0/0 属统计假象。TEST-2 的逐文件 100% 阈值已扩到 **19 个自定义 hook**；唯一未纳入的是 `use-account-cleanup-flow.ts`（分支 97.06，剩 1 个不可驱动分支）。仍不可驱动的死分支/工具语义不可达分支逐项登记在 `frontend/AUDIT.md` §13.3，不静默排除。
 - 重构按公共契约 → 账号/密钥/审计/模型 → 设置/出口/守护 → 创作/媒体/Gateway推进。完成模块移出豁免；阶段内未完成旧文件只允许持平或减小。
 - 全量审计不意味着一次性同时重写全部目录；但已批准的后续阶段不得悄悄取消或冒称全部完成。
 
