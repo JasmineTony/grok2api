@@ -59,75 +59,25 @@ type VideoInput struct {
 	VideoURL string
 }
 
-func (s *Service) CreateVideo(ctx context.Context, input VideoInput) (media.Job, error) {
-	if s.mediaJobs == nil || s.mediaQueue == nil {
-		return media.Job{}, fmt.Errorf("视频任务服务未配置")
-	}
-	operation := input.Operation
-	if operation == "" {
-		operation = provider.VideoOperationGenerate
-	}
-	switch operation {
-	case provider.VideoOperationGenerate, provider.VideoOperationEdit, provider.VideoOperationExtend:
-	default:
-		return media.Job{}, fmt.Errorf("不支持的视频操作")
-	}
-	if len(input.Prompt) > 100000 {
-		return media.Job{}, fmt.Errorf("prompt 过长")
-	}
-	if operation == provider.VideoOperationGenerate {
-		hasImage := strings.TrimSpace(input.ImageURL) != ""
-		hasRefs := len(input.ReferenceURLs) > 0
-		hasRefAudio := len(input.ReferenceAudios) > 0
-		if hasImage && (hasRefs || hasRefAudio) {
-			return media.Job{}, fmt.Errorf("image 不能与 reference_images/reference_audios 同时使用")
-		}
-		if hasRefs || hasRefAudio {
-			if len(input.Prompt) == 0 {
-				return media.Job{}, fmt.Errorf("参考图/参考音频视频必须提供 prompt")
-			}
-			if resolution := strings.ToLower(strings.TrimSpace(input.Resolution)); resolution == "1080p" {
-				return media.Job{}, fmt.Errorf("参考图视频 resolution 最高 720p")
-			}
-		}
-		if len(input.Prompt) == 0 && !hasImage && !hasRefs && !hasRefAudio {
-			return media.Job{}, fmt.Errorf("文本生视频必须提供 prompt；图片生视频可以省略 prompt")
-		}
-		if strings.TrimSpace(input.VideoURL) != "" {
-			return media.Job{}, fmt.Errorf("视频生成不支持 video 输入")
-		}
-		if err := validateVideoReferenceAudios(input.ReferenceAudios); err != nil {
-			return media.Job{}, err
-		}
-	} else {
-		if strings.TrimSpace(input.Prompt) == "" {
-			return media.Job{}, fmt.Errorf("视频编辑/延长必须提供 prompt")
-		}
-		if strings.TrimSpace(input.VideoURL) == "" {
-			return media.Job{}, fmt.Errorf("视频编辑/延长必须提供 video")
-		}
-		if strings.TrimSpace(input.ImageURL) != "" || len(input.ReferenceURLs) > 0 || len(input.ReferenceAudios) > 0 {
-			return media.Job{}, fmt.Errorf("视频编辑/延长不支持 image、reference_images 或 reference_audios")
-		}
-		if operation == provider.VideoOperationEdit && input.Duration != 0 {
-			return media.Job{}, fmt.Errorf("视频编辑不支持 duration")
-		}
-		if operation == provider.VideoOperationExtend {
-			if input.Duration == 0 {
-				input.Duration = 6
-			}
-			if input.Duration < 2 || input.Duration > 10 {
-				return media.Job{}, fmt.Errorf("视频延长 duration 必须在 2 到 10 秒之间")
-			}
-		}
-	}
+// videoCreatePlan 固定视频创建阶段解析出的可调度路由、账号选择会话与计费输入。
+type videoCreatePlan struct {
+	route     model.Route
+	selection *selectionSession
+	inputJSON string
+	allRefs   []string
+	pricing   audit.PricingResult
+	priced    bool
+}
+
+// resolveVideoCreatePlan 依次解析候选路由、校验输入引用、编码上游输入，并选出可调度路由与官方报价。
+func (s *Service) resolveVideoCreatePlan(ctx context.Context, input VideoInput, operation provider.VideoOperation) (videoCreatePlan, error) {
 	routes, err := s.models.GetByPublicIDCandidates(ctx, input.PublicModel)
 	if err != nil {
-		return media.Job{}, ErrModelNotFound
+		return videoCreatePlan{}, ErrModelNotFound
 	}
 	routes, err = routesForVideoOperation(routes, operation)
 	if err != nil {
-		return media.Job{}, err
+		return videoCreatePlan{}, err
 	}
 	providerSupported := func(providerValue account.Provider) bool {
 		_, ok := s.providers.Videos(providerValue)
@@ -135,35 +85,125 @@ func (s *Service) CreateVideo(ctx context.Context, input VideoInput) (media.Job,
 	}
 	routes, _, err = s.eligibleMediaRoutes(routes, input.ClientKey, model.CapabilityVideo, providerSupported)
 	if err != nil {
-		return media.Job{}, err
+		return videoCreatePlan{}, err
 	}
 	routes, err = routesForVideoParameters(routes, operation, input.Resolution, strings.TrimSpace(input.ImageURL) != "", len(input.ReferenceURLs), input.Duration)
 	if err != nil {
-		return media.Job{}, err
+		return videoCreatePlan{}, err
 	}
 	allRefs := videoInputReferences(input.ImageURL, input.ReferenceURLs)
 	if err := s.validateVideoInputReferences(ctx, allRefs, "image"); err != nil {
-		return media.Job{}, err
+		return videoCreatePlan{}, err
 	}
 	if videoURL := strings.TrimSpace(input.VideoURL); videoURL != "" {
 		if err := s.validateVideoInputReferences(ctx, []string{videoURL}, "video"); err != nil {
-			return media.Job{}, err
+			return videoCreatePlan{}, err
 		}
 	}
 	inputJSON, err := encodeVideoInputFull(operation, input.ImageURL, input.ReferenceURLs, input.ReferenceAudios, input.VideoURL)
 	if err != nil {
-		return media.Job{}, err
+		return videoCreatePlan{}, err
 	}
 	route, selection, err := s.selectSchedulableEligibleMediaRouteWithQuotaMode(ctx, routes, input.ClientKey, true, func(route model.Route) string {
 		return videoQuotaMode(route.Provider, s.providers.QuotaMode(route.Provider, route.UpstreamModel), input.Resolution)
 	})
 	if err != nil {
-		return media.Job{}, err
+		return videoCreatePlan{}, err
 	}
 	if err := s.checkLedgerReady(); err != nil {
-		return media.Job{}, err
+		return videoCreatePlan{}, err
 	}
 	pricing, priced := resolveVideoPricing(operation, route.UpstreamModel, input.Resolution, input.Duration, len(allRefs))
+	return videoCreatePlan{
+		route: route, selection: selection, inputJSON: inputJSON, allRefs: allRefs, pricing: pricing, priced: priced,
+	}, nil
+}
+
+// normalizeVideoCreateInput 规范化视频操作名并校验与操作相关的输入契约；返回的 input 可能带
+// 上补全后的默认时长。
+func normalizeVideoCreateInput(input VideoInput) (provider.VideoOperation, VideoInput, error) {
+	operation := input.Operation
+	if operation == "" {
+		operation = provider.VideoOperationGenerate
+	}
+	switch operation {
+	case provider.VideoOperationGenerate, provider.VideoOperationEdit, provider.VideoOperationExtend:
+	default:
+		return "", input, fmt.Errorf("不支持的视频操作")
+	}
+	if len(input.Prompt) > 100000 {
+		return "", input, fmt.Errorf("prompt 过长")
+	}
+	if operation == provider.VideoOperationGenerate {
+		return operation, input, validateVideoGenerateInput(input)
+	}
+	return normalizeVideoTransformInput(operation, input)
+}
+
+// validateVideoGenerateInput 校验文本/图片/参考素材生视频的互斥与必填项。
+func validateVideoGenerateInput(input VideoInput) error {
+	hasImage := strings.TrimSpace(input.ImageURL) != ""
+	hasRefs := len(input.ReferenceURLs) > 0
+	hasRefAudio := len(input.ReferenceAudios) > 0
+	if hasImage && (hasRefs || hasRefAudio) {
+		return fmt.Errorf("image 不能与 reference_images/reference_audios 同时使用")
+	}
+	if hasRefs || hasRefAudio {
+		if len(input.Prompt) == 0 {
+			return fmt.Errorf("参考图/参考音频视频必须提供 prompt")
+		}
+		if resolution := strings.ToLower(strings.TrimSpace(input.Resolution)); resolution == "1080p" {
+			return fmt.Errorf("参考图视频 resolution 最高 720p")
+		}
+	}
+	if len(input.Prompt) == 0 && !hasImage && !hasRefs && !hasRefAudio {
+		return fmt.Errorf("文本生视频必须提供 prompt；图片生视频可以省略 prompt")
+	}
+	if strings.TrimSpace(input.VideoURL) != "" {
+		return fmt.Errorf("视频生成不支持 video 输入")
+	}
+	return validateVideoReferenceAudios(input.ReferenceAudios)
+}
+
+// normalizeVideoTransformInput 校验编辑/延长操作并补齐延长时长的默认值。
+func normalizeVideoTransformInput(operation provider.VideoOperation, input VideoInput) (provider.VideoOperation, VideoInput, error) {
+	if strings.TrimSpace(input.Prompt) == "" {
+		return "", input, fmt.Errorf("视频编辑/延长必须提供 prompt")
+	}
+	if strings.TrimSpace(input.VideoURL) == "" {
+		return "", input, fmt.Errorf("视频编辑/延长必须提供 video")
+	}
+	if strings.TrimSpace(input.ImageURL) != "" || len(input.ReferenceURLs) > 0 || len(input.ReferenceAudios) > 0 {
+		return "", input, fmt.Errorf("视频编辑/延长不支持 image、reference_images 或 reference_audios")
+	}
+	if operation == provider.VideoOperationEdit && input.Duration != 0 {
+		return "", input, fmt.Errorf("视频编辑不支持 duration")
+	}
+	if operation != provider.VideoOperationExtend {
+		return operation, input, nil
+	}
+	if input.Duration == 0 {
+		input.Duration = 6
+	}
+	if input.Duration < 2 || input.Duration > 10 {
+		return "", input, fmt.Errorf("视频延长 duration 必须在 2 到 10 秒之间")
+	}
+	return operation, input, nil
+}
+
+func (s *Service) CreateVideo(ctx context.Context, input VideoInput) (media.Job, error) {
+	if s.mediaJobs == nil || s.mediaQueue == nil {
+		return media.Job{}, fmt.Errorf("视频任务服务未配置")
+	}
+	operation, input, err := normalizeVideoCreateInput(input)
+	if err != nil {
+		return media.Job{}, err
+	}
+	plan, err := s.resolveVideoCreatePlan(ctx, input, operation)
+	if err != nil {
+		return media.Job{}, err
+	}
+	route, selection := plan.route, plan.selection
 	externalModel := model.ExternalPublicID(route.Provider, route.PublicID)
 	lease, err := selection.Acquire(ctx, nil, false)
 	if err != nil {
@@ -183,11 +223,11 @@ func (s *Service) CreateVideo(ctx context.Context, input VideoInput) (media.Job,
 		AccountID: accountID, AccountName: lease.Credential.Name,
 		Provider: string(route.Provider), Model: externalModel, ModelRouteID: route.ID, UpstreamModel: model.DisplayUpstreamModel(route.Provider, route.UpstreamModel), Operation: operation, Prompt: input.Prompt,
 		Seconds: input.Duration, Size: input.AspectRatio, Quality: input.Resolution,
-		Status: media.StatusQueued, Progress: 0, InputJSON: inputJSON, InputImageCount: len(allRefs), CreatedAt: now, UpdatedAt: now,
+		Status: media.StatusQueued, Progress: 0, InputJSON: plan.inputJSON, InputImageCount: len(plan.allRefs), CreatedAt: now, UpdatedAt: now,
 	}
 	reserved := false
-	if priced {
-		reserved, err = s.clientKeys.ReserveBilling(ctx, input.ClientKey, "video_usage_"+job.ID, pricing.CostInUSDTicks, mediaBillingReservationTTL)
+	if plan.priced {
+		reserved, err = s.clientKeys.ReserveBilling(ctx, input.ClientKey, "video_usage_"+job.ID, plan.pricing.CostInUSDTicks, mediaBillingReservationTTL)
 		if err != nil {
 			return media.Job{}, err
 		}
@@ -457,10 +497,14 @@ func (s *Service) runVideoJob(parent context.Context, job media.Job, route model
 			pinnedAccountID = job.AccountID
 		}
 		if pinnedAccountID > 0 && !excluded[pinnedAccountID] {
-			lease, err = s.selector.AcquirePinnedForKey(ctx, route.Provider, pinnedAccountID, route.ID, route.UpstreamModel, quotaMode, true, accountScope)
-			if err != nil {
+			// 固定账号（首轮为本任务创建时选中的账号，其后为 403 出口重试的同一账号）获取失败时
+			// 只排除该账号；错误不能写回 err，否则下面的 selection.Acquire 回退会被跳过，把仍有
+			// 健康账号的账号池误判为 account_unavailable。
+			pinnedLease, pinnedErr := s.selector.AcquirePinnedForKey(ctx, route.Provider, pinnedAccountID, route.ID, route.UpstreamModel, quotaMode, true, accountScope)
+			if pinnedErr != nil {
 				excluded[pinnedAccountID] = true
-				lease = nil
+			} else {
+				lease = pinnedLease
 			}
 		}
 		if lease == nil {

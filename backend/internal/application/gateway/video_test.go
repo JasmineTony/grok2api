@@ -746,6 +746,9 @@ type videoCreateFailoverAdapter struct {
 	failures map[uint64]int
 	status   int
 	attempts []uint64
+	// onAttempt 在记录本次尝试后回调，供用例在上游调用与下一次租约获取之间改变账号状态
+	// （例如禁用账号），用于验证固定账号获取失败时的换号回退。
+	onAttempt func(credentialID uint64)
 }
 
 func (a *videoCreateFailoverAdapter) Provider() account.Provider { return account.ProviderWeb }
@@ -763,7 +766,11 @@ func (a *videoCreateFailoverAdapter) GenerateVideo(_ context.Context, request pr
 	if remaining > 0 {
 		a.failures[request.Credential.ID] = remaining - 1
 	}
+	onAttempt := a.onAttempt
 	a.mu.Unlock()
+	if onAttempt != nil {
+		onAttempt(request.Credential.ID)
+	}
 	if remaining > 0 {
 		if a.status == 0 {
 			return provider.VideoResult{}, errors.New("unclassified create failure")
