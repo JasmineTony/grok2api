@@ -536,18 +536,25 @@ Important optional settings:
 
 ```bash
 cd backend
-go test ./...
-go test -race ./...
+go test ./... -count=1   # full suite (PostgreSQL/Redis integration cases are skipped
+                         # unless TEST_POSTGRES_*/Redis env is provided; skipped != passed)
 go vet ./...
-go build ./cmd/grok2api
+go build ./...
+go test -race ./...      # requires a cgo-capable Linux/CI toolchain
 ```
 
 ```bash
 cd frontend
 pnpm install --frozen-lockfile
-pnpm lint
-pnpm build
+pnpm verify          # format, types, both linters, unit tests, coverage, dependency
+                     # boundaries, structure limits, gate self-tests, build, bundle budget
+pnpm verify:full     # pnpm verify + real full-stack Playwright E2E (production dist +
+                     # real Go service + temporary SQLite/Memory)
 ```
+
+See [`AGENTS.md`](./AGENTS.md) for the rules and thresholds, and
+[`frontend/AUDIT.md`](./frontend/AUDIT.md) / [`backend/AUDIT.md`](./backend/AUDIT.md)
+for the measured evidence and the registered open gaps.
 
 Regenerate Swagger after changing public API annotations:
 

@@ -491,18 +491,24 @@ docker network inspect grok2api_default \
 
 ```bash
 cd backend
-go test ./...
-go test -race ./...
+go test ./... -count=1   # 全量（PostgreSQL/Redis 集成用例需提供 TEST_POSTGRES_*/Redis
+                         # 环境，否则跳过；跳过不等于通过）
 go vet ./...
-go build ./cmd/grok2api
+go build ./...
+go test -race ./...      # 需支持 cgo 的 Linux/CI 工具链
 ```
 
 ```bash
 cd frontend
 pnpm install --frozen-lockfile
-pnpm lint
-pnpm build
+pnpm verify          # 格式、类型、双 Lint、单测、覆盖率、依赖边界、结构约束、
+                     # 门禁自测、生产构建、体积预算
+pnpm verify:full     # pnpm verify + 真实全栈 Playwright E2E（生产 dist + 真实 Go 服务
+                     # + 临时 SQLite/Memory）
 ```
+
+规则与阈值见 [`AGENTS.md`](./AGENTS.md)；实测证据与已登记的未达标项见
+[`frontend/AUDIT.md`](./frontend/AUDIT.md) 与 [`backend/AUDIT.md`](./backend/AUDIT.md)。
 
 修改公开 API 注释后重新生成 Swagger：
 
