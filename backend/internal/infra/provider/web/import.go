@@ -54,6 +54,11 @@ func (a *Adapter) ParseImportedCredentials(data []byte) ([]provider.CredentialSe
 	if len(entries) == 0 {
 		return nil, fmt.Errorf("账号文件中没有 Grok Web 账号")
 	}
+	return buildImportedCredentialSeeds(entries)
+}
+
+// buildImportedCredentialSeeds 把 JSON 条目转换为去重后的凭据种子。
+func buildImportedCredentialSeeds(entries []importEntry) ([]provider.CredentialSeed, error) {
 	seen := make(map[string]struct{}, len(entries))
 	result := make([]provider.CredentialSeed, 0, len(entries))
 	for index, entry := range entries {
@@ -79,15 +84,20 @@ func (a *Adapter) ParseImportedCredentials(data []byte) ([]provider.CredentialSe
 		if name == "" {
 			name = fmt.Sprintf("Grok Web %s", security.HashToken(token)[:8])
 		}
-		result = append(result, provider.CredentialSeed{
-			Provider: account.ProviderWeb, AuthType: account.AuthTypeSSO, WebTier: tier,
-			Name: name, Email: strings.TrimSpace(entry.Email), UserID: strings.TrimSpace(entry.UserID),
-			SourceKey: "sso:" + security.HashToken(token), AccessToken: token, CloudflareCookies: entry.CloudflareCookies,
-			WebNSFWEnabledAt: entry.NSFWEnabledAt, WebTermsAcceptedAt: entry.TOSAcceptedAt,
-			WebTermsAcceptedVersion: entry.TOSVersion, WebBirthDateSetAt: entry.BirthDateSetAt,
-		})
+		result = append(result, credentialSeedFromImportEntry(entry, token, tier, name))
 	}
 	return result, nil
+}
+
+// credentialSeedFromImportEntry 构造单条 Web SSO 凭据种子。
+func credentialSeedFromImportEntry(entry importEntry, token string, tier account.WebTier, name string) provider.CredentialSeed {
+	return provider.CredentialSeed{
+		Provider: account.ProviderWeb, AuthType: account.AuthTypeSSO, WebTier: tier,
+		Name: name, Email: strings.TrimSpace(entry.Email), UserID: strings.TrimSpace(entry.UserID),
+		SourceKey: "sso:" + security.HashToken(token), AccessToken: token, CloudflareCookies: entry.CloudflareCookies,
+		WebNSFWEnabledAt: entry.NSFWEnabledAt, WebTermsAcceptedAt: entry.TOSAcceptedAt,
+		WebTermsAcceptedVersion: entry.TOSVersion, WebBirthDateSetAt: entry.BirthDateSetAt,
+	}
 }
 
 func parsePlainTextCredentials(value string) ([]provider.CredentialSeed, error) {

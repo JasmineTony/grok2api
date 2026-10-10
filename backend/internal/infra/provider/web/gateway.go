@@ -376,6 +376,53 @@ func gatewayTurnEvents(sessionID, prompt string, attachments []string, previous 
 	return itemEvent, responseEvent
 }
 
+// applyGatewayResponseChunk 处理 mgw response.chunk 帧（工具卡片、工具结果、引用与文本增量）。
+func applyGatewayResponseChunk(parsed *parsedChat, chunk map[string]any) (string, string, error) {
+	if chunk == nil {
+		return "", "", nil
+	}
+	// Current grok.com mgw protocol streams search tools and citations as
+	// dedicated chunk fields (not <grok:render> tokens).
+	if card, _ := chunk["tool_usage_card"].(map[string]any); card != nil {
+		collectGatewayToolUsageCard(parsed, card)
+	}
+	if result, _ := chunk["tool_result"].(map[string]any); result != nil {
+		collectGatewayToolResult(parsed, result)
+	}
+	if cite, _ := chunk["render_citation"].(map[string]any); cite != nil {
+		return applyGatewayRenderCitation(parsed, cite)
+	}
+	text, _ := chunk["text"].(map[string]any)
+	delta, _ := text["text"].(string)
+	channel, _ := text["channel"].(string)
+	return appendGatewayDelta(parsed, channel, delta)
+}
+
+// applyGatewayResponseDone 记录父响应 id 并校验终态。
+func applyGatewayResponseDone(parsed *parsedChat, event map[string]any) error {
+	response, _ := event["response"].(map[string]any)
+	parsed.ParentID, _ = response["id"].(string)
+	status, _ := response["status"].(string)
+	if status != "" && status != "completed" {
+		return fmt.Errorf("Grok Gateway response 状态为 %s", status)
+	}
+	return nil
+}
+
+// applyGatewayGrokOutput 处理 response.grok.output 帧（流错误与卡片附件图片）。
+func applyGatewayGrokOutput(parsed *parsedChat, event map[string]any) (string, string, error) {
+	output, _ := event["output"].(map[string]any)
+	if streamError, _ := output["stream_error"].(map[string]any); streamError != nil {
+		return "", "", webResponseError(streamError)
+	}
+	if rawURL := collectCardAttachment(parsed, output["card_attachment"]); rawURL != "" {
+		rawURL = absoluteAssetURL(rawURL)
+		parsed.Images = appendUniqueString(parsed.Images, rawURL)
+		return "image", rawURL, nil
+	}
+	return "", "", nil
+}
+
 func parseGatewayEvent(event map[string]any, parsed *parsedChat) (string, string, error) {
 	typeName, _ := event["type"].(string)
 	switch typeName {
@@ -384,24 +431,7 @@ func parseGatewayEvent(event map[string]any, parsed *parsedChat) (string, string
 		parsed.ConversationID, _ = conversation["id"].(string)
 	case "response.chunk":
 		chunk, _ := event["chunk"].(map[string]any)
-		if chunk == nil {
-			return "", "", nil
-		}
-		// Current grok.com mgw protocol streams search tools and citations as
-		// dedicated chunk fields (not <grok:render> tokens).
-		if card, _ := chunk["tool_usage_card"].(map[string]any); card != nil {
-			collectGatewayToolUsageCard(parsed, card)
-		}
-		if result, _ := chunk["tool_result"].(map[string]any); result != nil {
-			collectGatewayToolResult(parsed, result)
-		}
-		if cite, _ := chunk["render_citation"].(map[string]any); cite != nil {
-			return applyGatewayRenderCitation(parsed, cite)
-		}
-		text, _ := chunk["text"].(map[string]any)
-		delta, _ := text["text"].(string)
-		channel, _ := text["channel"].(string)
-		return appendGatewayDelta(parsed, channel, delta)
+		return applyGatewayResponseChunk(parsed, chunk)
 	case "response.output_text.delta":
 		delta, _ := event["delta"].(string)
 		return appendGatewayDelta(parsed, "CHANNEL_ASSISTANT_RESPONSE", delta)
@@ -411,27 +441,14 @@ func parseGatewayEvent(event map[string]any, parsed *parsedChat) (string, string
 			return appendGatewayDelta(parsed, "CHANNEL_ASSISTANT_RESPONSE", text)
 		}
 	case "response.done":
-		response, _ := event["response"].(map[string]any)
-		parsed.ParentID, _ = response["id"].(string)
-		status, _ := response["status"].(string)
-		if status != "" && status != "completed" {
-			return "", "", fmt.Errorf("Grok Gateway response 状态为 %s", status)
-		}
+		return "", "", applyGatewayResponseDone(parsed, event)
 	case "response.search.result":
 		result, _ := event["result"].(map[string]any)
 		if rawURL, _ := result["url"].(string); rawURL != "" {
 			appendSearchSource(parsed, rawURL, firstString(result, "title"), "web")
 		}
 	case "response.grok.output":
-		output, _ := event["output"].(map[string]any)
-		if streamError, _ := output["stream_error"].(map[string]any); streamError != nil {
-			return "", "", webResponseError(streamError)
-		}
-		if rawURL := collectCardAttachment(parsed, output["card_attachment"]); rawURL != "" {
-			rawURL = absoluteAssetURL(rawURL)
-			parsed.Images = appendUniqueString(parsed.Images, rawURL)
-			return "image", rawURL, nil
-		}
+		return applyGatewayGrokOutput(parsed, event)
 	case "error":
 		return "", "", gatewayEventError(event)
 	}
@@ -511,73 +528,97 @@ func nestedSearchQuery(tool map[string]any) string {
 }
 
 // collectGatewayToolResult folds mgw tool_result into SearchSources and completes hosted calls.
+// gatewayActionSource 构造 OpenAPI 搜索 sources 条目：type 固定为 url，
+// title 作为不影响协议的 UI 扩展保留。
+func gatewayActionSource(rawURL, title string) (map[string]any, bool) {
+	normalized, ok := searchresult.NormalizeURL(rawURL)
+	if !ok {
+		return nil, false
+	}
+	return map[string]any{
+		"type": "url", "url": normalized, "title": searchresult.NormalizeTitle(title, normalized),
+	}, true
+}
+
+// collectGatewayWebSearchResult 把 mgw tool_result.web_search 折叠为 web 搜索来源并完成宿主调用。
+func collectGatewayWebSearchResult(parsed *parsedChat, callID string, web map[string]any) {
+	var sources []map[string]any
+	pages, _ := web["webpages"].([]any)
+	for _, raw := range pages {
+		item, _ := raw.(map[string]any)
+		if item == nil {
+			continue
+		}
+		u := firstString(item, "url")
+		title := firstString(item, "title")
+		appendSearchSource(parsed, u, title, "web")
+		if source, ok := gatewayActionSource(u, title); ok {
+			sources = append(sources, source)
+		}
+	}
+	call := upsertHostedSearchCall(parsed, callID, "web_search", nestedSearchQuery(web), "completed")
+	appendHostedSearchSources(call, sources)
+	if call != nil {
+		call.Status = "completed"
+		recordGatewaySearchTool(parsed, call.ID, "web_search")
+	}
+}
+
+// gatewayXPostTitle 复刻 mgw x_post 的标题拼接规则：作者名在前，正文追加在后。
+func gatewayXPostTitle(item map[string]any) string {
+	title := firstString(item, "name", "userhandle", "username")
+	text, _ := item["text"].(string)
+	if text == "" {
+		return title
+	}
+	if title != "" {
+		return title + ": " + text
+	}
+	return text
+}
+
+// collectGatewayXPostResult 把 mgw tool_result.x_post 折叠为 X 搜索来源并完成宿主调用。
+func collectGatewayXPostResult(parsed *parsedChat, callID string, xPost map[string]any) {
+	var sources []map[string]any
+	posts, _ := xPost["posts"].([]any)
+	for _, raw := range posts {
+		item, _ := raw.(map[string]any)
+		if item == nil {
+			continue
+		}
+		handle := firstString(item, "userhandle", "username")
+		postID := firstString(item, "post_id", "postId")
+		if handle == "" || postID == "" {
+			continue
+		}
+		rawURL := "https://x.com/" + url.PathEscape(handle) + "/status/" + url.PathEscape(postID)
+		title := gatewayXPostTitle(item)
+		appendSearchSource(parsed, rawURL, title, "x_post")
+		if source, ok := gatewayActionSource(rawURL, title); ok {
+			sources = append(sources, source)
+		}
+	}
+	call := upsertHostedSearchCall(parsed, callID, "x_search", "", "completed")
+	appendHostedSearchSources(call, sources)
+	if call != nil {
+		call.Status = "completed"
+		if call.Kind == "" {
+			call.Kind = "x_search"
+		}
+		recordGatewaySearchTool(parsed, call.ID, "x_search")
+	}
+}
+
 func collectGatewayToolResult(parsed *parsedChat, result map[string]any) {
 	if parsed == nil || result == nil {
 		return
 	}
 	callID := firstString(result, "tool_call_id", "tool_usage_card_id", "id")
 	if web, _ := result["web_search"].(map[string]any); web != nil {
-		var sources []map[string]any
-		pages, _ := web["webpages"].([]any)
-		for _, raw := range pages {
-			item, _ := raw.(map[string]any)
-			if item == nil {
-				continue
-			}
-			u := firstString(item, "url")
-			title := firstString(item, "title")
-			appendSearchSource(parsed, u, title, "web")
-			if normalized, ok := searchresult.NormalizeURL(u); ok {
-				// OpenAPI WebSearchActionSearch.sources item requires type:"url";
-				// keep title as a non-breaking extension for UI clients.
-				sources = append(sources, map[string]any{
-					"type": "url", "url": normalized, "title": searchresult.NormalizeTitle(title, normalized),
-				})
-			}
-		}
-		call := upsertHostedSearchCall(parsed, callID, "web_search", nestedSearchQuery(web), "completed")
-		appendHostedSearchSources(call, sources)
-		if call != nil {
-			call.Status = "completed"
-			recordGatewaySearchTool(parsed, call.ID, "web_search")
-		}
+		collectGatewayWebSearchResult(parsed, callID, web)
 	}
 	if xPost, _ := result["x_post"].(map[string]any); xPost != nil {
-		var sources []map[string]any
-		posts, _ := xPost["posts"].([]any)
-		for _, raw := range posts {
-			item, _ := raw.(map[string]any)
-			if item == nil {
-				continue
-			}
-			handle := firstString(item, "userhandle", "username")
-			postID := firstString(item, "post_id", "postId")
-			if handle == "" || postID == "" {
-				continue
-			}
-			rawURL := "https://x.com/" + url.PathEscape(handle) + "/status/" + url.PathEscape(postID)
-			title := firstString(item, "name", "userhandle", "username")
-			if text, _ := item["text"].(string); text != "" && title != "" {
-				title = title + ": " + text
-			} else if text, _ := item["text"].(string); text != "" {
-				title = text
-			}
-			appendSearchSource(parsed, rawURL, title, "x_post")
-			if normalized, ok := searchresult.NormalizeURL(rawURL); ok {
-				sources = append(sources, map[string]any{
-					"type": "url", "url": normalized, "title": searchresult.NormalizeTitle(title, normalized),
-				})
-			}
-		}
-		call := upsertHostedSearchCall(parsed, callID, "x_search", "", "completed")
-		appendHostedSearchSources(call, sources)
-		if call != nil {
-			call.Status = "completed"
-			if call.Kind == "" {
-				call.Kind = "x_search"
-			}
-			recordGatewaySearchTool(parsed, call.ID, "x_search")
-		}
+		collectGatewayXPostResult(parsed, callID, xPost)
 	}
 }
 

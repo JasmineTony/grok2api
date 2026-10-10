@@ -355,6 +355,41 @@ func (a *Adapter) DownloadVideo(ctx context.Context, credential account.Credenti
 	return providerregistry.NewCompletionReadCloser(response.Body, onFinished), contentType, response.ContentLength, nil
 }
 
+// collectVideoStreamFrame 处理单个流式帧：上报进度、记录视频 id，
+// 并在拿到可用视频地址时返回 done=true。
+func collectVideoStreamFrame(root map[string]any, result *provider.VideoResult, postID *string, progress func(int)) (bool, error) {
+	if errorValue, ok := root["error"].(map[string]any); ok {
+		return false, webMediaStreamError(errorValue)
+	}
+	if errorValue := nestedMap(root, "result", "response", "error"); errorValue != nil {
+		return false, webMediaStreamError(errorValue)
+	}
+	stream := nestedMap(root, "result", "response", "streamingVideoGenerationResponse")
+	if stream != nil {
+		if value, ok := numberAsInt(stream["progress"]); ok && progress != nil {
+			progress(value)
+		}
+		if value, _ := stream["videoPostId"].(string); value != "" {
+			*postID = value
+		} else if value, _ := stream["videoId"].(string); value != "" {
+			*postID = value
+		}
+		moderated, _ := stream["moderated"].(bool)
+		if moderated {
+			return false, nil
+		}
+		if setVideoResultURL(result, firstString(stream, "videoUrl", "contentUrl", "contentURL", "assetUrl", "assetURL", "fileUri", "fileURL")) {
+			return true, nil
+		}
+	}
+	for _, attachment := range videoFileAttachments(root) {
+		if setVideoResultURL(result, attachment) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func parseVideoStream(response *http.Response, progress func(int)) (provider.VideoResult, string, error) {
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(response.Body, webMediaDiagnosticBodyLimit+1))
@@ -370,36 +405,7 @@ func parseVideoStream(response *http.Response, progress func(int)) (provider.Vid
 	var result provider.VideoResult
 	var postID string
 	handle := func(root map[string]any) (bool, error) {
-		if errorValue, ok := root["error"].(map[string]any); ok {
-			return false, webMediaStreamError(errorValue)
-		}
-		if errorValue := nestedMap(root, "result", "response", "error"); errorValue != nil {
-			return false, webMediaStreamError(errorValue)
-		}
-		stream := nestedMap(root, "result", "response", "streamingVideoGenerationResponse")
-		if stream != nil {
-			if value, ok := numberAsInt(stream["progress"]); ok && progress != nil {
-				progress(value)
-			}
-			if value, _ := stream["videoPostId"].(string); value != "" {
-				postID = value
-			} else if value, _ := stream["videoId"].(string); value != "" {
-				postID = value
-			}
-			moderated, _ := stream["moderated"].(bool)
-			if moderated {
-				return false, nil
-			}
-			if setVideoResultURL(&result, firstString(stream, "videoUrl", "contentUrl", "contentURL", "assetUrl", "assetURL", "fileUri", "fileURL")) {
-				return true, nil
-			}
-		}
-		for _, attachment := range videoFileAttachments(root) {
-			if setVideoResultURL(&result, attachment) {
-				return true, nil
-			}
-		}
-		return false, nil
+		return collectVideoStreamFrame(root, &result, &postID, progress)
 	}
 
 	reader := bufio.NewReader(response.Body)
@@ -416,7 +422,6 @@ func parseVideoStream(response *http.Response, progress func(int)) (provider.Vid
 	}
 	return result, postID, nil
 }
-
 func webMediaStreamError(value map[string]any) error {
 	message := safeWebMediaDiagnostic(firstString(value, "message", "error", "detail"), webMediaDiagnosticFieldLimit)
 	if message == "" {
