@@ -329,17 +329,19 @@ ERROR: failed to push ghcr.io/jasminetony/grok2api:main-arm64: denied: permissio
 
 ### 12.1 文件级拆分
 
+下表「前」为 HEAD `236175e4` 实测，「后」为当前工作树实测（均为文件实际行数）。阶段 6 的工作树叠加了两轮改动（按职责拆文件 + 函数分解），因此部分文件的「后」比拆分当次更大——那是后续函数分解回填所致，不是回退。
+
 | 包 / 文件                              |   前 |      后 | 新增按职责文件                                                                                                                                                                                                                                                   |
 | -------------------------------------- | ---: | ------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `application/gateway/service.go`       | 2194 |    1895 | `service_routes.go` 317                                                                                                                                                                                                                                          |
-| `application/gateway/selector.go`      | 2247 |    1020 | `selector_cache.go` 662、`selector_health_cache.go` 591                                                                                                                                                                                                          |
+| `application/gateway/service.go`       | 2194 |    1951 | `service_routes.go` 340                                                                                                                                                                                                                                          |
+| `application/gateway/selector.go`      | 2247 |    1063 | `selector_cache.go` 678、`selector_health_cache.go` 664                                                                                                                                                                                                          |
 | `application/gateway/video.go`         | 1414 |    1304 | `video_tasks.go` 123                                                                                                                                                                                                                                             |
-| `application/gateway/voice.go`         |  552 |     310 | `voice_execution.go` 257                                                                                                                                                                                                                                         |
+| `application/gateway/voice.go`         |  552 |     304 | `voice_execution.go` 357                                                                                                                                                                                                                                         |
 | `application/gateway/quality_retry.go` |  611 |     361 | `quality_decision.go` 258                                                                                                                                                                                                                                        |
-| `application/gateway/image.go`         |  378 |     111 | `image_execution.go` 279                                                                                                                                                                                                                                         |
-| `transport/http/inference/handler.go`  | 2475 |  **91** | 12 个：`video_handler` 423、`stream_inspector` 370、`stream_copy` 265、`errors` 260、`image_handler` 219、`stream_usage` 206、`response_writer` 203、`media_response` 144、`responses_handler` 134、`models_handler` 100、`chat_handler` 100、`request_types` 97 |
-| `infra/provider/web/chat.go`           | 2733 | **329** | 10 个：`chat_search` 386、`chat_response` 329、`anthropic_stream` 315、`chat_parse` 299、`chat_request` 260、`chat_sse` 246、`chat_openai_stream` 216、`chat_card` 181、`chat_types` 141、`web_wire` 99                                                          |
-| `infra/provider/web/image.go`          | 1850 | **279** | 8 个：`image_upload` 367、`image_ws_stream` 300、`image_collector` 218、`image_assets` 211、`image_edit_stream` 202、`image_edit` 150、`image_chat` 149、`image_params` 58                                                                                       |
+| `application/gateway/image.go`         |  378 |     111 | `image_execution.go` 398                                                                                                                                                                                                                                         |
+| `transport/http/inference/handler.go`  | 2475 |  **91** | 12 个：`video_handler` 484、`stream_inspector` 421、`stream_copy` 312、`errors` 270、`image_handler` 278、`stream_usage` 206、`response_writer` 226、`media_response` 144、`responses_handler` 157、`models_handler` 100、`chat_handler` 100、`request_types` 97 |
+| `infra/provider/web/chat.go`           | 2733 | **439** | 10 个：`chat_search` 396、`chat_response` 368、`anthropic_stream` 337、`chat_parse` 355、`chat_request` 293、`chat_sse` 246、`chat_openai_stream` 280、`chat_card` 198、`chat_types` 141、`web_wire` 99                                                          |
+| `infra/provider/web/image.go`          | 1850 | **336** | 8 个：`image_upload` 367、`image_ws_stream` 361、`image_collector` 234、`image_assets` 227、`image_edit_stream` 202、`image_edit` 209、`image_chat` 168、`image_params` 58                                                                                       |
 
 职责划分（一句话/文件）：
 
@@ -351,7 +353,7 @@ ERROR: failed to push ghcr.io/jasminetony/grok2api:main-arm64: denied: permissio
 
 ### 12.2 函数级分解（REV-2）
 
-**结论：本轮把三个包的超限函数从 86 降到 18（降幅 79%），且无一处行数增大。**
+**结论：本轮把三个包的超限函数从 88 降到 18（降幅 80%），且无一处行数增大。**
 下表的「分解前」由 HEAD `236175e4` 的独立 worktree 实测得出（AST 统计，`count` 为包内 >50 行函数总数），「本轮后」为当前工作树实测，两者由同一工具测量，可直接比较：
 
 | 包                         | 分解前 >50 行 | 本轮后 >50 行 |   消除 |   剩余 |
@@ -389,9 +391,23 @@ ERROR: failed to push ghcr.io/jasminetony/grok2api:main-arm64: denied: permissio
 | Build 客户端版本回填                               | `provider/web` 对应文件逐行搬移                                                                                | 未变 |
 | 取消/超时不放行后续尝试、不重复计费                | `stream_copy.go` 中止 trailer、`errors.go::classifyCopyError`、gateway 各 `ctx.Err()`/`context.Canceled` 分支  | 未变 |
 
+### 12.3.1 独立审查发现并处理的问题
+
+对 12 个提交做过一次独立只读审查，结论与处置：
+
+| 发现 | 核实方式 | 处置 |
+| --- | --- | --- |
+| `image_execution.go` 连续两次 `checkLedgerReady()`（复制残留） | 对照 HEAD `236175e4:gateway/image.go` 实测**只有 1 次** | **已删除重复调用**（该检查幂等只读，行为等价且恢复与基线一致）；`go build`/`vet`/gateway 包测试 exit 0 |
+| `voice_execution.go`/`image_execution.go` 尝试循环把上一轮 `err` 带入下一轮，`if err == nil` 可能跳过 `Acquire` | 对照 HEAD `236175e4:gateway/voice.go:357-363`：基线**同样是循环外 `var err error` + `if err == nil` 守卫**，结构逐行一致 | **判定为既有行为被忠实保留，非本轮引入**；未改动（改它会改变既有重试语义，超出「等价搬移」范围）。已登记为**未覆盖风险**：voice/image 执行链目前无「第 1 账号传输失败 → 第 2 账号成功」的用例，`voice_ws.go` 亦复用同一写法，三者并存 |
+| `§12.1`「后」列行数过时（叠加了后续函数分解） | 用文件实际行数重新实测 | **已更新全表**，并注明「后」为工作树实测、部分数值大于拆分当次是函数分解回填所致 |
+| `§12.2` 结论「86 → 18」与同节表格「88 → 18」矛盾 | 复核 HEAD 基线实测为 88 | **已更正为 88 / 降幅 80%** |
+| `§12.4` 新增用例数「47（16/13/18）」与文件实际不符 | 实测 `^func Test` 为 22/34/18 | **已更正为 74（22/34/18）** |
+
+审查同时确认无问题：`voice_ws.go` 的 WebSocket 截止时间、`sso_build.go` 的 consent token、`quality_retry.go` 的 Build-only 拦截、`stream_copy.go` 的中止 trailer 与 `errors.go::classifyCopyError` 均未被改写；`selector_cache.go`/`selector_health_cache.go` 未见 `defer` 与显式 `Unlock` 混用导致的重复解锁。
+
 ### 12.4 验证
 
 - `go build ./...` exit 0；`go vet ./...` exit 0
 - `go test ./... -count=1` exit 0：**64 包 ok / 0 FAIL / 2879 PASS / 20 SKIP**（20 条为 PostgreSQL·Redis 集成用例，本机无隔离服务，属预期；CI 提供隔离服务后必须 0 skip）
-- 新增测试 3 文件 / 47 用例：`application/gateway/refactor_helpers_test.go` 16、`transport/http/inference/refactor_helpers_test.go` 13、`infra/provider/web/refactor_helpers_test.go` 18；覆盖提取出的定价估算、STT 格式化（text/json/verbose_json/rawjson）、媒体 JSON 解码、选择失败码、流分帧与 EOF 处理、导入凭据归一、图像/编辑校验拒绝路径
+- 新增测试 3 文件 / 74 个顶层用例：`application/gateway/refactor_helpers_test.go` 22、`transport/http/inference/refactor_helpers_test.go` 34、`infra/provider/web/refactor_helpers_test.go` 18；覆盖提取出的定价估算、STT 格式化（text/json/verbose_json/rawjson）、媒体 JSON 解码、选择失败码、流分帧与 EOF 处理、导入凭据归一、图像/编辑校验拒绝路径（计数为 `^func Test` 实测，`inference` 侧含 2 处 `t.Run` 子用例）
 - `-race` 本机无 cgo，**Blocked**，由 CI 覆盖

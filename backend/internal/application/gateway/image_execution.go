@@ -103,9 +103,6 @@ func (s *Service) executeImage(
 	if err := s.checkLedgerReady(); err != nil {
 		return nil, err
 	}
-	if err := s.checkLedgerReady(); err != nil {
-		return nil, err
-	}
 	pricingModel := s.providers.PricingModel(route.Provider, route.UpstreamModel)
 	pricingResolution, pricingQuality := imagePricingTiers(route.Provider, operation, resolution, quality)
 	reservation, priced := estimateImagePricing(operation, pricingModel, pricingResolution, pricingQuality, requestedCount, inputImageCount)
