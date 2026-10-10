@@ -40,7 +40,7 @@
 - **类型**：`tsconfig.app.json`（`src`，排除测试）、`tsconfig.node.json`（`vite.config.ts`、`vitest.config.ts`）、`tsconfig.test.json`（测试与 `src/types/*.d.ts`）。E2E 独立 tsconfig 属阶段 2。
 - **Lint**：ESLint 10.6.0 + `typescript-eslint` 8.63.0（`@typescript-eslint/no-explicit-any: error`）；Oxlint 1.87.0 仅 `correctness`。排除范围一致：`dist`、`coverage`、`src/components/ui`。
 - **测试**：`*.test.ts` 由 `node --experimental-strip-types --test` 运行；`*.test.tsx` 由 Vitest（jsdom）运行。
-- **覆盖率**：`@vitest/coverage-v8`；`coverage.include` 为 16 条「已重构模块整目录 + `virtual-table-body.tsx`」，`exclude` 14 条（测试分层、纯 re-export barrel、测试支撑）；全局门槛 **76**，另有 **19 个自定义 hook** 单独声明四项 100（TEST-2）。
+- **覆盖率**：`@vitest/coverage-v8`；`coverage.include` 为 16 条「已重构模块整目录 + `virtual-table-body.tsx`」，`exclude` 14 条（测试分层、纯 re-export barrel、测试支撑）；全局门槛 **76**，另有 **20 个自定义 hook** 单独声明四项 100（TEST-2，条目见 `vitest.config.ts:85-161`）。
 - **依赖边界**：dependency-cruiser 18.5.0，`.dependency-cruiser.cjs`：循环、不可解析导入、下层反向依赖、跨 feature（存量例外显式冻结）。
 - **结构与预算**：`scripts/check-structure.mjs`、`scripts/check-bundle-budget.mjs`，基线分别是 `structure-baseline.json`、`bundle-budget.json`。
 - **门禁自测**：`scripts/self-test-gates.mjs` 用临时装置验证门禁在违规输入下确实非零退出。
@@ -326,7 +326,7 @@
 ### 11.6 阶段 6 仍未达标项（如实登记，未静默排除）
 
 - **逐文件口径**：阶段 6 收尾登记的「约 32 个文件 <76%」在阶段 7 收敛为 **8 个文件**（全部落在分支或函数指标，语句与行均 ≥76%，最低语句 77.77）；逐项见 §13.2。原登记中 `quality-guard/**` 的 `degrade-events-list`、`use-degrade-accounts`、`probe-profile-dialog` 与 `src/app/**` 6 个 0% 入口均已达标。
-- **自定义 hook（TEST-2）**：阶段 7 把逐文件 100% 阈值从 10 个扩到 **19 个**；原登记未达 100% 的 `use-degrade-accounts`、`use-guard-nodes`、`use-probe-profiles`、`use-guard-node-actions`、`use-creative-video` 及 accounts/creative 各 hook 均已达 100/100/100/100，仅 `use-account-cleanup-flow.ts`（分支 97.06）未纳入，理由见 §13.3。
+- **自定义 hook（TEST-2）**：阶段 7 把逐文件 100% 阈值从 10 个扩到 **20 个**；原登记未达 100% 的 `use-degrade-accounts`、`use-guard-nodes`、`use-probe-profiles`、`use-guard-node-actions`、`use-creative-video` 及 accounts/creative 各 hook 均已达 100/100/100/100，仅 `use-account-cleanup-flow.ts`（分支 97.06）未纳入，理由见 §13.3。
 - jsdom 无法驱动的分支已逐条登记（例如 Radix「每页条数」选择、模态遮挡下的预览删除路径、recharts tooltip/tick 回调、`web-account-scripts.tsx` 的 Radix Checkbox 提交路径）
 - 后端函数级 REV-2 仍有 **7** 个函数 >50 行（gateway 7 / inference 0 / provider-web 0；HEAD 基线 88 → 阶段 6 本轮 18 → 收尾 7），逐项登记于 `backend/AUDIT.md` §12.2；其中 `createResponseAt` 908 行已登记为不强行拆，**不记为「已通过」**
 
@@ -363,7 +363,7 @@
 ### 12.3 仍未达标项（本阶段未解决，如实登记）
 
 - **逐文件口径**：阶段 6 收尾登记的「约 32 个文件 <76%」已归零——阶段 7 先补 `src/app/**` 6 个 0% 入口与 9 个 hook 的 100%（§13.1），再补齐最后 8 个文件的分支/函数缺口（§13.2）。当前逐文件四项全部 ≥76%。
-- **hook 100%（TEST-2）**：阶段 7 已把逐文件 100% 阈值从 10 个扩到 **19 个** hook；唯一未纳入的是 `use-account-cleanup-flow.ts`（分支 97.06，1 个不可驱动分支），见 §13.3。
+- **hook 100%（TEST-2）**：阶段 7 已把逐文件 100% 阈值从 10 个扩到 **20 个** hook；唯一未纳入的是 `use-account-cleanup-flow.ts`（分支 97.06，1 个不可驱动分支），见 §13.3。
 - **全局覆盖率**：阶段 7 最终实测 statements 97.65 / branches 93.76 / functions 97.94 / lines 98.36（113 文件 / 1388 用例，门槛 76），取代此前「补强后未重新实测」的说明。
 - **后端函数级 REV-2 仍剩 7 个** >50 行（gateway 7 / inference 0 / provider-web 0，详见 `backend/AUDIT.md` §12.2 与 §13.6），未记为「已通过」。
 
@@ -387,7 +387,7 @@
 
 本轮共新增 **23 个前端测试文件**（20 个 Vitest 组件/集成测试 + 3 个 Playwright E2E spec），并对既有测试做扩展；**未修改任何生产代码**。
 
-`vitest.config.ts` 的 TEST-2 逐文件 100% 阈值由 10 个 hook 扩到 **19 个**，把上述已达标 hook 锁定，防止回退。
+`vitest.config.ts` 的 TEST-2 逐文件 100% 阈值由 10 个 hook 扩到 **20 个**，把上述已达标 hook 锁定，防止回退。
 
 ### 13.2 逐文件覆盖率实测（阶段 7，最终）
 
@@ -422,7 +422,7 @@
 | 发现                                                                               | 修正                                                                                                                                  |
 | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | §1 验收矩阵 FE-A3/A5/A6/A7/A8/A9/A11/A13 停留在阶段 0–2 数值                       | 改为阶段 7 实测值（见 §1 与 §2）                                                                                                      |
-| §2「`coverage.include` 当前 3 个文件」与 `vitest.config.ts` 的 16 条不一致         | 改为实际口径（16 条 include + 14 条 exclude + 19 个 hook 阈值）                                                                       |
+| §2「`coverage.include` 当前 3 个文件」与 `vitest.config.ts` 的 16 条不一致         | 改为实际口径（16 条 include + 14 条 exclude + 20 个 hook 阈值）                                                                       |
 | §2 覆盖率表仍是阶段 2 的 3 行                                                      | 改为阶段 7 全局实测                                                                                                                   |
 | §2/§4.1 的 `252.07 KiB`、`128 模块 / 659 依赖` 过时                                | 改为 249.99 KiB、406 模块 / 1823 依赖                                                                                                 |
 | §11.6「约 32 个文件 <76%」与「hook 未全部达标」与实测不符                          | 更新为 8 个文件（分支/函数指标）与 1 个 hook；见 §13.2 / §13.3                                                                        |

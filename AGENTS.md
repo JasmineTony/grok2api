@@ -9,7 +9,7 @@
 - `origin` 必须指向 `https://github.com/JasmineTony/grok2api.git`，`upstream` 指向 `https://github.com/chenyme/grok2api.git`。推送前执行 `git remote -v`，禁止推送 upstream。
 - 当前技术路线：Go/Gin/GORM 模块化单体；React 19、TypeScript 6、Vite 8、pnpm，服务端状态用 TanStack Query，客户端会话状态用 Zustand。
 - 架构重构不默认授权改变 API、模型路由 ID、凭据/数据库格式、鉴权、计费、账号范围、审计或取消语义；不可逆迁移和生产发布单独确认。
-- 在维护分支分阶段提交。草稿 PR/CI 验证不等于允许合并 `main`、发布或部署。
+- 在维护分支分阶段提交；草稿 PR/CI 验证不等于允许合并 `main`、发布或部署。合并 `main`、创建 tag/Release、推送生产镜像属不可逆操作，每次执行前必须取得维护线负责人的明确授权，并在同次改动中按 §8 登记证据。2026-10-10 负责人已授权把 `maint/modular-quality-audit` 合并到 `main` 并发布 `v0.1.1`。
 
 ## 2. 开发规范（DEV）
 
@@ -140,7 +140,7 @@
 
 - `7c0493a2` 历史基线：前端 18 个源码文件 >600 行（accounts 3864、creative-console 3018、i18n 4150、settings 1604、quality-guard 1579、egress-nodes 1560 等）。旧“11个”记录已失效。
 - 阶段 3–6 整改后（`frontend/structure-baseline.json` 是唯一机器可读基线）：**超限文件 0 个**；超限函数由 80 降至 29（全部为存量，逐项清单见该基线文件的 `functions` 字段）。后端不在结构门禁扫描范围（REV-1 仅约束前端），其函数级 REV-2 存量由 `backend/AUDIT.md` §12.2 登记：三包由 HEAD 基线 **88 降至 7**（gateway 7 / inference 0 / provider-web 0）。其中 `createResponseAt` 908 行已登记为不强行拆；扣除后剩 6 个——3 个多锁段/状态机量级（`runVideoJob` 284、`OpenVoiceWebSocket` 247、`acquire` 246）与 3 个轻微超限（`executeImage` 57、`executeVoice` 54、`CreateVideo` 52），均未记为「已通过」。
-- 覆盖率口径自阶段 6 起为「已重构模块整目录纳入 + 例外逐项登记原因」，不再手工维护达标清单；例外只允许用于测试分层、纯 re-export barrel、测试支撑，禁止把业务代码排除来达标。阶段 7 最终实测（`pnpm verify` 中的 `test:ui:coverage`，113 文件 / 1388 用例全过）：全局 statements **97.65** / branches **93.76** / functions **97.94** / lines **98.36**，且**逐文件四项全部 ≥76%**（阶段 6 登记的「约 32 个文件 <76%」已归零）；另有 5 个不含可执行语句的类型/DTO 模块报 0/0/0/0 属统计假象。TEST-2 的逐文件 100% 阈值已扩到 **19 个自定义 hook**；唯一未纳入的是 `use-account-cleanup-flow.ts`（分支 97.06，剩 1 个不可驱动分支）。仍不可驱动的死分支/工具语义不可达分支逐项登记在 `frontend/AUDIT.md` §13.3，不静默排除。
+- 覆盖率口径自阶段 6 起为「已重构模块整目录纳入 + 例外逐项登记原因」，不再手工维护达标清单；例外只允许用于测试分层、纯 re-export barrel、测试支撑，禁止把业务代码排除来达标。阶段 7 最终实测（`pnpm verify` 中的 `test:ui:coverage`，113 文件 / 1388 用例全过）：全局 statements **97.65** / branches **93.76** / functions **97.94** / lines **98.36**，且**逐文件四项全部 ≥76%**（阶段 6 登记的「约 32 个文件 <76%」已归零）；另有 5 个不含可执行语句的类型/DTO 模块报 0/0/0/0 属统计假象。TEST-2 的逐文件 100% 阈值已扩到 **20 个自定义 hook**（`frontend/vitest.config.ts:85-161` 实测条目数，旧「19 个」记录已失效）；唯一未纳入的是 `use-account-cleanup-flow.ts`（分支 97.06，剩 1 个不可驱动分支）。仍不可驱动的死分支/工具语义不可达分支逐项登记在 `frontend/AUDIT.md` §13.3，不静默排除。
 - 重构按公共契约 → 账号/密钥/审计/模型 → 设置/出口/守护 → 创作/媒体/Gateway推进。完成模块移出豁免；阶段内未完成旧文件只允许持平或减小。
 - 全量审计不意味着一次性同时重写全部目录；但已批准的后续阶段不得悄悄取消或冒称全部完成。
 
@@ -182,3 +182,11 @@ git remote -v
 ```
 
 独立命令、覆盖范围、环境限制、性能基线与实际运行结果参见 [前端审计](frontend/AUDIT.md)、[后端审计](backend/AUDIT.md)。
+
+## 8. 发布流程（REL）
+
+- 版本载体：仓库根 `VERSION` 是唯一权威版本源（`Dockerfile:66` 把它复制到镜像 `/app/VERSION`，`backend/internal/buildinfo/version.go` 的 `CurrentVersion()` 读取它）；`frontend/package.json` 的 `version` 必须与 `VERSION` 处于同一条版本线，二者不一致按文档缺陷处理。
+- 发布前置（缺一不可，未实际完成不得记为 `Passed`）：目标提交上前端 `pnpm verify`、后端 `go test ./... -count=1` / `go vet ./...` / `go build ./...` 退出 0；`ghcr-image.yml` 的 Verify job 在远端真实跑完（含 race、PostgreSQL/Redis 集成用例 0 跳过、Swagger 精确 diff、全栈 E2E）。
+- 发布步骤：① 把维护分支 fast-forward 合并到 `main` 并推送 `origin`；② 打 annotated tag `vX.Y.Z` 并推送；③ 创建同名 GitHub Release，说明引用 `frontend/AUDIT.md` / `backend/AUDIT.md` 的验收结论；④ 等待 `ghcr-image.yml` 的 `build_ghcr_image` 与 `merge` 产出 `ghcr.io/<owner>/grok2api:vX.Y.Z` 的 amd64/arm64 与 manifest list。
+- 发布后登记：在两个 `AUDIT.md` 中记录 tag、commit sha、CI run id 与镜像 digest；任何未达成的环节按 §6 记为 `Blocked`/`Failed` 并写明精确补救步骤，不得以「配置已写好」代替。
+- 授权与边界：合并 `main`、创建 tag/Release、推送镜像属不可逆操作，每次执行前单独授权；`upstream` 永不推送。`ghcr.io` 容器包必须与 `origin` 仓库建立链接，否则 `GITHUB_TOKEN` 即使声明了 `packages: write` 也会以 `permission_denied: write_package` 失败（证据见 `backend/AUDIT.md` §11）。
