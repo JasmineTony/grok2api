@@ -18,16 +18,19 @@ import (
 	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/infra/runtime/memory"
 	"github.com/chenyme/grok2api/backend/internal/ports/provider"
+	"github.com/chenyme/grok2api/backend/internal/repository"
 )
 
 // videoScopeHarness 是「视频任务重试必须留在 client key 账号范围内」用例的公共装配。
 type videoScopeHarness struct {
 	service   *Service
 	mediaRepo *relational.MediaJobRepository
+	accounts  *relational.AccountRepository
 	route     modeldomain.Route
 	adapter   *videoCreateFailoverAdapter
 	super     account.Credential
 	free      account.Credential
+	spare     account.Credential
 	key       clientkey.Key
 }
 
@@ -61,10 +64,11 @@ func newVideoScopeHarness(t *testing.T, keyScope clientkey.AccountScope) *videoS
 	}
 	super := createAccount("scope-super", account.WebTierSuper, 200)
 	free := createAccount("scope-free", account.WebTierBasic, 100)
+	spare := createAccount("scope-spare", account.WebTierBasic, 50)
 	if err := modelRepo.UpsertDiscovered(ctx, account.ProviderWeb, []string{"grok-imagine-video"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, accountID := range []uint64{super.ID, free.ID} {
+	for _, accountID := range []uint64{super.ID, free.ID, spare.ID} {
 		if err := modelRepo.ReplaceAccountCapabilities(ctx, accountID, []string{"grok-imagine-video"}, time.Now().UTC()); err != nil {
 			t.Fatal(err)
 		}
@@ -91,8 +95,8 @@ func newVideoScopeHarness(t *testing.T, keyScope clientkey.AccountScope) *videoS
 	service.ConfigureMedia(mediaRepo, 1)
 	service.UpdateVideoMaxAttempts(10)
 	return &videoScopeHarness{
-		service: service, mediaRepo: mediaRepo, route: route, adapter: adapter,
-		super: super, free: free, key: key,
+		service: service, mediaRepo: mediaRepo, accounts: accountRepo, route: route, adapter: adapter,
+		super: super, free: free, spare: spare, key: key,
 	}
 }
 
@@ -172,5 +176,45 @@ func TestVideoPinnedAccountOutsideClientKeyScopeIsSkipped(t *testing.T) {
 	stored := harness.storedJob(t, job)
 	if stored.Status != media.StatusCompleted || stored.AccountID != harness.super.ID {
 		t.Fatalf("终态 = %#v, want completed/%d", stored, harness.super.ID)
+	}
+}
+
+// TestVideoPinnedAccountUnavailableFallsBackWithinScope 覆盖换号回退：重试轮次里固定账号获取失败
+// （例如该账号已被禁用/冷却）时必须回退到账号范围内其它健康账号，不能因为 pin 的错误残留在 err 上
+// 而跳过 selection.Acquire，把仍有健康账号的账号池误判为 account_unavailable。
+func TestVideoPinnedAccountUnavailableFallsBackWithinScope(t *testing.T) {
+	t.Parallel()
+	harness := newVideoScopeHarness(t, clientkey.AccountScope{})
+	// 首轮固定账号（Super）已被禁用 → pin 失败 → 建立 selection 会话并租到 Free；Free 返回 create
+	// 阶段 403 → 下一轮固定 Free 重试。
+	disabled := false
+	if _, err := harness.accounts.UpdateMany(context.Background(), account.ProviderWeb, []uint64{harness.super.ID}, repository.AccountUpdates{Enabled: &disabled}); err != nil {
+		t.Fatalf("禁用首轮固定账号失败: %v", err)
+	}
+	harness.adapter.failures = map[uint64]int{harness.free.ID: 1}
+	harness.adapter.status = http.StatusForbidden
+	// Free 在重试轮次前被禁用，使固定账号获取失败；此时范围内仍有 Spare 可用。
+	var disableErr error
+	harness.adapter.onAttempt = func(credentialID uint64) {
+		if credentialID != harness.free.ID {
+			return
+		}
+		enabled := false
+		_, disableErr = harness.accounts.UpdateMany(context.Background(), account.ProviderWeb, []uint64{harness.free.ID}, repository.AccountUpdates{Enabled: &enabled})
+	}
+	job := harness.newJob(t, "video_pinned_fallback", harness.super)
+
+	harness.service.runVideoJob(context.Background(), job, harness.route)
+
+	if disableErr != nil {
+		t.Fatalf("禁用固定账号失败: %v", disableErr)
+	}
+	attempts := harness.adapter.Attempts()
+	if len(attempts) != 2 || attempts[0] != harness.free.ID || attempts[1] != harness.spare.ID {
+		t.Fatalf("attempts=%#v, want 首轮回退到 %d、pin 失败后再回退到 %d", attempts, harness.free.ID, harness.spare.ID)
+	}
+	stored := harness.storedJob(t, job)
+	if stored.Status != media.StatusCompleted || stored.AccountID != harness.spare.ID {
+		t.Fatalf("终态 = status %q account %d, want completed/%d", stored.Status, stored.AccountID, harness.spare.ID)
 	}
 }
