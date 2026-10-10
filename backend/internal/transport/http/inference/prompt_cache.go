@@ -20,41 +20,58 @@ func extractPromptCacheSeed(headers http.Header, body []byte) string {
 	if isClaudeCodeTitleRequest(headers, body) {
 		return ""
 	}
-	if headers != nil {
-		// Prefer standard session signals from Claude Code, Codex, and OpenAI-compatible clients.
-		if seed := normalizePromptCacheSeed(headers.Get("X-Claude-Code-Session-Id")); seed != "" {
-			return claudeCodePromptCacheSeed(seed, headers)
-		}
-		if seed := codexPromptCacheSeedFromHeaders(headers); seed != "" {
-			return seed
-		}
-		for _, name := range []string{
-			"X-Session-Id", "Session-Id", "Session_id",
-			"X-Conversation-Id", "Conversation-Id", "Conversation_id",
-			// Support session signals forwarded by reverse proxies.
-			"X-Client-Session-Id", "X-Grok-Conv-Id",
-		} {
-			if seed := normalizePromptCacheSeed(headers.Get(name)); seed != "" {
-				return seed
-			}
-		}
+	if seed := promptCacheSeedFromHeaders(headers); seed != "" {
+		return seed
 	}
-	var payload struct {
-		PromptCacheKey      string `json:"prompt_cache_key"`
-		ConversationID      string `json:"conversation_id"`
-		ConversationIDCamel string `json:"conversationId"`
-		SessionID           string `json:"session_id"`
-		SessionIDCamel      string `json:"sessionId"`
-		Metadata            struct {
-			SessionID      string `json:"session_id"`
-			SessionIDCamel string `json:"sessionId"`
-			UserID         string `json:"user_id"`
-		} `json:"metadata"`
-		ClientMetadata map[string]json.RawMessage `json:"client_metadata"`
-	}
+	var payload promptCacheSeedPayload
 	if json.Unmarshal(body, &payload) != nil {
 		return ""
 	}
+	return promptCacheSeedFromPayload(payload, headers)
+}
+
+// promptCacheSeedPayload 汇总请求体与会话相关的种子字段。
+type promptCacheSeedPayload struct {
+	PromptCacheKey      string `json:"prompt_cache_key"`
+	ConversationID      string `json:"conversation_id"`
+	ConversationIDCamel string `json:"conversationId"`
+	SessionID           string `json:"session_id"`
+	SessionIDCamel      string `json:"sessionId"`
+	Metadata            struct {
+		SessionID      string `json:"session_id"`
+		SessionIDCamel string `json:"sessionId"`
+		UserID         string `json:"user_id"`
+	} `json:"metadata"`
+	ClientMetadata map[string]json.RawMessage `json:"client_metadata"`
+}
+
+// promptCacheSeedFromHeaders 按优先级读取 Claude Code、Codex 与 OpenAI 兼容客户端的会话请求头。
+func promptCacheSeedFromHeaders(headers http.Header) string {
+	if headers == nil {
+		return ""
+	}
+	// Prefer standard session signals from Claude Code, Codex, and OpenAI-compatible clients.
+	if seed := normalizePromptCacheSeed(headers.Get("X-Claude-Code-Session-Id")); seed != "" {
+		return claudeCodePromptCacheSeed(seed, headers)
+	}
+	if seed := codexPromptCacheSeedFromHeaders(headers); seed != "" {
+		return seed
+	}
+	for _, name := range []string{
+		"X-Session-Id", "Session-Id", "Session_id",
+		"X-Conversation-Id", "Conversation-Id", "Conversation_id",
+		// Support session signals forwarded by reverse proxies.
+		"X-Client-Session-Id", "X-Grok-Conv-Id",
+	} {
+		if seed := normalizePromptCacheSeed(headers.Get(name)); seed != "" {
+			return seed
+		}
+	}
+	return ""
+}
+
+// promptCacheSeedFromPayload 按既有优先级从请求体字段提取会话种子。
+func promptCacheSeedFromPayload(payload promptCacheSeedPayload, headers http.Header) string {
 	// The handler also writes body.prompt_cache_key to PromptCacheKey. Extract it here as well so middleware
 	// and logs that depend only on the seed path can observe it.
 	if seed := normalizePromptCacheSeed(payload.PromptCacheKey); seed != "" {
@@ -75,6 +92,11 @@ func extractPromptCacheSeed(headers http.Header, body []byte) string {
 	if seed := normalizeRawPromptCacheSeed(payload.ClientMetadata["x-codex-window-id"]); seed != "" {
 		return "codex:window:" + seed
 	}
+	return promptCacheSeedFromPlainFields(payload)
+}
+
+// promptCacheSeedFromPlainFields 处理不含 user_id / Codex 元数据时的直接 ID 字段。
+func promptCacheSeedFromPlainFields(payload promptCacheSeedPayload) string {
 	if seed := normalizePromptCacheSeed(payload.SessionID); seed != "" {
 		return seed
 	}
