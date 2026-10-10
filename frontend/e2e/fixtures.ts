@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 
-import { test as base, type APIRequestContext, type Page } from "@playwright/test";
+import { test as base, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test";
 
 import { startBackendServer } from "./backend-process";
 import { buildManifestPath } from "./paths";
@@ -78,17 +78,65 @@ export const test = base.extend<Record<never, never>, { server: E2EServer }>({
 
 export const expect = base.expect;
 
-/** 通过登录页完成一次真实管理员登录，并等待进入受保护页面。 */
-export async function signIn(page: Page, server: E2EServer): Promise<void> {
+type StorageState = Awaited<ReturnType<BrowserContext["storageState"]>>;
+
+// 管理面登录接口按用户名限流 12 次/分钟（backend adminauth.checkLoginRate 的
+// "admin-login:user" 键），而单个 worker 会运行 16 个用例；若每个用例各自登录，
+// 第 13 次起返回 429 loginRateLimited，表现为登录后停在 /login（CI 与本地单 worker
+// 均已实际复现）。因此按 worker 复用一次会话与一次 API 令牌，只有「尚未建立或已被
+// 注销」时才真正调用登录接口；登录流程本身仍由 auth.e2e 的 fresh 登录与错误密码用例覆盖。
+let cachedSession: StorageState | null = null;
+let cachedApiToken: string | null = null;
+
+const dashboardHeadingName = /^仪表盘$|^Dashboard$/;
+const loginHeadingName = /管理员登录|Admin sign in/;
+
+/**
+ * 通过登录页完成一次真实管理员登录，并等待进入受保护页面。
+ * `options.fresh` 为真时忽略缓存会话，强制走真实登录（登录流程用例使用）。
+ */
+export async function signIn(page: Page, server: E2EServer, options: { fresh?: boolean } = {}): Promise<void> {
+  if (!options.fresh && cachedSession && (await restoreCachedSession(page, server))) {
+    return;
+  }
   await page.goto(`${server.baseURL}/login`);
   await page.locator("#username").fill(server.username);
   await page.locator("#password").fill(server.password);
   await page.getByRole("button", { name: /^(登录|Sign in)$/ }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
+  if (!options.fresh) {
+    cachedSession = await page.context().storageState();
+  }
 }
 
-/** 直接调用管理 API 登录，返回 accessToken；失败时携带响应体，便于定位。 */
+/** 复用缓存会话并等待应用解析登录状态；落到登录页说明该会话已被注销，返回 false。 */
+async function restoreCachedSession(page: Page, server: E2EServer): Promise<boolean> {
+  if (cachedSession) {
+    await page.context().addCookies(cachedSession.cookies);
+  }
+  await page.goto(`${server.baseURL}/dashboard`);
+  const authenticated = await Promise.race([
+    page
+      .getByRole("heading", { name: dashboardHeadingName })
+      .waitFor({ state: "visible", timeout: 15000 })
+      .then(() => true),
+    page
+      .getByRole("heading", { name: loginHeadingName })
+      .waitFor({ state: "visible", timeout: 15000 })
+      .then(() => false),
+  ]).catch(() => false);
+  if (!authenticated) {
+    return false;
+  }
+  await expect(page).toHaveURL(/\/dashboard$/);
+  return true;
+}
+
+/** 直接调用管理 API 登录，返回 accessToken；失败时携带响应体，便于定位。按 worker 复用。 */
 export async function apiLogin(request: APIRequestContext, server: E2EServer): Promise<string> {
+  if (cachedApiToken) {
+    return cachedApiToken;
+  }
   const response = await request.post(`${server.baseURL}/api/admin/v1/auth/login`, {
     data: { username: server.username, password: server.password },
   });
@@ -98,7 +146,8 @@ export async function apiLogin(request: APIRequestContext, server: E2EServer): P
   const payload = (await response.json()) as { data?: { tokens?: { accessToken?: unknown } } };
   const accessToken = payload.data?.tokens?.accessToken;
   if (typeof accessToken !== "string" || accessToken.length === 0) {
-    throw new Error("管理员 API 登录响应缺少 accessToken");
+    throw new Error(`管理员 API 登录响应缺少 accessToken`);
   }
+  cachedApiToken = accessToken;
   return accessToken;
 }
