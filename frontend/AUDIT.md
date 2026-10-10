@@ -14,25 +14,25 @@
 状态取值：`Passed` / `Failed` / `Skipped`（缺环境跳过）/ `Blocked`（环境不支持）/ `Pending`（尚未执行）。
 不允许用 `Skipped`、`Blocked` 或"配置已写好"代替 `Passed`。
 
-| 编号   | 验收项             | 判定命令                             | 状态                                               |
-| ------ | ------------------ | ------------------------------------ | -------------------------------------------------- |
-| FE-A1  | 格式一致           | `pnpm format:check`                  | Passed                                             |
-| FE-A2  | 类型契约           | `pnpm typecheck`（`tsc -b --force`） | Passed（17.3s，无输出）                            |
-| FE-A3  | Oxlint correctness | `pnpm oxlint`                        | Passed（0 warnings / 0 errors，97 文件 / 96 规则） |
-| FE-A4  | ESLint 语义        | `pnpm lint`                          | Passed                                             |
-| FE-A5  | 纯逻辑单测         | `pnpm test`（node:test）             | Passed（16 tests）                                 |
-| FE-A6  | 组件单测 + 覆盖率  | `pnpm test:ui:coverage`              | Passed（2 文件 / 39 tests）                        |
-| FE-A7  | 生产构建           | `pnpm build`                         | Passed（冷 16.4s / 热 1.15–2.56s）                 |
-| FE-A8  | 依赖边界与循环     | `pnpm check:architecture`            | Passed（128 模块 / 659 依赖 / 0 违规）             |
-| FE-A9  | 结构约束           | `pnpm check:structure`               | Passed（18 超限文件 / 80 超限函数已冻结）          |
-| FE-A10 | 门禁自测           | `pnpm test:gates`                    | Passed（9 用例，含 4 个必须失败）                  |
-| FE-A11 | 产物体积预算       | `pnpm check:budget`                  | Passed（首屏 252.07 / 260 KiB）                    |
-| FE-A12 | 构建可复现性       | 同工具链三次构建产物哈希一致         | Passed（86 文件逐文件 SHA256 零差异）              |
-| FE-A13 | 真实全栈 E2E       | `pnpm test:e2e`                      | Passed（6 用例 / 4 worker / 15.9s）                |
-| FE-A14 | 聚合全量门禁       | `pnpm verify:full`                   | Passed（质量门禁 + E2E，exit 0）                   |
+| 编号   | 验收项             | 判定命令                             | 状态                                                                                                                    |
+| ------ | ------------------ | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| FE-A1  | 格式一致           | `pnpm format:check`                  | Passed（阶段 7 复跑：All matched files use Prettier code style）                                                        |
+| FE-A2  | 类型契约           | `pnpm typecheck`（`tsc -b --force`） | Passed（无输出）                                                                                                        |
+| FE-A3  | Oxlint correctness | `pnpm oxlint`                        | Passed（0 warnings / 0 errors，500 文件 / 96 规则）                                                                     |
+| FE-A4  | ESLint 语义        | `pnpm lint`                          | Passed（0 problem）                                                                                                     |
+| FE-A5  | 纯逻辑单测         | `pnpm test`（node:test）             | Passed（68 tests / 37 suites / 0 fail / 0 skip）                                                                        |
+| FE-A6  | 组件单测 + 覆盖率  | `pnpm test:ui:coverage`              | Passed（110 文件 / 1357 tests；全局 97.34 / 93.25 / 97.32 / 98.09）                                                     |
+| FE-A7  | 生产构建           | `pnpm build`                         | Passed（阶段 7 热构建 1.32s）                                                                                           |
+| FE-A8  | 依赖边界与循环     | `pnpm check:architecture`            | Passed（406 模块 / 1823 依赖 / 0 违规）                                                                                 |
+| FE-A9  | 结构约束           | `pnpm check:structure`               | Passed（380 源码文件；0 超限文件 / 29 超限函数 = 冻结基线）                                                             |
+| FE-A10 | 门禁自测           | `pnpm test:gates`                    | Passed（9 用例，含 4 个必须失败）                                                                                       |
+| FE-A11 | 产物体积预算       | `pnpm check:budget`                  | Passed（首屏 249.99 / 260；全部 JS 620.66 / 650；CSS 16.65 / 20；最大 chunk 458.55 / 500 原始；路由增量 ≤129.08 / 180） |
+| FE-A12 | 构建可复现性       | 同工具链三次构建产物哈希一致         | Passed（阶段 1 实测 86 文件逐文件 SHA256 零差异；阶段 7 未重跑）                                                        |
+| FE-A13 | 真实全栈 E2E       | `pnpm test:e2e`                      | Passed（4 spec / 16 用例，实测 16 passed / 0 failed / 36.8s / 4 workers / `retries: 0`，见 §12.1）                      |
+| FE-A14 | 聚合全量门禁       | `pnpm verify:full`                   | Passed（`pnpm verify` exit 0 + E2E 16/16）                                                                              |
 
 `pnpm verify` 实测 exit 0，链路为：
-`format:check → oxlint → lint → typecheck → test → test:ui:coverage → check:architecture → check:structure → test:gates → build → check:budget`。
+`format:check → oxlint → lint → typecheck → typecheck:e2e → test → test:ui:coverage → check:architecture → check:structure → test:gates → build → check:budget`（E2E 由 `verify:full` 追加，见 `frontend/README.md`）。
 
 ## 2. 质量门禁与检查范围
 
@@ -40,19 +40,20 @@
 - **类型**：`tsconfig.app.json`（`src`，排除测试）、`tsconfig.node.json`（`vite.config.ts`、`vitest.config.ts`）、`tsconfig.test.json`（测试与 `src/types/*.d.ts`）。E2E 独立 tsconfig 属阶段 2。
 - **Lint**：ESLint 10.6.0 + `typescript-eslint` 8.63.0（`@typescript-eslint/no-explicit-any: error`）；Oxlint 1.87.0 仅 `correctness`。排除范围一致：`dist`、`coverage`、`src/components/ui`。
 - **测试**：`*.test.ts` 由 `node --experimental-strip-types --test` 运行；`*.test.tsx` 由 Vitest（jsdom）运行。
-- **覆盖率**：`@vitest/coverage-v8`，`coverage.include` 当前 3 个文件，全局门槛 **76**，`use-auth.ts` 单独 100。
+- **覆盖率**：`@vitest/coverage-v8`；`coverage.include` 为 16 条「已重构模块整目录 + `virtual-table-body.tsx`」，`exclude` 14 条（测试分层、纯 re-export barrel、测试支撑）；全局门槛 **76**，另有 **19 个自定义 hook** 单独声明四项 100（TEST-2）。
 - **依赖边界**：dependency-cruiser 18.5.0，`.dependency-cruiser.cjs`：循环、不可解析导入、下层反向依赖、跨 feature（存量例外显式冻结）。
 - **结构与预算**：`scripts/check-structure.mjs`、`scripts/check-bundle-budget.mjs`，基线分别是 `structure-baseline.json`、`bundle-budget.json`。
 - **门禁自测**：`scripts/self-test-gates.mjs` 用临时装置验证门禁在违规输入下确实非零退出。
 
-### 覆盖率实测（`pnpm test:ui:coverage`）
+### 覆盖率实测（`pnpm test:ui:coverage`，阶段 7 复跑）
 
-| 文件                                      | Stmts | Branch | Funcs | Lines |
-| ----------------------------------------- | ----: | -----: | ----: | ----: |
-| All files（纳入 ratchet 范围）            | 99.35 |  84.84 |   100 |   100 |
-| `src/shared/auth/auth-store.ts`           |   100 |    100 |   100 |   100 |
-| `src/shared/auth/use-auth.ts`             |   100 |    100 |   100 |   100 |
-| `src/features/accounts/account-quota.tsx` | 99.06 |  83.60 |   100 |   100 |
+`pnpm verify` 内实测：**110 文件 / 1357 用例全过**（492s，`maxWorkers: 2`、`testTimeout: 20000`）。
+
+| 范围                        | Stmts | Branch | Funcs | Lines |
+| --------------------------- | ----: | -----: | ----: | ----: |
+| All files（287 个纳入文件） | 97.34 |  93.25 | 97.32 | 98.09 |
+
+逐文件口径：语句与行全部 ≥76%（最低语句 77.77）；8 个文件在分支或函数指标上 <76%，另有 5 个不含可执行语句的类型/DTO 模块报 0/0/0/0（统计假象）。逐项见 §13.2 与 §13.3。
 
 ### 真实全栈 E2E（阶段 2）
 
@@ -68,27 +69,36 @@
 | 只清理自有资源     | 结束只杀自己启动的进程、删除自己的临时目录                                                           | 运行后 0 残留进程、0 残留临时目录                                                                                    |
 | 测的是当前代码     | globalSetup 在 dist 缺失**或早于任一构建输入**时重建前端；后端二进制每次重建                         | 把 `dist/index.html` mtime 置为 2000-01-01 后运行：触发重建（6 passed）；随后再运行：零构建（6 passed）              |
 
-当前覆盖：未登录访问受保护路由被重定向、错误密码登录失败、正确登录后刷新仍保持、注销后不可回访、表单可访问名称。空账号池下 `/readyz` 返回 503 `not_ready` 属预期生产语义，管理面可用性单独断言，未放宽生产门槛。
+当前覆盖（阶段 6 收尾后共 **4 个 spec / 16 用例**，实测 `npx playwright test` **16 passed / 0 failed**，37.4s、4 workers、`retries: 0`）：
 
-尚未覆盖（后续阶段补齐）：客户端密钥 CRUD、账号导入与列表、审计筛选、设置保存与版本冲突、模型/出口页面、Quality Guard 未启用状态、创作台与媒体流程、语言主题与移动视口。
+| spec                        | 用例数 | 覆盖内容                                                                                                                                  |
+| --------------------------- | -----: | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `e2e/auth.e2e.ts`           |      6 | 未登录访问受保护路由被重定向、错误密码登录失败、正确登录后刷新仍保持、注销后不可回访、表单可访问名称                                      |
+| `e2e/client-keys.e2e.ts`    |      4 | 创建（含校验失败路径）、编辑停用后徽标与筛选同步、删除、未登录重定向                                                                      |
+| `e2e/request-audits.e2e.ts` |      3 | 未登录重定向；空池下渲染真实零值与空态且筛选/周期控件可用（并用管理 API 交叉验证服务端 `items=[]`）；状态筛选改变激活计数、清除后恢复空态 |
+| `e2e/settings.e2e.ts`       |      3 | 未登录重定向；未修改时保存/重置禁用、修改后启用、重置后恢复禁用；分页面板按标签显隐                                                       |
+
+空账号池下 `/readyz` 返回 503 `not_ready` 属预期生产语义，管理面可用性单独断言，未放宽生产门槛。
+
+尚未覆盖（后续阶段补齐）：账号导入与列表、设置保存的版本冲突、模型/出口页面、Quality Guard 未启用状态、创作台与媒体流程、语言主题与移动视口。
 
 ## 3. 生产产物与体积预算
 
 量化口径：`scripts/check-bundle-budget.mjs`，AST 解析 dist 内的相对 `import`/`export-from` 与懒加载 `import(...)` 字面量。
 
-| 指标                                          |            实测 |    阈值 | 余量                  |
-| --------------------------------------------- | --------------: | ------: | --------------------- |
-| 首屏关键 JS 闭包（2 文件：入口 + 图标运行时） | 252.07 KiB gzip | 260 KiB | 7.93 KiB（占 96.95%） |
-| 最大路由新增闭包（`dashboard-page`）          | 127.88 KiB gzip | 180 KiB | 52.12 KiB             |
-| 全部生产 JS（74 文件去重）                    | 593.25 KiB gzip | 650 KiB | 56.75 KiB             |
-| 全部生产 CSS（1 文件）                        |  16.65 KiB gzip |  20 KiB | 3.35 KiB              |
-| 最大单 chunk（`index-*.js`）                  | 458.31 KiB 原始 | 500 KiB | 41.69 KiB             |
+| 指标                                          |            实测 |    阈值 | 余量                   |
+| --------------------------------------------- | --------------: | ------: | ---------------------- |
+| 首屏关键 JS 闭包（2 文件：入口 + 图标运行时） | 249.99 KiB gzip | 260 KiB | 10.01 KiB（占 96.15%） |
+| 最大路由新增闭包（`dashboard-page`）          | 129.08 KiB gzip | 180 KiB | 50.92 KiB              |
+| 全部生产 JS（76 文件去重）                    | 620.66 KiB gzip | 650 KiB | 29.34 KiB              |
+| 全部生产 CSS（1 文件）                        |  16.65 KiB gzip |  20 KiB | 3.35 KiB               |
+| 最大单 chunk（`index-*.js`）                  | 458.55 KiB 原始 | 500 KiB | 41.45 KiB              |
 
-原始与 Brotli 参考：全部 JS raw 2055.38 KiB / brotli 508.39 KiB；首屏闭包 raw 797.37 KiB / brotli 213.35 KiB。
+阶段 7 实测（`pnpm verify` 内的 `pnpm check:budget`，exit 0）。原始与 Brotli 参考值仍为阶段 6 记录（全部 JS raw 2055.38 KiB / brotli 508.39 KiB；首屏闭包 raw 797.37 KiB / brotli 213.35 KiB），阶段 7 未重新记录。
 
-12 个路由新增闭包（gzip KiB）：dashboard 127.88、creative-console 74.90、accounts 74.62、client-keys 74.61、settings 74.00、quality-guard 64.73、request-audits 58.95、models 49.54、video-gallery 44.00、app-shell 30.87、gallery 30.84、api-docs 28.78。
+12 个路由新增闭包（gzip KiB，阶段 7 实测）：dashboard 129.08、creative-console 81.59、accounts 81.05、settings 79.08、client-keys 76.55、quality-guard 67.76、request-audits 60.50、models 50.76、video-gallery 46.64、gallery 32.99、app-shell 31.40、api-docs 29.07。
 
-**关键结论：首屏闭包只余 7.93 KiB（3.05%）余量**，任何新增到入口闭包的代码都必须同时给出体积影响；这也是阶段 3 优先拆分 i18n 与入口依赖的直接动因。
+**关键结论：首屏闭包余量 10.01 KiB（3.85%）**；全部生产 JS 相对冻结基线（`bundle-budget.json` 的 607485 B gzip）增长 **4.6%**，仍在 REV-5 的 5% 容差内，但已接近上限——后续任何进入生产 JS 的改动都必须同时给出体积影响。
 
 ### 构建可复现性
 
@@ -99,7 +109,7 @@
 ### 4.1 分层与依赖方向
 
 - 目录职责：`app`（路由/壳层/Provider）、`features`（业务能力）、`entities`（领域 DTO 与只读查询）、`shared`（API/鉴权/配置/组件/工具）、`components/ui`（shadcn 原语）。
-- dependency-cruiser 实测（128 模块 / 659 依赖）：**0 循环、0 不可解析导入、0 下层反向依赖、0 未冻结的跨 feature 依赖**。
+- dependency-cruiser 实测（阶段 7：406 模块 / 1823 依赖）：**0 循环、0 不可解析导入、0 下层反向依赖、0 未冻结的跨 feature 依赖**。
 - 门禁反向验证：注入 `features/models → features/settings` 后立即报 `no-cross-feature-models` 并 exit 1，删除后恢复 exit 0。
 - 已冻结的 9 处跨 feature 依赖（`.dependency-cruiser.cjs` 的 `frozenCrossFeatureDebt`，阶段 3 整改，只允许删除条目）：
 
@@ -315,7 +325,121 @@
 
 ### 11.6 阶段 6 仍未达标项（如实登记，未静默排除）
 
-- **全局覆盖率已达标（四项 ≥90%，门槛 76%），但仍有 32 个文件按 TEST-1 的「按文件」口径低于 76%**。其中 6 个是**未被任何组件测试导入**的入口/包裹层，实测 0%（`app/auth-boundary.tsx`、`app/deferred-pages.tsx`、`app/providers.tsx`、`app/router.tsx`、`shared/auth/auth-context.tsx`、`settings/egress-error-tooltip.tsx`）——由 E2E 而非组件测试覆盖；其余集中在 `quality-guard/**`（`degrade-events-list` 54.54%、`use-degrade-accounts` 74.57%、`probe-profile-dialog` 77.77%）与 `settings/egress*`（分支 66–77%）。逐文件 ratchet 未完成
-- **自定义 hook 未全部达到 TEST-2 的 100%**：实测未达四项 100% 的为 `use-degrade-accounts`（71.23/60/55.88/74.57）、`use-guard-nodes`（84.61/83.87/85.71/83.87）、`use-probe-profiles`（90/44.44/82.6/91.48）、`use-guard-node-actions`（96.87/64.28/93.33/96.72）、`use-creative-video`（98.82/94.44/96.29/98.73）以及多个 accounts/creative hook（语句/行达 100%，分支 90–97%）。全部已超过 76% 业务门槛，但未满足 TEST-2 的 100% 要求；`vitest.config.ts` 目前只对 10 个 hook 单独声明 100% 阈值
+- **逐文件口径**：阶段 6 收尾登记的「约 32 个文件 <76%」在阶段 7 收敛为 **8 个文件**（全部落在分支或函数指标，语句与行均 ≥76%，最低语句 77.77）；逐项见 §13.2。原登记中 `quality-guard/**` 的 `degrade-events-list`、`use-degrade-accounts`、`probe-profile-dialog` 与 `src/app/**` 6 个 0% 入口均已达标。
+- **自定义 hook（TEST-2）**：阶段 7 把逐文件 100% 阈值从 10 个扩到 **19 个**；原登记未达 100% 的 `use-degrade-accounts`、`use-guard-nodes`、`use-probe-profiles`、`use-guard-node-actions`、`use-creative-video` 及 accounts/creative 各 hook 均已达 100/100/100/100，仅 `use-account-cleanup-flow.ts`（分支 97.06）未纳入，理由见 §13.3。
 - jsdom 无法驱动的分支已逐条登记（例如 Radix「每页条数」选择、模态遮挡下的预览删除路径、recharts tooltip/tick 回调、`web-account-scripts.tsx` 的 Radix Checkbox 提交路径）
-- 后端函数级 REV-2 仍有 **18** 个函数 >50 行（gateway 9 / inference 0 / provider-web 9），已由 HEAD 基线实测对比并逐项登记于 `backend/AUDIT.md` §12.2（**这是本轮更新，原记录「42 个」已过时**）
+- 后端函数级 REV-2 仍有 **7** 个函数 >50 行（gateway 7 / inference 0 / provider-web 0；HEAD 基线 88 → 阶段 6 本轮 18 → 收尾 7），逐项登记于 `backend/AUDIT.md` §12.2；其中 `createResponseAt` 908 行已登记为不强行拆，**不记为「已通过」**
+
+## 12. 阶段 6 收尾（E2E 扩展 / 入口与包裹层覆盖率补强）
+
+### 12.1 E2E 由 1 spec / 6 用例扩为 4 spec / 16 用例
+
+新增 3 个 spec（`client-keys`、`request-audits`、`settings`），沿用既有隔离机制（生产 `frontend/dist` + 真实 Go 二进制 + 每 worker 独立端口/临时目录/合成凭据 + 未知外呼指向未监听端口），未放宽任何生产语义：
+
+| 观测项    | 结果                                                                                            |
+| --------- | ----------------------------------------------------------------------------------------------- |
+| 执行命令  | `npx playwright test`                                                                           |
+| 结果      | **16 passed / 0 failed**                                                                        |
+| 耗时/并发 | 37.4s、4 workers、`retries: 0`（`frontend/playwright.config.ts:15` 仍为 0，未用重试掩盖缺陷）   |
+| spec 计数 | 4（`auth` 6 / `client-keys` 4 / `request-audits` 3 / `settings` 3，用例数由 `^\s*test\(` 实测） |
+
+覆盖明细见 §2「真实全栈 E2E」。空账号池下管理 API 与服务端真实返回的交叉验证（`items=[]`）只断言**真实空池语义**，未新增测试后门或放宽鉴权。
+
+### 12.2 `src/app/**` 入口与包裹层覆盖率由 0% 提升到 100%
+
+此前 §11.6 登记的 6 个「未被任何组件测试导入、实测 0%」文件已补齐组件测试：
+
+| 文件                                             | 补测结果     | 覆盖内容                               |
+| ------------------------------------------------ | ------------ | -------------------------------------- |
+| `src/app/auth-boundary.tsx`                      | 0 → **100%** | 已登录/未登录分支、加载态、重定向      |
+| `src/app/deferred-pages.tsx`                     | 0 → **100%** | 懒加载 fallback 与 Suspense 边界       |
+| `src/app/providers.tsx`                          | 0 → **100%** | Query/主题/鉴权 Provider 组装与卸载    |
+| `src/app/router.tsx`                             | 0 → **100%** | 路由表装配与 SPA 回退                  |
+| `src/shared/auth/auth-context.tsx`               | 0 → **100%** | context 消费与缺失 Provider 的显式报错 |
+| `src/features/settings/egress-error-tooltip.tsx` | 0 → **100%** | 有/无错误时的渲染与可访问名称          |
+
+新增测试文件（`src/app/{auth-boundary,deferred-pages,providers,router}.test.tsx`、`src/shared/auth/auth-context.test.tsx`、`src/features/settings/egress-error-tooltip.test.tsx`）共 **45 个用例**（总数以实际运行报告为准，未逐一比对行内 `it(` 计数）。`src/app/**` 目录汇总：statements **53.95 → 99.28**；剩余未达 100% 的为存量 `app-shell.tsx` 92.85 statements 与 `shell-navigation.tsx` 分支 95。
+
+### 12.3 仍未达标项（本阶段未解决，如实登记）
+
+- **逐文件分支/函数 <76% 的 8 个文件**：阶段 7 已把阶段 6 的「约 32 个」收敛到 **8 个**（全部落在分支或函数指标，语句与行均 ≥76%，最低语句 77.77），逐项见 §13.2；该结论为阶段 7 实测，不再是「未重新统计」。
+- **hook 100%（TEST-2）**：阶段 7 已把逐文件 100% 阈值从 10 个扩到 **19 个** hook；唯一未纳入的是 `use-account-cleanup-flow.ts`（分支 97.06，1 个不可驱动分支），见 §13.3。
+- **全局覆盖率**：阶段 7 重新实测 statements 97.34 / branches 93.25 / functions 97.32 / lines 98.09（门槛 76），取代此前「补强后未重新实测」的说明。
+- **后端函数级 REV-2 仍剩 7 个** >50 行（gateway 7 / inference 0 / provider-web 0，详见 `backend/AUDIT.md` §12.2 与 §13.6），未记为「已通过」。
+
+## 13. 阶段 7（逐文件覆盖率 ratchet / 文档与配置一致性 / 复验）
+
+阶段 7 在阶段 6 收尾的工作树上继续；未改变对外 API、DTO、模型路由 ID、鉴权、计费与审计语义。
+
+### 13.1 hook 覆盖率收敛（只改测试，未改生产代码）
+
+| 目标                                       | 收敛前（stmts/br/fn/lines）   | 收敛后              | 驱动用例                                                                  |
+| ------------------------------------------ | ----------------------------- | ------------------- | ------------------------------------------------------------------------- |
+| `quality-guard/use-degrade-accounts.ts`    | 71.23 / 60 / 55.88 / 74.57    | **100/100/100/100** | `use-guard-hooks.test.tsx`（新增）                                        |
+| `quality-guard/use-guard-nodes.ts`         | 84.61 / 83.87 / 85.71 / 83.87 | **100/100/100/100** | 同上                                                                      |
+| `quality-guard/use-probe-profiles.ts`      | 90 / 44.44 / 82.6 / 91.48     | **100/100/100/100** | 同上                                                                      |
+| `quality-guard/use-guard-node-actions.ts`  | 96.87 / 64.28 / 93.33 / 96.72 | **100/100/100/100** | 同上                                                                      |
+| `creative-console/use-creative-console.ts` | 98.57 / 97.05 / 100 / 100     | **100/100/100/100** | `use-creative-console.test.tsx`（+1，`render(<StrictMode>…)` 真实重挂载） |
+| `creative-console/use-creative-video.ts`   | 98.82 / 94.44 / 96.29 / 98.73 | **100/100/100/100** | `use-creative-video.test.tsx`（+2，面板重试与 hook 级 `retryStatus`）     |
+| `creative-console/use-creative-voice.ts`   | 98.33 / 92.1 / 100 / 100      | **100/100/100/100** | `use-creative-voice.test.tsx`（新增 3 例，陈旧提交闭包驱动回退）          |
+| `accounts/use-accounts-transfer-flows.ts`  | 100 / 96.15 / 100 / 100       | **100/100/100/100** | `use-accounts-flow-error-branches.test.tsx`（新增 4 例）                  |
+| `accounts/use-accounts-page-model.ts`      | 100 / 95.65 / 100 / 100       | **100/100/100/100** | 同上                                                                      |
+
+本轮共新增 **23 个前端测试文件**（20 个 Vitest 组件/集成测试 + 3 个 Playwright E2E spec），并对既有测试做扩展；**未修改任何生产代码**。
+
+`vitest.config.ts` 的 TEST-2 逐文件 100% 阈值由 10 个 hook 扩到 **19 个**，把上述已达标 hook 锁定，防止回退。
+
+### 13.2 逐文件覆盖率实测（阶段 7）
+
+`pnpm verify` 内 `test:ui:coverage`：**110 文件 / 1357 用例全过**（492s，`maxWorkers: 2`），全局 **97.34 / 93.25 / 97.32 / 98.09**（门槛 76）。逐文件（287 个纳入文件）：**语句与行全部 ≥76%**（最低语句 77.77）；**8 个文件在分支或函数指标上仍 <76%**：
+
+| 文件                                               | Stmts | Branch | Funcs | Lines |
+| -------------------------------------------------- | ----: | -----: | ----: | ----: |
+| `features/settings/egress-source-dialog.tsx`       | 77.77 |  87.50 | 70.58 | 80.76 |
+| `features/settings/egress-node-dialogs.tsx`        | 82.81 |  77.02 | 75.00 | 85.00 |
+| `features/settings/settings-page.tsx`              | 90.00 | 100.00 | 66.66 |   100 |
+| `features/settings/settings-page-tabs.tsx`         |   100 |  50.00 |   100 |   100 |
+| `features/settings/settings-form-layout.tsx`       | 87.50 |  69.23 |   100 |   100 |
+| `features/settings/egress-automation-settings.tsx` | 93.54 |  66.66 | 90.47 | 93.10 |
+| `features/accounts/web-account-settings.tsx`       | 87.50 |  91.66 | 71.42 | 85.71 |
+| `features/media/video-gallery-page.tsx`            |   100 |  72.72 |   100 |   100 |
+
+另有 5 个**不含可执行语句**的类型/DTO 模块在文本报表中显示 0/0/0/0（`shared/auth/auth-state.ts`、`features/settings/settings-dto.ts`、`features/settings/egress-dto.ts`、`features/media/types.ts`、`features/accounts/accounts-flow-context.ts`），属 v8 统计假象，不是覆盖缺口。
+
+### 13.3 仍登记未达标项
+
+- **逐文件分支/函数 <76% 的 8 个文件**（§13.2 表）：集中在 `settings/**`（6）、`accounts/web-account-settings.tsx`、`media/video-gallery-page.tsx`。缺口来自 Radix 交互分支与 recharts/选择器回调在 jsdom 下不可驱动，或未触发的错误回调；未用伪造覆盖率或改生产代码的方式绕过。
+- **hook 100%（TEST-2）仍有 1 个未纳入阈值**：`accounts/use-account-cleanup-flow.ts` 分支 97.06，剩 `:169` 的 `preview?.data ?? null` 兜底分支。不可驱动证据：`previewFresh` 为真时 `preview` 必非 null，且 `preview.data` 来自 `account-batch-api.ts` 的解码器校验，null/undefined 响应会直接 reject。要让该分支执行只能让 mock 违反解码器契约（伪造覆盖率）或改生产代码，两者均未采用。
+- **后端函数级 REV-2 仍剩 7 个** >50 行（gateway 7 / inference 0 / provider-web 0，详见 `backend/AUDIT.md` §12.2 与 §13.6），未记为「已通过」。
+- **既有 StrictMode 用例是空转（本轮发现，未修改原用例）**：`creative-console/use-creative-console.test.tsx` 的 `strictWrapper` 把 `<StrictMode>` 放在自定义 wrapper 组件**内部**，实测不会触发 React 的 effect 双重执行，因此该用例「StrictMode 下不重复读取密钥」并未真正走到重挂载路径。本轮新增了真实双重执行的用例覆盖同一行为。
+
+### 13.4 文档与配置一致性修正（阶段 7 只读审计发现）
+
+| 发现                                                                               | 修正                                                                                                                                  |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| §1 验收矩阵 FE-A3/A5/A6/A7/A8/A9/A11/A13 停留在阶段 0–2 数值                       | 改为阶段 7 实测值（见 §1 与 §2）                                                                                                      |
+| §2「`coverage.include` 当前 3 个文件」与 `vitest.config.ts` 的 16 条不一致         | 改为实际口径（16 条 include + 14 条 exclude + 19 个 hook 阈值）                                                                       |
+| §2 覆盖率表仍是阶段 2 的 3 行                                                      | 改为阶段 7 全局实测                                                                                                                   |
+| §2/§4.1 的 `252.07 KiB`、`128 模块 / 659 依赖` 过时                                | 改为 249.99 KiB、406 模块 / 1823 依赖                                                                                                 |
+| §11.6「约 32 个文件 <76%」与「hook 未全部达标」与实测不符                          | 更新为 8 个文件（分支/函数指标）与 1 个 hook；见 §13.2 / §13.3                                                                        |
+| `frontend/README.md` 把 `pnpm test:e2e` 列进「`pnpm verify` 依次执行」             | 改为明确「`pnpm verify` 不含 E2E」，并修正表内 `typecheck:e2e` 的位置                                                                 |
+| `vitest.config.ts` 中 `endpoint-definitions.ts` 的排除理由写作「同名 `*.test.ts`」 | 该文件无同名 node:test 文件，实际由 `api-docs-examples.test.ts` 覆盖；注释改为准确表述                                                |
+| 根 `AGENTS.md` REV-1 / REV-3 / TEST-6 的判定与门禁实际能力不符                     | REV-1 注明门禁扫描范围排除测试文件；REV-3 注明无自动门禁；TEST-6 注明 `go build` 为本地必需检查、CI 的 `go test`/`-race` 已编译全部包 |
+
+### 13.5 阶段 7 复验（`pnpm verify`，exit 0）
+
+| 步骤           | 命令                      | 结果                                                                                            |
+| -------------- | ------------------------- | ----------------------------------------------------------------------------------------------- |
+| 格式           | `pnpm format:check`       | Passed（All matched files use Prettier code style）                                             |
+| Oxlint         | `pnpm oxlint`             | Passed（0 warnings / 0 errors，500 文件 / 96 规则）                                             |
+| ESLint         | `pnpm lint`               | Passed（0 problem）                                                                             |
+| 类型           | `pnpm typecheck`          | Passed（无输出）                                                                                |
+| E2E 类型       | `pnpm typecheck:e2e`      | Passed（无输出）                                                                                |
+| 纯逻辑单测     | `pnpm test`               | Passed（68 tests / 37 suites / 0 fail / 0 skip）                                                |
+| 组件单测覆盖率 | `pnpm test:ui:coverage`   | Passed（110 文件 / 1357 tests；97.34 / 93.25 / 97.32 / 98.09）                                  |
+| 依赖边界       | `pnpm check:architecture` | Passed（406 模块 / 1823 依赖 / 0 违规）                                                         |
+| 结构约束       | `pnpm check:structure`    | Passed（380 源码文件；0 超限文件 / 29 超限函数 = 冻结基线）                                     |
+| 门禁自测       | `pnpm test:gates`         | Passed（9 用例，含 4 个必须失败）                                                               |
+| 生产构建       | `pnpm build`              | Passed（1.32s）                                                                                 |
+| 体积预算       | `pnpm check:budget`       | Passed（首屏 249.99 / 260；全部 JS 620.66 / 650；CSS 16.65 / 20；最大 chunk 458.55 / 500 原始） |
+| 真实全栈 E2E   | `pnpm test:e2e`           | Passed（16 passed / 0 failed / 36.8s / 4 workers / `retries: 0`）                               |
