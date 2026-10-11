@@ -144,40 +144,66 @@ func convertChatMessages(messages []chatMessage) ([]any, error) {
 func convertChatMessagesWithReasoningReplay(messages []chatMessage, cache *ReasoningCache, scope string) ([]any, error) {
 	input := make([]any, 0, len(messages))
 	for _, message := range messages {
-		role := strings.ToLower(strings.TrimSpace(message.Role))
-		switch role {
-		case "system", "developer", "user", "assistant":
-			if !isEmptyJSON(message.Content) && !bytes.Equal(bytes.TrimSpace(message.Content), []byte("null")) {
-				content, err := convertChatContent(message.Content)
-				if err != nil {
-					return nil, fmt.Errorf("%s 消息内容无效: %w", role, err)
-				}
-				input = append(input, map[string]any{"type": "message", "role": role, "content": content})
-			}
-			if role == "assistant" && !isEmptyJSON(message.ToolCalls) {
-				calls, err := convertAssistantToolCalls(message.ToolCalls)
-				if err != nil {
-					return nil, err
-				}
-				input = append(input, restoreReasoningForCalls(calls, cache, scope)...)
-			}
-		case "tool":
-			if strings.TrimSpace(message.ToolCallID) == "" {
-				return nil, errors.New("tool 消息缺少 tool_call_id")
-			}
-			output, err := convertChatToolOutput(message.Content)
-			if err != nil {
-				return nil, err
-			}
-			input = append(input, map[string]any{"type": "function_call_output", "call_id": message.ToolCallID, "output": output})
-		default:
-			return nil, fmt.Errorf("不支持 messages.role=%q", message.Role)
+		converted, err := convertChatMessageWithReasoningReplay(message, cache, scope)
+		if err != nil {
+			return nil, err
 		}
+		input = append(input, converted...)
 	}
 	if len(input) == 0 {
 		return nil, errors.New("messages 中没有可发送内容")
 	}
 	return input, nil
+}
+
+// convertChatMessageWithReasoningReplay 按 role 分派单条 Chat 消息的转换。
+func convertChatMessageWithReasoningReplay(message chatMessage, cache *ReasoningCache, scope string) ([]any, error) {
+	role := strings.ToLower(strings.TrimSpace(message.Role))
+	switch role {
+	case "system", "developer", "user", "assistant":
+		return convertChatRoleMessage(role, message, cache, scope)
+	case "tool":
+		return convertChatToolMessage(message)
+	default:
+		return nil, fmt.Errorf("不支持 messages.role=%q", message.Role)
+	}
+}
+
+// convertChatRoleMessage 转换 message 角色消息，并为 assistant 追加可回放的工具调用。
+func convertChatRoleMessage(role string, message chatMessage, cache *ReasoningCache, scope string) ([]any, error) {
+	var converted []any
+	if hasChatMessageContent(message.Content) {
+		content, err := convertChatContent(message.Content)
+		if err != nil {
+			return nil, fmt.Errorf("%s 消息内容无效: %w", role, err)
+		}
+		converted = append(converted, map[string]any{"type": "message", "role": role, "content": content})
+	}
+	if role != "assistant" || isEmptyJSON(message.ToolCalls) {
+		return converted, nil
+	}
+	calls, err := convertAssistantToolCalls(message.ToolCalls)
+	if err != nil {
+		return nil, err
+	}
+	return append(converted, restoreReasoningForCalls(calls, cache, scope)...), nil
+}
+
+// hasChatMessageContent 判断消息 content 是否包含可发送内容。
+func hasChatMessageContent(raw json.RawMessage) bool {
+	return !isEmptyJSON(raw) && !bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
+}
+
+// convertChatToolMessage 把 tool 角色消息转换为 function_call_output 输入项。
+func convertChatToolMessage(message chatMessage) ([]any, error) {
+	if strings.TrimSpace(message.ToolCallID) == "" {
+		return nil, errors.New("tool 消息缺少 tool_call_id")
+	}
+	output, err := convertChatToolOutput(message.Content)
+	if err != nil {
+		return nil, err
+	}
+	return []any{map[string]any{"type": "function_call_output", "call_id": message.ToolCallID, "output": output}}, nil
 }
 
 func convertChatContent(raw json.RawMessage) (any, error) {
@@ -302,50 +328,47 @@ func convertChatTools(raw json.RawMessage) ([]any, error) {
 	}
 	result := make([]any, 0, len(tools))
 	for _, tool := range tools {
-		var typeName string
-		_ = json.Unmarshal(tool["type"], &typeName)
-		if typeName != "function" {
-			var value any
-			_ = json.Unmarshal(mustJSON(tool), &value)
-			object, _ := value.(map[string]any)
-			switch typeName {
-			case "web_search", "web_search_preview", "web_search_preview_2025_03_11", "web_search_2025_08_26":
-				converted, err := convertChatWebSearchTool(object)
-				if err != nil {
-					return nil, err
-				}
-				result = append(result, converted)
-			default:
-				result = append(result, value)
-			}
-			continue
+		converted, err := convertChatTool(tool)
+		if err != nil {
+			return nil, err
 		}
-		var function map[string]any
-		if json.Unmarshal(tool["function"], &function) != nil {
-			return nil, errors.New("function tool 格式无效")
-		}
-		function["type"] = "function"
-		result = append(result, function)
+		result = append(result, converted)
 	}
 	return result, nil
 }
 
+// convertChatTool 转换单个 Chat 工具定义；function 类型补齐 type 字段后原样透传。
+func convertChatTool(tool map[string]json.RawMessage) (any, error) {
+	var typeName string
+	_ = json.Unmarshal(tool["type"], &typeName)
+	if typeName != "function" {
+		return convertNonFunctionChatTool(typeName, tool)
+	}
+	var function map[string]any
+	if json.Unmarshal(tool["function"], &function) != nil {
+		return nil, errors.New("function tool 格式无效")
+	}
+	function["type"] = "function"
+	return function, nil
+}
+
+// convertNonFunctionChatTool 归一化托管 web_search 变体，其余类型按原始 JSON 透传。
+func convertNonFunctionChatTool(typeName string, tool map[string]json.RawMessage) (any, error) {
+	var value any
+	_ = json.Unmarshal(mustJSON(tool), &value)
+	switch typeName {
+	case "web_search", "web_search_preview", "web_search_preview_2025_03_11", "web_search_2025_08_26":
+		object, _ := value.(map[string]any)
+		return convertChatWebSearchTool(object)
+	default:
+		return value, nil
+	}
+}
+
 func convertChatWebSearchTool(tool map[string]any) (map[string]any, error) {
-	nested := make(map[string][]any, 2)
-	if rawFilters, exists := tool["filters"]; exists && rawFilters != nil {
-		filters, ok := rawFilters.(map[string]any)
-		if !ok {
-			return nil, errors.New("web_search filters 必须是对象")
-		}
-		for _, field := range []string{"allowed_domains", "excluded_domains"} {
-			if value, exists := filters[field]; exists {
-				domains, err := normalizeChatWebSearchDomains(value, field)
-				if err != nil {
-					return nil, err
-				}
-				nested[field] = domains
-			}
-		}
+	nested, err := parseChatWebSearchFilters(tool)
+	if err != nil {
+		return nil, err
 	}
 
 	resultFilters := make(map[string]any, 2)
@@ -379,6 +402,29 @@ func convertChatWebSearchTool(tool map[string]any) (map[string]any, error) {
 		converted["filters"] = resultFilters
 	}
 	return converted, nil
+}
+
+// parseChatWebSearchFilters 解析 web_search tool 嵌套 filters 对象中的域名声明。
+func parseChatWebSearchFilters(tool map[string]any) (map[string][]any, error) {
+	rawFilters, exists := tool["filters"]
+	if !exists || rawFilters == nil {
+		return make(map[string][]any, 2), nil
+	}
+	filters, ok := rawFilters.(map[string]any)
+	if !ok {
+		return nil, errors.New("web_search filters 必须是对象")
+	}
+	nested := make(map[string][]any, 2)
+	for _, field := range []string{"allowed_domains", "excluded_domains"} {
+		if value, exists := filters[field]; exists {
+			domains, err := normalizeChatWebSearchDomains(value, field)
+			if err != nil {
+				return nil, err
+			}
+			nested[field] = domains
+		}
+	}
+	return nested, nil
 }
 
 func normalizeChatWebSearchDomains(value any, field string) ([]any, error) {

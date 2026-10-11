@@ -295,12 +295,13 @@ func (h *Handler) streamModelSyncProgress(c *gin.Context, result <-chan modelSyn
 			}
 		case <-progress:
 			current, maximum := int(completed.Load()), int(total.Load())
-			if maximum > 0 && (current != lastCompleted || maximum != lastTotal) {
-				if err := writeModelSyncEvent(c, "progress", gin.H{"completed": current, "total": maximum}); err != nil {
-					return
-				}
-				lastCompleted, lastTotal = current, maximum
+			if maximum <= 0 || (current == lastCompleted && maximum == lastTotal) {
+				continue
 			}
+			if err := writeModelSyncEvent(c, "progress", gin.H{"completed": current, "total": maximum}); err != nil {
+				return
+			}
+			lastCompleted, lastTotal = current, maximum
 		}
 	}
 }

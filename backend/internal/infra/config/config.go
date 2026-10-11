@@ -70,27 +70,9 @@ type Config struct {
 // Load 从 YAML 加载启动配置，并为非敏感运行参数补充代码默认值。
 func Load(path string) (Config, error) {
 	cfg := defaultConfig()
-	loadedFrom := ""
-	if strings.TrimSpace(path) != "" {
-		data, err := os.ReadFile(path)
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return Config{}, fmt.Errorf("读取配置文件: %w", err)
-		}
-		if err == nil {
-			loadedFrom = path
-			decoder := yaml.NewDecoder(bytes.NewReader(data))
-			decoder.KnownFields(true)
-			if err := decoder.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
-				return Config{}, fmt.Errorf("解析配置文件: %w", err)
-			}
-			var extra any
-			if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-				if err != nil {
-					return Config{}, fmt.Errorf("解析配置文件: %w", err)
-				}
-				return Config{}, errors.New("配置文件只能包含一个 YAML 文档")
-			}
-		}
+	loadedFrom, err := loadConfigFile(path, &cfg)
+	if err != nil {
+		return Config{}, err
 	}
 	if loadedFrom != "" {
 		if err := resolveRelativePaths(&cfg, loadedFrom); err != nil {
@@ -104,6 +86,43 @@ func Load(path string) (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+// loadConfigFile 用配置文件里显式出现的字段覆盖 cfg，并返回实际读取到的路径。
+// 路径为空或文件不存在时返回空路径，表示全部沿用代码默认值。
+func loadConfigFile(path string, cfg *Config) (string, error) {
+	if strings.TrimSpace(path) == "" {
+		return "", nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("读取配置文件: %w", err)
+	}
+	if err != nil {
+		return "", nil
+	}
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(cfg); err != nil && !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("解析配置文件: %w", err)
+	}
+	if err := rejectTrailingDocument(decoder); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// rejectTrailingDocument 拒绝同一文件中的第二个 YAML 文档。
+func rejectTrailingDocument(decoder *yaml.Decoder) error {
+	var extra any
+	err := decoder.Decode(&extra)
+	if errors.Is(err, io.EOF) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("解析配置文件: %w", err)
+	}
+	return errors.New("配置文件只能包含一个 YAML 文档")
 }
 
 // applyEnvironmentOverrides applies typed, application-owned environment

@@ -218,17 +218,23 @@ func (c *streamConverter) recordOutputItem(item responseItem) {
 	}
 	key := replayOutputKey(item)
 	if key != "" {
-		if _, exists := c.outputItemIDs[key]; exists {
-			for index := range c.outputItems {
-				if replayOutputKey(c.outputItems[index]) == key {
-					c.outputItems[index] = mergeResponseItem(c.outputItems[index], item)
-					return
-				}
-			}
+		if _, exists := c.outputItemIDs[key]; exists && c.replaceRecordedOutputItem(key, item) {
+			return
 		}
 		c.outputItemIDs[key] = struct{}{}
 	}
 	c.outputItems = append(c.outputItems, cloneResponseItem(item))
+}
+
+// replaceRecordedOutputItem 用新 payload 合并已记录的同 key item，返回是否命中。
+func (c *streamConverter) replaceRecordedOutputItem(key string, item responseItem) bool {
+	for index := range c.outputItems {
+		if replayOutputKey(c.outputItems[index]) == key {
+			c.outputItems[index] = mergeResponseItem(c.outputItems[index], item)
+			return true
+		}
+	}
+	return false
 }
 
 func replayOutputKey(item responseItem) string {
@@ -329,21 +335,25 @@ func (c *streamConverter) mergeOutputItems(output []responseItem) []responseItem
 	}
 	merged := append([]responseItem(nil), output...)
 	for _, item := range c.outputItems {
-		found := false
 		if key := replayOutputKey(item); key != "" {
-			for index := range merged {
-				if replayOutputKey(merged[index]) == key {
-					merged[index] = mergeResponseItem(merged[index], item)
-					found = true
-					break
-				}
+			if index, found := findReplayOutputIndex(merged, key); found {
+				merged[index] = mergeResponseItem(merged[index], item)
+				continue
 			}
 		}
-		if !found {
-			merged = append(merged, item)
-		}
+		merged = append(merged, item)
 	}
 	return merged
+}
+
+// findReplayOutputIndex 返回 merged 中 replay key 匹配的 item 下标。
+func findReplayOutputIndex(merged []responseItem, key string) (int, bool) {
+	for index := range merged {
+		if replayOutputKey(merged[index]) == key {
+			return index, true
+		}
+	}
+	return -1, false
 }
 
 func mergeResponseItem(base, update responseItem) responseItem {

@@ -330,21 +330,8 @@ func projectStreamFailureDiagnostic(data []byte) gateway.StreamFailureDiagnostic
 		projected["error"] = raw
 	}
 	if responseRaw := root["response"]; len(responseRaw) > 0 {
-		var response map[string]json.RawMessage
-		if json.Unmarshal(responseRaw, &response) == nil {
-			safeResponse := make(map[string]json.RawMessage)
-			copySafeDiagnosticFields(safeResponse, response, "id", "status", "code", "message")
-			if raw := projectSafeErrorValue(response["error"]); len(raw) > 0 {
-				safeResponse["error"] = raw
-			}
-			if raw := projectSafeErrorValue(response["incomplete_details"]); len(raw) > 0 {
-				safeResponse["incomplete_details"] = raw
-			}
-			if len(safeResponse) > 0 {
-				if encoded, err := json.Marshal(safeResponse); err == nil {
-					projected["response"] = encoded
-				}
-			}
+		if encoded := projectResponseDiagnostic(responseRaw); len(encoded) > 0 {
+			projected["response"] = encoded
 		}
 	}
 	if len(projected) == 0 {
@@ -356,16 +343,45 @@ func projectStreamFailureDiagnostic(data []byte) gateway.StreamFailureDiagnostic
 	}
 	diagnostic := gateway.StreamFailureDiagnostic{Body: encoded}
 	if len(diagnostic.Body) > maxStreamFailureDiagnosticBytes {
-		bounded := diagnostic.Body[:maxStreamFailureDiagnosticBytes]
-		for len(bounded) > 0 && !utf8.Valid(bounded) {
-			bounded = bounded[:len(bounded)-1]
-		}
-		diagnostic.Body = append([]byte(nil), bounded...)
+		diagnostic.Body = truncateDiagnosticBody(diagnostic.Body)
 		diagnostic.BodyTruncated = true
 	} else {
 		diagnostic.Body = append([]byte(nil), diagnostic.Body...)
 	}
 	return diagnostic
+}
+
+// projectResponseDiagnostic 投影 response 对象中的安全字段，并在投影结果非空时返回其编码内容。
+func projectResponseDiagnostic(responseRaw json.RawMessage) json.RawMessage {
+	var response map[string]json.RawMessage
+	if json.Unmarshal(responseRaw, &response) != nil {
+		return nil
+	}
+	safeResponse := make(map[string]json.RawMessage)
+	copySafeDiagnosticFields(safeResponse, response, "id", "status", "code", "message")
+	if raw := projectSafeErrorValue(response["error"]); len(raw) > 0 {
+		safeResponse["error"] = raw
+	}
+	if raw := projectSafeErrorValue(response["incomplete_details"]); len(raw) > 0 {
+		safeResponse["incomplete_details"] = raw
+	}
+	if len(safeResponse) == 0 {
+		return nil
+	}
+	encoded, err := json.Marshal(safeResponse)
+	if err != nil {
+		return nil
+	}
+	return encoded
+}
+
+// truncateDiagnosticBody 按 UTF-8 边界截断超限诊断体，并返回不共享上游缓冲的独立切片。
+func truncateDiagnosticBody(body []byte) []byte {
+	bounded := body[:maxStreamFailureDiagnosticBytes]
+	for len(bounded) > 0 && !utf8.Valid(bounded) {
+		bounded = bounded[:len(bounded)-1]
+	}
+	return append([]byte(nil), bounded...)
 }
 
 func copySafeDiagnosticFields(destination, source map[string]json.RawMessage, fields ...string) {

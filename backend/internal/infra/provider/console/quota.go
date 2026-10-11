@@ -112,7 +112,7 @@ func parseConsoleQuotaWindows(data []byte, credentialID uint64) ([]account.Quota
 	now := time.Now().UTC()
 	byMode := make(map[string]account.QuotaWindow, 3)
 	for _, quota := range payload.Quotas {
-		window, err := consoleQuotaWindow(quota.Kind, quota.Limit, quota.Used, quota.Remaining, credentialID, now)
+		window, err := consoleQuotaWindow(quota.Kind, quota.Limit, quota.Used, quota.Remaining, credentialID, &now)
 		if err != nil {
 			return nil, time.Time{}, err
 		}
@@ -133,7 +133,7 @@ func parseConsoleQuotaWindows(data []byte, credentialID uint64) ([]account.Quota
 
 // consoleQuotaWindow converts one Console usage entry into a quota window; a
 // nil window means the quota kind is not tracked.
-func consoleQuotaWindow(kind string, limit, used, remaining int, credentialID uint64, now time.Time) (*account.QuotaWindow, error) {
+func consoleQuotaWindow(kind string, limit, used, remaining int, credentialID uint64, now *time.Time) (*account.QuotaWindow, error) {
 	mode := consoleQuotaMode(kind)
 	if mode == "" {
 		return nil, nil
@@ -154,10 +154,11 @@ func consoleQuotaWindow(kind string, limit, used, remaining int, credentialID ui
 			resetAt = &predicted
 		}
 	}
+	// 三窗口共享同一时刻地址，与拆分前一致：SyncedAt 全部指向 parseConsoleQuotaWindows 的 now。
 	return &account.QuotaWindow{
 		AccountID: credentialID, Mode: mode, Remaining: remaining, Total: limit,
 		UsagePercent: usagePercent, WindowSeconds: windowSeconds, ResetAt: resetAt,
-		SyncedAt: &now, Source: account.QuotaSourceUpstream, UpdatedAt: now,
+		SyncedAt: now, Source: account.QuotaSourceUpstream, UpdatedAt: *now,
 	}, nil
 }
 

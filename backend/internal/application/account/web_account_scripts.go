@@ -59,10 +59,8 @@ func (s *Service) RunAllWebAccountScriptsWithProgress(ctx context.Context, optio
 		if !started {
 			total = int(count)
 			started = true
-			if progress != nil {
-				if err := progress(0, total); err != nil {
-					return succeeded, failed, err
-				}
+			if err := reportInitialBatchProgress(progress, total); err != nil {
+				return succeeded, failed, err
 			}
 		}
 		ids := webAccountScriptPageIDs(values, total-completed)

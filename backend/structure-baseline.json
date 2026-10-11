@@ -1,0 +1,11 @@
+{
+  "note": "存量债务冻结基线（AGENTS.md §5）。只允许持平或下降，整改后可用 --update 收缩。",
+  "limits": {
+    "fileLines": 600,
+    "functionLines": 50,
+    "nestingDepth": 3
+  },
+  "files": {},
+  "functions": {},
+  "nesting": {}
+}

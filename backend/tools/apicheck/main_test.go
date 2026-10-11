@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -149,6 +150,45 @@ func TestBaselineRoundTrip(t *testing.T) {
 	for index := range lines {
 		if back[index] != lines[index] {
 			t.Errorf("第 %d 条不一致：%q != %q", index, back[index], lines[index])
+		}
+	}
+}
+
+// TestCollectExportedAPISkipsUnexportedReceiverMethods 证明未导出类型上的大写方法
+// （例如为满足 ast.Visitor 而写的 Visit）不算公共契约：包外无法命名该类型，也就无法调用。
+func TestCollectExportedAPISkipsUnexportedReceiverMethods(t *testing.T) {
+	root := t.TempDir()
+	source := `package sample
+
+type ExportedWidget struct{}
+
+type hiddenWidget struct{}
+
+func (e *ExportedWidget) ExportedMethod() error { return nil }
+
+func (h *hiddenWidget) Visit() {}
+
+func (h hiddenWidget) AlsoHidden() {}
+`
+	dir := filepath.Join(root, "sample")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("创建夹具目录失败: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sample.go"), []byte(source), 0o644); err != nil {
+		t.Fatalf("写入夹具失败: %v", err)
+	}
+
+	lines, err := collectExportedAPI(root)
+	if err != nil {
+		t.Fatalf("收集导出 API 失败: %v", err)
+	}
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "(*ExportedWidget).ExportedMethod") {
+		t.Errorf("导出类型上的导出方法必须进入基线，实际:\n%s", joined)
+	}
+	for _, unwanted := range []string{"hiddenWidget).Visit", "hiddenWidget).AlsoHidden"} {
+		if strings.Contains(joined, unwanted) {
+			t.Errorf("未导出类型上的方法不应进入基线: %s\n实际:\n%s", unwanted, joined)
 		}
 	}
 }

@@ -134,9 +134,30 @@ func funcEntry(scope, pkg string, node *ast.FuncDecl, render func(ast.Node) stri
 		return nil
 	}
 	if node.Recv != nil && len(node.Recv.List) > 0 {
+		if !exportedReceiver(node.Recv.List[0].Type) {
+			return nil
+		}
 		return []string{fmt.Sprintf("%s [%s] method (%s).%s %s", scope, pkg, render(node.Recv.List[0].Type), name, render(node.Type))}
 	}
 	return []string{fmt.Sprintf("%s [%s] func %s %s", scope, pkg, name, render(node.Type))}
+}
+
+// exportedReceiver 判断方法接收者的基类型是否导出。
+// 未导出类型上的大写方法（例如实现 ast.Visitor 的 Visit）不是公共契约：
+// 包外无法命名该类型，因此也就无法调用该方法。
+func exportedReceiver(expr ast.Expr) bool {
+	switch node := expr.(type) {
+	case *ast.StarExpr:
+		return exportedReceiver(node.X)
+	case *ast.IndexExpr:
+		return exportedReceiver(node.X)
+	case *ast.IndexListExpr:
+		return exportedReceiver(node.X)
+	case *ast.Ident:
+		return ast.IsExported(node.Name)
+	default:
+		return false
+	}
 }
 
 func genEntries(scope, pkg string, node *ast.GenDecl, render func(ast.Node) string) []string {

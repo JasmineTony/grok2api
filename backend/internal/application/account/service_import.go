@@ -167,13 +167,9 @@ func (s *Service) importCredentialDocumentsWithProgress(ctx context.Context, ada
 			return ImportResult{}, fmt.Errorf("%w: 单次最多导入 %d 个账号", ErrImportLimit, maxCredentialImportAccounts)
 		}
 		for _, value := range values {
-			if value.SourceKey != "" {
-				key := string(value.Provider) + "\x00" + value.SourceKey
-				if _, exists := seen[key]; exists {
-					skipped++
-					continue
-				}
-				seen[key] = struct{}{}
+			if !claimImportSourceKey(seen, value) {
+				skipped++
+				continue
 			}
 			seeds = append(seeds, value)
 		}
@@ -187,6 +183,19 @@ func (s *Service) importCredentialDocumentsWithProgress(ctx context.Context, ada
 	}
 	result.Skipped += skipped
 	return result, err
+}
+
+// claimImportSourceKey 登记种子的 Provider+SourceKey；SourceKey 为空视为无需去重，重复种子返回 false。
+func claimImportSourceKey(seen map[string]struct{}, seed provider.CredentialSeed) bool {
+	if seed.SourceKey == "" {
+		return true
+	}
+	key := string(seed.Provider) + "\x00" + seed.SourceKey
+	if _, exists := seen[key]; exists {
+		return false
+	}
+	seen[key] = struct{}{}
+	return true
 }
 
 func hasRefreshTokenOnlySeed(seeds []provider.CredentialSeed) bool {
@@ -364,28 +373,39 @@ func (s *Service) persistImportedSeedsFromProgress(ctx context.Context, seeds []
 			return ImportResult{}, err
 		}
 		for _, value := range stored {
-			result.AccountIDs = append(result.AccountIDs, value.ID)
-			s.reconcileProviderLinksBestEffort(ctx, value.ID)
-			if observer != nil {
-				if err := observer(value.ID); err != nil {
-					return ImportResult{}, err
-				}
+			nextCompleted, recordErr := s.recordImportedAccount(ctx, &result, value, observer, progress, completed, total)
+			if recordErr != nil {
+				return ImportResult{}, recordErr
 			}
-			completed++
-			if progress != nil {
-				if err := progress(completed, total); err != nil {
-					return ImportResult{}, err
-				}
-			}
-			if value.Created {
-				result.Created++
-			} else {
-				result.Updated++
-			}
+			completed = nextCompleted
 		}
 	}
 	s.WakeCredentialRefresh()
 	return result, nil
+}
+
+// recordImportedAccount 记录单个已落库账号：收集账号 ID、修复 Provider 关联、通知观察者并上报进度；
+// 返回新的完成计数，观察者或进度回调失败时不再累加创建/更新计数。
+func (s *Service) recordImportedAccount(ctx context.Context, result *ImportResult, value repository.AccountUpsertResult, observer ImportedAccountObserver, progress BatchProgressObserver, completed, total int) (int, error) {
+	result.AccountIDs = append(result.AccountIDs, value.ID)
+	s.reconcileProviderLinksBestEffort(ctx, value.ID)
+	if observer != nil {
+		if err := observer(value.ID); err != nil {
+			return completed, err
+		}
+	}
+	completed++
+	if progress != nil {
+		if err := progress(completed, total); err != nil {
+			return completed, err
+		}
+	}
+	if value.Created {
+		result.Created++
+	} else {
+		result.Updated++
+	}
+	return completed, nil
 }
 
 func (s *Service) persistSeed(ctx context.Context, seed provider.CredentialSeed) (accountdomain.Credential, bool, error) {

@@ -73,10 +73,8 @@ func (s *Service) SyncAllWebAccountsToConsoleWithStrategy(ctx context.Context, s
 			total = int(count)
 			result.Skipped = int(skipped)
 			initialized = true
-			if progress != nil {
-				if err := progress(0, total); err != nil {
-					return result, err
-				}
+			if err := reportInitialBatchProgress(progress, total); err != nil {
+				return result, err
 			}
 		}
 		if len(values) == 0 {
@@ -233,10 +231,8 @@ func (s *Service) ConvertAllWebAccountsToBuildWithStrategy(ctx context.Context, 
 		if !initialized {
 			total = int(count)
 			initialized = true
-			if progress != nil {
-				if err := progress(0, total); err != nil {
-					return result, err
-				}
+			if err := reportInitialBatchProgress(progress, total); err != nil {
+				return result, err
 			}
 		}
 		if len(ids) == 0 {
@@ -310,6 +306,14 @@ func offsetBatchProgress(progress BatchProgressObserver, offset, total int) Batc
 		}
 		return progress(offset+completed, total)
 	}
+}
+
+// reportInitialBatchProgress 在批次首次拿到总量时上报进度起点；未设置观察者时不做任何事。
+func reportInitialBatchProgress(progress BatchProgressObserver, total int) error {
+	if progress == nil {
+		return nil
+	}
+	return progress(0, total)
 }
 
 func (s *Service) convertWebAccountsToBuild(ctx context.Context, ids []uint64, strategy BuildConversionStrategy, observer ImportedAccountObserver, progress BatchProgressObserver) (BuildConversionResult, error) {

@@ -244,21 +244,12 @@ func (m *Manager) collectAvailableNodes(ctx context.Context, scope domain.Scope,
 		}
 		candidateAvailable := make([]domain.Node, 0, len(nodes))
 		for _, node := range nodes {
-			if !node.Enabled {
-				continue
+			candidate, usable, nodeConfigured := m.usableNodeCandidate(node, now, reservedFallbackNodes)
+			if nodeConfigured {
+				configured = true
 			}
-			// A fixed fallback is a reserved last resort, not another member of
-			// the primary pool. It is validated again immediately before use.
-			if _, reserved := reservedFallbackNodes[node.ID]; reserved {
-				continue
-			}
-			configured = true
-			proxyPool := m.isProxyPoolNode(node)
-			if node.CooldownUntil == nil || !now.Before(*node.CooldownUntil) || proxyPool {
-				if proxyPool {
-					node.Health, node.FailureCount, node.CooldownUntil, node.LastError = 1, 0, nil, ""
-				}
-				candidateAvailable = append(candidateAvailable, node)
+			if usable {
+				candidateAvailable = append(candidateAvailable, candidate)
 			}
 		}
 		if len(candidateAvailable) > 0 {
@@ -267,6 +258,28 @@ func (m *Manager) collectAvailableNodes(ctx context.Context, scope domain.Scope,
 		}
 	}
 	return available, configured, nil
+}
+
+// usableNodeCandidate classifies one listed node. nodeConfigured reports that the
+// node counts towards the configured pool, and usable reports that the node can be
+// leased right now. A proxy pool node is refreshed to healthy state before use.
+func (m *Manager) usableNodeCandidate(node domain.Node, now time.Time, reservedFallbackNodes map[uint64]struct{}) (candidate domain.Node, usable, nodeConfigured bool) {
+	if !node.Enabled {
+		return domain.Node{}, false, false
+	}
+	// A fixed fallback is a reserved last resort, not another member of
+	// the primary pool. It is validated again immediately before use.
+	if _, reserved := reservedFallbackNodes[node.ID]; reserved {
+		return domain.Node{}, false, false
+	}
+	proxyPool := m.isProxyPoolNode(node)
+	if node.CooldownUntil != nil && now.Before(*node.CooldownUntil) && !proxyPool {
+		return domain.Node{}, false, true
+	}
+	if proxyPool {
+		node.Health, node.FailureCount, node.CooldownUntil, node.LastError = 1, 0, nil, ""
+	}
+	return node, true, true
 }
 
 func (m *Manager) leaseFromCandidates(ctx context.Context, scope domain.Scope, affinity, encryptedCredentialCookies string, managedClearance bool, available []domain.Node) (*Lease, bool, error) {

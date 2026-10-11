@@ -378,24 +378,11 @@ func stripReasoningEncryptedContent(body []byte) ([]byte, bool) {
 			rebuilt = append(rebuilt, raw)
 			continue
 		}
-		if stringField(item, "type") == "reasoning" {
-			encrypted, hasEncrypted := item["encrypted_content"].(string)
-			if !hasEncrypted || strings.TrimSpace(encrypted) == "" {
-				if portable, ok := portableReasoningSummaryMessage(item); ok {
-					changed = true
-					rebuilt = append(rebuilt, portable)
-					continue
-				}
-				rebuilt = append(rebuilt, raw)
-				continue
-			}
+		replacement, itemChanged := rebuildReasoningInputItem(item, raw)
+		if itemChanged {
 			changed = true
-			if portable, ok := portableReasoningSummaryMessage(item); ok {
-				rebuilt = append(rebuilt, portable)
-			}
-			continue
 		}
-		rebuilt = append(rebuilt, raw)
+		rebuilt = append(rebuilt, replacement...)
 	}
 	if !changed {
 		return body, false
@@ -406,6 +393,25 @@ func stripReasoningEncryptedContent(body []byte) ([]byte, bool) {
 		return body, false
 	}
 	return encoded, true
+}
+
+// rebuildReasoningInputItem 返回单个 input item 的重建结果：nil 表示丢弃该项，
+// 单元素切片表示保留（原样或可移植摘要）；changed 表示该项是否发生改写。
+func rebuildReasoningInputItem(item map[string]any, raw any) ([]any, bool) {
+	if stringField(item, "type") != "reasoning" {
+		return []any{raw}, false
+	}
+	encrypted, hasEncrypted := item["encrypted_content"].(string)
+	if !hasEncrypted || strings.TrimSpace(encrypted) == "" {
+		if portable, ok := portableReasoningSummaryMessage(item); ok {
+			return []any{portable}, true
+		}
+		return []any{raw}, false
+	}
+	if portable, ok := portableReasoningSummaryMessage(item); ok {
+		return []any{portable}, true
+	}
+	return nil, true
 }
 
 func portableReasoningSummaryMessage(item map[string]any) (map[string]any, bool) {

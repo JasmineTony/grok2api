@@ -540,8 +540,14 @@ go test ./... -count=1   # full suite (PostgreSQL/Redis integration cases are sk
                          # unless TEST_POSTGRES_*/Redis env is provided; skipped != passed)
 go vet ./...
 go build ./...
+go run ./tools/structurecheck   # REV-1/2/3: file <=600 lines, function <=50 lines, nesting <=3
+go run ./tools/apicheck         # exported API surface must match backend/api-baseline.txt
 go test -race ./...      # requires a cgo-capable Linux/CI toolchain
 ```
+
+Both gate tools compare against a frozen baseline and fail on any new or worsened
+violation (`--update` re-freezes only after an intentional change; `--list` prints the
+current violations as a machine-readable work list). See `AGENTS.md` REV-1/REV-2/REV-3.
 
 ```bash
 cd frontend

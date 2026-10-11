@@ -404,15 +404,7 @@ func (c *responsesToolCompatibility) rewriteFunctionCall(call map[string]any) er
 	}
 	switch identity.Kind {
 	case responsesFunctionTool:
-		if schema := c.functionSchemas[alias]; schema != nil {
-			if arguments, ok := call["arguments"].(string); ok {
-				normalized, changed := normalizeFunctionArguments(arguments, schema)
-				if changed {
-					call["arguments"] = normalized
-				}
-			}
-		}
-		applyToolIdentityName(call, identity)
+		c.rewriteFunctionToolCall(call, alias, identity)
 	case responsesCustomTool:
 		call["type"] = "custom_tool_call"
 		applyToolIdentityName(call, identity)
@@ -436,6 +428,20 @@ func (c *responsesToolCompatibility) rewriteFunctionCall(call map[string]any) er
 		delete(call, "arguments")
 	}
 	return nil
+}
+
+// rewriteFunctionToolCall 按已登记的工具 schema 归一化 function_call 的 arguments，
+// 并把别名恢复为下游可见的工具名与 namespace。
+func (c *responsesToolCompatibility) rewriteFunctionToolCall(call map[string]any, alias string, identity responsesToolIdentity) {
+	if schema := c.functionSchemas[alias]; schema != nil {
+		if arguments, ok := call["arguments"].(string); ok {
+			normalized, changed := normalizeFunctionArguments(arguments, schema)
+			if changed {
+				call["arguments"] = normalized
+			}
+		}
+	}
+	applyToolIdentityName(call, identity)
 }
 
 // applyToolIdentityName 把别名恢复为下游可见的工具名与 namespace。

@@ -194,19 +194,26 @@ func extractMessageAnnotations(item responseItem) []map[string]any {
 	var out []map[string]any
 	for _, content := range item.Content {
 		for _, ann := range content.Annotations {
-			if m, ok := ann.(map[string]any); ok {
+			if m, ok := annotationObject(ann); ok {
 				out = append(out, m)
-			} else {
-				// re-marshal generic
-				raw, _ := json.Marshal(ann)
-				var m map[string]any
-				if json.Unmarshal(raw, &m) == nil {
-					out = append(out, m)
-				}
 			}
 		}
 	}
 	return out
+}
+
+// annotationObject 把单个 annotation 归一化为对象；无法转换时返回 ok=false。
+func annotationObject(ann any) (map[string]any, bool) {
+	if m, ok := ann.(map[string]any); ok {
+		return m, true
+	}
+	// re-marshal generic
+	raw, _ := json.Marshal(ann)
+	var m map[string]any
+	if json.Unmarshal(raw, &m) != nil {
+		return nil, false
+	}
+	return m, true
 }
 
 // dedupeWebSearchCalls keeps one entry per call id, preferring the payload with

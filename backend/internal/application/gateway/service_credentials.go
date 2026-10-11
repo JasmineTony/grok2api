@@ -24,25 +24,7 @@ func rewriteAliasedModel(body []byte, publicModel, reasoningEffort string, opera
 		case audit.OperationChat:
 			payload["reasoning_effort"] = reasoningEffort
 		case audit.OperationMessages:
-			config, _ := payload["output_config"].(map[string]any)
-			if reasoningEffort == modeldomain.ReasoningEffortNone {
-				if config != nil {
-					delete(config, "effort")
-				}
-				if len(config) == 0 {
-					delete(payload, "output_config")
-				} else {
-					payload["output_config"] = config
-				}
-				payload["thinking"] = map[string]any{"type": "disabled"}
-				break
-			}
-			if config == nil {
-				config = make(map[string]any)
-			}
-			config["effort"] = reasoningEffort
-			payload["output_config"] = config
-			payload["thinking"] = map[string]any{"type": "adaptive"}
+			applyMessagesReasoningEffort(payload, reasoningEffort)
 		default:
 			reasoning, _ := payload["reasoning"].(map[string]any)
 			if reasoning == nil {
@@ -53,6 +35,29 @@ func rewriteAliasedModel(body []byte, publicModel, reasoningEffort string, opera
 		}
 	}
 	return json.Marshal(payload)
+}
+
+// applyMessagesReasoningEffort 按 Messages 兼容契约写入 output_config 与 thinking；effort 为 none 时关闭思考。
+func applyMessagesReasoningEffort(payload map[string]any, reasoningEffort string) {
+	config, _ := payload["output_config"].(map[string]any)
+	if reasoningEffort == modeldomain.ReasoningEffortNone {
+		if config != nil {
+			delete(config, "effort")
+		}
+		if len(config) == 0 {
+			delete(payload, "output_config")
+		} else {
+			payload["output_config"] = config
+		}
+		payload["thinking"] = map[string]any{"type": "disabled"}
+		return
+	}
+	if config == nil {
+		config = make(map[string]any)
+	}
+	config["effort"] = reasoningEffort
+	payload["output_config"] = config
+	payload["thinking"] = map[string]any{"type": "adaptive"}
 }
 
 type ResourceInput struct {

@@ -45,22 +45,28 @@ func (s *Service) DecrementWebQuota(ctx context.Context, id uint64, mode string,
 
 func (s *Service) ExhaustQuota(ctx context.Context, id uint64, mode string, resetAt *time.Time) error {
 	if resetAt == nil {
-		windows, err := s.accounts.GetQuotaWindows(ctx, []uint64{id})
-		if err == nil {
-			for _, window := range windows[id] {
-				if window.Mode != mode {
-					continue
-				}
-				resetAt = quotaRecoveryDueAt(window, s.now(), true)
-				break
-			}
-		}
+		resetAt = s.resolveExhaustQuotaResetAt(ctx, id, mode)
 	}
 	if err := s.accounts.ExhaustQuotaWindow(ctx, id, mode, resetAt, s.now()); err != nil {
 		return err
 	}
 	if resetAt != nil && s.quotaQueue != nil {
 		return s.quotaQueue.ScheduleQuotaRecovery(ctx, accountdomain.QuotaRecoveryEvent{AccountID: id, Mode: mode, DueAt: *resetAt})
+	}
+	return nil
+}
+
+// resolveExhaustQuotaResetAt 读取当前快照中该模式的恢复时间；读取失败或没有匹配窗口时返回 nil。
+func (s *Service) resolveExhaustQuotaResetAt(ctx context.Context, id uint64, mode string) *time.Time {
+	windows, err := s.accounts.GetQuotaWindows(ctx, []uint64{id})
+	if err != nil {
+		return nil
+	}
+	for _, window := range windows[id] {
+		if window.Mode != mode {
+			continue
+		}
+		return quotaRecoveryDueAt(window, s.now(), true)
 	}
 	return nil
 }
@@ -151,30 +157,7 @@ func preserveActiveQuotaWindows(existing, incoming []accountdomain.QuotaWindow, 
 // RPS/RPM 限流，不能在未查询 /usage 时直接将账号冻结 24 小时。
 func (s *Service) ReconcileRateLimit(ctx context.Context, id uint64, mode string, retryAfter time.Duration) (RateLimitReconcileState, error) {
 	if mode == "weekly" || isConsoleUsageQuotaMode(mode) {
-		var window accountdomain.QuotaWindow
-		var err error
-		if isConsoleUsageQuotaMode(mode) {
-			window, err = s.refreshConsoleQuotaModeLocked(ctx, id, mode)
-		} else {
-			window, err = s.RefreshQuotaMode(ctx, id, mode)
-		}
-		if err != nil {
-			if isConsoleUsageQuotaMode(mode) {
-				if errors.Is(err, errQuotaRefreshBusy) {
-					return RateLimitReconcileRefreshing, nil
-				}
-				// Keep the last known snapshot on an inconclusive probe and let the
-				// bounded refresh worker retry. The gateway will still apply its normal
-				// account cooldown and rotate this request to another account.
-				s.QueueQuotaRefresh(id, mode)
-				s.logger.Warn("console_rate_limit_quota_probe_failed", "account_id", id, "mode", mode, "error", err)
-			}
-			return RateLimitReconcileInconclusive, err
-		}
-		if window.Remaining == 0 || window.UsagePercent >= 100 {
-			return RateLimitReconcileExhausted, nil
-		}
-		return RateLimitReconcileAvailable, nil
+		return s.reconcileQuotaModeRateLimit(ctx, id, mode)
 	}
 	var resetAt *time.Time
 	if retryAfter > 0 {
@@ -185,6 +168,36 @@ func (s *Service) ReconcileRateLimit(ctx context.Context, id uint64, mode string
 		return RateLimitReconcileInconclusive, err
 	}
 	return RateLimitReconcileExhausted, nil
+}
+
+// reconcileQuotaModeRateLimit 用上游额度快照核实该模式的 429：锁竞争视为仍在刷新，
+// Console 探测失败保留旧快照并排队重试，其余失败返回不确定状态。
+func (s *Service) reconcileQuotaModeRateLimit(ctx context.Context, id uint64, mode string) (RateLimitReconcileState, error) {
+	consoleMode := isConsoleUsageQuotaMode(mode)
+	var window accountdomain.QuotaWindow
+	var err error
+	if consoleMode {
+		window, err = s.refreshConsoleQuotaModeLocked(ctx, id, mode)
+	} else {
+		window, err = s.RefreshQuotaMode(ctx, id, mode)
+	}
+	if err != nil {
+		if consoleMode && errors.Is(err, errQuotaRefreshBusy) {
+			return RateLimitReconcileRefreshing, nil
+		}
+		if consoleMode {
+			// Keep the last known snapshot on an inconclusive probe and let the
+			// bounded refresh worker retry. The gateway will still apply its normal
+			// account cooldown and rotate this request to another account.
+			s.QueueQuotaRefresh(id, mode)
+			s.logger.Warn("console_rate_limit_quota_probe_failed", "account_id", id, "mode", mode, "error", err)
+		}
+		return RateLimitReconcileInconclusive, err
+	}
+	if window.Remaining == 0 || window.UsagePercent >= 100 {
+		return RateLimitReconcileExhausted, nil
+	}
+	return RateLimitReconcileAvailable, nil
 }
 
 func (s *Service) ReconcileWebRateLimit(ctx context.Context, id uint64, mode string, retryAfter time.Duration) (bool, error) {

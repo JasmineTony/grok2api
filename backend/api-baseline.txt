@@ -367,10 +367,6 @@ internal/application/egress [egress] method (*Service).UpdateManyEnabled func(ct
 internal/application/egress [egress] method (*Service).UpdateOperationsConfig func(ctx context.Context, input OperationsConfigInput) (domain.OperationsConfig, error)
 internal/application/egress [egress] method (*Service).UpdateProxyProfile func(ctx context.Context, id uint64, input ProxyProfileInput) (domain.PublicProxyProfile, error)
 internal/application/egress [egress] method (*Service).UpdateSource func(ctx context.Context, id uint64, input SubscriptionSourceInput) (domain.PublicSubscriptionSource, error)
-internal/application/egress [egress] method (*clashInteger).UnmarshalYAML func(node *yaml.Node) error
-internal/application/egress [egress] method (*clashStringList).UnmarshalYAML func(node *yaml.Node) error
-internal/application/egress [egress] method (*subscriptionProxyForwardDialer).Dial func(network, address string) (net.Conn, error)
-internal/application/egress [egress] method (*subscriptionProxyForwardDialer).DialContext func(ctx context.Context, network, address string) (net.Conn, error)
 internal/application/egress [egress] type AccountBindingRepository interface { CountProviderAccountsByIDs(context.Context, accountdomain.Provider, []uint64) (int64, error) UpdateEgressBindings(context.Context, accountdomain.Provider, []uint64, *uint64, accountdomain.EgressAssignmentMode, time.Time) (int64, error) ListEgressAssignments(context.Context, accountdomain.Provider) ([]accountdomain.Credential, error) ListEgressBindingProviders(context.Context, uint64) ([]accountdomain.Provider, error) ListEgressSourceBindingProviders(context.Context, uint64) ([]accountdomain.Provider, error) }
 internal/application/egress [egress] type AssignmentResult struct { Assigned int }
 internal/application/egress [egress] type BatchClearanceManager interface { ForgetClearances([]uint64) }
@@ -496,20 +492,6 @@ internal/application/gateway [gateway] method (*UpstreamFailure).AuditCode func(
 internal/application/gateway [gateway] method (*UpstreamFailure).ClientCredentialErrorCode func() string
 internal/application/gateway [gateway] method (*UpstreamFailure).Error func() string
 internal/application/gateway [gateway] method (*UpstreamFailure).Unwrap func() error
-internal/application/gateway [gateway] method (*accountLease).Release func()
-internal/application/gateway [gateway] method (*candidatePlan).Len func() int
-internal/application/gateway [gateway] method (*candidatePlan).Less func(left, right int) bool
-internal/application/gateway [gateway] method (*candidatePlan).Next func() (account.RoutingCandidate, bool)
-internal/application/gateway [gateway] method (*candidatePlan).Pop func() any
-internal/application/gateway [gateway] method (*candidatePlan).Push func(value any)
-internal/application/gateway [gateway] method (*candidatePlan).Swap func(left, right int)
-internal/application/gateway [gateway] method (*finalizingBody).Close func() error
-internal/application/gateway [gateway] method (*firstByteReadCloser).Read func(buffer []byte) (int, error)
-internal/application/gateway [gateway] method (*qualityReadPump).Close func() error
-internal/application/gateway [gateway] method (*qualityReadPump).Read func(dst []byte) (int, error)
-internal/application/gateway [gateway] method (*replayReadCloser).Close func() error
-internal/application/gateway [gateway] method (*selectionSession).Acquire func(ctx context.Context, excluded map[uint64]bool, allowQuotaProbe bool) (*accountLease, error)
-internal/application/gateway [gateway] method (*selectionSession).RetryAccount func(accountID uint64)
 internal/application/gateway [gateway] type ImageEditInput struct { RequestID string ClientKey clientkey.Key PublicModel string Prompt string ImageURLs []string Count int Size string AspectRatio string Resolution string Quality string ResponseFormat string Streaming bool PartialImages int Method string Path string Headers map[string][]string }
 internal/application/gateway [gateway] type ImageGenerationInput struct { RequestID string ClientKey clientkey.Key PublicModel string Prompt string Count int Size string AspectRatio string Resolution string Quality string ResponseFormat string Streaming bool PartialImages int Method string Path string Headers map[string][]string }
 internal/application/gateway [gateway] type Input struct { RequestID string ClientKey clientkey.Key PublicModel string Body []byte Streaming bool PromptCacheKey string PromptCacheSeed string AllowClientToolCacheRoute bool PreviousResponseID string GrokTurnIndex string Operation audit.Operation Method string Path string Headers map[string][]string auditOperation audit.Operation skipQualityHold bool ForcedEgressNodeID uint64 ForcedAccountID uint64 }
@@ -1113,9 +1095,6 @@ internal/infra/egress [egress] method (*Manager).UpdateBuildResponseHeaderTimeou
 internal/infra/egress [egress] method (*Manager).UpdateBuildStreamIdleTimeout func(value time.Duration)
 internal/infra/egress [egress] method (*Manager).UpdateClearanceConfig func(value ClearanceConfig)
 internal/infra/egress [egress] method (*Trace).Selection func(scope domain.Scope) (Selection, bool)
-internal/infra/egress [egress] method (*browserClient).CloseIdleConnections func()
-internal/infra/egress [egress] method (*browserClient).Do func(request *http.Request) (*http.Response, error)
-internal/infra/egress [egress] method (flaresolverrSolver).Solve func(ctx context.Context, cfg ClearanceConfig, proxyURL string) (clearanceSolution, error)
 internal/infra/egress [egress] type ClearanceConfig struct { Mode string FlareSolverrURL string TargetURL string Timeout time.Duration RefreshInterval time.Duration }
 internal/infra/egress [egress] type FailureProber func(context.Context, uint64) (domain.ProbeResult, error)
 internal/infra/egress [egress] type Lease struct { NodeID uint64 NodeName string Scope domain.Scope ProxyURL string UserAgent string CFCookies string client requestClient browser *browserClient sticky bool proxyPool bool freshTunnel bool clearanceKey string clearanceManager *Manager release func() }
@@ -1366,41 +1345,6 @@ internal/infra/persistence/relational [relational] method (*ResponseRepository).
 internal/infra/persistence/relational [relational] method (*ResponseRepository).SaveWebState func(ctx context.Context, value inferencedomain.WebResponseState) error
 internal/infra/persistence/relational [relational] method (*RuntimeSettingsRepository).Get func(ctx context.Context) (settingsdomain.Config, time.Time, uint64, bool, error)
 internal/infra/persistence/relational [relational] method (*RuntimeSettingsRepository).Save func(ctx context.Context, value settingsdomain.Config, expectedRevision uint64) (time.Time, uint64, error)
-internal/infra/persistence/relational [relational] method (*degradeTimestamp).Scan func(input any) error
-internal/infra/persistence/relational [relational] method (*postgresConnectionError).Error func() string
-internal/infra/persistence/relational [relational] method (*postgresConnectionError).Unwrap func() error
-internal/infra/persistence/relational [relational] method (accountCredentialModel).TableName func() string
-internal/infra/persistence/relational [relational] method (accountEgressLeaseBlockModel).TableName func() string
-internal/infra/persistence/relational [relational] method (accountModel).TableName func() string
-internal/infra/persistence/relational [relational] method (accountModelCapabilityModel).TableName func() string
-internal/infra/persistence/relational [relational] method (accountModelQuotaBlockModel).TableName func() string
-internal/infra/persistence/relational [relational] method (accountModelSyncStateModel).TableName func() string
-internal/infra/persistence/relational [relational] method (accountProviderLinkModel).TableName func() string
-internal/infra/persistence/relational [relational] method (adminModel).TableName func() string
-internal/infra/persistence/relational [relational] method (adminSessionModel).TableName func() string
-internal/infra/persistence/relational [relational] method (billingModel).TableName func() string
-internal/infra/persistence/relational [relational] method (billingReservationModel).TableName func() string
-internal/infra/persistence/relational [relational] method (clientKeyModel).TableName func() string
-internal/infra/persistence/relational [relational] method (clientKeyModelPermission).TableName func() string
-internal/infra/persistence/relational [relational] method (egressNodeModel).TableName func() string
-internal/infra/persistence/relational [relational] method (egressOperationsConfigModel).TableName func() string
-internal/infra/persistence/relational [relational] method (egressProxyProfileModel).TableName func() string
-internal/infra/persistence/relational [relational] method (egressSubscriptionSourceModel).TableName func() string
-internal/infra/persistence/relational [relational] method (mediaAssetModel).TableName func() string
-internal/infra/persistence/relational [relational] method (mediaJobModel).TableName func() string
-internal/infra/persistence/relational [relational] method (mediaUploadTicketModel).TableName func() string
-internal/infra/persistence/relational [relational] method (modelRouteAccountModel).TableName func() string
-internal/infra/persistence/relational [relational] method (modelRouteAliasModel).TableName func() string
-internal/infra/persistence/relational [relational] method (modelRouteModel).TableName func() string
-internal/infra/persistence/relational [relational] method (quotaRecoveryModel).TableName func() string
-internal/infra/persistence/relational [relational] method (quotaWindowModel).TableName func() string
-internal/infra/persistence/relational [relational] method (requestAuditAttemptModel).TableName func() string
-internal/infra/persistence/relational [relational] method (requestAuditModel).TableName func() string
-internal/infra/persistence/relational [relational] method (responseOwnershipModel).TableName func() string
-internal/infra/persistence/relational [relational] method (runtimeSettingsModel).TableName func() string
-internal/infra/persistence/relational [relational] method (webAccountProfileModel).TableName func() string
-internal/infra/persistence/relational [relational] method (webConsoleAccountLinkModel).TableName func() string
-internal/infra/persistence/relational [relational] method (webResponseStateModel).TableName func() string
 internal/infra/persistence/relational [relational] type AccountRepository struct { db *Database observer repository.InvalidationObserver }
 internal/infra/persistence/relational [relational] type AdminRepository struct{ db *Database }
 internal/infra/persistence/relational [relational] type AdminSessionRepository struct{ db *Database }
@@ -1453,8 +1397,6 @@ internal/infra/provider [provider] method (*Registry).Validate func() error
 internal/infra/provider [provider] method (*Registry).Videos func(value account.Provider) (ports.VideoAdapter, bool)
 internal/infra/provider [provider] method (*Registry).VoiceWebSocket func(value account.Provider) (ports.VoiceWebSocketAdapter, bool)
 internal/infra/provider [provider] method (*Registry).WebAccountSettings func() (ports.WebAccountSettingsAdapter, bool)
-internal/infra/provider [provider] method (*completionReadCloser).Close func() error
-internal/infra/provider [provider] method (*completionReadCloser).Read func(buffer []byte) (int, error)
 internal/infra/provider [provider] type Registry struct { adapters map[account.Provider]ports.Adapter definitions map[account.Provider]ports.Definition aliases map[string]ports.ModelAlias issues []error }
 internal/infra/provider/browserheaders [browserheaders] func ApplyChromiumClientHints func(header http.Header, userAgent string)
 internal/infra/provider/cli [cli] func NewAdapter func(cfg Config, cipher *security.Cipher) *Adapter
@@ -1480,23 +1422,6 @@ internal/infra/provider/cli [cli] method (*Adapter).SetReasoningReplay func(repl
 internal/infra/provider/cli [cli] method (*Adapter).SetVideoUploadIssuer func(issuer VideoUploadIssuer)
 internal/infra/provider/cli [cli] method (*Adapter).StartDeviceAuthorization func(ctx context.Context) (provider.DeviceAuthorization, error)
 internal/infra/provider/cli [cli] method (*Adapter).UpdateConfig func(cfg Config)
-internal/infra/provider/cli [cli] method (*buildDirectTransport).RoundTrip func(request *http.Request) (*http.Response, error)
-internal/infra/provider/cli [cli] method (*buildDirectTransport).UpdateResponseHeaderTimeout func(responseHeaderTimeout time.Duration)
-internal/infra/provider/cli [cli] method (*buildSSEActivityDetector).Observe func(chunk []byte) bool
-internal/infra/provider/cli [cli] method (*cancelOnCloseReadCloser).Close func() error
-internal/infra/provider/cli [cli] method (*compatibleSSEEvent).SetData func(data []byte)
-internal/infra/provider/cli [cli] method (*egressResponseBody).Close func() error
-internal/infra/provider/cli [cli] method (*egressTransport).RoundTrip func(request *http.Request) (*http.Response, error)
-internal/infra/provider/cli [cli] method (*gatewayCompactionStreamError).Error func() string
-internal/infra/provider/cli [cli] method (*gzipResponseBody).Close func() error
-internal/infra/provider/cli [cli] method (*responsesRequestError).Error func() string
-internal/infra/provider/cli [cli] method (*semanticIdleReadCloser).Close func() error
-internal/infra/provider/cli [cli] method (*semanticIdleReadCloser).Read func(buffer []byte) (int, error)
-internal/infra/provider/cli [cli] method (*semanticIdleReadCloser).TimedOut func() bool
-internal/infra/provider/cli [cli] method (*videoUpstreamError).Error func() string
-internal/infra/provider/cli [cli] method (*videoUpstreamError).HTTPStatusCode func() int
-internal/infra/provider/cli [cli] method (compatibleSSEEvent).Data func() []byte
-internal/infra/provider/cli [cli] method (compatibleSSEEvent).HasData func() bool
 internal/infra/provider/cli [cli] type Adapter struct { cfgMu sync.RWMutex cfg Config http *http.Client oauth *oauthClient cipher *security.Cipher base *buildDirectTransport agentID string modelsMu sync.Mutex modelsETags map[uint64]string fallbackMarker FallbackMarker uploadIssuer VideoUploadIssuer replay *reasoningreplay.ReasoningReplay conversationReasoningCache *conversation.ReasoningCache compaction *gatewayCompactionCodec logger *slog.Logger }
 internal/infra/provider/cli [cli] type Config struct { BaseURL string FallbackBaseURL string ClientVersion string ClientIdentifier string TokenAuth string UserAgent string ResponseHeaderTimeout time.Duration StreamIdleTimeout time.Duration }
 internal/infra/provider/cli [cli] type FallbackMarker interface { MarkBuildAPIFallback(ctx context.Context, accountID uint64, enabled bool) error }
@@ -1533,13 +1458,6 @@ internal/infra/provider/console [console] method (*Adapter).SynthesizeSpeech fun
 internal/infra/provider/console [console] method (*Adapter).TierOrder func(string) []account.WebTier
 internal/infra/provider/console [console] method (*Adapter).TranscribeSpeech func(ctx context.Context, request provider.STTRequest) (provider.STTResult, error)
 internal/infra/provider/console [console] method (*Adapter).UpdateConfig func(cfg Config)
-internal/infra/provider/console [console] method (*consoleMediaUpstreamError).Error func() string
-internal/infra/provider/console [console] method (*consoleMediaUpstreamError).HTTPStatusCode func() int
-internal/infra/provider/console [console] method (*consoleMediaUpstreamError).PublicErrorMessage func() string
-internal/infra/provider/console [console] method (*consoleMediaUpstreamError).RequestScopedFailure func() bool
-internal/infra/provider/console [console] method (*consoleMediaUpstreamError).RetryAfterDuration func() time.Duration
-internal/infra/provider/console [console] method (*dpopTokenEndpointError).Error func() string
-internal/infra/provider/console [console] method (*releaseBody).Close func() error
 internal/infra/provider/console [console] type Adapter struct { mu sync.RWMutex cfg Config egress *infraegress.Manager cipher *security.Cipher assets provider.ImageAssetStore dpop *dpopSessionManager }
 internal/infra/provider/console [console] type Config struct { BaseURL string SessionBaseURL string TimeoutSeconds int StreamIdleTimeoutSeconds int }
 internal/infra/provider/console [console] type ModelSpec struct { PublicID string UpstreamModel string SupportsReasoning bool SupportsReasoningEffort bool DefaultReasoningEffort string MaxOutputTokens int }
@@ -1559,9 +1477,6 @@ internal/infra/provider/conversation [conversation] func NewReasoningCache func(
 internal/infra/provider/conversation [conversation] method (*ReasoningCache).GetScoped func(scope, callID string) (responseItem, bool)
 internal/infra/provider/conversation [conversation] method (*ReasoningCache).RememberReasoningForEnvelope func(scope string, envelope responseEnvelope)
 internal/infra/provider/conversation [conversation] method (*ReasoningCache).SetScoped func(scope, callID string, item responseItem)
-internal/infra/provider/conversation [conversation] method (*anthropicStreamStopFilter).Flush func() string
-internal/infra/provider/conversation [conversation] method (*anthropicStreamStopFilter).Push func(delta string) (string, string)
-internal/infra/provider/conversation [conversation] method (*streamPipeReadCloser).Close func() error
 internal/infra/provider/conversation [conversation] method (ResponseOptions).InlineCitationsEnabled func() bool
 internal/infra/provider/conversation [conversation] method (ResponseOptions).WithReasoningReplay func(cache *ReasoningCache, scope string) ResponseOptions
 internal/infra/provider/conversation [conversation] type ReasoningCache struct { mu sync.Mutex entries map[string]*list.Element order *list.List capacity int ttl time.Duration }
@@ -1609,47 +1524,6 @@ internal/infra/provider/web [web] method (*Adapter).TierOrder func(upstreamModel
 internal/infra/provider/web [web] method (*Adapter).TierOrderForQuotaMode func(upstreamModel, quotaMode string) []account.WebTier
 internal/infra/provider/web [web] method (*Adapter).UpdateConfig func(cfg Config)
 internal/infra/provider/web [web] method (*Adapter).WarmStatsig func(ctx context.Context, credential account.Credential) (int, error)
-internal/infra/provider/web [web] method (*boundedCapture).Bytes func() []byte
-internal/infra/provider/web [web] method (*boundedCapture).Write func(value []byte) (int, error)
-internal/infra/provider/web [web] method (*cancelBody).Close func() error
-internal/infra/provider/web [web] method (*imagineCollector).Accept func(message map[string]any)
-internal/infra/provider/web [web] method (*imagineCollector).Done func(expected int) bool
-internal/infra/provider/web [web] method (*imagineCollector).Images func() []imagineImageValue
-internal/infra/provider/web [web] method (*imagineCollector).ReadyImages func() []imagineImageValue
-internal/infra/provider/web [web] method (*imagineCollector).ReadyPreviews func() []imagineImageValue
-internal/infra/provider/web [web] method (*imagineCollector).UsableCount func() int
-internal/infra/provider/web [web] method (*liteUpstreamError).Error func() string
-internal/infra/provider/web [web] method (*liteUpstreamError).Response func() *provider.Response
-internal/infra/provider/web [web] method (*readerCloser).Close func() error
-internal/infra/provider/web [web] method (*releaseBody).Close func() error
-internal/infra/provider/web [web] method (*statsigSigner).Clear func()
-internal/infra/provider/web [web] method (*statsigSigner).Invalidate func(baseURL, signerURL, method, target string)
-internal/infra/provider/web [web] method (*statsigSigner).Sign func(ctx context.Context, baseURL, signerURL, token string, lease *infraegress.Lease, method, target string) (string, string, error)
-internal/infra/provider/web [web] method (*statsigSigner).Warm func(ctx context.Context, baseURL, signerURL, token string, lease *infraegress.Lease, targets []statsigWarmTarget) (int, error)
-internal/infra/provider/web [web] method (*toolStreamSieve).Feed func(chunk string) toolStreamResult
-internal/infra/provider/web [web] method (*toolStreamSieve).Flush func() toolStreamResult
-internal/infra/provider/web [web] method (*trackedTextBuilder).CharacterLen func() int
-internal/infra/provider/web [web] method (*trackedTextBuilder).Len func() int
-internal/infra/provider/web [web] method (*trackedTextBuilder).Reset func()
-internal/infra/provider/web [web] method (*trackedTextBuilder).String func() string
-internal/infra/provider/web [web] method (*trackedTextBuilder).WriteString func(value string) (int, error)
-internal/infra/provider/web [web] method (*webAccountSettingError).Error func() string
-internal/infra/provider/web [web] method (*webAccountSettingError).HTTPStatusCode func() int
-internal/infra/provider/web [web] method (*webMediaUpstreamError).Error func() string
-internal/infra/provider/web [web] method (*webMediaUpstreamError).HTTPStatusCode func() int
-internal/infra/provider/web [web] method (*webMessagesStream).Delta func(kind, delta string) error
-internal/infra/provider/web [web] method (*webMessagesStream).Finish func(parsed parsedChat, payload map[string]any) error
-internal/infra/provider/web [web] method (*webMessagesStream).Start func() error
-internal/infra/provider/web [web] method (*webMessagesStream).Tools func(calls []parsedToolCall) error
-internal/infra/provider/web [web] method (*webResponsesStream).Annotations func(annotations []map[string]any, startIndex int) error
-internal/infra/provider/web [web] method (*webResponsesStream).Delta func(kind, delta string) error
-internal/infra/provider/web [web] method (*webResponsesStream).Finish func(parsed *parsedChat) error
-internal/infra/provider/web [web] method (*webResponsesStream).HostedSearch func(call hostedSearchCall) error
-internal/infra/provider/web [web] method (*webResponsesStream).ToolCalls func(calls []parsedToolCall) error
-internal/infra/provider/web [web] method (*webStopFilter).Flush func() string
-internal/infra/provider/web [web] method (*webStopFilter).Push func(delta string) (string, string)
-internal/infra/provider/web [web] method (*webVisibleStreamPhase).Allow func(kind, delta string) bool
-internal/infra/provider/web [web] method (conversionHTTPError).Error func() string
 internal/infra/provider/web [web] type Adapter struct { mu sync.RWMutex cfg Config accountsBaseURL string egress *infraegress.Manager cipher *security.Cipher states repository.ResponseRepository assets provider.ImageAssetStore statsig *statsigSigner logger *slog.Logger }
 internal/infra/provider/web [web] type Config struct { BaseURL string StatsigMode string StatsigManualValue string StatsigSignerURL string QuotaTimeoutSeconds int ChatTimeoutSeconds int StreamIdleTimeoutSeconds int ImageTimeoutSeconds int VideoTimeoutSeconds int MaxInputImageBytes int64 AllowNSFW bool FreeVideoDurationCap int }
 internal/infra/provider/web [web] type ModelSpec struct { PublicID string UpstreamModel string ProtocolModel string ImaginePro bool Capability modeldomain.Capability Mode string MinimumTier account.WebTier }
@@ -1691,16 +1565,6 @@ internal/infra/runtime/memory [memory] method (*StickyStore).DeleteByAccount fun
 internal/infra/runtime/memory [memory] method (*StickyStore).DeleteByAccounts func(_ context.Context, accountIDs []uint64) error
 internal/infra/runtime/memory [memory] method (*StickyStore).Get func(_ context.Context, affinityKey string, now time.Time) (uint64, bool, error)
 internal/infra/runtime/memory [memory] method (*StickyStore).Set func(_ context.Context, affinityKey string, accountID uint64, expiresAt time.Time) error
-internal/infra/runtime/memory [memory] method (*quotaHeap).Pop func() any
-internal/infra/runtime/memory [memory] method (*quotaHeap).Push func(value any)
-internal/infra/runtime/memory [memory] method (*quotaRefreshExpiryHeap).Pop func() any
-internal/infra/runtime/memory [memory] method (*quotaRefreshExpiryHeap).Push func(value any)
-internal/infra/runtime/memory [memory] method (quotaHeap).Len func() int
-internal/infra/runtime/memory [memory] method (quotaHeap).Less func(i, j int) bool
-internal/infra/runtime/memory [memory] method (quotaHeap).Swap func(i, j int)
-internal/infra/runtime/memory [memory] method (quotaRefreshExpiryHeap).Len func() int
-internal/infra/runtime/memory [memory] method (quotaRefreshExpiryHeap).Less func(i, j int) bool
-internal/infra/runtime/memory [memory] method (quotaRefreshExpiryHeap).Swap func(i, j int)
 internal/infra/runtime/memory [memory] type ConcurrencyLimiter struct { shards [shardCount]concurrencyShard indicesCache sync.Pool }
 internal/infra/runtime/memory [memory] type DeviceSessionStore struct { mu sync.Mutex sessions map[string]account.DeviceSession }
 internal/infra/runtime/memory [memory] type LockStore struct { mu sync.Mutex locks map[string]string }
@@ -1835,8 +1699,6 @@ internal/pkg/reasoningreplay [reasoningreplay] method (*ReasoningReplay).Enabled
 internal/pkg/reasoningreplay [reasoningreplay] method (*ReasoningReplay).StoreFromCompleted func(ctx context.Context, model, sessionKey string, payload []byte)
 internal/pkg/reasoningreplay [reasoningreplay] method (*ReasoningReplay).StoreFromCompletedPayload func(ctx context.Context, model, sessionKey string, payload []byte, compact bool)
 internal/pkg/reasoningreplay [reasoningreplay] method (*ReasoningReplay).UpdateConfig func(cfg Config)
-internal/pkg/reasoningreplay [reasoningreplay] method (*replayCaptureBody).Close func() error
-internal/pkg/reasoningreplay [reasoningreplay] method (*replayCaptureBody).Read func(p []byte) (int, error)
 internal/pkg/reasoningreplay [reasoningreplay] type Config struct { Enabled bool TTL time.Duration }
 internal/pkg/reasoningreplay [reasoningreplay] type ReasoningReplay struct { store repository.ReasoningReplayRepository cfg atomic.Pointer[Config] logger *slog.Logger now func() time.Time }
 internal/pkg/requestmeta [requestmeta] func ClientIP func(ctx context.Context) string
@@ -1857,18 +1719,6 @@ internal/pkg/tunnelproxy [tunnelproxy] func Normalize func(value string) (string
 internal/pkg/tunnelproxy [tunnelproxy] func Parse func(value string) (Config, error)
 internal/pkg/tunnelproxy [tunnelproxy] method (*Dialer).Dial func(network, address string) (net.Conn, error)
 internal/pkg/tunnelproxy [tunnelproxy] method (*Dialer).DialContext func(ctx context.Context, network, address string) (net.Conn, error)
-internal/pkg/tunnelproxy [tunnelproxy] method (*ownedVLESSProxy).Conn func(ctx context.Context, address netapi.Address) (net.Conn, error)
-internal/pkg/tunnelproxy [tunnelproxy] method (*ownedVLESSProxy).PacketConn func(ctx context.Context, address netapi.Address) (net.PacketConn, error)
-internal/pkg/tunnelproxy [tunnelproxy] method (*realityProxy).Conn func(ctx context.Context, address netapi.Address) (net.Conn, error)
-internal/pkg/tunnelproxy [tunnelproxy] method (*realityProxy).PacketConn func(context.Context, netapi.Address) (net.PacketConn, error)
-internal/pkg/tunnelproxy [tunnelproxy] method (*serverDialer).Conn func(ctx context.Context, _ netapi.Address) (net.Conn, error)
-internal/pkg/tunnelproxy [tunnelproxy] method (*serverDialer).PacketConn func(context.Context, netapi.Address) (net.PacketConn, error)
-internal/pkg/tunnelproxy [tunnelproxy] method (*singleConnectionProxy).Conn func(context.Context, netapi.Address) (net.Conn, error)
-internal/pkg/tunnelproxy [tunnelproxy] method (*singleConnectionProxy).PacketConn func(context.Context, netapi.Address) (net.PacketConn, error)
-internal/pkg/tunnelproxy [tunnelproxy] method (*tlsProxy).Conn func(ctx context.Context, address netapi.Address) (net.Conn, error)
-internal/pkg/tunnelproxy [tunnelproxy] method (*tlsProxy).PacketConn func(context.Context, netapi.Address) (net.PacketConn, error)
-internal/pkg/tunnelproxy [tunnelproxy] method (*websocketProxy).Conn func(ctx context.Context, address netapi.Address) (net.Conn, error)
-internal/pkg/tunnelproxy [tunnelproxy] method (*websocketProxy).PacketConn func(context.Context, netapi.Address) (net.PacketConn, error)
 internal/pkg/tunnelproxy [tunnelproxy] type Config struct { Scheme string Server string Credential string Method string AlterID int Cipher string Transport string TLS bool Security string Flow string ServerName string Insecure bool ALPN []string RealityPublicKey string RealityShortID string ClientFingerprint string SpiderX string WebSocketHost string WebSocketPath string CanonicalProxyURL string }
 internal/pkg/tunnelproxy [tunnelproxy] type Dialer struct { proxy netapi.Proxy shadowsocksCipher sscore.StreamConnCipher server string }
 internal/ports/provider [provider] const ConsoleVideoMaxReferenceDurationSeconds  = 10
@@ -2153,14 +2003,6 @@ internal/transport/http [httpserver] type SwaggerVideoGenerationRequest struct {
 internal/transport/http [httpserver] type SwaggerVideoMediaInput struct { URL string `json:"url,omitempty" example:"https://example.com/input.png"` FileID string `json:"file_id,omitempty" example:"file_123"` }
 internal/transport/http/account [account] func NewHandler func(service *accountapp.Service, sync accountSynchronizer) *Handler
 internal/transport/http/account [account] method (*Handler).Register func(router *gin.RouterGroup)
-internal/transport/http/account [account] method (*accountEventStream).Close func()
-internal/transport/http/account [account] method (*accountEventStream).PhaseProgressObserver func(phase string, totalValue *atomic.Int64) accountapp.BatchProgressObserver
-internal/transport/http/account [account] method (*accountEventStream).ProgressObserver func() accountapp.BatchProgressObserver
-internal/transport/http/account [account] method (*accountEventStream).SyncProgressObserver func() func(completed, total int)
-internal/transport/http/account [account] method (*accountEventStream).Write func(event string, value any) error
-internal/transport/http/account [account] method (*accountEventStream).WriteError func(code, message string)
-internal/transport/http/account [account] method (*accountSyncPipeline).Finish func(abort bool) accountsyncapp.Result
-internal/transport/http/account [account] method (*accountSyncPipeline).Observe func(accountID uint64) error
 internal/transport/http/account [account] type Handler struct { service *accountapp.Service sync accountSynchronizer }
 internal/transport/http/adminauth [adminauth] func NewHandler func(service *adminapp.Service, secureCookies bool) *Handler
 internal/transport/http/adminauth [adminauth] method (*Handler).RegisterAuthenticated func(router *gin.RouterGroup)
@@ -2189,11 +2031,6 @@ internal/transport/http/egress [egress] type Handler struct { service *egressapp
 internal/transport/http/inference [inference] func NewHandler func(gatewayService *gateway.Service, models *modelapp.Service, maxBodyBytes int64, publicAPIBaseURL ...string) *Handler
 internal/transport/http/inference [inference] method (*Handler).Register func(router *gin.RouterGroup)
 internal/transport/http/inference [inference] method (*Handler).SetPublicAPIBaseURLResolver func(resolve func() string) *Handler
-internal/transport/http/inference [inference] method (*internalSSEMarkerFilter).Filter func(chunk []byte, final bool) []byte
-internal/transport/http/inference [inference] method (*responseInspector).Finish func()
-internal/transport/http/inference [inference] method (*responseInspector).Inspect func(chunk []byte)
-internal/transport/http/inference [inference] method (*responseInspector).Metadata func() responseMetadata
-internal/transport/http/inference [inference] method (*responseInspector).TerminalError func() error
 internal/transport/http/inference [inference] type Handler struct { gateway *gateway.Service models *modelapp.Service maxBodyBytes int64 publicAPIBaseURL string publicBaseURL func() string }
 internal/transport/http/media [media] func NewHandler func(service *mediaapp.Service) *Handler
 internal/transport/http/media [media] method (*Handler).RegisterAdmin func(router *gin.RouterGroup)
@@ -2215,8 +2052,6 @@ internal/transport/http/middleware [middleware] func SecurityHeaders func() gin.
 internal/transport/http/middleware [middleware] func Timeout func(duration time.Duration) gin.HandlerFunc
 internal/transport/http/middleware [middleware] method (*ConcurrencyGate).Middleware func() gin.HandlerFunc
 internal/transport/http/middleware [middleware] method (*ConcurrencyGate).UpdateLimit func(limit int)
-internal/transport/http/middleware [middleware] method (*bodyMemoryObserver).Middleware func() gin.HandlerFunc
-internal/transport/http/middleware [middleware] method (*observedRequestBody).Read func(buffer []byte) (int, error)
 internal/transport/http/middleware [middleware] type ConcurrencyGate struct { mu sync.Mutex limit int active int }
 internal/transport/http/model [model] func NewHandler func(service *modelapp.Service) *Handler
 internal/transport/http/model [model] method (*Handler).Register func(router *gin.RouterGroup)
@@ -2227,4 +2062,3 @@ internal/transport/http/settings [settings] type Handler struct{ service *settin
 internal/transport/http/system [system] func NewHandler func(publicAPIBaseURL func() string, updates *updatecheckapp.Service) *Handler
 internal/transport/http/system [system] method (*Handler).Register func(router *gin.RouterGroup)
 internal/transport/http/system [system] type Handler struct { publicAPIBaseURL func() string updates *updatecheckapp.Service }
-tools/structurecheck [main] method (nestingVisitor).Visit func(node ast.Node) ast.Visitor

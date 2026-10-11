@@ -398,40 +398,57 @@ func (s *Selector) claimNormalCandidates(ctx context.Context, values []account.R
 
 func (s *Selector) completeStickyLease(ctx context.Context, stickyKey string, values []account.RoutingCandidate, normalCandidates []int, candidate account.RoutingCandidate, lease *accountLease, quotaMode string, materialFailures *credentialMaterialFailureTracker) (*accountLease, error) {
 	if stickyKey != "" {
-		stickyTTL, _, _, _ := s.routingConfig()
-		now := time.Now().UTC()
-		boundID, err := s.sticky.Bind(ctx, stickyKey, candidate.Credential.ID, now, now.Add(stickyTTL))
+		boundCandidate, boundLease, err := s.bindStickyLease(ctx, stickyKey, values, normalCandidates, candidate, lease, materialFailures)
 		if err != nil {
-			lease.Release()
-			return nil, fmt.Errorf("写入会话粘滞状态: %w", err)
+			return nil, err
 		}
-		if boundID != candidate.Credential.ID {
-			if boundCandidate, eligible := routingCandidateByID(values, normalCandidates, boundID); eligible {
-				boundLease, acquireErr := s.acquirePinnedCapacity(ctx, boundCandidate.Credential, materialFailures)
-				if acquireErr == nil {
-					lease.Release()
-					lease = boundLease
-					candidate = boundCandidate
-				} else if errors.Is(acquireErr, errRoutingCredentialStale) {
-					_ = s.sticky.DeleteByAccount(ctx, boundID)
-					if err := s.sticky.Set(ctx, stickyKey, candidate.Credential.ID, now.Add(stickyTTL)); err != nil {
-						lease.Release()
-						return nil, fmt.Errorf("重建会话粘滞状态: %w", err)
-					}
-				} else if !isSelectionUnavailable(acquireErr, SelectionSaturated) {
-					lease.Release()
-					return nil, acquireErr
-				}
-				// 已绑定账号满载时保留原绑定，本次请求使用已获取的临时账号。
-			} else if err := s.sticky.Set(ctx, stickyKey, candidate.Credential.ID, now.Add(stickyTTL)); err != nil {
-				lease.Release()
-				return nil, fmt.Errorf("重建会话粘滞状态: %w", err)
-			}
-		}
+		candidate, lease = boundCandidate, boundLease
 	}
 	lease.Billing = candidate.Billing
 	lease.QuotaMode = effectiveQuotaMode(candidate, quotaMode)
 	return lease, nil
+}
+
+// bindStickyLease 写入会话粘滞绑定；绑定账号与本轮候选不一致时，按既有规则改用绑定账号或重建粘滞状态。
+// 出错路径会释放传入租约，因此返回值只在 err == nil 时有效。
+func (s *Selector) bindStickyLease(ctx context.Context, stickyKey string, values []account.RoutingCandidate, normalCandidates []int, candidate account.RoutingCandidate, lease *accountLease, materialFailures *credentialMaterialFailureTracker) (account.RoutingCandidate, *accountLease, error) {
+	stickyTTL, _, _, _ := s.routingConfig()
+	now := time.Now().UTC()
+	boundID, err := s.sticky.Bind(ctx, stickyKey, candidate.Credential.ID, now, now.Add(stickyTTL))
+	if err != nil {
+		lease.Release()
+		return candidate, nil, fmt.Errorf("写入会话粘滞状态: %w", err)
+	}
+	if boundID == candidate.Credential.ID {
+		return candidate, lease, nil
+	}
+	boundCandidate, eligible := routingCandidateByID(values, normalCandidates, boundID)
+	if !eligible {
+		if err := s.sticky.Set(ctx, stickyKey, candidate.Credential.ID, now.Add(stickyTTL)); err != nil {
+			lease.Release()
+			return candidate, nil, fmt.Errorf("重建会话粘滞状态: %w", err)
+		}
+		return candidate, lease, nil
+	}
+	boundLease, acquireErr := s.acquirePinnedCapacity(ctx, boundCandidate.Credential, materialFailures)
+	if acquireErr == nil {
+		lease.Release()
+		return boundCandidate, boundLease, nil
+	}
+	if !errors.Is(acquireErr, errRoutingCredentialStale) {
+		if !isSelectionUnavailable(acquireErr, SelectionSaturated) {
+			lease.Release()
+			return candidate, nil, acquireErr
+		}
+		// 已绑定账号满载时保留原绑定，本次请求使用已获取的临时账号。
+		return candidate, lease, nil
+	}
+	_ = s.sticky.DeleteByAccount(ctx, boundID)
+	if err := s.sticky.Set(ctx, stickyKey, candidate.Credential.ID, now.Add(stickyTTL)); err != nil {
+		lease.Release()
+		return candidate, nil, fmt.Errorf("重建会话粘滞状态: %w", err)
+	}
+	return candidate, lease, nil
 }
 
 // stickySessionKey 将调用方粘滞 identity 压缩为固定长度，仅用于账号粘滞索引。

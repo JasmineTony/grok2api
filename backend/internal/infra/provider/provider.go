@@ -45,29 +45,34 @@ func NewRegistry(adapters ...ports.Adapter) *Registry {
 			registry.definitions[providerValue] = source.Definition().Clone()
 		}
 		if source, ok := adapter.(ports.ModelAliasAdapter); ok {
-			for _, value := range source.ModelAliases() {
-				if value.Alias == "" || value.PublicModel == "" {
-					continue
-				}
-				if value.Provider != providerValue {
-					registry.issues = append(registry.issues, fmt.Errorf("Provider %s 的模型别名 %q 指向了 %s", providerValue, value.Alias, value.Provider))
-					continue
-				}
-				if !modeldomain.IsCanonicalPublicID(value.Provider, value.PublicModel) {
-					registry.issues = append(registry.issues, fmt.Errorf("Provider %s 的模型别名 %q 目标 %q 不是规范内部路由 ID", providerValue, value.Alias, value.PublicModel))
-					continue
-				}
-				if existing, exists := registry.aliases[value.Alias]; exists {
-					if existing != value {
-						registry.issues = append(registry.issues, fmt.Errorf("模型别名 %q 重复注册", value.Alias))
-					}
-					continue
-				}
-				registry.aliases[value.Alias] = value
-			}
+			registry.registerModelAliases(providerValue, source.ModelAliases())
 		}
 	}
 	return registry
+}
+
+// registerModelAliases 注册适配器声明的隐藏兼容模型别名，违规项按声明顺序累积为注册问题。
+func (r *Registry) registerModelAliases(providerValue account.Provider, values []ports.ModelAlias) {
+	for _, value := range values {
+		if value.Alias == "" || value.PublicModel == "" {
+			continue
+		}
+		if value.Provider != providerValue {
+			r.issues = append(r.issues, fmt.Errorf("Provider %s 的模型别名 %q 指向了 %s", providerValue, value.Alias, value.Provider))
+			continue
+		}
+		if !modeldomain.IsCanonicalPublicID(value.Provider, value.PublicModel) {
+			r.issues = append(r.issues, fmt.Errorf("Provider %s 的模型别名 %q 目标 %q 不是规范内部路由 ID", providerValue, value.Alias, value.PublicModel))
+			continue
+		}
+		if existing, exists := r.aliases[value.Alias]; exists {
+			if existing != value {
+				r.issues = append(r.issues, fmt.Errorf("模型别名 %q 重复注册", value.Alias))
+			}
+			continue
+		}
+		r.aliases[value.Alias] = value
+	}
 }
 
 // Get returns a registered Provider Adapter.

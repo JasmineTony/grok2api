@@ -112,15 +112,7 @@ func normalizeConsoleResponseFormat(payload map[string]any) {
 		return
 	}
 	if typeName, _ := format["type"].(string); typeName == "json_schema" {
-		if nested, ok := format["json_schema"].(map[string]any); ok {
-			flattened := map[string]any{"type": "json_schema"}
-			for key, value := range nested {
-				if key != "type" {
-					flattened[key] = value
-				}
-			}
-			format = flattened
-		}
+		format = flattenConsoleJSONSchemaFormat(format)
 	}
 	text, _ := payload["text"].(map[string]any)
 	if text == nil {
@@ -130,6 +122,22 @@ func normalizeConsoleResponseFormat(payload map[string]any) {
 		text["format"] = format
 	}
 	payload["text"] = text
+}
+
+// flattenConsoleJSONSchemaFormat 把嵌套的 json_schema 提升到 response_format 顶层；
+// Console 只接受扁平形式，嵌套内的 type 以顶层 json_schema 为准。
+func flattenConsoleJSONSchemaFormat(format map[string]any) map[string]any {
+	nested, ok := format["json_schema"].(map[string]any)
+	if !ok {
+		return format
+	}
+	flattened := map[string]any{"type": "json_schema"}
+	for key, value := range nested {
+		if key != "type" {
+			flattened[key] = value
+		}
+	}
+	return flattened
 }
 
 func patchConsoleInput(payload map[string]any) {

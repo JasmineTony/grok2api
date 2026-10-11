@@ -154,28 +154,36 @@ func (s *Selector) evictCandidate(provider account.Provider, accountID uint64) {
 		if key.provider != provider {
 			continue
 		}
-		// 候选快照会被并发请求的 selectionSession 只读复用；必须 copy-on-write，
-		// 不能复用底层数组，否则会改写正在执行的请求视图。
-		values := make([]account.RoutingCandidate, 0, len(snapshot.values))
-		removed := false
-		for _, candidate := range snapshot.values {
-			if candidate.Credential.ID == accountID {
-				removed = true
-				continue
-			}
-			values = append(values, candidate)
-		}
-		if removed {
-			// also update byAccount index if present
-			if snapshot.byAccount != nil {
-				byAccount := make(map[uint64]int, len(values))
-				for idx, candidate := range values {
-					byAccount[candidate.Credential.ID] = idx
-				}
-				snapshot.byAccount = byAccount
-			}
-			snapshot.values = values
-			s.candidates[key] = snapshot
+		if evicted, removed := evictCandidateFromSnapshot(snapshot, accountID); removed {
+			s.candidates[key] = evicted
 		}
 	}
+}
+
+// evictCandidateFromSnapshot 返回移除指定账号后的候选快照副本；账号不在快照中时原样返回且 removed 为 false。
+func evictCandidateFromSnapshot(snapshot candidateSnapshot, accountID uint64) (candidateSnapshot, bool) {
+	// 候选快照会被并发请求的 selectionSession 只读复用；必须 copy-on-write，
+	// 不能复用底层数组，否则会改写正在执行的请求视图。
+	values := make([]account.RoutingCandidate, 0, len(snapshot.values))
+	removed := false
+	for _, candidate := range snapshot.values {
+		if candidate.Credential.ID == accountID {
+			removed = true
+			continue
+		}
+		values = append(values, candidate)
+	}
+	if !removed {
+		return snapshot, false
+	}
+	// also update byAccount index if present
+	if snapshot.byAccount != nil {
+		byAccount := make(map[uint64]int, len(values))
+		for idx, candidate := range values {
+			byAccount[candidate.Credential.ID] = idx
+		}
+		snapshot.byAccount = byAccount
+	}
+	snapshot.values = values
+	return snapshot, true
 }

@@ -102,15 +102,22 @@ func (s *Service) RunAccountAutoClean(ctx context.Context) {
 			cfg, scheduledRevision = s.autoCleanSnapshot()
 			resetCredentialRefreshTimer(timer, autoCleanInterval(cfg))
 		case <-timer.C:
-			current, revision := s.autoCleanSnapshot()
-			if revision == scheduledRevision && current.Enabled {
-				if err := s.runAutoCleanReauthRevision(ctx, current, revision); err != nil && ctx.Err() == nil {
-					s.logger.Warn("account_auto_clean_failed", "error", err)
-				}
-			}
+			s.handleAutoCleanTimerTick(ctx, scheduledRevision)
 			cfg, scheduledRevision = s.autoCleanSnapshot()
 			resetCredentialRefreshTimer(timer, autoCleanInterval(cfg))
 		}
+	}
+}
+
+// handleAutoCleanTimerTick 在 timer 到期时执行一轮自动清理：只有当前快照仍处于排程 revision
+// 且已启用才删除，清理失败只记录日志，不影响后续调度。
+func (s *Service) handleAutoCleanTimerTick(ctx context.Context, scheduledRevision uint64) {
+	current, revision := s.autoCleanSnapshot()
+	if revision != scheduledRevision || !current.Enabled {
+		return
+	}
+	if err := s.runAutoCleanReauthRevision(ctx, current, revision); err != nil && ctx.Err() == nil {
+		s.logger.Warn("account_auto_clean_failed", "error", err)
 	}
 }
 

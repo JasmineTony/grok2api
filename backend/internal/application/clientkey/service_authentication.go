@@ -84,7 +84,8 @@ func (s *Service) acquireAuthQuota(ctx context.Context, value clientkeydomain.Ke
 			return nil, ErrRateLimited
 		}
 	}
-	if value.MaxConcurrent == 0 {
+	// 与拆分前一致：仅当上限为正数时才申请并发租约；非正数（含负值）一律不调用 Acquire。
+	if value.MaxConcurrent <= 0 {
 		return func() {}, nil
 	}
 	release, acquired, err := s.concurrency.Acquire(ctx, fmt.Sprintf("client:%d", value.ID), value.MaxConcurrent)

@@ -161,23 +161,9 @@ func (screening *candidateScreening) screenCandidate(s *Selector, provider accou
 
 // Acquire 从请求级候选计划中获取下一个账号。被 excluded 的账号不会重新入选。
 func (session *selectionSession) Acquire(ctx context.Context, excluded map[uint64]bool, allowQuotaProbe bool) (*accountLease, error) {
-	if session.retryAccountID != 0 {
-		accountID := session.retryAccountID
-		session.retryAccountID = 0
-		if !session.candidateExcluded(excluded, accountID) {
-			if candidate, ok := routingCandidateByID(session.values, session.normalCandidates, accountID); ok {
-				lease, err := session.selector.claimAccountSlotTracked(ctx, candidate.Credential, &session.materialFailures)
-				if err != nil {
-					if errors.Is(err, errRoutingCredentialStale) {
-						session.markCandidateStale(accountID)
-					} else {
-						return nil, err
-					}
-				} else if lease != nil {
-					return session.completeNormalLease(ctx, lease, candidate, excluded)
-				}
-			}
-		}
+	lease, err := session.acquireRetryAccount(ctx, excluded)
+	if err != nil || lease != nil {
+		return lease, err
 	}
 	if allowQuotaProbe {
 		lease, err := session.acquireQuotaProbe(ctx, excluded)
@@ -186,6 +172,34 @@ func (session *selectionSession) Acquire(ctx context.Context, excluded map[uint6
 		}
 	}
 	return session.acquireNormal(ctx, excluded)
+}
+
+// acquireRetryAccount 优先尝试上一次被放回的账号；返回 nil 租约表示该账号本次不可用，调用方继续正常选号。
+func (session *selectionSession) acquireRetryAccount(ctx context.Context, excluded map[uint64]bool) (*accountLease, error) {
+	if session.retryAccountID == 0 {
+		return nil, nil
+	}
+	accountID := session.retryAccountID
+	session.retryAccountID = 0
+	if session.candidateExcluded(excluded, accountID) {
+		return nil, nil
+	}
+	candidate, ok := routingCandidateByID(session.values, session.normalCandidates, accountID)
+	if !ok {
+		return nil, nil
+	}
+	lease, err := session.selector.claimAccountSlotTracked(ctx, candidate.Credential, &session.materialFailures)
+	if err != nil {
+		if !errors.Is(err, errRoutingCredentialStale) {
+			return nil, err
+		}
+		session.markCandidateStale(accountID)
+		return nil, nil
+	}
+	if lease == nil {
+		return nil, nil
+	}
+	return session.completeNormalLease(ctx, lease, candidate, excluded)
 }
 
 // RetryAccount 将一个已被本请求取出的普通账号放回下一次选号的最前面。
@@ -368,42 +382,57 @@ func (session *selectionSession) claimNormalPlan(ctx context.Context, excluded m
 
 func (session *selectionSession) completeNormalLease(ctx context.Context, lease *accountLease, candidate account.RoutingCandidate, excluded map[uint64]bool) (*accountLease, error) {
 	if session.stickyKey != "" && session.selector.sticky != nil {
-		stickyTTL, _, _, _ := session.selector.routingConfig()
-		now := time.Now().UTC()
-		boundID, err := session.selector.sticky.Bind(ctx, session.stickyKey, candidate.Credential.ID, now, now.Add(stickyTTL))
+		boundCandidate, boundLease, err := session.bindSessionStickyLease(ctx, lease, candidate, excluded)
 		if err != nil {
-			lease.Release()
-			return nil, fmt.Errorf("写入会话粘滞状态: %w", err)
+			return nil, err
 		}
-		if boundID != candidate.Credential.ID {
-			if boundCandidate, eligible := routingCandidateByID(session.values, session.normalCandidates, boundID); eligible && !session.candidateExcluded(excluded, boundID) {
-				boundLease, acquireErr := session.selector.claimAccountSlotTracked(ctx, boundCandidate.Credential, &session.materialFailures)
-				if acquireErr != nil {
-					if errors.Is(acquireErr, errRoutingCredentialStale) {
-						session.markCandidateStale(boundID)
-						_ = session.selector.sticky.DeleteByAccount(ctx, boundID)
-						if err := session.selector.sticky.Set(ctx, session.stickyKey, candidate.Credential.ID, now.Add(stickyTTL)); err != nil {
-							lease.Release()
-							return nil, fmt.Errorf("重建会话粘滞状态: %w", err)
-						}
-					} else {
-						lease.Release()
-						return nil, acquireErr
-					}
-				} else if boundLease != nil {
-					lease.Release()
-					lease = boundLease
-					candidate = boundCandidate
-				}
-			} else if err := session.selector.sticky.Set(ctx, session.stickyKey, candidate.Credential.ID, now.Add(stickyTTL)); err != nil {
-				lease.Release()
-				return nil, fmt.Errorf("重建会话粘滞状态: %w", err)
-			}
-		}
+		candidate, lease = boundCandidate, boundLease
 	}
 	lease.Billing = candidate.Billing
 	lease.QuotaMode = effectiveQuotaMode(candidate, session.quotaMode)
 	return lease, nil
+}
+
+// bindSessionStickyLease 写入请求级会话粘滞绑定；绑定账号与本轮候选不一致时，按既有规则改用绑定账号或重建粘滞状态。
+// 出错路径会释放传入租约，因此返回值只在 err == nil 时有效。
+func (session *selectionSession) bindSessionStickyLease(ctx context.Context, lease *accountLease, candidate account.RoutingCandidate, excluded map[uint64]bool) (account.RoutingCandidate, *accountLease, error) {
+	stickyTTL, _, _, _ := session.selector.routingConfig()
+	now := time.Now().UTC()
+	boundID, err := session.selector.sticky.Bind(ctx, session.stickyKey, candidate.Credential.ID, now, now.Add(stickyTTL))
+	if err != nil {
+		lease.Release()
+		return candidate, nil, fmt.Errorf("写入会话粘滞状态: %w", err)
+	}
+	if boundID == candidate.Credential.ID {
+		return candidate, lease, nil
+	}
+	boundCandidate, eligible := routingCandidateByID(session.values, session.normalCandidates, boundID)
+	if !eligible || session.candidateExcluded(excluded, boundID) {
+		if err := session.selector.sticky.Set(ctx, session.stickyKey, candidate.Credential.ID, now.Add(stickyTTL)); err != nil {
+			lease.Release()
+			return candidate, nil, fmt.Errorf("重建会话粘滞状态: %w", err)
+		}
+		return candidate, lease, nil
+	}
+	boundLease, acquireErr := session.selector.claimAccountSlotTracked(ctx, boundCandidate.Credential, &session.materialFailures)
+	if acquireErr == nil {
+		if boundLease != nil {
+			lease.Release()
+			return boundCandidate, boundLease, nil
+		}
+		return candidate, lease, nil
+	}
+	if !errors.Is(acquireErr, errRoutingCredentialStale) {
+		lease.Release()
+		return candidate, nil, acquireErr
+	}
+	session.markCandidateStale(boundID)
+	_ = session.selector.sticky.DeleteByAccount(ctx, boundID)
+	if err := session.selector.sticky.Set(ctx, session.stickyKey, candidate.Credential.ID, now.Add(stickyTTL)); err != nil {
+		lease.Release()
+		return candidate, nil, fmt.Errorf("重建会话粘滞状态: %w", err)
+	}
+	return candidate, lease, nil
 }
 
 func (session *selectionSession) hasUnexcludedNormal(excluded map[uint64]bool) bool {

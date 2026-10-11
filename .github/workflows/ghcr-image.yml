@@ -114,6 +114,16 @@ jobs:
         working-directory: backend
         run: go vet ./...
 
+      # AGENTS.md REV-1/REV-2/REV-3 与导出 API 契约：结构棘轮（backend/structure-baseline.json）
+      # 与导出 API 面（backend/api-baseline.txt）由仓库内工具判定，基线漂移即失败，不靠人工逐轮核对。
+      - name: Verify backend structure and API contract
+        working-directory: backend
+        run: |
+          # 两个门禁都必须执行并各自暴露失败：缺 set -e/pipefail 时前一个失败会被后一个的成功掩盖。
+          set -euo pipefail
+          go run ./tools/structurecheck
+          go run ./tools/apicheck
+
       - name: Verify Swagger document
         run: |
           make swagger

@@ -261,24 +261,37 @@ func (s *StickyStore) Set(_ context.Context, affinityKey string, accountID uint6
 }
 
 func pruneStickyBindingsLocked(shard *stickyShard, now time.Time) {
-	if len(shard.bindings) > maxEntriesPerShard() {
-		for key, binding := range shard.bindings {
-			if !now.Before(binding.expiresAt) {
-				delete(shard.bindings, key)
-			}
-		}
-		for len(shard.bindings) > maxEntriesPerShard() {
-			var oldestKey string
-			var oldest time.Time
-			for key, binding := range shard.bindings {
-				if oldestKey == "" || binding.expiresAt.Before(oldest) {
-					oldestKey = key
-					oldest = binding.expiresAt
-				}
-			}
-			delete(shard.bindings, oldestKey)
+	if len(shard.bindings) <= maxEntriesPerShard() {
+		return
+	}
+	deleteExpiredStickyBindingsLocked(shard, now)
+	for len(shard.bindings) > maxEntriesPerShard() {
+		delete(shard.bindings, oldestStickyBindingKeyLocked(shard))
+	}
+}
+
+// deleteExpiredStickyBindingsLocked drops every binding that is already expired
+// at now. The caller must hold the shard lock.
+func deleteExpiredStickyBindingsLocked(shard *stickyShard, now time.Time) {
+	for key, binding := range shard.bindings {
+		if !now.Before(binding.expiresAt) {
+			delete(shard.bindings, key)
 		}
 	}
+}
+
+// oldestStickyBindingKeyLocked returns the key that expires first. The caller
+// must hold the shard lock.
+func oldestStickyBindingKeyLocked(shard *stickyShard) string {
+	var oldestKey string
+	var oldest time.Time
+	for key, binding := range shard.bindings {
+		if oldestKey == "" || binding.expiresAt.Before(oldest) {
+			oldestKey = key
+			oldest = binding.expiresAt
+		}
+	}
+	return oldestKey
 }
 
 func (s *StickyStore) DeleteByAccount(_ context.Context, accountID uint64) error {

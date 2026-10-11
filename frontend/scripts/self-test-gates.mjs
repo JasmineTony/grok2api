@@ -3,7 +3,9 @@
  * 门禁自测（AGENTS.md DEV-4）。
  *
  * 一个不会失败的门禁等于没有门禁。本脚本用临时装置验证：
- *  - check-structure：新增超限文件 / 超限函数继续增大 / 缺少基线 → 非零退出
+ *  - check-structure：新增超限文件 / 超限函数继续增大 / 新增嵌套越限函数 / 缺少基线 → 非零退出；
+ *    并覆盖 REV-3 作用域归属（匿名内联回调归属最近外层具名作用域、类构造函数独立作用域、
+ *    具名嵌套函数重置为独立作用域）与输出中的键名、深度断言。
  *  - check-bundle-budget：首屏闭包超限 / 路由新增闭包超限 / 无法识别路由 / 相对基线增长 → 非零退出
  * 并通过「阈值放宽」与「符合基线」两组反例，确认门禁不是无条件失败。
  *
@@ -75,6 +77,118 @@ writeFile(matchingBaseline, `${JSON.stringify({ files: { [structureKey]: 700 }, 
 writeFile(grownBaseline, `${JSON.stringify({ files: { [structureKey]: 690 }, functions: {} })}\n`);
 const missingBaseline = path.join(root, "does-not-exist.json");
 
+// ---- 嵌套深度（REV-3）装置 ----
+const nestingSrc = path.join(root, "nesting-src");
+const nestingFile = path.join(nestingSrc, "deep-nesting.ts");
+writeFile(
+  nestingFile,
+  [
+    "export function deeplyNested(value: number): number {",
+    "  if (value > 0) {",
+    "    for (const item of [value]) {",
+    "      while (item > 0) {",
+    "        try {",
+    "          return item;",
+    "        } catch {",
+    "          return 0;",
+    "        }",
+    "      }",
+    "    }",
+    "  }",
+    "  return value;",
+    "}",
+    "",
+  ].join("\n"),
+);
+const nestingKey = `${relativeKey(nestingFile)}#deeplyNested`;
+const nestingEmptyBaseline = path.join(root, "structure-baseline-nesting-empty.json");
+const nestingMatchingBaseline = path.join(root, "structure-baseline-nesting-match.json");
+const nestingFrozenBaseline = path.join(root, "structure-baseline-nesting-frozen.json");
+writeFile(nestingEmptyBaseline, `${JSON.stringify({ files: {}, functions: {}, nesting: {} })}\n`);
+writeFile(nestingMatchingBaseline, `${JSON.stringify({ files: {}, functions: {}, nesting: { [nestingKey]: 4 } })}\n`);
+writeFile(nestingFrozenBaseline, `${JSON.stringify({ files: {}, functions: {}, nesting: { [nestingKey]: 5 } })}\n`);
+const nestingEnv = { STRUCTURE_SRC_DIR: nestingSrc };
+
+// ---- REV-3 作用域归属装置（F2 匿名回调 / F4 构造函数 / F3 具名嵌套重置）----
+// 三个装置各占独立源码目录，避免彼此的超限项互相干扰。
+const anonymousCallbackSrc = path.join(root, "rev3-anonymous-callback-src");
+const anonymousCallbackFile = path.join(anonymousCallbackSrc, "anonymous-callback.ts");
+writeFile(
+  anonymousCallbackFile,
+  [
+    "export function Component({ items }: { items: number[] }): number {",
+    "  return items.map((item) => {",
+    "    if (item > 0) {",
+    "      for (const other of items) {",
+    "        try {",
+    "          if (other > item) return other;",
+    "        } catch {",
+    "          return item;",
+    "        }",
+    "      }",
+    "    }",
+    "    return item;",
+    "  });",
+    "}",
+    "",
+  ].join("\n"),
+);
+const anonymousCallbackKey = `${relativeKey(anonymousCallbackFile)}#Component`;
+
+const constructorSrc = path.join(root, "rev3-constructor-src");
+const constructorFile = path.join(constructorSrc, "module-constructor.ts");
+writeFile(
+  constructorFile,
+  [
+    "class ModuleLevelProbe {",
+    "  constructor(value: number) {",
+    "    if (value > 0) {",
+    "      for (const item of [value]) {",
+    "        try {",
+    "          if (item > 0) return;",
+    "        } catch {",
+    "          return;",
+    "        }",
+    "      }",
+    "    }",
+    "  }",
+    "}",
+    "",
+    "void ModuleLevelProbe;",
+    "",
+  ].join("\n"),
+);
+const constructorKey = `${relativeKey(constructorFile)}#ModuleLevelProbe.constructor`;
+
+const namedResetSrc = path.join(root, "rev3-named-reset-src");
+const namedResetFile = path.join(namedResetSrc, "named-reset.ts");
+writeFile(
+  namedResetFile,
+  [
+    "export function outerScopeProbe(value: number): number {",
+    "  if (value > 0) {",
+    "    for (const item of [value]) {",
+    "      while (item > 0) {",
+    "        function innerScopeProbe(input: number): number {",
+    "          if (input > 0) {",
+    "            return input;",
+    "          }",
+    "          return 0;",
+    "        }",
+    "        return innerScopeProbe(item);",
+    "      }",
+    "    }",
+    "  }",
+    "  return value;",
+    "}",
+    "",
+  ].join("\n"),
+);
+// 具名嵌套函数重置为独立作用域：外层自身 3 层、内层自身 1 层，均不越限（若内层继承外层深度则为 4 层并报出）。
+const namedResetEnv = { STRUCTURE_SRC_DIR: namedResetSrc, STRUCTURE_BASELINE_PATH: nestingEmptyBaseline };
+const anonymousCallbackEnv = { STRUCTURE_SRC_DIR: anonymousCallbackSrc, STRUCTURE_BASELINE_PATH: nestingEmptyBaseline };
+const constructorEnv = { STRUCTURE_SRC_DIR: constructorSrc, STRUCTURE_BASELINE_PATH: nestingEmptyBaseline };
+
 // ---- 体积预算装置 ----
 const distDir = path.join(root, "dist");
 const assetsDir = path.join(distDir, "assets");
@@ -136,6 +250,39 @@ const cases = [
     run: () => runGate("check-structure.mjs", { ...structureEnv, STRUCTURE_BASELINE_PATH: missingBaseline }),
   },
   {
+    name: "结构：新增嵌套越限函数应失败",
+    expect: 1,
+    run: () => runGate("check-structure.mjs", { ...nestingEnv, STRUCTURE_BASELINE_PATH: nestingEmptyBaseline }),
+  },
+  {
+    name: "结构：嵌套深度与冻结基线一致应通过",
+    expect: 0,
+    run: () => runGate("check-structure.mjs", { ...nestingEnv, STRUCTURE_BASELINE_PATH: nestingMatchingBaseline }),
+  },
+  {
+    name: "结构：嵌套深度已整改应通过",
+    expect: 0,
+    run: () => runGate("check-structure.mjs", { ...nestingEnv, STRUCTURE_BASELINE_PATH: nestingFrozenBaseline }),
+  },
+  {
+    name: "结构：匿名内联回调内 4 层嵌套应失败（F2 作用域归属）",
+    expect: 1,
+    contains: [`${anonymousCallbackKey} = 4 层`],
+    run: () => runGate("check-structure.mjs", anonymousCallbackEnv),
+  },
+  {
+    name: "结构：模块级类构造函数内 4 层嵌套应失败（F4 构造函数作用域）",
+    expect: 1,
+    contains: [`${constructorKey} = 4 层`],
+    run: () => runGate("check-structure.mjs", constructorEnv),
+  },
+  {
+    name: "结构：具名嵌套函数重置为独立作用域应通过（F3）",
+    expect: 0,
+    absent: ["outerScopeProbe", "innerScopeProbe"],
+    run: () => runGate("check-structure.mjs", namedResetEnv),
+  },
+  {
     name: "预算：阈值宽松应通过",
     expect: 0,
     run: () => runGate("check-bundle-budget.mjs", { ...budgetEnv, BUDGET_CONFIG_PATH: budgetOk }),
@@ -166,16 +313,29 @@ const cases = [
   },
 ];
 
+/** 校验单个用例：先比退出码，再校验输出必须包含 / 不得包含的片段；通过返回 null。 */
+function checkCase(testCase, status, output) {
+  if (status !== testCase.expect) return `期望 exit ${testCase.expect}，实际 ${status}\n${output.trim()}`;
+  for (const fragment of testCase.contains ?? []) {
+    if (!output.includes(fragment)) return `输出未包含 ${fragment}\n${output.trim()}`;
+  }
+  for (const fragment of testCase.absent ?? []) {
+    if (output.includes(fragment)) return `输出不应包含 ${fragment}\n${output.trim()}`;
+  }
+  return null;
+}
+
 function main() {
   const failures = [];
   try {
     for (const testCase of cases) {
       const { status, output } = testCase.run();
-      if (status === testCase.expect) {
+      const problem = checkCase(testCase, status, output);
+      if (problem === null) {
         console.log(`  ✓ ${testCase.name}（exit ${status}）`);
         continue;
       }
-      failures.push(`${testCase.name}：期望 exit ${testCase.expect}，实际 ${status}\n${output.trim()}`);
+      failures.push(`${testCase.name}：${problem}`);
     }
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
@@ -186,7 +346,8 @@ function main() {
     for (const failure of failures) console.error(`  - ${failure}`);
     process.exit(1);
   }
-  console.log(`门禁自测通过：${cases.length} 个用例（含 ${cases.length - 5} 个必须失败的用例）。`);
+  const expectedFailures = cases.filter((testCase) => testCase.expect !== 0).length;
+  console.log(`门禁自测通过：${cases.length} 个用例（含 ${expectedFailures} 个必须失败的用例）。`);
 }
 
 main();

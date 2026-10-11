@@ -122,19 +122,7 @@ func (r *AccountRepository) ReconcileProviderLinks(ctx context.Context, accountI
 		}
 		switch account.Provider(value.Provider) {
 		case account.ProviderWeb:
-			if consoleSource, ok := matchingConsoleSourceKey(value.SourceKey); ok {
-				if candidate, found, err := uniqueLinkCandidate(tx, value.ID, "web_console", account.ProviderConsole, "source_key = ?", consoleSource); err != nil {
-					return err
-				} else if found {
-					if err := linkWebToConsole(tx, value.ID, candidate.ID); err != nil {
-						return err
-					}
-				}
-			}
-			if err := reconcileWebConsoleByUserID(tx, value, true); err != nil {
-				return err
-			}
-			return reconcileWebBuildByUserID(tx, value, true)
+			return reconcileWebProviderLinks(tx, value)
 		case account.ProviderConsole:
 			if webSource, ok := matchingWebSourceKey(value.SourceKey); ok {
 				if candidate, found, err := uniqueLinkCandidate(tx, value.ID, "web_console", account.ProviderWeb, "source_key = ?", webSource); err != nil {
@@ -153,6 +141,24 @@ func (r *AccountRepository) ReconcileProviderLinks(ctx context.Context, accountI
 		r.notifyInvalidation(ctx, repository.InvalidationEvent{Kind: repository.InvalidationAccountCredentialChanged, AccountID: accountID})
 	}
 	return err
+}
+
+// reconcileWebProviderLinks 为 Web 账号建立无歧义的高可信关联：先按来源键配 Console，
+// 再按 user_id 分别配 Console 与 Build。任一冲突或歧义都保持不变并返回错误。
+func reconcileWebProviderLinks(tx *gorm.DB, value accountModel) error {
+	if consoleSource, ok := matchingConsoleSourceKey(value.SourceKey); ok {
+		if candidate, found, err := uniqueLinkCandidate(tx, value.ID, "web_console", account.ProviderConsole, "source_key = ?", consoleSource); err != nil {
+			return err
+		} else if found {
+			if err := linkWebToConsole(tx, value.ID, candidate.ID); err != nil {
+				return err
+			}
+		}
+	}
+	if err := reconcileWebConsoleByUserID(tx, value, true); err != nil {
+		return err
+	}
+	return reconcileWebBuildByUserID(tx, value, true)
 }
 
 func reconcileWebConsoleByUserID(tx *gorm.DB, value accountModel, valueIsWeb bool) error {
