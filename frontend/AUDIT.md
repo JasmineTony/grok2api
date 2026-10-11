@@ -1036,3 +1036,28 @@ main 线的 AUDIT 章节（`backend/AUDIT.md` §20/§21（BE-18/BE-19）、`fron
 | 冻结预算基线陈旧（`bundle-budget.json`） | 登记（P3，需授权） | 更新须满足 CHG-5（工作区静止 + 记录 `git rev-parse HEAD`） |
 | 认证后首屏 282.30 KiB 不入门禁 | 登记（P2 口径） | 改阈值或口径需维护线授权 |
 | Linux `-race` 与隔离 PG/Redis 的**本机**证据 | 不适用 | 本机无 C 编译器与隔离服务；CI 侧已闭环（§20.2），本机不再声称 |
+
+### 20.6 EVID-8 更正：§20.2 的 CI 覆盖范围与 CodeQL 结论
+
+**原值 → 新值（第 1 条）**：§20.2 未区分该 run 执行的是哪一版工作流定义，读者会误以为维护线新增的门禁步骤也在 CI 覆盖内。**新值**：该 run 执行的是 **`origin/main` 版工作流**（`ci-probe/acceptance-audit-20261011:.github/workflows/ghcr-image.yml` 的 blob `d89c5d51`，与 `origin/main` **逐字节相同**），因此以下两步**不在该 run 中**，其 CI 侧未闭环：
+
+| 仅存在于维护线工作流的步骤 | 受影响登记 | 更正后结论 |
+| --- | --- | --- |
+| `Assert required frontend tests ran`（`pnpm test:results:e2e`） | §20.4 表中「X-09」行 | **E2E 报告门禁的 CI 侧未闭环**；`Verify frontend`（其 13 步含 `pnpm test:results`）的 `success` 只覆盖 Vitest 报告门禁 |
+| `Verify backend structure and API contract`（`go run ./tools/structurecheck` + `apicheck`） | §20.2 表格的隐含覆盖 | **未在该 run 中执行**；本机侧已闭环（§20.3 与 `backend/AUDIT.md` §21.1） |
+
+**根因**：本机凭据缺工作流作用域，探针分支必须保留 `origin/main` 的工作流定义（否则推送被拒，见 §20.1 的实测 `git push` exit 1）。
+
+**复现**：
+
+- `GET /repos/JasmineTony/grok2api/actions/runs/38147560751/jobs?per_page=50` → `Verify` job 的 25 个 step 中不含上述两步（含 `Verify frontend`、`Run full-stack E2E`）；
+- `git rev-parse origin/main:.github/workflows/ghcr-image.yml ci-probe/acceptance-audit-20261011:.github/workflows/ghcr-image.yml` → 两者相同。
+
+**原值 → 新值（第 2 条）**：§20.5 记「CodeQL 聚合 check 为 `failure` — 待解释」→ **已查明**：该 check 由 `github-advanced-security` app 生成（**不是** workflow 产物；`codeql.yml` 的 workflow 名为 `CodeQL Advanced`、job 名为 `Analyze (…)`），含义是「本 PR 变更代码引入 5 个高危 code-scanning 告警」：
+
+- 4 × `Clear-text logging of sensitive information` → `backend/internal/application/gateway/service_request_failure.go` 约 `:154`、`:180`、`:182`、`:284`；
+- 1 × `Uncontrolled data used in path expression` → `backend/internal/transport/http/frontend.go:80`。
+
+真/假阳性 triage 进行中（登记为**待裁定项**，不预判结论）。
+
+**附**：`Upload Playwright artifacts` 的 `skipped` 由该 step 的 `if: failure()` 决定（工作流 `:179-180`）；Verify job 无失败步骤 ⇒ 条件为假 ⇒ `skipped` 属预期，非缺陷。
