@@ -100,10 +100,15 @@ func (s *Service) executeVoice(
 		return nil, err
 	}
 	quotaMode := s.voiceQuotaMode(route, consumesQuota)
-	state, err := s.runVoiceAttempts(ctx, voiceExecutionPlan{
+	return s.completeVoiceExecution(ctx, auditCtx, operation, route, quotaMode, voiceExecutionPlan{
 		key: key, route: route, quotaMode: quotaMode, preselected: preselectedSession,
 		policy: newRoutingAttemptPolicy(int(s.maxAttempts.Load())), execute: execute,
 	})
+}
+
+// completeVoiceExecution 执行语音账号尝试，并按结果返回客户端结果或统一错误。
+func (s *Service) completeVoiceExecution(ctx context.Context, auditCtx mediaAuditContext, operation audit.Operation, route modeldomain.Route, quotaMode string, plan voiceExecutionPlan) (*Result, error) {
+	state, err := s.runVoiceAttempts(ctx, plan)
 	if err != nil {
 		s.writeMediaFailureAudit(auditCtx, state.outcome.failureStatus, state.outcome.failureCode, state.outcome.failureCredential)
 		return nil, err

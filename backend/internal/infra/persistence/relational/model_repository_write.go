@@ -61,176 +61,238 @@ func (r *ModelRepository) UpsertRoutes(ctx context.Context, values []model.Route
 	return err
 }
 
+// catalogRouteKey 标识目录路由在公开 ID 或上游模型 + 能力维度上的匹配键。
+type catalogRouteKey struct {
+	value      string
+	capability model.Capability
+}
+
 func (r *ModelRepository) ReplaceProviderRoutes(ctx context.Context, provider account.Provider, values []model.Route) error {
 	err := r.db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		normalizedValues := make([]model.Route, len(values))
-		for index, value := range values {
-			publicID, ok := model.NormalizePublicID(provider, value.PublicID)
-			if !ok {
-				return fmt.Errorf("模型路由目录包含无效公开 ID %q", value.PublicID)
-			}
-			value.PublicID = publicID
-			if strings.TrimSpace(value.PublicID) == "" || strings.TrimSpace(value.UpstreamModel) == "" || value.Provider != provider || value.Capability == "" {
-				return fmt.Errorf("模型路由目录包含无效条目")
-			}
-			normalizedValues[index] = value
-		}
-		values = normalizedValues
-		var existing []modelRouteModel
-		if err := tx.Where("provider = ?", provider).Find(&existing).Error; err != nil {
+		normalizedValues, err := normalizeProviderRouteReplacements(provider, values)
+		if err != nil {
 			return err
 		}
-
-		type catalogRouteKey struct {
-			value      string
-			capability model.Capability
+		values = normalizedValues
+		existing, err := loadProviderRouteRows(tx, provider)
+		if err != nil {
+			return err
 		}
-		byPublicID := make(map[catalogRouteKey]modelRouteModel, len(existing))
-		byUpstreamNonManual := make(map[catalogRouteKey][]modelRouteModel, len(existing))
-		for _, row := range existing {
-			if row.Origin == string(model.OriginManual) {
-				continue
-			}
-			publicKey := catalogRouteKey{value: row.PublicID, capability: model.Capability(row.Capability)}
-			if current, exists := byPublicID[publicKey]; !exists || row.ID < current.ID {
-				byPublicID[publicKey] = row
-			}
-			upstreamKey := catalogRouteKey{value: row.UpstreamModel, capability: model.Capability(row.Capability)}
-			byUpstreamNonManual[upstreamKey] = append(byUpstreamNonManual[upstreamKey], row)
+		matched, usedIDs := matchProviderRouteRows(existing, values)
+		if err := deleteUnmatchedProviderRoutes(tx, existing, usedIDs); err != nil {
+			return err
 		}
-		matched := make(map[int]modelRouteModel, len(values))
-		usedIDs := make(map[uint64]bool, len(values))
-		for index, value := range values {
-			publicKey := catalogRouteKey{value: value.PublicID, capability: value.Capability}
-			if row, ok := byPublicID[publicKey]; ok && !usedIDs[row.ID] {
-				matched[index] = row
-				usedIDs[row.ID] = true
-				continue
-			}
-			// 仅回退匹配非手动路由，避免把手动别名路由改写成目录项。
-			candidates := byUpstreamNonManual[catalogRouteKey{value: value.UpstreamModel, capability: value.Capability}]
-			var chosen modelRouteModel
-			found := false
-			for _, candidate := range candidates {
-				if usedIDs[candidate.ID] {
-					continue
-				}
-				if !found || candidate.ID < chosen.ID {
-					chosen = candidate
-					found = true
-				}
-			}
-			if found {
-				matched[index] = chosen
-				usedIDs[chosen.ID] = true
-			}
+		if err := releaseProviderRouteAliasNames(tx, values, matched, usedIDs); err != nil {
+			return err
 		}
-		for _, row := range existing {
-			if usedIDs[row.ID] || row.Origin == string(model.OriginManual) {
-				continue
-			}
-			if err := tx.Delete(&modelRouteModel{}, row.ID).Error; err != nil {
-				return err
-			}
-		}
-		// A catalog name may have multiple capability rows. When a previous
-		// catalog rename preserved that name as an alias to one member, restoring
-		// it must promote the alias back to the formal group name before every
-		// matched capability row is validated. A catalog rename may also move a
-		// historical alias from one reconciled route to another (for example when
-		// an upstream protocol gains distinct public products). This is safe only
-		// when the current owner is itself retained by this same catalog update;
-		// aliases owned by manual or unrelated routes remain conflicts.
-		matchedIDsByPublicID := make(map[string]map[uint64]struct{}, len(values))
-		for index, value := range values {
-			ids := matchedIDsByPublicID[value.PublicID]
-			if ids == nil {
-				ids = make(map[uint64]struct{})
-				matchedIDsByPublicID[value.PublicID] = ids
-			}
-			if row, ok := matched[index]; ok {
-				ids[row.ID] = struct{}{}
-			}
-		}
-		for publicID, routeIDs := range matchedIDsByPublicID {
-			var alias modelRouteAliasModel
-			err := tx.Where("alias = ?", publicID).First(&alias).Error
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				continue
-			}
-			if err != nil {
-				return err
-			}
-			if _, owned := routeIDs[alias.ModelRouteID]; !owned && !usedIDs[alias.ModelRouteID] {
-				return fmt.Errorf("%w: 模型公开 ID %q 已被路由 %d 保留为兼容名称", repository.ErrConflict, publicID, alias.ModelRouteID)
-			}
-			if err := tx.Delete(&modelRouteAliasModel{}, "alias = ?", publicID).Error; err != nil {
-				return err
-			}
-		}
-		for index, value := range values {
-			routeID := uint64(0)
-			if row, ok := matched[index]; ok {
-				routeID = row.ID
-			}
-			if err := ensureModelPublicIDNotAlias(tx, value.PublicID, routeID); err != nil {
-				return err
-			}
+		if err := ensureProviderRoutePublicIDsFree(tx, values, matched); err != nil {
+			return err
 		}
 		// Temporary values allow public IDs or upstream identifiers to be swapped while
 		// stable route IDs and key permissions survive.
-		for index, row := range matched {
-			if row.PublicID != values[index].PublicID {
-				if row.PublicID != retiredWebImageQualityLitePublicID {
-					if err := preserveModelRouteAlias(tx, row.PublicID, row.ID); err != nil {
-						return err
-					}
-				}
-			}
+		if err := preserveReplacedRouteAliases(tx, matched, values); err != nil {
+			return err
 		}
 		if provider == account.ProviderWeb {
 			if err := tx.Delete(&modelRouteAliasModel{}, "alias = ?", retiredWebImageQualityLitePublicID).Error; err != nil {
 				return err
 			}
 		}
-		for _, row := range matched {
-			updates := map[string]any{
-				"public_id":      fmt.Sprintf("__grok2api_reconcile_%d", row.ID),
-				"upstream_model": fmt.Sprintf("__grok2api_upstream_reconcile_%d", row.ID),
-			}
-			if err := tx.Model(&modelRouteModel{}).Where("id = ?", row.ID).Updates(updates).Error; err != nil {
-				return mapError(err)
-			}
+		if err := detachReplacedRouteIdentifiers(tx, matched); err != nil {
+			return err
 		}
-		for index, value := range values {
-			updates := map[string]any{
-				"public_id":      value.PublicID,
-				"upstream_model": value.UpstreamModel,
-				"capability":     value.Capability,
-				"origin":         model.OriginCatalog,
-			}
-			if row, ok := matched[index]; ok {
-				if err := tx.Model(&modelRouteModel{}).Where("id = ?", row.ID).Updates(updates).Error; err != nil {
-					return mapError(err)
-				}
-				if row.UpstreamModel != value.UpstreamModel {
-					if err := renameAccountModelCapability(tx, provider, row.UpstreamModel, value.UpstreamModel); err != nil {
-						return err
-					}
-				}
-				continue
-			}
-			row := modelRouteModel{PublicID: value.PublicID, Provider: string(provider), UpstreamModel: value.UpstreamModel, Capability: string(value.Capability), Origin: string(model.OriginCatalog), Enabled: value.Enabled}
-			if err := tx.Create(&row).Error; err != nil {
-				return mapError(err)
-			}
-		}
-		return nil
+		return applyProviderRouteReplacements(tx, provider, values, matched)
 	})
 	if err == nil {
 		r.notifyInvalidation(ctx, repository.InvalidationEvent{Kind: repository.InvalidationRouteChanged, Provider: provider})
 	}
 	return err
+}
+
+func normalizeProviderRouteReplacements(provider account.Provider, values []model.Route) ([]model.Route, error) {
+	normalizedValues := make([]model.Route, len(values))
+	for index, value := range values {
+		publicID, ok := model.NormalizePublicID(provider, value.PublicID)
+		if !ok {
+			return nil, fmt.Errorf("模型路由目录包含无效公开 ID %q", value.PublicID)
+		}
+		value.PublicID = publicID
+		if strings.TrimSpace(value.PublicID) == "" || strings.TrimSpace(value.UpstreamModel) == "" || value.Provider != provider || value.Capability == "" {
+			return nil, fmt.Errorf("模型路由目录包含无效条目")
+		}
+		normalizedValues[index] = value
+	}
+	return normalizedValues, nil
+}
+
+func loadProviderRouteRows(tx *gorm.DB, provider account.Provider) ([]modelRouteModel, error) {
+	var existing []modelRouteModel
+	if err := tx.Where("provider = ?", provider).Find(&existing).Error; err != nil {
+		return nil, err
+	}
+	return existing, nil
+}
+
+func matchProviderRouteRows(existing []modelRouteModel, values []model.Route) (map[int]modelRouteModel, map[uint64]bool) {
+	byPublicID := make(map[catalogRouteKey]modelRouteModel, len(existing))
+	byUpstreamNonManual := make(map[catalogRouteKey][]modelRouteModel, len(existing))
+	for _, row := range existing {
+		if row.Origin == string(model.OriginManual) {
+			continue
+		}
+		publicKey := catalogRouteKey{value: row.PublicID, capability: model.Capability(row.Capability)}
+		if current, exists := byPublicID[publicKey]; !exists || row.ID < current.ID {
+			byPublicID[publicKey] = row
+		}
+		upstreamKey := catalogRouteKey{value: row.UpstreamModel, capability: model.Capability(row.Capability)}
+		byUpstreamNonManual[upstreamKey] = append(byUpstreamNonManual[upstreamKey], row)
+	}
+	matched := make(map[int]modelRouteModel, len(values))
+	usedIDs := make(map[uint64]bool, len(values))
+	for index, value := range values {
+		publicKey := catalogRouteKey{value: value.PublicID, capability: value.Capability}
+		if row, ok := byPublicID[publicKey]; ok && !usedIDs[row.ID] {
+			matched[index] = row
+			usedIDs[row.ID] = true
+			continue
+		}
+		// 仅回退匹配非手动路由，避免把手动别名路由改写成目录项。
+		candidates := byUpstreamNonManual[catalogRouteKey{value: value.UpstreamModel, capability: value.Capability}]
+		var chosen modelRouteModel
+		found := false
+		for _, candidate := range candidates {
+			if usedIDs[candidate.ID] {
+				continue
+			}
+			if !found || candidate.ID < chosen.ID {
+				chosen = candidate
+				found = true
+			}
+		}
+		if found {
+			matched[index] = chosen
+			usedIDs[chosen.ID] = true
+		}
+	}
+	return matched, usedIDs
+}
+
+func deleteUnmatchedProviderRoutes(tx *gorm.DB, existing []modelRouteModel, usedIDs map[uint64]bool) error {
+	for _, row := range existing {
+		if usedIDs[row.ID] || row.Origin == string(model.OriginManual) {
+			continue
+		}
+		if err := tx.Delete(&modelRouteModel{}, row.ID).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// A catalog name may have multiple capability rows. When a previous
+// catalog rename preserved that name as an alias to one member, restoring
+// it must promote the alias back to the formal group name before every
+// matched capability row is validated. A catalog rename may also move a
+// historical alias from one reconciled route to another (for example when
+// an upstream protocol gains distinct public products). This is safe only
+// when the current owner is itself retained by this same catalog update;
+// aliases owned by manual or unrelated routes remain conflicts.
+func releaseProviderRouteAliasNames(tx *gorm.DB, values []model.Route, matched map[int]modelRouteModel, usedIDs map[uint64]bool) error {
+	matchedIDsByPublicID := make(map[string]map[uint64]struct{}, len(values))
+	for index, value := range values {
+		ids := matchedIDsByPublicID[value.PublicID]
+		if ids == nil {
+			ids = make(map[uint64]struct{})
+			matchedIDsByPublicID[value.PublicID] = ids
+		}
+		if row, ok := matched[index]; ok {
+			ids[row.ID] = struct{}{}
+		}
+	}
+	for publicID, routeIDs := range matchedIDsByPublicID {
+		var alias modelRouteAliasModel
+		err := tx.Where("alias = ?", publicID).First(&alias).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if _, owned := routeIDs[alias.ModelRouteID]; !owned && !usedIDs[alias.ModelRouteID] {
+			return fmt.Errorf("%w: 模型公开 ID %q 已被路由 %d 保留为兼容名称", repository.ErrConflict, publicID, alias.ModelRouteID)
+		}
+		if err := tx.Delete(&modelRouteAliasModel{}, "alias = ?", publicID).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureProviderRoutePublicIDsFree(tx *gorm.DB, values []model.Route, matched map[int]modelRouteModel) error {
+	for index, value := range values {
+		routeID := uint64(0)
+		if row, ok := matched[index]; ok {
+			routeID = row.ID
+		}
+		if err := ensureModelPublicIDNotAlias(tx, value.PublicID, routeID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func preserveReplacedRouteAliases(tx *gorm.DB, matched map[int]modelRouteModel, values []model.Route) error {
+	for index, row := range matched {
+		if row.PublicID == values[index].PublicID || row.PublicID == retiredWebImageQualityLitePublicID {
+			continue
+		}
+		if err := preserveModelRouteAlias(tx, row.PublicID, row.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func detachReplacedRouteIdentifiers(tx *gorm.DB, matched map[int]modelRouteModel) error {
+	for _, row := range matched {
+		updates := map[string]any{
+			"public_id":      fmt.Sprintf("__grok2api_reconcile_%d", row.ID),
+			"upstream_model": fmt.Sprintf("__grok2api_upstream_reconcile_%d", row.ID),
+		}
+		if err := tx.Model(&modelRouteModel{}).Where("id = ?", row.ID).Updates(updates).Error; err != nil {
+			return mapError(err)
+		}
+	}
+	return nil
+}
+
+func applyProviderRouteReplacements(tx *gorm.DB, provider account.Provider, values []model.Route, matched map[int]modelRouteModel) error {
+	for index, value := range values {
+		updates := map[string]any{
+			"public_id":      value.PublicID,
+			"upstream_model": value.UpstreamModel,
+			"capability":     value.Capability,
+			"origin":         model.OriginCatalog,
+		}
+		row, found := matched[index]
+		if !found {
+			created := modelRouteModel{PublicID: value.PublicID, Provider: string(provider), UpstreamModel: value.UpstreamModel, Capability: string(value.Capability), Origin: string(model.OriginCatalog), Enabled: value.Enabled}
+			if err := tx.Create(&created).Error; err != nil {
+				return mapError(err)
+			}
+			continue
+		}
+		if err := tx.Model(&modelRouteModel{}).Where("id = ?", row.ID).Updates(updates).Error; err != nil {
+			return mapError(err)
+		}
+		if row.UpstreamModel == value.UpstreamModel {
+			continue
+		}
+		if err := renameAccountModelCapability(tx, provider, row.UpstreamModel, value.UpstreamModel); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func renameAccountModelCapability(tx *gorm.DB, provider account.Provider, oldModel, newModel string) error {
@@ -308,14 +370,8 @@ func (r *ModelRepository) Update(ctx context.Context, value model.Route, account
 		if result.Error != nil {
 			return mapError(result.Error)
 		}
-		if result.RowsAffected == 0 {
-			var count int64
-			if err := tx.Model(&modelRouteModel{}).Where("id = ?", value.ID).Count(&count).Error; err != nil {
-				return err
-			}
-			if count == 0 {
-				return repository.ErrNotFound
-			}
+		if err := ensureModelRouteExistsAfterUpdate(tx, value.ID, result.RowsAffected); err != nil {
+			return err
 		}
 		if accountIDs != nil {
 			return replaceModelRouteAccounts(tx, value.ID, *accountIDs)
@@ -330,6 +386,20 @@ func (r *ModelRepository) Update(ctx context.Context, value model.Route, account
 		r.notifyInvalidation(ctx, repository.InvalidationEvent{Kind: repository.InvalidationModelBindingChanged, Provider: storedProvider, UpstreamModel: storedUpstreamModel})
 	}
 	return r.Get(ctx, value.ID)
+}
+
+func ensureModelRouteExistsAfterUpdate(tx *gorm.DB, id uint64, rowsAffected int64) error {
+	if rowsAffected != 0 {
+		return nil
+	}
+	var count int64
+	if err := tx.Model(&modelRouteModel{}).Where("id = ?", id).Count(&count).Error; err != nil {
+		return err
+	}
+	if count == 0 {
+		return repository.ErrNotFound
+	}
+	return nil
 }
 
 func (r *ModelRepository) Delete(ctx context.Context, id uint64) error {

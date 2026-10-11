@@ -114,17 +114,9 @@ func (s *Service) get(ctx context.Context, rawPeriod, rawTimezone string, useCac
 func (s *Service) load(ctx context.Context, period Period, bucketCount, bucketDays int, location *time.Location, rawNow time.Time) (Result, error) {
 	now := rawNow.In(location)
 	series := buildSeries(now, period, bucketCount, bucketDays)
-	boundaries := make([]time.Time, 0, len(series))
-	for _, point := range series {
-		boundaries = append(boundaries, point.Start)
-	}
-	boundaries = append(boundaries, series[len(series)-1].End)
+	boundaries := buildSeriesBoundaries(series)
 	activity := buildActivitySeries(now)
-	activityBoundaries := make([]time.Time, 0, len(activity)+1)
-	for _, point := range activity {
-		activityBoundaries = append(activityBoundaries, point.Start)
-	}
-	activityBoundaries = append(activityBoundaries, activity[len(activity)-1].End)
+	activityBoundaries := buildActivityBoundaries(activity)
 	generatedAt := rawNow.UTC()
 	aggregate, err := s.dashboard.Snapshot(ctx, repository.DashboardSnapshotWindow{
 		BucketBoundaries:   boundaries,
@@ -133,7 +125,41 @@ func (s *Service) load(ctx context.Context, period Period, bucketCount, bucketDa
 	if err != nil {
 		return Result{}, err
 	}
-	for _, bucket := range aggregate.Buckets {
+	applyUsageBuckets(series, aggregate.Buckets)
+	applyActivityBuckets(activity, aggregate.ActivityBuckets)
+	return Result{
+		Period:      period,
+		GeneratedAt: generatedAt,
+		Range:       Range{Start: boundaries[0], End: boundaries[len(boundaries)-1]},
+		Resources:   aggregate.Resources,
+		Usage:       aggregate.Usage,
+		Series:      series,
+		Activity:    activity,
+		TopModels:   buildTopModels(aggregate.TopModels),
+		Providers:   aggregate.Providers,
+	}, nil
+}
+
+// buildSeriesBoundaries 汇总趋势桶边界，末尾补上最后一个桶的结束时间。
+func buildSeriesBoundaries(series []SeriesPoint) []time.Time {
+	boundaries := make([]time.Time, 0, len(series))
+	for _, point := range series {
+		boundaries = append(boundaries, point.Start)
+	}
+	return append(boundaries, series[len(series)-1].End)
+}
+
+// buildActivityBoundaries 汇总活动热力图桶边界，末尾补上最后一个桶的结束时间。
+func buildActivityBoundaries(activity []ActivityPoint) []time.Time {
+	boundaries := make([]time.Time, 0, len(activity)+1)
+	for _, point := range activity {
+		boundaries = append(boundaries, point.Start)
+	}
+	return append(boundaries, activity[len(activity)-1].End)
+}
+
+func applyUsageBuckets(series []SeriesPoint, buckets []dashboarddomain.Bucket) {
+	for _, bucket := range buckets {
 		if bucket.Index < 0 || bucket.Index >= len(series) {
 			continue
 		}
@@ -145,27 +171,23 @@ func (s *Service) load(ctx context.Context, period Period, bucketCount, bucketDa
 		series[bucket.Index].Tokens = bucket.Tokens
 		series[bucket.Index].BilledCostUSDTicks = bucket.BilledCostUSDTicks
 	}
-	for _, bucket := range aggregate.ActivityBuckets {
+}
+
+func applyActivityBuckets(activity []ActivityPoint, buckets []dashboarddomain.ActivityBucket) {
+	for _, bucket := range buckets {
 		if bucket.Index < 0 || bucket.Index >= len(activity) {
 			continue
 		}
 		activity[bucket.Index].Requests = bucket.Requests
 	}
-	topModels := make([]ModelUsage, 0, len(aggregate.TopModels))
-	for _, item := range aggregate.TopModels {
+}
+
+func buildTopModels(values []dashboarddomain.ModelUsage) []ModelUsage {
+	topModels := make([]ModelUsage, 0, len(values))
+	for _, item := range values {
 		topModels = append(topModels, ModelUsage{Model: item.Model, Requests: item.Requests, InputTokens: item.InputTokens, CachedInputTokens: item.CachedInputTokens, OutputTokens: item.OutputTokens, ReasoningTokens: item.ReasoningTokens, Tokens: item.Tokens, BilledCostUSDTicks: item.BilledCostUSDTicks})
 	}
-	return Result{
-		Period:      period,
-		GeneratedAt: generatedAt,
-		Range:       Range{Start: boundaries[0], End: boundaries[len(boundaries)-1]},
-		Resources:   aggregate.Resources,
-		Usage:       aggregate.Usage,
-		Series:      series,
-		Activity:    activity,
-		TopModels:   topModels,
-		Providers:   aggregate.Providers,
-	}, nil
+	return topModels
 }
 
 func parseTimezone(value string) (*time.Location, error) {

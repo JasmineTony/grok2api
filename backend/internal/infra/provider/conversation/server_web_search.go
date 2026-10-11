@@ -240,39 +240,46 @@ func dedupeWebSearchCalls(calls []webSearchCall) []webSearchCall {
 			best[id] = call
 			continue
 		}
-		// Prefer richer payload.
-		score := func(c webSearchCall) int {
-			n := len(c.Hits) * 10
-			if strings.TrimSpace(c.Query) != "" {
-				n += 5
-			}
-			if !c.Failed {
-				n += 1
-			}
-			return n
-		}
-		if score(call) >= score(prev) {
-			// Keep non-empty query from either side.
-			if call.Query == "" {
-				call.Query = prev.Query
-			}
-			// Union hits by URL if both have sources.
-			if len(prev.Hits) > 0 && len(call.Hits) > 0 {
-				call.Hits = boundedWebSearchHits(call.Hits, prev.Hits)
-			} else if len(call.Hits) == 0 {
-				call.Hits = prev.Hits
-			}
-			best[id] = call
-		} else if prev.Query == "" && call.Query != "" {
-			prev.Query = call.Query
-			best[id] = prev
-		}
+		best[id] = mergeWebSearchCall(prev, call)
 	}
 	out := make([]webSearchCall, 0, len(order))
 	for _, id := range order {
 		out = append(out, best[id])
 	}
 	return out
+}
+
+// mergeWebSearchCall 合并同一 call id 的多个载荷，保留更丰富的一份。
+func mergeWebSearchCall(prev, call webSearchCall) webSearchCall {
+	// Prefer richer payload.
+	if webSearchCallScore(call) >= webSearchCallScore(prev) {
+		// Keep non-empty query from either side.
+		if call.Query == "" {
+			call.Query = prev.Query
+		}
+		// Union hits by URL if both have sources.
+		if len(prev.Hits) > 0 && len(call.Hits) > 0 {
+			call.Hits = boundedWebSearchHits(call.Hits, prev.Hits)
+		} else if len(call.Hits) == 0 {
+			call.Hits = prev.Hits
+		}
+		return call
+	}
+	if prev.Query == "" && call.Query != "" {
+		prev.Query = call.Query
+	}
+	return prev
+}
+
+func webSearchCallScore(call webSearchCall) int {
+	score := len(call.Hits) * 10
+	if strings.TrimSpace(call.Query) != "" {
+		score += 5
+	}
+	if !call.Failed {
+		score += 1
+	}
+	return score
 }
 
 func boundedWebSearchHits(groups ...[]webSearchHit) []webSearchHit {

@@ -16,6 +16,43 @@ import (
 
 // Validate 校验启动所需的安全配置和运行边界。
 func (c Config) Validate() error {
+	if err := c.validateFoundationConfig(); err != nil {
+		return err
+	}
+	if err := c.validateProviderConfig(); err != nil {
+		return err
+	}
+	return c.validateLimitsConfig()
+}
+
+// validateFoundationConfig 校验服务监听、存储、部署、媒体与凭据配置。
+func (c Config) validateFoundationConfig() error {
+	if err := c.validateServerConfig(); err != nil {
+		return err
+	}
+	if err := c.validateFrontendConfig(); err != nil {
+		return err
+	}
+	if err := c.validateDatabaseConfig(); err != nil {
+		return err
+	}
+	if err := c.validateRuntimeStoreConfig(); err != nil {
+		return err
+	}
+	if err := c.validateDeploymentConfig(); err != nil {
+		return err
+	}
+	if err := c.validateMediaConfig(); err != nil {
+		return err
+	}
+	if err := c.validateSecretsConfig(); err != nil {
+		return err
+	}
+	return c.validateAuthConfig()
+}
+
+// validateServerConfig 校验监听地址、请求上限与可信代理。
+func (c Config) validateServerConfig() error {
 	if strings.TrimSpace(c.Server.Listen) == "" {
 		return errors.New("server.listen 不能为空")
 	}
@@ -50,6 +87,11 @@ func (c Config) Validate() error {
 			return fmt.Errorf("server.trustedProxies %q 不能信任整个互联网", value)
 		}
 	}
+	return nil
+}
+
+// validateFrontendConfig 校验对外公开的 API 根地址。
+func (c Config) validateFrontendConfig() error {
 	for _, item := range []struct {
 		name  string
 		value string
@@ -64,6 +106,11 @@ func (c Config) Validate() error {
 			}
 		}
 	}
+	return nil
+}
+
+// validateDatabaseConfig 校验数据库驱动及其连接配置。
+func (c Config) validateDatabaseConfig() error {
 	switch c.Database.Driver {
 	case "sqlite":
 		if strings.TrimSpace(c.Database.SQLite.Path) == "" {
@@ -79,6 +126,11 @@ func (c Config) Validate() error {
 	default:
 		return errors.New("database.driver 必须是 sqlite 或 postgres")
 	}
+	return nil
+}
+
+// validateRuntimeStoreConfig 校验运行态存储驱动及其连接配置。
+func (c Config) validateRuntimeStoreConfig() error {
 	switch c.RuntimeStore.Driver {
 	case "memory":
 	case "redis":
@@ -94,6 +146,11 @@ func (c Config) Validate() error {
 	default:
 		return errors.New("runtimeStore.driver 必须是 memory 或 redis")
 	}
+	return nil
+}
+
+// validateDeploymentConfig 校验副本数以及多实例部署的共享依赖。
+func (c Config) validateDeploymentConfig() error {
 	if c.Deployment.Replicas < 1 || c.Deployment.Replicas > maxDeploymentReplicas {
 		return fmt.Errorf("deployment.replicas 必须在 1 到 %d 之间", maxDeploymentReplicas)
 	}
@@ -114,6 +171,11 @@ func (c Config) Validate() error {
 			return errors.New("多实例部署必须确认 deployment.sharedMedia=true 并挂载共享媒体目录")
 		}
 	}
+	return nil
+}
+
+// validateMediaConfig 校验媒体目录、容量上限与清理策略。
+func (c Config) validateMediaConfig() error {
 	if c.Media.Driver != "local" {
 		return errors.New("media.driver 当前仅支持 local")
 	}
@@ -132,6 +194,11 @@ func (c Config) Validate() error {
 	if c.Media.CleanupInterval.Value() < time.Minute || c.Media.CleanupInterval.Value() > 24*time.Hour {
 		return errors.New("media.cleanupInterval 必须在 1 分钟到 24 小时之间")
 	}
+	return nil
+}
+
+// validateSecretsConfig 校验密钥强度与占位值。
+func (c Config) validateSecretsConfig() error {
 	if len(c.Secrets.JWTSecret) < 32 {
 		return errors.New("secrets.jwtSecret 至少需要 32 个字符")
 	}
@@ -144,9 +211,30 @@ func (c Config) Validate() error {
 	if isExampleSecret(c.BootstrapAdmin.Password) {
 		return errors.New("bootstrapAdmin.password 不能使用示例占位值")
 	}
+	return nil
+}
+
+// validateAuthConfig 校验令牌有效期。
+func (c Config) validateAuthConfig() error {
 	if c.Auth.AccessTokenTTL.Value() <= 0 || c.Auth.RefreshTokenTTL.Value() <= 0 {
 		return errors.New("JWT 有效期必须大于零")
 	}
+	return nil
+}
+
+// validateProviderConfig 校验 Build、Web 与 Console 三个上游提供方。
+func (c Config) validateProviderConfig() error {
+	if err := c.validateProviderBuildConfig(); err != nil {
+		return err
+	}
+	if err := c.validateProviderWebConfig(); err != nil {
+		return err
+	}
+	return c.validateProviderConsoleConfig()
+}
+
+// validateProviderBuildConfig 校验 Grok Build 上游地址、客户端标识与超时。
+func (c Config) validateProviderBuildConfig() error {
 	if err := validateAPIBaseURL("provider.build.baseURL", c.Provider.Build.BaseURL, false); err != nil {
 		return err
 	}
@@ -166,6 +254,11 @@ func (c Config) Validate() error {
 	if idle := c.Provider.Build.StreamIdleTimeout.Value(); idle < settingsdomain.MinBuildStreamIdleTimeout || idle > settingsdomain.MaxBuildStreamIdleTimeout {
 		return errors.New("Grok Build 流式空闲超时必须在 30 秒到 10 分钟之间")
 	}
+	return nil
+}
+
+// validateProviderWebConfig 校验 Grok Web 上游地址、Statsig、Clearance 与超时。
+func (c Config) validateProviderWebConfig() error {
 	webURL, err := url.ParseRequestURI(strings.TrimSpace(c.Provider.Web.BaseURL))
 	if err != nil || webURL.Scheme != "https" || webURL.Host == "" || webURL.User != nil {
 		return errors.New("provider.web.baseURL 必须是无凭据的 HTTPS URL")
@@ -212,6 +305,11 @@ func (c Config) Validate() error {
 	if c.Provider.Web.FreeVideoDurationCap != 0 && (c.Provider.Web.FreeVideoDurationCap < settingsdomain.MinWebFreeVideoDurationCap || c.Provider.Web.FreeVideoDurationCap > settingsdomain.MaxWebFreeVideoDurationCap) {
 		return errors.New("provider.web free 视频时长上限必须在 1 到 15 秒之间")
 	}
+	return nil
+}
+
+// validateProviderConsoleConfig 校验 Grok Console 上游地址与超时。
+func (c Config) validateProviderConsoleConfig() error {
 	consoleURL, err := url.ParseRequestURI(strings.TrimSpace(c.Provider.Console.BaseURL))
 	if err != nil || consoleURL.Scheme != "https" || consoleURL.Host == "" || consoleURL.User != nil {
 		return errors.New("provider.console.baseURL 必须是无凭据的 HTTPS URL")
@@ -222,6 +320,31 @@ func (c Config) Validate() error {
 	if idle := c.Provider.Console.StreamIdleTimeout.Value(); idle < settingsdomain.MinProviderStreamIdleTimeout || idle > settingsdomain.MaxProviderStreamIdleTimeout {
 		return errors.New("Grok Console 流式空闲超时必须在 30 秒到 10 分钟之间")
 	}
+	return nil
+}
+
+// validateLimitsConfig 校验批量、路由、审计、质量守护与默认凭据限额。
+func (c Config) validateLimitsConfig() error {
+	if err := c.validateBatchConfig(); err != nil {
+		return err
+	}
+	if err := c.validateRoutingConfig(); err != nil {
+		return err
+	}
+	if err := c.validateAuditConfig(); err != nil {
+		return err
+	}
+	if err := validateQualityGuardConfig(c.QualityGuard); err != nil {
+		return err
+	}
+	if err := c.validateClientKeyDefaultsConfig(); err != nil {
+		return err
+	}
+	return c.validateAccountsConfig()
+}
+
+// validateBatchConfig 校验批量任务并发与随机延迟。
+func (c Config) validateBatchConfig() error {
 	if c.Batch.ImportConcurrency < 1 || c.Batch.ImportConcurrency > 50 ||
 		c.Batch.ConversionConcurrency < 1 || c.Batch.ConversionConcurrency > 50 ||
 		c.Batch.SyncConcurrency < 1 || c.Batch.SyncConcurrency > 50 ||
@@ -231,6 +354,11 @@ func (c Config) Validate() error {
 	if c.Batch.RandomDelay.Value() < 0 || c.Batch.RandomDelay.Value() > 5*time.Second {
 		return errors.New("批量任务随机延迟必须在 0 到 5 秒之间")
 	}
+	return nil
+}
+
+// validateRoutingConfig 校验路由粘滞、冷却、重试与分段选择器参数。
+func (c Config) validateRoutingConfig() error {
 	if c.Provider.Web.RecoveryBackoffBase.Value() < 5*time.Second || c.Provider.Web.RecoveryBackoffMax.Value() < c.Provider.Web.RecoveryBackoffBase.Value() || c.Provider.Web.RecoveryBackoffMax.Value() > 6*time.Hour {
 		return errors.New("provider.web 恢复退避配置无效")
 	}
@@ -251,6 +379,11 @@ func (c Config) Validate() error {
 	if !validAutoAssignShare(c.Routing.AutoAssignMaxNodeShare) || !validAutoAssignShare(c.Routing.AutoAssignMaxMigrationShare) {
 		return errors.New("routing.autoAssignMaxNodeShare 与 autoAssignMaxMigrationShare 必须为 0 或 0.05 到 1 之间")
 	}
+	return nil
+}
+
+// validateAuditConfig 校验审计队列、批量写入与账本模式。
+func (c Config) validateAuditConfig() error {
 	if c.Audit.BufferSize < 1 || c.Audit.BufferSize > maxAuditBufferSize || c.Audit.BatchSize < 1 || c.Audit.BatchSize > maxAuditBatchSize || c.Audit.BatchSize > c.Audit.BufferSize || c.Audit.FlushInterval.Value() < minAuditFlushInterval || c.Audit.FlushInterval.Value() > maxAuditFlushInterval {
 		return errors.New("audit 队列和批量写入配置无效")
 	}
@@ -272,12 +405,19 @@ func (c Config) Validate() error {
 	if c.Audit.LedgerQueueHighWatermarkPct < 50 || c.Audit.LedgerQueueHighWatermarkPct > 100 {
 		return errors.New("audit.ledgerQueueHighWatermarkPercent 必须在 50 到 100 之间")
 	}
-	if err := validateQualityGuardConfig(c.QualityGuard); err != nil {
-		return err
-	}
+	return nil
+}
+
+// validateClientKeyDefaultsConfig 校验客户端密钥默认限额。
+func (c Config) validateClientKeyDefaultsConfig() error {
 	if c.ClientKeyDefaults.RPMLimit < 1 || c.ClientKeyDefaults.RPMLimit > clientkeydomain.MaxRPMLimit || c.ClientKeyDefaults.MaxConcurrent < 1 || c.ClientKeyDefaults.MaxConcurrent > clientkeydomain.MaxConcurrent {
 		return errors.New("clientKeyDefaults 超出允许范围")
 	}
+	return nil
+}
+
+// validateAccountsConfig 校验账号自动清理与 Build 封禁重认证配置。
+func (c Config) validateAccountsConfig() error {
 	if c.Accounts.AutoCleanReauthInterval.Value() < time.Minute || c.Accounts.AutoCleanReauthInterval.Value() > time.Hour {
 		return errors.New("accounts.autoCleanReauthInterval 必须在 1 分钟到 1 小时之间")
 	}

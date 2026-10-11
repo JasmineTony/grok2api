@@ -14,30 +14,48 @@ func convertChatRequest(body []byte, model string) ([]byte, ResponseOptions, err
 }
 
 func convertChatRequestWithReasoningReplay(body []byte, model string, cache *ReasoningCache, scope string) ([]byte, ResponseOptions, error) {
-	var source map[string]json.RawMessage
-	if err := json.Unmarshal(body, &source); err != nil {
-		return nil, ResponseOptions{}, fmt.Errorf("解析 Chat Completions 请求: %w", err)
-	}
-	var messages []chatMessage
-	if err := json.Unmarshal(source["messages"], &messages); err != nil || len(messages) == 0 {
-		return nil, ResponseOptions{}, errors.New("messages 必须是非空数组")
+	source, messages, err := decodeChatRequestSource(body)
+	if err != nil {
+		return nil, ResponseOptions{}, err
 	}
 	input, err := convertChatMessagesWithReasoningReplay(messages, cache, scope)
 	if err != nil {
 		return nil, ResponseOptions{}, err
 	}
+	target, stopSequences, err := buildChatRequestTarget(source, model, input)
+	if err != nil {
+		return nil, ResponseOptions{}, err
+	}
+	converted, err := json.Marshal(target)
+	return converted, ResponseOptions{StopSequences: stopSequences}.WithReasoningReplay(cache, scope), err
+}
+
+func decodeChatRequestSource(body []byte) (map[string]json.RawMessage, []chatMessage, error) {
+	var source map[string]json.RawMessage
+	if err := json.Unmarshal(body, &source); err != nil {
+		return nil, nil, fmt.Errorf("解析 Chat Completions 请求: %w", err)
+	}
+	var messages []chatMessage
+	if err := json.Unmarshal(source["messages"], &messages); err != nil || len(messages) == 0 {
+		return nil, nil, errors.New("messages 必须是非空数组")
+	}
+	return source, messages, nil
+}
+
+// buildChatRequestTarget 把 Chat Completions 字段映射到 Responses 目标请求。
+func buildChatRequestTarget(source map[string]json.RawMessage, model string, input []any) (map[string]json.RawMessage, []string, error) {
 	target := map[string]json.RawMessage{"model": mustJSON(model), "input": mustJSON(input)}
 	copyFields(target, source, "stream", "temperature", "top_p", "parallel_tool_calls", "metadata", "store", "service_tier")
 	if raw := source["user"]; !isEmptyJSON(raw) {
 		var user string
 		if json.Unmarshal(raw, &user) != nil || strings.TrimSpace(user) == "" {
-			return nil, ResponseOptions{}, errors.New("user 必须是非空字符串")
+			return nil, nil, errors.New("user 必须是非空字符串")
 		}
 		target["safety_identifier"] = mustJSON(strings.TrimSpace(user))
 	}
 	stopSequences, err := parseChatStopSequences(source["stop"])
 	if err != nil {
-		return nil, ResponseOptions{}, err
+		return nil, nil, err
 	}
 	if raw := firstJSON(source["max_completion_tokens"], source["max_tokens"]); !isEmptyJSON(raw) {
 		target["max_output_tokens"] = raw
@@ -45,22 +63,16 @@ func convertChatRequestWithReasoningReplay(body []byte, model string, cache *Rea
 	if raw := source["response_format"]; !isEmptyJSON(raw) {
 		format, err := convertResponseFormat(raw)
 		if err != nil {
-			return nil, ResponseOptions{}, err
+			return nil, nil, err
 		}
 		target["text"] = mustJSON(map[string]json.RawMessage{"format": format})
 	}
 	if raw := source["reasoning_effort"]; !isEmptyJSON(raw) {
 		target["reasoning"] = mustJSON(map[string]json.RawMessage{"effort": raw})
 	}
-	var tools []any
-	if raw := source["tools"]; !isEmptyJSON(raw) {
-		tools, err = convertChatTools(raw)
-		if err != nil {
-			return nil, ResponseOptions{}, err
-		}
-	}
-	if !isEmptyJSON(source["web_search_options"]) && !containsToolType(tools, "web_search") {
-		tools = append(tools, map[string]any{"type": "web_search"})
+	tools, err := convertChatToolsWithWebSearch(source)
+	if err != nil {
+		return nil, nil, err
 	}
 	if len(tools) > 0 {
 		target["tools"] = mustJSON(tools)
@@ -68,12 +80,27 @@ func convertChatRequestWithReasoningReplay(body []byte, model string, cache *Rea
 	if raw := source["tool_choice"]; !isEmptyJSON(raw) {
 		choice, err := convertChatToolChoice(raw)
 		if err != nil {
-			return nil, ResponseOptions{}, err
+			return nil, nil, err
 		}
 		target["tool_choice"] = choice
 	}
-	converted, err := json.Marshal(target)
-	return converted, ResponseOptions{StopSequences: stopSequences}.WithReasoningReplay(cache, scope), err
+	return target, stopSequences, nil
+}
+
+// convertChatToolsWithWebSearch 转换函数工具，并按 web_search_options 追加托管搜索工具。
+func convertChatToolsWithWebSearch(source map[string]json.RawMessage) ([]any, error) {
+	var tools []any
+	if raw := source["tools"]; !isEmptyJSON(raw) {
+		converted, err := convertChatTools(raw)
+		if err != nil {
+			return nil, err
+		}
+		tools = converted
+	}
+	if !isEmptyJSON(source["web_search_options"]) && !containsToolType(tools, "web_search") {
+		tools = append(tools, map[string]any{"type": "web_search"})
+	}
+	return tools, nil
 }
 
 func parseChatStopSequences(raw json.RawMessage) ([]string, error) {

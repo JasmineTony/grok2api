@@ -43,88 +43,116 @@ func (s *Service) runSupervised() {
 	}
 }
 
-func (s *Service) run() {
-	var timer *time.Timer
-	var timerC <-chan time.Time
-	requests := make([]auditWriteRequest, 0, int(s.batchSize.Load()))
-	hasAck := false
-	resetTimer := func(delay time.Duration) {
-		if delay <= 0 {
-			delay = auditDefaultCommitDelay
-		}
-		if timer == nil {
-			timer = time.NewTimer(delay)
-		} else {
-			if !timer.Stop() {
-				select {
-				case <-timer.C:
-				default:
-				}
+// auditWriteLoop 持有批量写入循环的可变状态：计时器、待提交请求与 ack 标记。
+// 仅在 run 的调用栈内存在，避免把循环状态摊到多个辅助函数的参数上。
+type auditWriteLoop struct {
+	service  *Service
+	requests []auditWriteRequest
+	timer    *time.Timer
+	timerC   <-chan time.Time
+	hasAck   bool
+}
+
+func (l *auditWriteLoop) resetTimer(delay time.Duration) {
+	if delay <= 0 {
+		delay = auditDefaultCommitDelay
+	}
+	if l.timer == nil {
+		l.timer = time.NewTimer(delay)
+	} else {
+		if !l.timer.Stop() {
+			select {
+			case <-l.timer.C:
+			default:
 			}
-			timer.Reset(delay)
 		}
-		timerC = timer.C
+		l.timer.Reset(delay)
 	}
-	defer func() {
-		if timer != nil {
-			timer.Stop()
-		}
-	}()
-	flush := func() {
-		if len(requests) == 0 {
-			return
-		}
-		s.persistBatch(requests)
-		requests = requests[:0]
-		hasAck = false
-		timerC = nil
+	l.timerC = l.timer.C
+}
+
+func (l *auditWriteLoop) flush() {
+	if len(l.requests) == 0 {
+		return
 	}
-	appendRequest := func(request auditWriteRequest) {
-		wasEmpty := len(requests) == 0
-		requests = append(requests, request)
-		if request.ack != nil && !hasAck {
-			hasAck = true
-			resetTimer(time.Duration(s.commitDelay.Load()))
-		} else if wasEmpty {
-			resetTimer(time.Duration(s.flushInterval.Load()))
-		}
+	l.service.persistBatch(l.requests)
+	l.requests = l.requests[:0]
+	l.hasAck = false
+	l.timerC = nil
+}
+
+func (l *auditWriteLoop) appendRequest(request auditWriteRequest) {
+	wasEmpty := len(l.requests) == 0
+	l.requests = append(l.requests, request)
+	if request.ack != nil && !l.hasAck {
+		l.hasAck = true
+		l.resetTimer(time.Duration(l.service.commitDelay.Load()))
+	} else if wasEmpty {
+		l.resetTimer(time.Duration(l.service.flushInterval.Load()))
 	}
+}
+
+// collectOnStop 在停止信号后排空已入队请求并提交剩余批次。
+func (l *auditWriteLoop) collectOnStop() {
 	for {
 		select {
-		case request := <-s.queue:
-			s.notifyQueueSpace()
-			appendRequest(request)
-			if len(requests) >= int(s.batchSize.Load()) {
-				flush()
+		case request := <-l.service.queue:
+			l.service.notifyQueueSpace()
+			l.appendRequest(request)
+			if len(l.requests) >= int(l.service.batchSize.Load()) {
+				l.flush()
 			}
-		case <-timerC:
-			flush()
-		case <-s.configChanged:
-			if len(requests) >= int(s.batchSize.Load()) {
-				flush()
-			} else if len(requests) > 0 {
-				if hasAck {
-					resetTimer(time.Duration(s.commitDelay.Load()))
-				} else {
-					resetTimer(time.Duration(s.flushInterval.Load()))
-				}
-			}
-		case <-s.stop:
-			for {
-				select {
-				case request := <-s.queue:
-					s.notifyQueueSpace()
-					appendRequest(request)
-					if len(requests) >= int(s.batchSize.Load()) {
-						flush()
-					}
-				default:
-					flush()
-					return
-				}
-			}
+		default:
+			l.flush()
+			return
 		}
 	}
+}
+
+// applyConfigChange 在批量参数变更后按当前待提交状态重算提交期限。
+func (l *auditWriteLoop) applyConfigChange() {
+	if len(l.requests) >= int(l.service.batchSize.Load()) {
+		l.flush()
+		return
+	}
+	if len(l.requests) == 0 {
+		return
+	}
+	if l.hasAck {
+		l.resetTimer(time.Duration(l.service.commitDelay.Load()))
+		return
+	}
+	l.resetTimer(time.Duration(l.service.flushInterval.Load()))
+}
+
+func (l *auditWriteLoop) run() {
+	defer func() {
+		if l.timer != nil {
+			l.timer.Stop()
+		}
+	}()
+	for {
+		select {
+		case request := <-l.service.queue:
+			l.service.notifyQueueSpace()
+			l.appendRequest(request)
+			if len(l.requests) >= int(l.service.batchSize.Load()) {
+				l.flush()
+			}
+		case <-l.timerC:
+			l.flush()
+		case <-l.service.configChanged:
+			l.applyConfigChange()
+		case <-l.service.stop:
+			l.collectOnStop()
+			return
+		}
+	}
+}
+
+func (s *Service) run() {
+	loop := auditWriteLoop{service: s, requests: make([]auditWriteRequest, 0, int(s.batchSize.Load()))}
+	loop.run()
 }
 
 func (s *Service) persistBatch(requests []auditWriteRequest) {

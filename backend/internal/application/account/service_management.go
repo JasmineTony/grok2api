@@ -269,66 +269,12 @@ func (s *Service) Update(ctx context.Context, id uint64, input UpdateInput) (Vie
 	if err != nil {
 		return View{}, mapRepositoryError(err)
 	}
-	enabledChanged := input.Enabled != nil && value.Enabled != *input.Enabled
-	if input.Name != nil {
-		value.Name = strings.TrimSpace(*input.Name)
-		if value.Name == "" {
-			return View{}, invalidInput("账号名称不能为空")
-		}
+	enabledChanged, err := applyAccountUpdateFields(&value, input)
+	if err != nil {
+		return View{}, err
 	}
-	if input.Enabled != nil {
-		value.Enabled = *input.Enabled
-	}
-	if input.Priority != nil {
-		value.Priority = *input.Priority
-	}
-	if input.MaxConcurrent != nil {
-		if *input.MaxConcurrent < 1 || *input.MaxConcurrent > accountdomain.MaxConcurrent {
-			return View{}, invalidInput("maxConcurrent 必须在 1 到 256 之间")
-		}
-		value.MaxConcurrent = *input.MaxConcurrent
-	}
-	if input.MinimumRemaining != nil {
-		if *input.MinimumRemaining < 0 {
-			return View{}, invalidInput("minimumRemaining 不能小于零")
-		}
-		value.MinimumRemaining = *input.MinimumRemaining
-	}
-	if input.ClearCloudflareCookies {
-		value.EncryptedCloudflareCookie = ""
-	} else if input.CloudflareCookies != nil {
-		if value.Provider == accountdomain.ProviderBuild {
-			return View{}, invalidInput("Grok Build 账号不使用 Cloudflare Cookie")
-		}
-		if len(*input.CloudflareCookies) > 16<<10 {
-			return View{}, invalidInput("Cloudflare Cookie 不能超过 16 KiB")
-		}
-		if strings.TrimSpace(*input.CloudflareCookies) != "" {
-			cookies := egressapp.SanitizeCloudflareCookies(*input.CloudflareCookies)
-			if cookies == "" {
-				return View{}, invalidInput("Cloudflare Cookie 中没有有效字段")
-			}
-			encrypted, encryptErr := s.cipher.Encrypt(cookies)
-			if encryptErr != nil {
-				return View{}, encryptErr
-			}
-			value.EncryptedCloudflareCookie = encrypted
-		}
-	}
-	if input.BuildSuperEntitled != nil {
-		if value.Provider != accountdomain.ProviderBuild {
-			return View{}, invalidInput("仅 Grok Build 账号支持设置 Build Super entitlement")
-		}
-		value.BuildSuperEntitled = *input.BuildSuperEntitled
-	}
-	if input.BuildRouteMode != nil {
-		if value.Provider != accountdomain.ProviderBuild {
-			return View{}, invalidInput("仅 Grok Build 账号支持设置上游地址")
-		}
-		if !input.BuildRouteMode.IsValid() {
-			return View{}, invalidInput("Build 上游地址必须是 auto、build 或 xai")
-		}
-		value.BuildRouteMode = *input.BuildRouteMode
+	if err := s.applyAccountCredentialUpdate(&value, input); err != nil {
+		return View{}, err
 	}
 	updated, err := s.accounts.Update(ctx, value)
 	if err != nil {
@@ -345,6 +291,86 @@ func (s *Service) Update(ctx context.Context, id uint64, input UpdateInput) (Vie
 	}
 	view.EnabledChanged = enabledChanged
 	return view, nil
+}
+
+// applyAccountUpdateFields 应用账号名称、启用状态、优先级与并发等基础字段，返回启用状态是否变化。
+func applyAccountUpdateFields(value *accountdomain.Credential, input UpdateInput) (bool, error) {
+	enabledChanged := input.Enabled != nil && value.Enabled != *input.Enabled
+	if input.Name != nil {
+		value.Name = strings.TrimSpace(*input.Name)
+		if value.Name == "" {
+			return false, invalidInput("账号名称不能为空")
+		}
+	}
+	if input.Enabled != nil {
+		value.Enabled = *input.Enabled
+	}
+	if input.Priority != nil {
+		value.Priority = *input.Priority
+	}
+	if input.MaxConcurrent != nil {
+		if *input.MaxConcurrent < 1 || *input.MaxConcurrent > accountdomain.MaxConcurrent {
+			return false, invalidInput("maxConcurrent 必须在 1 到 256 之间")
+		}
+		value.MaxConcurrent = *input.MaxConcurrent
+	}
+	if input.MinimumRemaining != nil {
+		if *input.MinimumRemaining < 0 {
+			return false, invalidInput("minimumRemaining 不能小于零")
+		}
+		value.MinimumRemaining = *input.MinimumRemaining
+	}
+	return enabledChanged, nil
+}
+
+// applyAccountCredentialUpdate 应用 Cloudflare Cookie、Build Super entitlement 与上游地址等更新。
+func (s *Service) applyAccountCredentialUpdate(value *accountdomain.Credential, input UpdateInput) error {
+	if input.ClearCloudflareCookies {
+		value.EncryptedCloudflareCookie = ""
+	} else if input.CloudflareCookies != nil {
+		if err := s.replaceCloudflareCookie(value, *input.CloudflareCookies); err != nil {
+			return err
+		}
+	}
+	if input.BuildSuperEntitled != nil {
+		if value.Provider != accountdomain.ProviderBuild {
+			return invalidInput("仅 Grok Build 账号支持设置 Build Super entitlement")
+		}
+		value.BuildSuperEntitled = *input.BuildSuperEntitled
+	}
+	if input.BuildRouteMode != nil {
+		if value.Provider != accountdomain.ProviderBuild {
+			return invalidInput("仅 Grok Build 账号支持设置上游地址")
+		}
+		if !input.BuildRouteMode.IsValid() {
+			return invalidInput("Build 上游地址必须是 auto、build 或 xai")
+		}
+		value.BuildRouteMode = *input.BuildRouteMode
+	}
+	return nil
+}
+
+// replaceCloudflareCookie 校验并加密新的 Cloudflare Cookie；空内容视为不修改。
+func (s *Service) replaceCloudflareCookie(value *accountdomain.Credential, rawCookies string) error {
+	if value.Provider == accountdomain.ProviderBuild {
+		return invalidInput("Grok Build 账号不使用 Cloudflare Cookie")
+	}
+	if len(rawCookies) > 16<<10 {
+		return invalidInput("Cloudflare Cookie 不能超过 16 KiB")
+	}
+	if strings.TrimSpace(rawCookies) == "" {
+		return nil
+	}
+	cookies := egressapp.SanitizeCloudflareCookies(rawCookies)
+	if cookies == "" {
+		return invalidInput("Cloudflare Cookie 中没有有效字段")
+	}
+	encrypted, encryptErr := s.cipher.Encrypt(cookies)
+	if encryptErr != nil {
+		return encryptErr
+	}
+	value.EncryptedCloudflareCookie = encrypted
+	return nil
 }
 
 // ClearCooldown resets request-path health so a cooled account can be

@@ -588,10 +588,26 @@ v0.1.2 发布后继续清空已登记存量：**BE-01 的 >1000 行文件类清�
 - 语义等价性由「逐行搬运 + 多重集比对 + 编译 + 全量测试」保证；PostgreSQL/Redis 专属路径本机未执行（`Skipped`）。
 
 - **2026-10-11 全量口径复核（新增测量，非新增债务）**：此前 §12.2 / §16.4 的「REV-2 存量 7 个」只统计 `gateway` / `inference` / `provider-web` 三个包（其中 `inference` 0、`provider-web` 0）。以 stdlib `go/parser`+`go/ast` 对 `backend/internal/**` 全量复核（427 个生产文件 / 4113 个函数，口径 `Rbrace.Line - Lbrace.Line + 1`，与 §12.2 登记口径一致，校验点 `createResponseAt` = 908 行吻合）：**>50 行生产函数 174 个**（大型 >200：8；中等 61–200：110；轻微 51–60：56），**>600 行生产文件 12 个**（`docs/docs.go` 945 行为 swag 生成物，已排除）。`gateway` 实测为 5 个——`executeImage` 57→40、`executeVoice` 54→40 已随阶段 6 收尾下降，登记值未同步。
-- 结论：后端函数级 REV-2 的「7 项」是**三包口径**，全后端口径为 **174 项 / 12 文件**；两者都不得记为「已通过」，均按 P2/P3 分阶段清偿。后端不在 REV-1 文件门禁扫描范围（`AGENTS.md` §5），该 12 个文件按 P3 登记。
+- 结论：后端函数级 REV-2 的「7 项」是**三包口径**，全后端口径为 **174 项 / 12 文件**；两者都不得记为「已通过」，均按 P2/P3 分阶段清偿。后端不在 REV-1 文件门禁扫描范围（`AGENTS.md` §5），该 12 个文件按 P3 登记。 **2026-10-11（续）该 174 项与 12 文件已全部清零，见 §17。**
 
 ### 16.5 CI 加固实施与登记（BE-11~BE-14，2026-10-11）
 
 - 实施提交：`e57fadda`（`ghcr-image.yml`：tag 推送不取消、四个 job 超时、集成用例双重断言、`uses:` 固定 SHA）、`79230b36`（`frontend/package.json` 声明 `engines.node >=22` 并同步 README）；本机 2026-10-11 补固定 `codeql.yml` / `stale.yml` 的 4 处浮动 `uses:`。
 - 验证 run：`38121078190`（main，`1a510f5d`，其工作流定义含上述全部加固）`conclusion=success`，`Verify` job 第 5–17 步（含 `Verify version carriers are aligned`、`Assert required integration tests ran`、`Race backend`、`Vet backend`、`Verify Swagger document`、`Verify frontend`、`Run full-stack E2E`）全 success，`Publish image (amd64)` / `Publish image (arm64)` / `Merge image` 全 success；同提交 `CodeQL Advanced` run `38121078196` success。
 - 未覆盖（如实登记）：`ghcr-image.yml:20` 的 tag 专用表达式自实施后**尚无真实 tag 推送执行**（`v0.1.2` tag run `38108809200` 早于 `e57fadda`），故「tag 推送不被取消」目前只有静态证据；`codeql.yml` / `stale.yml` 仍未设 `timeout-minutes`。
+
+## 17. 2026-10-11（续）后端 REV-2 函数级与文件级全量清零（BE-15）
+
+- **范围与口径**：`backend/internal/**` 全部生产代码（`docs/docs.go` 为 swag 生成物，排除）。函数体行数 = `Rbrace.Line - Lbrace.Line + 1`，与 §12.2 / §16.4 同一口径；文件行数为文件总行数。工具为本轮自建 stdlib `go/parser`+`go/ast` 计数器（扫描 `.go` 且排除 `_test.go` 与 `docs/`）。
+- **结果（本机实测）**：以 `HEAD 2148def8` 的独立 worktree 为改动前基线，**>50 行生产函数 163 → 0**、**>600 行生产文件 2 → 0**（基线 2 个为 `application/gateway/service_request.go` 967 行与 `domain/audit/pricing.go` 628 行）。§16.4 登记的 174 项是 §16 时点的全后端口径，两者不矛盾：163 是 §16 之后两轮（`6b39ea93`、`2148def8`）已清偿后的新基线。
+- **实施方式**：20 个并行子代理按包/文件切分、边界互不重叠；全部只做「同包未导出辅助函数/方法抽取」与同包文件级搬运。导出签名、接收者类型、错误字符串、日志与 warning 文案、字段与 `json`/`yaml` tag、SQL 文本与参数顺序、语句相对顺序、副作用顺序、锁持有范围与事务边界逐项保持；跨块共享的局部状态改由参数/返回值或函数内局部结构体承载，未引入包级可变状态。
+- **最大项**：`createResponseAt` 908 → 24 行（拆出 56 个辅助函数，`service_request.go` 966 → 426 行并拆为 `service_request.go` / `service_request_attempt.go` / `service_request_failure.go` 三个同包文件）；`ForwardResponse`（cli）277 → 45、`Validate`（config）282 → 9、`runVideoJob` 288、`OpenVoiceWebSocket` 247、`acquire`（gateway）246 同批清零。
+- **新增同包文件 5 个**（纯搬运/职责归位，标识符逐字未变）：`application/gateway/service_request_attempt.go`、`application/gateway/service_request_failure.go`、`application/gateway/video_job_run.go`、`domain/audit/pricing_reconstruction.go`、`infra/provider/cli/responses_sse_reader.go`（SSE 读取器从 `responses_response.go` 迁出，该文件 642 → 523 行，避免拆分后越过 REV-1）。
+- **未改测试**：`git status --porcelain` 中 `_test.go` 命中 **0**；未删除、未弱化任何断言。
+- **验证（本机实测）**：
+  - `go build ./...` exit 0；`go vet ./...` exit 0。
+  - `go test ./... -count=1` exit 0；`-json` 统计 **64 包 ok / 0 FAIL / 2935 用例通过 / 20 跳过 / 11 包无测试文件**——与 §16.3 改动前的计数逐项相同，用例集与判定未被改动。
+  - **导出 API 面比对**：自建 `go/ast` 工具导出「包相对路径 + 导出名 + 归一化签名/类型定义」共 **2228 条**，`HEAD 2148def8` 独立 worktree 与工作区**逐条相同（差异 0 条）**，即公共契约未变。
+  - 全部改动路径（118 修改 + 5 新增，均在 `backend/internal/**` 内）经「CRLF 归一化后与 `gofmt` 输出比对」判定 `gofmt-clean`；`git diff --check` exit 0。工作区 CRLF 属 `.gitattributes` 约定的本地表现，仓库存储侧始终为 LF。
+- **未覆盖（如实登记）**：`go test -race ./...` 本机 **Blocked**（`-race requires cgo`，无 C 编译器），须由 Linux CI 覆盖；20 个 PostgreSQL·Redis 集成用例本机 **Skipped**（缺 `TEST_POSTGRES_DSN`/`TEST_REDIS_ADDRESS`），由 CI 隔离服务覆盖。并发语义（锁持有范围、锁序、`defer` 释放点）由逐函数人工比对与上述用例集保证，**未**由 race 检测器独立验证。
+- **回滚**：`git revert <本提交>`。本次为纯结构拆分，无数据、协议、配置或依赖迁移。

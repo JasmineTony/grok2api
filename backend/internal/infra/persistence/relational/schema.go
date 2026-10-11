@@ -136,6 +136,31 @@ func (d *Database) initializeSchema(ctx context.Context) error {
 			return fmt.Errorf("清理旧版所有域出口节点: %w", err)
 		}
 	}
+	if err := d.migrateSchemaTables(ctx); err != nil {
+		return err
+	}
+	if hadGlobalSubscriptionProxy {
+		if err := d.migratePerSourceSubscriptionProxy(ctx); err != nil {
+			return fmt.Errorf("迁移代理订阅拉取代理: %w", err)
+		}
+	}
+	if err := d.migrateStandaloneEgressProxyProfiles(ctx); err != nil {
+		return fmt.Errorf("迁移独立出口代理配置: %w", err)
+	}
+	if err := d.migrateLegacySchemaColumns(ctx, hadLegacyAccountPool, !hadProviderScope, !hadTierScope); err != nil {
+		return err
+	}
+	if err := d.migrateSchemaConstraints(ctx); err != nil {
+		return err
+	}
+	if err := d.migrateMediaJobSchema(ctx); err != nil {
+		return err
+	}
+	return d.finalizeSchemaMigration(ctx)
+}
+
+// migrateSchemaTables 按方言执行模型 AutoMigrate；SQLite 需要暂停外键才能重建父表。
+func (d *Database) migrateSchemaTables(ctx context.Context) error {
 	autoMigrate := func() error {
 		return d.db.WithContext(ctx).AutoMigrate(schemaModels...)
 	}
@@ -150,15 +175,12 @@ func (d *Database) initializeSchema(ctx context.Context) error {
 	if migrateErr != nil {
 		return fmt.Errorf("初始化数据库表: %w", migrateErr)
 	}
-	if hadGlobalSubscriptionProxy {
-		if err := d.migratePerSourceSubscriptionProxy(ctx); err != nil {
-			return fmt.Errorf("迁移代理订阅拉取代理: %w", err)
-		}
-	}
-	if err := d.migrateStandaloneEgressProxyProfiles(ctx); err != nil {
-		return fmt.Errorf("迁移独立出口代理配置: %w", err)
-	}
-	if err := d.migrateClientKeyAccountScopes(ctx, hadLegacyAccountPool, !hadProviderScope, !hadTierScope); err != nil {
+	return nil
+}
+
+// migrateLegacySchemaColumns 迁移客户端 Key 调用范围与 Build 相关的历史列。
+func (d *Database) migrateLegacySchemaColumns(ctx context.Context, hadLegacyAccountPool, missingProviderScope, missingTierScope bool) error {
+	if err := d.migrateClientKeyAccountScopes(ctx, hadLegacyAccountPool, missingProviderScope, missingTierScope); err != nil {
 		return fmt.Errorf("迁移客户端 Key 调用范围: %w", err)
 	}
 	if err := d.migrateBuildResponseHeaderTimeout(ctx); err != nil {
@@ -167,6 +189,11 @@ func (d *Database) initializeSchema(ctx context.Context) error {
 	if err := d.migrateProviderStreamIdleTimeouts(ctx); err != nil {
 		return fmt.Errorf("迁移 Provider 流式空闲超时: %w", err)
 	}
+	return nil
+}
+
+// migrateSchemaConstraints 迁移 Console、出口、审计与模型路由的表级约束。
+func (d *Database) migrateSchemaConstraints(ctx context.Context) error {
 	if err := d.ensureConsoleConstraints(ctx); err != nil {
 		return fmt.Errorf("迁移 Console 数据库约束: %w", err)
 	}
@@ -179,6 +206,11 @@ func (d *Database) initializeSchema(ctx context.Context) error {
 	if err := d.ensureModelRouteCapabilityConstraints(ctx); err != nil {
 		return fmt.Errorf("迁移模型路由能力约束: %w", err)
 	}
+	return nil
+}
+
+// migrateMediaJobSchema 迁移 media job 约束、操作类型、输入长度、待回填索引与外键。
+func (d *Database) migrateMediaJobSchema(ctx context.Context) error {
 	if err := d.ensureMediaJobConstraints(ctx); err != nil {
 		return fmt.Errorf("迁移 media job 数据库约束: %w", err)
 	}
@@ -199,6 +231,12 @@ func (d *Database) initializeSchema(ctx context.Context) error {
 	if err := d.ensureMediaJobAccountForeignKey(ctx); err != nil {
 		return fmt.Errorf("迁移 media job 账号外键: %w", err)
 	}
+	return nil
+}
+
+// finalizeSchemaMigration 迁移剩余约束、回填历史数据、清理冗余索引并创建统一索引。
+func (d *Database) finalizeSchemaMigration(ctx context.Context) error {
+	db := d.db.WithContext(ctx)
 	if err := d.ensureMediaAssetConstraints(ctx); err != nil {
 		return fmt.Errorf("迁移 media asset 数据库约束: %w", err)
 	}

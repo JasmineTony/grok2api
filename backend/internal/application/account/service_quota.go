@@ -322,24 +322,7 @@ func (s *Service) refreshQuotaMode(ctx context.Context, id uint64, mode string) 
 	var syncedAt time.Time
 	var tier accountdomain.WebTier
 	if value.Provider == accountdomain.ProviderConsole {
-		// Console /usage always returns Chat, Image and Video together. Persist the
-		// response as one authoritative snapshot so each media route observes the
-		// same upstream usage generation.
-		var snapshot provider.QuotaSnapshot
-		snapshot, err = adapter.SyncQuota(ctx, value)
-		if err == nil {
-			windows = snapshot.Windows
-			syncedAt = snapshot.SyncedAt
-			for _, candidate := range windows {
-				if candidate.Mode == mode {
-					window = candidate
-					break
-				}
-			}
-			if window.Mode == "" {
-				err = fmt.Errorf("Console usage 响应缺少 %s 额度", mode)
-			}
-		}
+		windows, syncedAt, err = s.syncConsoleQuotaSnapshot(ctx, adapter, value, mode)
 	} else {
 		window, err = adapter.SyncQuotaMode(ctx, value, mode)
 		windows = []accountdomain.QuotaWindow{window}
@@ -368,6 +351,33 @@ func (s *Service) refreshQuotaMode(ctx context.Context, id uint64, mode string) 
 		return quotaRefreshResult{}, err
 	}
 	return quotaRefreshResult{Credential: value, Windows: windows}, nil
+}
+
+// syncConsoleQuotaSnapshot 拉取 Console 完整 /usage 快照，并校验其中包含目标 mode 的额度窗口。
+//
+// Console /usage always returns Chat, Image and Video together. Persist the
+// response as one authoritative snapshot so each media route observes the
+// same upstream usage generation.
+func (s *Service) syncConsoleQuotaSnapshot(ctx context.Context, adapter provider.QuotaAdapter, value accountdomain.Credential, mode string) ([]accountdomain.QuotaWindow, time.Time, error) {
+	snapshot, err := adapter.SyncQuota(ctx, value)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	windows := snapshot.Windows
+	if !hasQuotaWindowMode(windows, mode) {
+		return windows, snapshot.SyncedAt, fmt.Errorf("Console usage 响应缺少 %s 额度", mode)
+	}
+	return windows, snapshot.SyncedAt, nil
+}
+
+// hasQuotaWindowMode 判断额度窗口列表是否包含指定 mode。
+func hasQuotaWindowMode(windows []accountdomain.QuotaWindow, mode string) bool {
+	for _, window := range windows {
+		if window.Mode == mode {
+			return true
+		}
+	}
+	return false
 }
 
 func quotaSyncKey(accountID uint64, mode string) string {

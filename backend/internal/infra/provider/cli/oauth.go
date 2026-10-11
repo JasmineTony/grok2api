@@ -114,27 +114,33 @@ func (c *oauthClient) exchange(ctx context.Context, form url.Values, fallbackRef
 		return tokenPayload{}, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		oauthError := parseOAuthErrorResponse(body, resp.StatusCode)
+		return tokenPayload{}, exchangeErrorResponse(resp, body, deviceFlow)
+	}
+	return decodeTokenPayload(resp.StatusCode, body, fallbackRefresh)
+}
+
+// exchangeErrorResponse 把非 2xx OAuth 响应映射为设备流轮询信号或凭据刷新错误。
+func exchangeErrorResponse(resp *http.Response, body []byte, deviceFlow bool) error {
+	oauthError := parseOAuthErrorResponse(body, resp.StatusCode)
+	if deviceFlow {
 		switch oauthError.Code {
 		case "authorization_pending":
-			if deviceFlow {
-				return tokenPayload{}, provider.ErrAuthorizationPending
-			}
+			return provider.ErrAuthorizationPending
 		case "slow_down":
-			if deviceFlow {
-				return tokenPayload{}, provider.ErrSlowDown
-			}
+			return provider.ErrSlowDown
 		case "access_denied", "expired_token":
-			if deviceFlow {
-				return tokenPayload{}, provider.ErrAuthorizationDenied
-			}
-		}
-		return tokenPayload{}, &provider.CredentialRefreshError{
-			Status: resp.StatusCode, Code: oauthError.Code, Message: oauthError.Message, Response: oauthError.Response,
-			Permanent:  provider.IsPermanentCredentialRefreshErrorCode(oauthError.Code),
-			RetryAfter: parseOAuthRetryAfter(resp.Header.Get("Retry-After")),
+			return provider.ErrAuthorizationDenied
 		}
 	}
+	return &provider.CredentialRefreshError{
+		Status: resp.StatusCode, Code: oauthError.Code, Message: oauthError.Message, Response: oauthError.Response,
+		Permanent:  provider.IsPermanentCredentialRefreshErrorCode(oauthError.Code),
+		RetryAfter: parseOAuthRetryAfter(resp.Header.Get("Retry-After")),
+	}
+}
+
+// decodeTokenPayload 解析 2xx OAuth 令牌响应，补齐默认有效期并判定刷新令牌是否轮换。
+func decodeTokenPayload(status int, body []byte, fallbackRefresh string) (tokenPayload, error) {
 	var value struct {
 		AccessToken  string `json:"access_token"`
 		RefreshToken string `json:"refresh_token"`
@@ -145,7 +151,7 @@ func (c *oauthClient) exchange(ctx context.Context, form url.Values, fallbackRef
 		return tokenPayload{}, fmt.Errorf("解析 xAI OAuth 响应: %w", err)
 	}
 	if value.AccessToken == "" {
-		return tokenPayload{}, &provider.CredentialRefreshError{Status: resp.StatusCode, Code: "missing_access_token", Message: "OAuth response did not contain access_token"}
+		return tokenPayload{}, &provider.CredentialRefreshError{Status: status, Code: "missing_access_token", Message: "OAuth response did not contain access_token"}
 	}
 	if value.ExpiresIn <= 0 {
 		value.ExpiresIn = 3600
@@ -177,6 +183,16 @@ func parseOAuthErrorResponse(body []byte, status int) oauthErrorDetails {
 		jsonStringAt(payload, "code"),
 		result.Code,
 	)
+	result.Message = oauthErrorMessage(payload)
+	redacted, err := json.Marshal(redactOAuthDiagnosticValue("", payload))
+	if err == nil {
+		result.Response = truncateOAuthDiagnostic(string(redacted), 4096)
+	}
+	return result
+}
+
+// oauthErrorMessage 汇总各上游错误形态中的可读消息：逐条规范化、去重后用 · 连接。
+func oauthErrorMessage(payload any) string {
 	rootMessage, _ := payload.(string)
 	messages := []string{
 		rootMessage,
@@ -191,25 +207,22 @@ func parseOAuthErrorResponse(body []byte, status int) oauthErrorDetails {
 		jsonStringAt(payload, "error", "description"),
 	}
 	seen := make(map[string]struct{}, len(messages))
-	for _, message := range messages {
-		message = normalizeOAuthErrorMessage(message, 512)
-		if message == "" {
+	message := ""
+	for _, candidate := range messages {
+		candidate = normalizeOAuthErrorMessage(candidate, 512)
+		if candidate == "" {
 			continue
 		}
-		if _, exists := seen[message]; exists {
+		if _, exists := seen[candidate]; exists {
 			continue
 		}
-		seen[message] = struct{}{}
-		if result.Message != "" {
-			result.Message += " · "
+		seen[candidate] = struct{}{}
+		if message != "" {
+			message += " · "
 		}
-		result.Message += message
+		message += candidate
 	}
-	redacted, err := json.Marshal(redactOAuthDiagnosticValue("", payload))
-	if err == nil {
-		result.Response = truncateOAuthDiagnostic(string(redacted), 4096)
-	}
-	return result
+	return message
 }
 
 func jsonStringAt(value any, path ...string) string {

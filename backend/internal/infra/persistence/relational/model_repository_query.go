@@ -76,56 +76,107 @@ type modelRouteGroupRow struct {
 // routes. This keeps capability groups complete under filters and avoids the
 // admin UI fetching and annotating the entire route table.
 func (r *ModelRepository) ListGroups(ctx context.Context, input repository.ModelListQuery) ([]model.RouteGroup, int64, error) {
-	// Route-level metrics must be calculated before grouping. In particular,
-	// PostgreSQL does not allow a correlated metric to reference model_routes.id
-	// from inside a grouped SELECT when id is not itself a grouping key.
-	buildRouteMetricsQuery := func(includeMetrics bool) *gorm.DB {
-		columns := []string{
-			"model_routes.id",
-			"model_routes.provider",
-			"model_routes.public_id",
-			"model_routes.upstream_model",
-			"model_routes.origin",
-			"model_routes.enabled",
-			"model_routes.created_at",
-		}
-		if includeMetrics && input.Page.Sort.Field == "accountSupport" {
-			columns = append(columns, modelSupportSortExpression+" AS support_sort")
-		}
-		if includeMetrics && input.Page.Sort.Field == "lastSyncedAt" {
-			columns = append(columns, modelSyncedSortExpression+" AS last_synced_sort")
-		}
-		query := r.db.db.WithContext(ctx).Model(&modelRouteModel{}).Select(strings.Join(columns, ", "))
-		if search := strings.TrimSpace(input.Page.Search); search != "" {
-			pattern := "%" + strings.ToLower(search) + "%"
-			query = query.Where("LOWER(model_routes.public_id) LIKE ? OR LOWER(model_routes.upstream_model) LIKE ?", pattern, pattern)
-		}
-		if input.Filter.Provider != "" {
-			query = query.Where("model_routes.provider = ?", input.Filter.Provider)
-		}
-		return query
+	expr := modelGroupExpressionsFor(r.db.dialect, input.Page.Sort.Field)
+
+	var total int64
+	if err := r.db.db.WithContext(ctx).Table("(?) AS grouped_model_routes", r.modelRouteGroupQuery(ctx, input, expr, false)).Count(&total).Error; err != nil {
+		return nil, 0, err
 	}
 
+	query := applyModelGroupOrdering(r.modelRouteGroupQuery(ctx, input, expr, true), input, expr)
+	var groupRows []modelRouteGroupRow
+	if err := query.Offset(input.Page.Offset).Limit(input.Page.Limit).Scan(&groupRows).Error; err != nil {
+		return nil, 0, err
+	}
+
+	groupIDs, allIDs, err := parseModelRouteGroupRowIDs(groupRows)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(allIDs) == 0 {
+		return []model.RouteGroup{}, total, nil
+	}
+	var rows []modelRouteModel
+	if err := r.db.db.WithContext(ctx).Where("id IN ?", allIDs).Find(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+	values := mapModelRows(rows)
+	if err := r.annotateAvailability(ctx, values); err != nil {
+		return nil, 0, err
+	}
+	return buildModelRouteGroups(groupIDs, values), total, nil
+}
+
+// Route-level metrics must be calculated before grouping. In particular,
+// PostgreSQL does not allow a correlated metric to reference model_routes.id
+// from inside a grouped SELECT when id is not itself a grouping key.
+func (r *ModelRepository) modelRouteMetricsQuery(ctx context.Context, input repository.ModelListQuery, includeMetrics bool) *gorm.DB {
+	columns := []string{
+		"model_routes.id",
+		"model_routes.provider",
+		"model_routes.public_id",
+		"model_routes.upstream_model",
+		"model_routes.origin",
+		"model_routes.enabled",
+		"model_routes.created_at",
+	}
+	if includeMetrics && input.Page.Sort.Field == "accountSupport" {
+		columns = append(columns, modelSupportSortExpression+" AS support_sort")
+	}
+	if includeMetrics && input.Page.Sort.Field == "lastSyncedAt" {
+		columns = append(columns, modelSyncedSortExpression+" AS last_synced_sort")
+	}
+	query := r.db.db.WithContext(ctx).Model(&modelRouteModel{}).Select(strings.Join(columns, ", "))
+	if search := strings.TrimSpace(input.Page.Search); search != "" {
+		pattern := "%" + strings.ToLower(search) + "%"
+		query = query.Where("LOWER(model_routes.public_id) LIKE ? OR LOWER(model_routes.upstream_model) LIKE ?", pattern, pattern)
+	}
+	if input.Filter.Provider != "" {
+		query = query.Where("model_routes.provider = ?", input.Filter.Provider)
+	}
+	return query
+}
+
+// modelGroupExpressions 汇总分组查询依赖的 SQL 片段，避免调用方重复拼接。
+type modelGroupExpressions struct {
+	manualRouteID  string
+	routeIDs       string
+	enabledCount   string
+	groupColumns   string
+	supportSort    string
+	lastSyncedSort string
+}
+
+func modelGroupExpressionsFor(dialect, sortField string) modelGroupExpressions {
 	manualRouteIDExpression := "CASE WHEN route_metrics.origin = 'manual' THEN route_metrics.id ELSE 0 END"
 	routeIDsExpression := "GROUP_CONCAT(CAST(route_metrics.id AS TEXT), ',')"
-	if r.db.dialect == "postgres" {
+	if dialect == "postgres" {
 		routeIDsExpression = "STRING_AGG(CAST(route_metrics.id AS TEXT), ',' ORDER BY route_metrics.id)"
 	}
 	enabledCountExpression := "SUM(CASE WHEN route_metrics.enabled = TRUE THEN 1 ELSE 0 END)"
-	groupColumns := "route_metrics.provider, route_metrics.public_id, route_metrics.upstream_model, route_metrics.origin, " + manualRouteIDExpression
+	groupColumnsExpression := "route_metrics.provider, route_metrics.public_id, route_metrics.upstream_model, route_metrics.origin, " + manualRouteIDExpression
 	supportSortExpression := "0"
-	if input.Page.Sort.Field == "accountSupport" {
+	if sortField == "accountSupport" {
 		supportSortExpression = "MAX(route_metrics.support_sort)"
 	}
 	lastSyncedSortExpression := "NULL"
-	if input.Page.Sort.Field == "lastSyncedAt" {
+	if sortField == "lastSyncedAt" {
 		lastSyncedSortExpression = "MAX(route_metrics.last_synced_sort)"
 	}
+	return modelGroupExpressions{
+		manualRouteID:  manualRouteIDExpression,
+		routeIDs:       routeIDsExpression,
+		enabledCount:   enabledCountExpression,
+		groupColumns:   groupColumnsExpression,
+		supportSort:    supportSortExpression,
+		lastSyncedSort: lastSyncedSortExpression,
+	}
+}
 
-	buildQuery := func(includeMetrics bool) *gorm.DB {
-		query := r.db.db.WithContext(ctx).Table("(?) AS route_metrics", buildRouteMetricsQuery(includeMetrics))
-		if includeMetrics {
-			query = query.Select(fmt.Sprintf(`
+func (r *ModelRepository) modelRouteGroupQuery(ctx context.Context, input repository.ModelListQuery, expr modelGroupExpressions, includeMetrics bool) *gorm.DB {
+	query := r.db.db.WithContext(ctx).Table("(?) AS route_metrics", r.modelRouteMetricsQuery(ctx, input, includeMetrics))
+	if includeMetrics {
+		query = query.Select(fmt.Sprintf(`
 				route_metrics.provider,
 				route_metrics.public_id,
 				route_metrics.upstream_model,
@@ -140,27 +191,22 @@ func (r *ModelRepository) ListGroups(ctx context.Context, input repository.Model
 				%s AS group_support_sort,
 				%s AS group_last_synced_sort,
 				MAX(route_metrics.created_at) AS created_sort
-			`, manualRouteIDExpression, routeIDsExpression, enabledCountExpression, enabledCountExpression, supportSortExpression, lastSyncedSortExpression))
+			`, expr.manualRouteID, expr.routeIDs, expr.enabledCount, expr.enabledCount, expr.supportSort, expr.lastSyncedSort))
+	} else {
+		query = query.Select("route_metrics.provider, route_metrics.public_id, route_metrics.upstream_model, route_metrics.origin, " + expr.manualRouteID + " AS manual_route_id")
+	}
+	query = query.Group(expr.groupColumns)
+	if input.Filter.Enabled != nil {
+		if *input.Filter.Enabled {
+			query = query.Having(expr.enabledCount + " > 0")
 		} else {
-			query = query.Select("route_metrics.provider, route_metrics.public_id, route_metrics.upstream_model, route_metrics.origin, " + manualRouteIDExpression + " AS manual_route_id")
+			query = query.Having(expr.enabledCount + " = 0")
 		}
-		query = query.Group(groupColumns)
-		if input.Filter.Enabled != nil {
-			if *input.Filter.Enabled {
-				query = query.Having(enabledCountExpression + " > 0")
-			} else {
-				query = query.Having(enabledCountExpression + " = 0")
-			}
-		}
-		return query
 	}
+	return query
+}
 
-	var total int64
-	if err := r.db.db.WithContext(ctx).Table("(?) AS grouped_model_routes", buildQuery(false)).Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-
-	query := buildQuery(true)
+func applyModelGroupOrdering(query *gorm.DB, input repository.ModelListQuery, expr modelGroupExpressions) *gorm.DB {
 	spec, direction := stableSortSpec(input.Page.Sort, map[string]sortSpec{
 		"publicId":       {expression: "LOWER(route_metrics.public_id)"},
 		"upstreamModel":  {expression: "LOWER(route_metrics.upstream_model)"},
@@ -175,42 +221,33 @@ func (r *ModelRepository) ListGroups(ctx context.Context, input repository.Model
 		// NULL discriminator and use the alias for the value ordering below.
 		nullSortExpression := spec.expression
 		if input.Page.Sort.Field == "lastSyncedAt" {
-			nullSortExpression = lastSyncedSortExpression
+			nullSortExpression = expr.lastSyncedSort
 		}
 		query = query.Order("CASE WHEN " + nullSortExpression + " IS NULL THEN 1 ELSE 0 END ASC")
 	}
-	query = query.Order(spec.expression + " " + direction).
+	return query.Order(spec.expression + " " + direction).
 		Order("route_metrics.provider ASC").
 		Order("LOWER(route_metrics.public_id) ASC").
 		Order("LOWER(route_metrics.upstream_model) ASC").
 		Order("route_metrics.origin ASC").
 		Order("manual_route_id ASC")
-	var groupRows []modelRouteGroupRow
-	if err := query.Offset(input.Page.Offset).Limit(input.Page.Limit).Scan(&groupRows).Error; err != nil {
-		return nil, 0, err
-	}
+}
 
+func parseModelRouteGroupRowIDs(groupRows []modelRouteGroupRow) ([][]uint64, []uint64, error) {
 	groupIDs := make([][]uint64, 0, len(groupRows))
 	allIDs := make([]uint64, 0, len(groupRows)*2)
 	for _, row := range groupRows {
 		ids, err := parseModelRouteGroupIDs(row.RouteIDs)
 		if err != nil {
-			return nil, 0, err
+			return nil, nil, err
 		}
 		groupIDs = append(groupIDs, ids)
 		allIDs = append(allIDs, ids...)
 	}
-	if len(allIDs) == 0 {
-		return []model.RouteGroup{}, total, nil
-	}
-	var rows []modelRouteModel
-	if err := r.db.db.WithContext(ctx).Where("id IN ?", allIDs).Find(&rows).Error; err != nil {
-		return nil, 0, err
-	}
-	values := mapModelRows(rows)
-	if err := r.annotateAvailability(ctx, values); err != nil {
-		return nil, 0, err
-	}
+	return groupIDs, allIDs, nil
+}
+
+func buildModelRouteGroups(groupIDs [][]uint64, values []model.Route) []model.RouteGroup {
 	byID := make(map[uint64]model.Route, len(values))
 	for _, value := range values {
 		byID[value.ID] = value
@@ -228,7 +265,7 @@ func (r *ModelRepository) ListGroups(ctx context.Context, input repository.Model
 		}
 		groups = append(groups, model.RouteGroup{Routes: members})
 	}
-	return groups, total, nil
+	return groups
 }
 
 func parseModelRouteGroupIDs(value string) ([]uint64, error) {

@@ -16,6 +16,33 @@ func (r *AccountRepository) UpdateMany(ctx context.Context, providerValue accoun
 	if len(ids) == 0 {
 		return 0, nil
 	}
+	values := buildAccountUpdateValues(updates)
+	if len(values) == 0 {
+		return 0, nil
+	}
+	var updated int64
+	err := r.db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockAccountPoolForUpdate(tx, providerValue, ids); err != nil {
+			return err
+		}
+		var err error
+		updated, err = applyAccountUpdatesInBatches(tx, providerValue, ids, values)
+		if err != nil {
+			return err
+		}
+		return deleteDisabledBuildEgressLeaseBlocks(tx, providerValue, ids, updates.Enabled)
+	})
+	if err != nil {
+		return 0, err
+	}
+	if updated > 0 {
+		r.notifyInvalidation(ctx, repository.InvalidationEvent{Kind: repository.InvalidationAccountStateChanged})
+	}
+	return updated, nil
+}
+
+// buildAccountUpdateValues 把可选的批量更新字段转换为列名到值的映射；未提供任何字段时返回空映射。
+func buildAccountUpdateValues(updates repository.AccountUpdates) map[string]any {
 	values := make(map[string]any, 4)
 	if updates.Enabled != nil {
 		values["enabled"] = *updates.Enabled
@@ -29,48 +56,49 @@ func (r *AccountRepository) UpdateMany(ctx context.Context, providerValue accoun
 	if updates.MinimumRemaining != nil {
 		values["minimum_remaining"] = *updates.MinimumRemaining
 	}
-	if len(values) == 0 {
-		return 0, nil
-	}
-	var updated int64
-	err := r.db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for start := 0; start < len(ids); start += accountUpdateBatchSize {
-			end := min(start+accountUpdateBatchSize, len(ids))
-			var rows []accountModel
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "provider").Where("id IN ?", ids[start:end]).Order("id ASC").Find(&rows).Error; err != nil {
-				return err
-			}
-			if len(rows) != end-start {
+	return values
+}
+
+// lockAccountPoolForUpdate 分批锁定目标账号，要求全部存在且属于指定号池，避免部分更新。
+func lockAccountPoolForUpdate(tx *gorm.DB, providerValue account.Provider, ids []uint64) error {
+	for start := 0; start < len(ids); start += accountUpdateBatchSize {
+		end := min(start+accountUpdateBatchSize, len(ids))
+		var rows []accountModel
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "provider").Where("id IN ?", ids[start:end]).Order("id ASC").Find(&rows).Error; err != nil {
+			return err
+		}
+		if len(rows) != end-start {
+			return repository.ErrAccountPoolMismatch
+		}
+		for _, row := range rows {
+			if account.Provider(row.Provider) != providerValue {
 				return repository.ErrAccountPoolMismatch
 			}
-			for _, row := range rows {
-				if account.Provider(row.Provider) != providerValue {
-					return repository.ErrAccountPoolMismatch
-				}
-			}
 		}
-		for start := 0; start < len(ids); start += accountUpdateBatchSize {
-			end := min(start+accountUpdateBatchSize, len(ids))
-			result := tx.Model(&accountModel{}).Where("provider = ? AND id IN ?", providerValue, ids[start:end]).Updates(values)
-			if result.Error != nil {
-				return result.Error
-			}
-			updated += result.RowsAffected
-		}
-		if providerValue == account.ProviderBuild && updates.Enabled != nil && !*updates.Enabled {
-			if err := tx.Where("account_id IN ?", ids).Delete(&accountEgressLeaseBlockModel{}).Error; err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return 0, err
 	}
-	if updated > 0 {
-		r.notifyInvalidation(ctx, repository.InvalidationEvent{Kind: repository.InvalidationAccountStateChanged})
+	return nil
+}
+
+// applyAccountUpdatesInBatches 分批应用字段更新并累计受影响行数。
+func applyAccountUpdatesInBatches(tx *gorm.DB, providerValue account.Provider, ids []uint64, values map[string]any) (int64, error) {
+	var updated int64
+	for start := 0; start < len(ids); start += accountUpdateBatchSize {
+		end := min(start+accountUpdateBatchSize, len(ids))
+		result := tx.Model(&accountModel{}).Where("provider = ? AND id IN ?", providerValue, ids[start:end]).Updates(values)
+		if result.Error != nil {
+			return 0, result.Error
+		}
+		updated += result.RowsAffected
 	}
 	return updated, nil
+}
+
+// deleteDisabledBuildEgressLeaseBlocks 在禁用 Build 账号时清理其出口租约封锁。
+func deleteDisabledBuildEgressLeaseBlocks(tx *gorm.DB, providerValue account.Provider, ids []uint64, enabled *bool) error {
+	if providerValue != account.ProviderBuild || enabled == nil || *enabled {
+		return nil
+	}
+	return tx.Where("account_id IN ?", ids).Delete(&accountEgressLeaseBlockModel{}).Error
 }
 
 // UpdateEgressBindings assigns one egress node to multiple accounts of one
@@ -250,57 +278,71 @@ func (r *AccountRepository) DeleteAutoCleanReauthCandidates(ctx context.Context,
 		if len(deletable) == 0 {
 			return nil
 		}
-
-		var lockedIDs []uint64
-		lockQuery := tx.Model(&accountModel{}).Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id IN ? AND auth_status = ? AND reauth_marked_at IS NOT NULL AND reauth_marked_at < ?", deletable, account.AuthStatusReauthRequired, markedBefore.UTC()).
-			Where(accountUnclassifiedRefreshReauthPredicate)
-		if !includeDisabled {
-			lockQuery = lockQuery.Where("enabled = ?", true)
-		}
-		if err := lockQuery.Pluck("id", &lockedIDs).Error; err != nil {
-			return err
-		}
-		// lock 后再过滤活动视频任务，避免 list 与 delete 之间的 TOCTOU。
-		lockedIDs, err = excludeAccountsWithActiveMediaJobs(tx, lockedIDs)
+		lockedIDs, err := lockAutoCleanReauthCandidates(tx, deletable, markedBefore, includeDisabled)
 		if err != nil {
 			return err
 		}
 		if len(lockedIDs) == 0 {
 			return nil
 		}
-		deletion := tx.Where("id IN ? AND auth_status = ? AND reauth_marked_at IS NOT NULL AND reauth_marked_at < ?", lockedIDs, account.AuthStatusReauthRequired, markedBefore.UTC()).
-			Where(accountUnclassifiedRefreshReauthPredicate)
-		if !includeDisabled {
-			deletion = deletion.Where("enabled = ?", true)
-		}
-		result := deletion.Delete(&accountModel{})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected == int64(len(lockedIDs)) {
-			deletedIDs = append(deletedIDs, lockedIDs...)
-			return nil
-		}
-		var remaining []uint64
-		if err := tx.Model(&accountModel{}).Where("id IN ?", lockedIDs).Pluck("id", &remaining).Error; err != nil {
+		removed, err := deleteReauthCandidates(tx, lockedIDs, markedBefore, includeDisabled)
+		if err != nil {
 			return err
 		}
-		remainingSet := make(map[uint64]struct{}, len(remaining))
-		for _, id := range remaining {
-			remainingSet[id] = struct{}{}
-		}
-		for _, id := range lockedIDs {
-			if _, exists := remainingSet[id]; !exists {
-				deletedIDs = append(deletedIDs, id)
-			}
-		}
+		deletedIDs = append(deletedIDs, removed...)
 		return nil
 	})
 	if err == nil && len(deletedIDs) > 0 {
 		r.notifyInvalidation(ctx, repository.InvalidationEvent{Kind: repository.InvalidationAccountStateChanged})
 	}
 	return deletedIDs, err
+}
+
+// lockAutoCleanReauthCandidates 锁定仍满足清理条件且无活动视频任务的候选账号。
+func lockAutoCleanReauthCandidates(tx *gorm.DB, candidateIDs []uint64, markedBefore time.Time, includeDisabled bool) ([]uint64, error) {
+	var lockedIDs []uint64
+	lockQuery := tx.Model(&accountModel{}).Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id IN ? AND auth_status = ? AND reauth_marked_at IS NOT NULL AND reauth_marked_at < ?", candidateIDs, account.AuthStatusReauthRequired, markedBefore.UTC()).
+		Where(accountUnclassifiedRefreshReauthPredicate)
+	if !includeDisabled {
+		lockQuery = lockQuery.Where("enabled = ?", true)
+	}
+	if err := lockQuery.Pluck("id", &lockedIDs).Error; err != nil {
+		return nil, err
+	}
+	// lock 后再过滤活动视频任务，避免 list 与 delete 之间的 TOCTOU。
+	return excludeAccountsWithActiveMediaJobs(tx, lockedIDs)
+}
+
+// deleteReauthCandidates 删除仍满足清理条件的锁定账号，并按实际删除结果返回 ID。
+func deleteReauthCandidates(tx *gorm.DB, lockedIDs []uint64, markedBefore time.Time, includeDisabled bool) ([]uint64, error) {
+	deletion := tx.Where("id IN ? AND auth_status = ? AND reauth_marked_at IS NOT NULL AND reauth_marked_at < ?", lockedIDs, account.AuthStatusReauthRequired, markedBefore.UTC()).
+		Where(accountUnclassifiedRefreshReauthPredicate)
+	if !includeDisabled {
+		deletion = deletion.Where("enabled = ?", true)
+	}
+	result := deletion.Delete(&accountModel{})
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == int64(len(lockedIDs)) {
+		return lockedIDs, nil
+	}
+	var remaining []uint64
+	if err := tx.Model(&accountModel{}).Where("id IN ?", lockedIDs).Pluck("id", &remaining).Error; err != nil {
+		return nil, err
+	}
+	remainingSet := make(map[uint64]struct{}, len(remaining))
+	for _, id := range remaining {
+		remainingSet[id] = struct{}{}
+	}
+	deleted := make([]uint64, 0, len(lockedIDs))
+	for _, id := range lockedIDs {
+		if _, exists := remainingSet[id]; !exists {
+			deleted = append(deleted, id)
+		}
+	}
+	return deleted, nil
 }
 
 // excludeAccountsWithActiveMediaJobs 返回无 queued/in_progress 视频任务的账号 ID（顺序保持输入顺序）。

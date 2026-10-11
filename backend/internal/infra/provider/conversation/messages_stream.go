@@ -208,46 +208,92 @@ func (c *streamConverter) toolArgumentsDoneMessages(itemID, arguments string) er
 }
 
 func (c *streamConverter) doneMessages(status string) error {
-	if c.thinkingStarted && !c.thinkingClosed {
-		c.thinkingClosed = true
-		if err := c.writeEvent("content_block_stop", map[string]any{"type": "content_block_stop", "index": c.thinkingIndex}); err != nil {
-			return err
-		}
+	if err := c.closeThinkingBlock(); err != nil {
+		return err
 	}
 	if c.options.AnthropicWebSearchRequired && len(c.webSearch) == 0 {
 		c.webSearch = []webSearchCall{unavailableWebSearchCall(c.options.AnthropicWebSearchQuery)}
 	}
-	if c.deferSearchText {
-		// Hosted search was observed before text, so preserve Anthropic's block order:
-		// server_tool_use → web_search_tool_result → text.
-		if err := c.emitPendingWebSearchResults(); err != nil {
-			return err
-		}
-		if pending := c.pendingSearchText.String(); pending != "" {
-			if err := c.textDeltaMessages(pending); err != nil {
-				return err
-			}
-		}
+	if err := c.flushDeferredSearchText(); err != nil {
+		return err
 	}
-	if c.stopSequence == "" {
-		if pending := c.stopFilter.Flush(); pending != "" {
-			if err := c.textDeltaWithoutFilter(pending); err != nil {
-				return err
-			}
-		}
+	if err := c.flushStopFilterText(); err != nil {
+		return err
 	}
 	if c.textStarted {
 		if err := c.writeEvent("content_block_stop", map[string]any{"type": "content_block_stop", "index": c.textIndex}); err != nil {
 			return err
 		}
 	}
+	if err := c.closePendingWebSearchResults(); err != nil {
+		return err
+	}
+	if err := c.closeOpenToolBlocks(); err != nil {
+		return err
+	}
+	stopReason := c.anthropicStopReason(status)
+	usage := anthropicUsage(c.usage, webSearchRequestCount(c.webSearch))
+	if err := c.writeEvent("message_delta", map[string]any{
+		"type": "message_delta", "delta": map[string]any{"stop_reason": stopReason, "stop_sequence": nullableAnthropicString(c.stopSequence)},
+		"usage": usage,
+	}); err != nil {
+		return err
+	}
+	c.finished = true
+	return c.writeEvent("message_stop", map[string]any{"type": "message_stop"})
+}
+
+// closeThinkingBlock 在流结束前补发未关闭的 thinking 内容块。
+func (c *streamConverter) closeThinkingBlock() error {
+	if !c.thinkingStarted || c.thinkingClosed {
+		return nil
+	}
+	c.thinkingClosed = true
+	return c.writeEvent("content_block_stop", map[string]any{"type": "content_block_stop", "index": c.thinkingIndex})
+}
+
+// flushDeferredSearchText 按 Anthropic 块顺序补发延迟的托管搜索结果与文本。
+func (c *streamConverter) flushDeferredSearchText() error {
 	if !c.deferSearchText {
-		// If text arrived before the search item, close it before starting any server
-		// tool blocks so content blocks never overlap.
-		if err := c.emitPendingWebSearchResults(); err != nil {
+		return nil
+	}
+	// Hosted search was observed before text, so preserve Anthropic's block order:
+	// server_tool_use → web_search_tool_result → text.
+	if err := c.emitPendingWebSearchResults(); err != nil {
+		return err
+	}
+	if pending := c.pendingSearchText.String(); pending != "" {
+		if err := c.textDeltaMessages(pending); err != nil {
 			return err
 		}
 	}
+	return nil
+}
+
+// flushStopFilterText 在未匹配停止序列时补发停止过滤器保留的尾部文本。
+func (c *streamConverter) flushStopFilterText() error {
+	if c.stopSequence != "" {
+		return nil
+	}
+	pending := c.stopFilter.Flush()
+	if pending == "" {
+		return nil
+	}
+	return c.textDeltaWithoutFilter(pending)
+}
+
+// closePendingWebSearchResults 在文本块之后补发托管搜索结果，避免内容块交叠。
+func (c *streamConverter) closePendingWebSearchResults() error {
+	if c.deferSearchText {
+		return nil
+	}
+	// If text arrived before the search item, close it before starting any server
+	// tool blocks so content blocks never overlap.
+	return c.emitPendingWebSearchResults()
+}
+
+// closeOpenToolBlocks 按内容块顺序关闭仍打开的 function tool 块。
+func (c *streamConverter) closeOpenToolBlocks() error {
 	openTools := make([]streamTool, 0)
 	for itemID, tool := range c.tools {
 		if !tool.Closed {
@@ -262,26 +308,24 @@ func (c *streamConverter) doneMessages(status string) error {
 			return err
 		}
 	}
-	stopReason := "end_turn"
+	return nil
+}
+
+// anthropicStopReason 推导 stop_reason：仅客户端函数工具强制 tool_use。
+func (c *streamConverter) anthropicStopReason(status string) string {
 	// Only client function tools force tool_use stop. Hosted web_search is end_turn.
-	if len(c.tools) > 0 {
-		stopReason = "tool_use"
-	} else if c.stopSequence != "" {
-		stopReason = "stop_sequence"
-	} else if c.refused {
-		stopReason = "refusal"
-	} else if status == "incomplete" {
-		stopReason = "max_tokens"
+	switch {
+	case len(c.tools) > 0:
+		return "tool_use"
+	case c.stopSequence != "":
+		return "stop_sequence"
+	case c.refused:
+		return "refusal"
+	case status == "incomplete":
+		return "max_tokens"
+	default:
+		return "end_turn"
 	}
-	usage := anthropicUsage(c.usage, webSearchRequestCount(c.webSearch))
-	if err := c.writeEvent("message_delta", map[string]any{
-		"type": "message_delta", "delta": map[string]any{"stop_reason": stopReason, "stop_sequence": nullableAnthropicString(c.stopSequence)},
-		"usage": usage,
-	}); err != nil {
-		return err
-	}
-	c.finished = true
-	return c.writeEvent("message_stop", map[string]any{"type": "message_stop"})
 }
 
 func (c *streamConverter) streamErrorMessages(data []byte) error {

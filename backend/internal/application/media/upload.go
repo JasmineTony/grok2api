@@ -133,57 +133,19 @@ func (s *Service) WaitVideoUpload(ctx context.Context, assetID string) (contentT
 // ReceiveVideoUpload 处理公开 PUT：校验票据、流式限长、内容嗅探、原子提交并登记资产。
 // 票据本身即授权，无需客户端 API key。
 func (s *Service) ReceiveVideoUpload(ctx context.Context, rawToken string, contentType string, body io.Reader) (mediadomain.Asset, error) {
-	if s.tickets == nil {
-		return mediadomain.Asset{}, ErrUploadTicketsUnavailable
-	}
-	token := strings.TrimSpace(rawToken)
-	if !validUploadToken(token) {
-		return mediadomain.Asset{}, ErrUploadTicketNotFound
-	}
-	tokenHash := hashUploadToken(token)
 	now := time.Now().UTC()
-	// 先读取票据以做预检，再原子消费，防止重复成功写入。
-	existing, err := s.tickets.GetUploadTicketByHash(ctx, tokenHash)
-	if errors.Is(err, repository.ErrNotFound) {
-		return mediadomain.Asset{}, ErrUploadTicketNotFound
-	}
+	tokenHash, allowedMIME, ticket, err := s.prepareVideoUpload(ctx, rawToken, contentType, now)
 	if err != nil {
 		return mediadomain.Asset{}, err
 	}
-	if existing.ConsumedAt != nil {
-		return mediadomain.Asset{}, ErrUploadTicketConsumed
-	}
-	if !existing.ExpiresAt.After(now) {
-		return mediadomain.Asset{}, ErrUploadTicketExpired
-	}
-	// 若资产已存在则视为重复成功写入，拒绝覆盖；仓储故障必须向上传播，禁止继续写入或消费票据。
-	if _, getErr := s.assets.GetMediaAsset(ctx, existing.AssetID); getErr == nil {
-		return mediadomain.Asset{}, ErrUploadTicketConsumed
-	} else if getErr != nil && !errors.Is(getErr, repository.ErrNotFound) {
-		return mediadomain.Asset{}, getErr
-	}
-
-	// XAI ZDR 当前契约为 MP4：票据 AllowedMIME 约束声明类型与嗅探结果。
-	allowedMIME := normalizeVideoMIME(existing.AllowedMIME)
-	if allowedMIME == "" {
-		allowedMIME = "video/mp4"
-	}
-	if !supportedVideoMIME(allowedMIME) {
-		return mediadomain.Asset{}, fmt.Errorf("%w: 票据 MIME 无效", ErrInvalidVideoUpload)
-	}
-	declaredMIME := normalizeVideoMIME(contentType)
-	if declaredMIME != "" && declaredMIME != allowedMIME {
-		return mediadomain.Asset{}, fmt.Errorf("%w: Content-Type 与票据不允许的类型不一致", ErrInvalidVideoUpload)
-	}
-
-	staged, err := s.stageVideo(ctx, existing.AssetID, allowedMIME, body, existing.MaxBytes)
+	staged, err := s.stageVideo(ctx, ticket.AssetID, allowedMIME, body, ticket.MaxBytes)
 	if err != nil {
 		return mediadomain.Asset{}, err
 	}
 	defer func() { _ = s.objects.AbortVideoUpload(context.WithoutCancel(ctx), staged.TempPath) }()
 
 	// 原子消费票据：并发 PUT 仅一个能消费成功。
-	ticket, consumed, err := s.tickets.ConsumeUploadTicket(ctx, tokenHash, now)
+	consumedTicket, consumed, err := s.tickets.ConsumeUploadTicket(ctx, tokenHash, now)
 	if err != nil {
 		return mediadomain.Asset{}, err
 	}
@@ -203,8 +165,71 @@ func (s *Service) ReceiveVideoUpload(ctx context.Context, rawToken string, conte
 		return mediadomain.Asset{}, err
 	}
 	releaseTicket = false
-	_ = s.tickets.BindJobResultAsset(ctx, ticket.JobID, ticket.AssetID)
+	_ = s.tickets.BindJobResultAsset(ctx, consumedTicket.JobID, consumedTicket.AssetID)
 	return asset, nil
+}
+
+// prepareVideoUpload 校验票据与声明类型，返回票据哈希、允许的 MIME 与票据本体。
+func (s *Service) prepareVideoUpload(ctx context.Context, rawToken, contentType string, now time.Time) (string, string, repository.MediaUploadTicket, error) {
+	tokenHash, ticket, err := s.loadVideoUploadTicket(ctx, rawToken, now)
+	if err != nil {
+		return "", "", repository.MediaUploadTicket{}, err
+	}
+	allowedMIME, err := resolveVideoUploadMIME(ticket.AllowedMIME, contentType)
+	if err != nil {
+		return "", "", repository.MediaUploadTicket{}, err
+	}
+	return tokenHash, allowedMIME, ticket, nil
+}
+
+// loadVideoUploadTicket 预检票据：可用性、消费状态、有效期与目标资产是否已存在。
+func (s *Service) loadVideoUploadTicket(ctx context.Context, rawToken string, now time.Time) (string, repository.MediaUploadTicket, error) {
+	if s.tickets == nil {
+		return "", repository.MediaUploadTicket{}, ErrUploadTicketsUnavailable
+	}
+	token := strings.TrimSpace(rawToken)
+	if !validUploadToken(token) {
+		return "", repository.MediaUploadTicket{}, ErrUploadTicketNotFound
+	}
+	tokenHash := hashUploadToken(token)
+	// 先读取票据以做预检，再原子消费，防止重复成功写入。
+	existing, err := s.tickets.GetUploadTicketByHash(ctx, tokenHash)
+	if errors.Is(err, repository.ErrNotFound) {
+		return "", repository.MediaUploadTicket{}, ErrUploadTicketNotFound
+	}
+	if err != nil {
+		return "", repository.MediaUploadTicket{}, err
+	}
+	if existing.ConsumedAt != nil {
+		return "", repository.MediaUploadTicket{}, ErrUploadTicketConsumed
+	}
+	if !existing.ExpiresAt.After(now) {
+		return "", repository.MediaUploadTicket{}, ErrUploadTicketExpired
+	}
+	// 若资产已存在则视为重复成功写入，拒绝覆盖；仓储故障必须向上传播，禁止继续写入或消费票据。
+	if _, getErr := s.assets.GetMediaAsset(ctx, existing.AssetID); getErr == nil {
+		return "", repository.MediaUploadTicket{}, ErrUploadTicketConsumed
+	} else if getErr != nil && !errors.Is(getErr, repository.ErrNotFound) {
+		return "", repository.MediaUploadTicket{}, getErr
+	}
+	return tokenHash, existing, nil
+}
+
+// resolveVideoUploadMIME 解析票据允许的 MIME，并校验客户端声明类型一致。
+// XAI ZDR 当前契约为 MP4：票据 AllowedMIME 约束声明类型与嗅探结果。
+func resolveVideoUploadMIME(ticketMIME, contentType string) (string, error) {
+	allowedMIME := normalizeVideoMIME(ticketMIME)
+	if allowedMIME == "" {
+		allowedMIME = "video/mp4"
+	}
+	if !supportedVideoMIME(allowedMIME) {
+		return "", fmt.Errorf("%w: 票据 MIME 无效", ErrInvalidVideoUpload)
+	}
+	declaredMIME := normalizeVideoMIME(contentType)
+	if declaredMIME != "" && declaredMIME != allowedMIME {
+		return "", fmt.Errorf("%w: Content-Type 与票据不允许的类型不一致", ErrInvalidVideoUpload)
+	}
+	return allowedMIME, nil
 }
 
 // SaveVideo 将 Provider 已生成的远程视频流式归档为本地媒体资产。

@@ -202,8 +202,25 @@ func normalizeDegradeAccountFilter(value DegradeAccountFilter) DegradeAccountFil
 }
 
 func buildDegradeSummary(window string, now time.Time, thresholds DegradeThresholds, filter DegradeAccountFilter, bucketSpecs []degradeBucketSpec, data repository.DegradeSummaryResult) DegradeSummary {
-	accounts := make([]DegradeAccount, 0, len(data.Accounts))
-	for _, value := range data.Accounts {
+	return DegradeSummary{
+		Window: window, GeneratedAt: now, Thresholds: thresholds,
+		Totals: DegradeTotals{
+			Hits: data.Totals.Hits, Accounts: data.Totals.Accounts, StillEnabled: data.Totals.StillEnabled,
+			Disabled: data.Totals.Disabled, Deleted: data.Totals.Deleted, Hard: data.Totals.Hard,
+			Soft: data.Totals.Soft, Burst: data.Totals.Burst, Thinking: data.Totals.Thinking, MaxTPS: round(data.Totals.MaxTPS, 2),
+		},
+		Series: buildDegradeSeries(bucketSpecs, data.Buckets), Nodes: buildDegradeNodes(data.Nodes), Accounts: buildDegradeAccounts(data.Accounts),
+		AccountPage: DegradeAccountPage{
+			Page: data.AccountOffset/filter.PageSize + 1, PageSize: filter.PageSize, Total: data.AccountTotal,
+			HasMore: int64(data.AccountOffset+filter.PageSize) < data.AccountTotal,
+		},
+		Events: buildDegradeEvents(data.Events),
+	}
+}
+
+func buildDegradeAccounts(values []repository.DegradeAccount) []DegradeAccount {
+	accounts := make([]DegradeAccount, 0, len(values))
+	for _, value := range values {
 		accounts = append(accounts, DegradeAccount{
 			ID: value.ID, Name: value.Name, Email: value.Email, Hits: value.Hits, MaxTPS: round(value.MaxTPS, 1),
 			Classes: map[string]int64{
@@ -216,12 +233,20 @@ func buildDegradeSummary(window string, now time.Time, thresholds DegradeThresho
 			LeaseCooldownUntil: value.LeaseCooldownUntil,
 		})
 	}
-	nodes := make([]DegradeNode, 0, len(data.Nodes))
-	for _, value := range data.Nodes {
+	return accounts
+}
+
+func buildDegradeNodes(values []repository.DegradeNode) []DegradeNode {
+	nodes := make([]DegradeNode, 0, len(values))
+	for _, value := range values {
 		nodes = append(nodes, DegradeNode{Name: value.Name, Hits: value.Hits, Accounts: value.Accounts, MaxTPS: round(value.MaxTPS, 1)})
 	}
-	events := make([]DegradeEventView, 0, len(data.Events))
-	for _, value := range data.Events {
+	return nodes
+}
+
+func buildDegradeEvents(values []repository.DegradeEvent) []DegradeEventView {
+	events := make([]DegradeEventView, 0, len(values))
+	for _, value := range values {
 		nodeName := value.EgressNodeName
 		if nodeName == "" {
 			nodeName = "?"
@@ -232,30 +257,22 @@ func buildDegradeSummary(window string, now time.Time, thresholds DegradeThresho
 			CreatedAt: value.CreatedAt, Model: value.Model,
 		})
 	}
+	return events
+}
+
+// buildDegradeSeries 按桶规格初始化序列，并回填仓储聚合出的计数。
+func buildDegradeSeries(bucketSpecs []degradeBucketSpec, values []repository.DegradeBucket) []DegradeBucket {
 	series := make([]DegradeBucket, len(bucketSpecs))
 	for index, spec := range bucketSpecs {
 		series[index].Label = spec.Label
 	}
-	for _, value := range data.Buckets {
+	for _, value := range values {
 		if value.Index >= 0 && value.Index < len(series) {
 			series[value.Index].Count = value.Count
 			series[value.Index].Severe = value.Severe
 		}
 	}
-	return DegradeSummary{
-		Window: window, GeneratedAt: now, Thresholds: thresholds,
-		Totals: DegradeTotals{
-			Hits: data.Totals.Hits, Accounts: data.Totals.Accounts, StillEnabled: data.Totals.StillEnabled,
-			Disabled: data.Totals.Disabled, Deleted: data.Totals.Deleted, Hard: data.Totals.Hard,
-			Soft: data.Totals.Soft, Burst: data.Totals.Burst, Thinking: data.Totals.Thinking, MaxTPS: round(data.Totals.MaxTPS, 2),
-		},
-		Series: series, Nodes: nodes, Accounts: accounts,
-		AccountPage: DegradeAccountPage{
-			Page: data.AccountOffset/filter.PageSize + 1, PageSize: filter.PageSize, Total: data.AccountTotal,
-			HasMore: int64(data.AccountOffset+filter.PageSize) < data.AccountTotal,
-		},
-		Events: events,
-	}
+	return series
 }
 
 func degradeBucketSpecs(window string, start, end time.Time) []degradeBucketSpec {

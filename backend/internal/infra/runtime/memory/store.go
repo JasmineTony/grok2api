@@ -171,6 +171,12 @@ func (l *ConcurrencyLimiter) CurrentMany(_ context.Context, keys []string) (map[
 		grouped[cursors[shard]] = keyIndex
 		cursors[shard]++
 	}
+	l.collectShardCounts(keys, grouped, &offsets, values)
+	return values, nil
+}
+
+// collectShardCounts 按分片读取租约计数，只写入仍有活跃租约的键。
+func (l *ConcurrencyLimiter) collectShardCounts(keys []string, grouped []int, offsets *[shardCount + 1]int, values map[string]int) {
 	for shardIndex := range shardCount {
 		if offsets[shardIndex] == offsets[shardIndex+1] {
 			continue
@@ -185,7 +191,6 @@ func (l *ConcurrencyLimiter) CurrentMany(_ context.Context, keys []string) (map[
 		}
 		shard.mu.Unlock()
 	}
-	return values, nil
 }
 
 type stickyBinding struct {

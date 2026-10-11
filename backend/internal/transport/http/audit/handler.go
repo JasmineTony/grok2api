@@ -341,20 +341,11 @@ func (h *Handler) summary(c *gin.Context) {
 }
 
 func (h *Handler) degradeAccounts(c *gin.Context) {
-	softTPS, _ := strconv.ParseFloat(c.Query("softTPS"), 64)
-	hardTPS, _ := strconv.ParseFloat(c.Query("hardTPS"), 64)
-	minGenMS, _ := strconv.ParseInt(c.Query("minGenMs"), 10, 64)
-	failClosed, _ := strconv.ParseBool(c.Query("failClosed"))
-	minHits, _ := strconv.Atoi(c.Query("minHits"))
-	page, _ := strconv.Atoi(c.Query("page"))
-	pageSize, _ := strconv.Atoi(c.Query("pageSize"))
+	thresholds, filter := parseDegradeSummaryQuery(c)
 	result, err := h.service.DegradeSummary(
 		c.Request.Context(), c.DefaultQuery("window", "24h"),
-		auditapp.DegradeThresholds{SoftTPS: softTPS, HardTPS: hardTPS, MinGenMS: minGenMS, FailClosed: failClosed},
-		auditapp.DegradeAccountFilter{
-			Search: c.Query("search"), Status: c.Query("status"), Class: c.Query("class"), MinHits: minHits,
-			Page: page, PageSize: pageSize,
-		},
+		thresholds,
+		filter,
 	)
 	if errors.Is(err, auditapp.ErrInvalidPeriod) {
 		response.Error(c, http.StatusBadRequest, "invalidAuditPeriod", "window 仅支持 1h、6h、24h、7d")
@@ -364,16 +355,62 @@ func (h *Handler) degradeAccounts(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, "auditDegradeFailed", "读取降智账号失败")
 		return
 	}
-	accounts := make([]degradeAccountResponse, 0, len(result.Accounts))
-	for _, account := range result.Accounts {
-		accounts = append(accounts, degradeAccountResponse{
+	response.Success(c, http.StatusOK, newDegradeSummaryResponse(result))
+}
+
+// parseDegradeSummaryQuery 解析降智统计的判定阈值与账号筛选参数。
+func parseDegradeSummaryQuery(c *gin.Context) (auditapp.DegradeThresholds, auditapp.DegradeAccountFilter) {
+	softTPS, _ := strconv.ParseFloat(c.Query("softTPS"), 64)
+	hardTPS, _ := strconv.ParseFloat(c.Query("hardTPS"), 64)
+	minGenMS, _ := strconv.ParseInt(c.Query("minGenMs"), 10, 64)
+	failClosed, _ := strconv.ParseBool(c.Query("failClosed"))
+	minHits, _ := strconv.Atoi(c.Query("minHits"))
+	page, _ := strconv.Atoi(c.Query("page"))
+	pageSize, _ := strconv.Atoi(c.Query("pageSize"))
+	thresholds := auditapp.DegradeThresholds{SoftTPS: softTPS, HardTPS: hardTPS, MinGenMS: minGenMS, FailClosed: failClosed}
+	filter := auditapp.DegradeAccountFilter{
+		Search: c.Query("search"), Status: c.Query("status"), Class: c.Query("class"), MinHits: minHits,
+		Page: page, PageSize: pageSize,
+	}
+	return thresholds, filter
+}
+
+// newDegradeSummaryResponse 转换降智统计汇总、账号与事件明细为响应 DTO。
+func newDegradeSummaryResponse(result auditapp.DegradeSummary) degradeSummaryResponse {
+	return degradeSummaryResponse{
+		Window: result.Window, GeneratedAt: result.GeneratedAt,
+		Thresholds: degradeThresholdsResponse{SoftTPS: result.Thresholds.SoftTPS, HardTPS: result.Thresholds.HardTPS, MinGenMS: result.Thresholds.MinGenMS, MinOut: result.Thresholds.MinOut},
+		Totals: degradeTotalsResponse{
+			Hits: result.Totals.Hits, Accounts: result.Totals.Accounts, StillEnabled: result.Totals.StillEnabled,
+			Disabled: result.Totals.Disabled, Deleted: result.Totals.Deleted, Hard: result.Totals.Hard,
+			Soft: result.Totals.Soft, Burst: result.Totals.Burst, Thinking: result.Totals.Thinking, MaxTPS: result.Totals.MaxTPS,
+		},
+		Series: result.Series, Nodes: result.Nodes, Accounts: newDegradeAccountResponses(result.Accounts),
+		AccountPage: degradeAccountPageResponse{
+			Page: result.AccountPage.Page, PageSize: result.AccountPage.PageSize,
+			Total: result.AccountPage.Total, HasMore: result.AccountPage.HasMore,
+		},
+		Events: newDegradeEventResponses(result.Events),
+	}
+}
+
+// newDegradeAccountResponses 转换降智账号明细。
+func newDegradeAccountResponses(accounts []auditapp.DegradeAccount) []degradeAccountResponse {
+	items := make([]degradeAccountResponse, 0, len(accounts))
+	for _, account := range accounts {
+		items = append(items, degradeAccountResponse{
 			ID: strconv.FormatUint(account.ID, 10), Name: account.Name, Email: account.Email, Hits: account.Hits,
 			MaxTPS: account.MaxTPS, Classes: account.Classes, Nodes: account.Nodes, Last: account.Last,
 			Enabled: account.Enabled, Found: account.Found, BFS: account.BFS, LeaseCooldownUntil: account.LeaseCooldownUntil,
 		})
 	}
-	events := make([]degradeEventResponse, 0, len(result.Events))
-	for _, event := range result.Events {
+	return items
+}
+
+// newDegradeEventResponses 转换降智事件明细，并格式化可选的账号 ID。
+func newDegradeEventResponses(events []auditapp.DegradeEventView) []degradeEventResponse {
+	items := make([]degradeEventResponse, 0, len(events))
+	for _, event := range events {
 		item := degradeEventResponse{
 			ID: strconv.FormatUint(event.ID, 10), RequestID: event.RequestID, AccountName: event.AccountName,
 			NodeName: event.NodeName, OutputTokens: event.OutputTokens, TPS: event.TPS, Class: event.Class,
@@ -383,23 +420,9 @@ func (h *Handler) degradeAccounts(c *gin.Context) {
 			id := strconv.FormatUint(*event.AccountID, 10)
 			item.AccountID = &id
 		}
-		events = append(events, item)
+		items = append(items, item)
 	}
-	response.Success(c, http.StatusOK, degradeSummaryResponse{
-		Window: result.Window, GeneratedAt: result.GeneratedAt,
-		Thresholds: degradeThresholdsResponse{SoftTPS: result.Thresholds.SoftTPS, HardTPS: result.Thresholds.HardTPS, MinGenMS: result.Thresholds.MinGenMS, MinOut: result.Thresholds.MinOut},
-		Totals: degradeTotalsResponse{
-			Hits: result.Totals.Hits, Accounts: result.Totals.Accounts, StillEnabled: result.Totals.StillEnabled,
-			Disabled: result.Totals.Disabled, Deleted: result.Totals.Deleted, Hard: result.Totals.Hard,
-			Soft: result.Totals.Soft, Burst: result.Totals.Burst, Thinking: result.Totals.Thinking, MaxTPS: result.Totals.MaxTPS,
-		},
-		Series: result.Series, Nodes: result.Nodes, Accounts: accounts,
-		AccountPage: degradeAccountPageResponse{
-			Page: result.AccountPage.Page, PageSize: result.AccountPage.PageSize,
-			Total: result.AccountPage.Total, HasMore: result.AccountPage.HasMore,
-		},
-		Events: events,
-	})
+	return items
 }
 
 type degradeSummaryResponse struct {

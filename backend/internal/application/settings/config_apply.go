@@ -19,6 +19,19 @@ func applyDomainConfig(base config.Config, value settingsdomain.Config) config.C
 	if capacityWait <= 0 {
 		capacityWait = base.Routing.CapacityWait.Value()
 	}
+	base = applyDomainBuildProviderConfig(base, value)
+	base = applyDomainWebProviderConfig(base, value)
+	base = applyDomainConsoleProviderConfig(base, value)
+	base = applyDomainBatchConfig(base, value)
+	base = applyDomainMediaAndFrontendConfig(base, value)
+	base = applyDomainRoutingConfig(base, value, capacityWait)
+	base = applyDomainAuditConfig(base, value)
+	base = applyDomainClientKeyDefaultsConfig(base, value)
+	return applyDomainAccountsConfig(base, value)
+}
+
+// applyDomainBuildProviderConfig 写入 Build 上游字段，并回填过低的客户端版本与缺失超时。
+func applyDomainBuildProviderConfig(base config.Config, value settingsdomain.Config) config.Config {
 	base.Provider.Build = config.BuildProviderConfig{
 		BaseURL: value.ProviderBuild.BaseURL, FallbackBaseURL: config.NormalizeBuildFallbackBaseURL(value.ProviderBuild.FallbackBaseURL),
 		ClientVersion: value.ProviderBuild.ClientVersion, ClientIdentifier: value.ProviderBuild.ClientIdentifier,
@@ -38,6 +51,11 @@ func applyDomainConfig(base config.Config, value settingsdomain.Config) config.C
 	if value.ProviderBuild.StreamIdleTimeout <= 0 {
 		base.Provider.Build.StreamIdleTimeout = config.Duration(settingsdomain.DefaultBuildStreamIdleTimeout)
 	}
+	return base
+}
+
+// applyDomainWebProviderConfig 写入 Web 上游字段，缺失的 Clearance 配置沿用当前值。
+func applyDomainWebProviderConfig(base config.Config, value settingsdomain.Config) config.Config {
 	clearanceMode := strings.TrimSpace(value.ProviderWeb.ClearanceMode)
 	if clearanceMode == "" {
 		clearanceMode = base.Provider.Web.ClearanceMode
@@ -73,6 +91,11 @@ func applyDomainConfig(base config.Config, value settingsdomain.Config) config.C
 	if value.ProviderWeb.StreamIdleTimeout <= 0 {
 		base.Provider.Web.StreamIdleTimeout = config.Duration(settingsdomain.DefaultWebStreamIdleTimeout)
 	}
+	return base
+}
+
+// applyDomainConsoleProviderConfig 写入 Console 上游字段；整段缺失时沿用代码默认值。
+func applyDomainConsoleProviderConfig(base config.Config, value settingsdomain.Config) config.Config {
 	// Console 是后续版本新增的完整配置段；旧 JSON 整段缺失时沿用代码默认值。
 	if value.ProviderConsole != (settingsdomain.ProviderConsoleConfig{}) {
 		base.Provider.Console = config.ConsoleProviderConfig{
@@ -83,6 +106,11 @@ func applyDomainConfig(base config.Config, value settingsdomain.Config) config.C
 			base.Provider.Console.StreamIdleTimeout = config.Duration(settingsdomain.DefaultConsoleStreamIdleTimeout)
 		}
 	}
+	return base
+}
+
+// applyDomainBatchConfig 写入批量任务并发与随机延迟。
+func applyDomainBatchConfig(base config.Config, value settingsdomain.Config) config.Config {
 	randomDelay := time.Duration(-1)
 	if value.Batch.RandomDelay != nil {
 		randomDelay = *value.Batch.RandomDelay
@@ -92,11 +120,21 @@ func applyDomainConfig(base config.Config, value settingsdomain.Config) config.C
 		SyncConcurrency: value.Batch.SyncConcurrency, RefreshConcurrency: value.Batch.RefreshConcurrency,
 		RandomDelay: config.Duration(randomDelay),
 	}
+	return base
+}
+
+// applyDomainMediaAndFrontendConfig 写入媒体容量与前端公开地址。
+func applyDomainMediaAndFrontendConfig(base config.Config, value settingsdomain.Config) config.Config {
 	base.Media.MaxImageBytes = value.Media.MaxImageBytes
 	base.Media.MaxTotalBytes = value.Media.MaxTotalBytes
 	base.Media.CleanupThresholdPercent = value.Media.CleanupThresholdPercent
 	base.Media.CleanupInterval = config.Duration(value.Media.CleanupInterval)
 	base.Frontend.PublicAPIBaseURLOverride = strings.TrimSpace(value.Frontend.PublicAPIBaseURL)
+	return base
+}
+
+// applyDomainRoutingConfig 写入路由字段，并保留账本推理重放配置。
+func applyDomainRoutingConfig(base config.Config, value settingsdomain.Config, capacityWait time.Duration) config.Config {
 	segmentedEnabled := base.Routing.SegmentedSelectorEnabled
 	segmentedMinCandidates := base.Routing.SegmentedMinCandidates
 	segmentedWindowSize := base.Routing.SegmentedWindowSize
@@ -121,6 +159,11 @@ func applyDomainConfig(base config.Config, value settingsdomain.Config) config.C
 		ReasoningReplayEnabled:      base.Routing.ReasoningReplayEnabled, ReasoningReplayTTL: base.Routing.ReasoningReplayTTL,
 		ReasoningReplayMaxEntries: base.Routing.ReasoningReplayMaxEntries,
 	}
+	return base
+}
+
+// applyDomainAuditConfig 写入审计队列与保留策略，并保留账本运行参数。
+func applyDomainAuditConfig(base config.Config, value settingsdomain.Config) config.Config {
 	commitDelay := base.Audit.CommitDelay.Value()
 	if value.Audit.CommitDelay > 0 {
 		commitDelay = value.Audit.CommitDelay
@@ -135,9 +178,19 @@ func applyDomainConfig(base config.Config, value settingsdomain.Config) config.C
 		LedgerMode: base.Audit.LedgerMode, LedgerFailureThreshold: base.Audit.LedgerFailureThreshold,
 		LedgerUnhealthyGrace: base.Audit.LedgerUnhealthyGrace, LedgerQueueHighWatermarkPct: base.Audit.LedgerQueueHighWatermarkPct,
 	}
+	return base
+}
+
+// applyDomainClientKeyDefaultsConfig 写入客户端密钥默认限额。
+func applyDomainClientKeyDefaultsConfig(base config.Config, value settingsdomain.Config) config.Config {
 	base.ClientKeyDefaults = config.ClientKeyDefaultsConfig{
 		RPMLimit: value.ClientKeyDefaults.RPMLimit, MaxConcurrent: value.ClientKeyDefaults.MaxConcurrent,
 	}
+	return base
+}
+
+// applyDomainAccountsConfig 写入账号自动清理与 Build 封禁重认证字段。
+func applyDomainAccountsConfig(base config.Config, value settingsdomain.Config) config.Config {
 	// Accounts 为后续新增段；旧持久化缺字段时沿用代码默认（全部关闭）。
 	if value.Accounts.AutoCleanReauthInterval > 0 {
 		base.Accounts.AutoCleanReauthInterval = config.Duration(value.Accounts.AutoCleanReauthInterval)
@@ -218,70 +271,98 @@ func toDomainConfig(value config.Config) settingsdomain.Config {
 	randomDelay := value.Batch.RandomDelay.Value()
 	accountIsolatedConnections := value.Routing.AccountIsolatedConnections
 	return settingsdomain.Config{
-		Server: settingsdomain.ServerConfig{MaxConcurrentRequests: value.Server.MaxConcurrentRequests},
-		ProviderBuild: settingsdomain.ProviderBuildConfig{
-			BaseURL: value.Provider.Build.BaseURL, FallbackBaseURL: config.NormalizeBuildFallbackBaseURL(value.Provider.Build.FallbackBaseURL),
-			ClientVersion: value.Provider.Build.ClientVersion, ClientIdentifier: value.Provider.Build.ClientIdentifier,
-			TokenAuth: value.Provider.Build.TokenAuth, UserAgent: value.Provider.Build.UserAgent,
-			ResponseHeaderTimeout: value.Provider.Build.ResponseHeaderTimeout.Value(),
-			StreamIdleTimeout:     value.Provider.Build.StreamIdleTimeout.Value(),
-		},
-		ProviderWeb: settingsdomain.ProviderWebConfig{
-			BaseURL: value.Provider.Web.BaseURL, QuotaTimeout: value.Provider.Web.QuotaTimeout.Value(),
-			StatsigMode: value.Provider.Web.StatsigMode, StatsigManualValue: value.Provider.Web.StatsigManualValue,
-			StatsigSignerURL: value.Provider.Web.StatsigSignerURL,
-			ClearanceMode:    value.Provider.Web.ClearanceMode, FlareSolverrURL: value.Provider.Web.FlareSolverrURL,
-			ClearanceTimeout: value.Provider.Web.ClearanceTimeout.Value(), ClearanceRefresh: value.Provider.Web.ClearanceRefresh.Value(),
-			ChatTimeout: value.Provider.Web.ChatTimeout.Value(), StreamIdleTimeout: value.Provider.Web.StreamIdleTimeout.Value(),
-			ImageTimeout:     value.Provider.Web.ImageTimeout.Value(),
-			VideoTimeout:     value.Provider.Web.VideoTimeout.Value(),
-			MediaConcurrency: value.Provider.Web.MediaConcurrency, AllowNSFW: value.Provider.Web.AllowNSFW,
-			FreeVideoDurationCap: settingsdomain.NormalizeWebFreeVideoDurationCap(value.Provider.Web.FreeVideoDurationCap),
-			RecoveryBackoffBase:  value.Provider.Web.RecoveryBackoffBase.Value(), RecoveryBackoffMax: value.Provider.Web.RecoveryBackoffMax.Value(),
-		},
-		ProviderConsole: settingsdomain.ProviderConsoleConfig{
-			BaseURL: value.Provider.Console.BaseURL, ChatTimeout: value.Provider.Console.ChatTimeout.Value(),
-			StreamIdleTimeout: value.Provider.Console.StreamIdleTimeout.Value(),
-		},
+		Server:          settingsdomain.ServerConfig{MaxConcurrentRequests: value.Server.MaxConcurrentRequests},
+		ProviderBuild:   toDomainProviderBuildConfig(value),
+		ProviderWeb:     toDomainProviderWebConfig(value),
+		ProviderConsole: toDomainProviderConsoleConfig(value),
 		Batch: settingsdomain.BatchConfig{
 			ImportConcurrency: value.Batch.ImportConcurrency, ConversionConcurrency: value.Batch.ConversionConcurrency,
 			SyncConcurrency: value.Batch.SyncConcurrency, RefreshConcurrency: value.Batch.RefreshConcurrency,
 			RandomDelay: &randomDelay,
 		},
-		Media: settingsdomain.MediaConfig{
-			MaxImageBytes: value.Media.MaxImageBytes, MaxTotalBytes: value.Media.MaxTotalBytes,
-			CleanupThresholdPercent: value.Media.CleanupThresholdPercent, CleanupInterval: value.Media.CleanupInterval.Value(),
-		},
+		Media: toDomainMediaConfig(value),
 		Frontend: settingsdomain.FrontendConfig{
 			PublicAPIBaseURL: value.Frontend.PublicAPIBaseURLOverride,
 		},
-		Routing: settingsdomain.RoutingConfig{
-			StickyTTL: value.Routing.StickyTTL.Value(), CooldownBase: value.Routing.CooldownBase.Value(),
-			CooldownMax: value.Routing.CooldownMax.Value(), CapacityWait: value.Routing.CapacityWait.Value(), MaxAttempts: value.Routing.MaxAttempts, VideoMaxAttempts: value.Routing.VideoMaxAttempts,
-			MarkBuildChatDeniedAsReauth: value.Routing.MarkBuildChatDeniedAsReauth,
-			PreferFreeBuild:             value.Routing.PreferFreeBuild,
-			AccountIsolatedConnections:  &accountIsolatedConnections,
-			SegmentedSelector: &settingsdomain.SegmentedSelectorConfig{
-				ActiveEnabled: value.Routing.SegmentedSelectorEnabled,
-				MinCandidates: value.Routing.SegmentedMinCandidates, WindowSize: value.Routing.SegmentedWindowSize,
-			},
-		},
-		Audit: settingsdomain.AuditConfig{
-			BufferSize: value.Audit.BufferSize, BatchSize: value.Audit.BatchSize, FlushInterval: value.Audit.FlushInterval.Value(), CommitDelay: value.Audit.CommitDelay.Value(),
-			RetentionDays: intPointer(value.Audit.RetentionDays),
-		},
+		Routing: toDomainRoutingConfig(value, &accountIsolatedConnections),
+		Audit:   toDomainAuditConfig(value),
 		ClientKeyDefaults: settingsdomain.ClientKeyDefaultsConfig{
 			RPMLimit: value.ClientKeyDefaults.RPMLimit, MaxConcurrent: value.ClientKeyDefaults.MaxConcurrent,
 		},
-		Accounts: settingsdomain.AccountsConfig{
-			MarkBuildForbiddenReauth:             value.Accounts.MarkBuildForbiddenReauth,
-			BuildForbiddenReauthCodes:            append([]string(nil), value.Accounts.BuildForbiddenReauthCodes...),
-			ExcludeBuildBotFlaggedFromScheduling: value.Accounts.ExcludeBuildBotFlaggedFromScheduling,
-			AutoCleanReauthEnabled:               value.Accounts.AutoCleanReauthEnabled,
-			AutoCleanReauthInterval:              value.Accounts.AutoCleanReauthInterval.Value(),
-			AutoCleanReauthMinAge:                value.Accounts.AutoCleanReauthMinAge.Value(),
-			AutoCleanIncludeDisabled:             value.Accounts.AutoCleanIncludeDisabled,
+		Accounts: toDomainAccountsConfig(value),
+	}
+}
+
+func toDomainProviderBuildConfig(value config.Config) settingsdomain.ProviderBuildConfig {
+	return settingsdomain.ProviderBuildConfig{
+		BaseURL: value.Provider.Build.BaseURL, FallbackBaseURL: config.NormalizeBuildFallbackBaseURL(value.Provider.Build.FallbackBaseURL),
+		ClientVersion: value.Provider.Build.ClientVersion, ClientIdentifier: value.Provider.Build.ClientIdentifier,
+		TokenAuth: value.Provider.Build.TokenAuth, UserAgent: value.Provider.Build.UserAgent,
+		ResponseHeaderTimeout: value.Provider.Build.ResponseHeaderTimeout.Value(),
+		StreamIdleTimeout:     value.Provider.Build.StreamIdleTimeout.Value(),
+	}
+}
+
+func toDomainProviderWebConfig(value config.Config) settingsdomain.ProviderWebConfig {
+	return settingsdomain.ProviderWebConfig{
+		BaseURL: value.Provider.Web.BaseURL, QuotaTimeout: value.Provider.Web.QuotaTimeout.Value(),
+		StatsigMode: value.Provider.Web.StatsigMode, StatsigManualValue: value.Provider.Web.StatsigManualValue,
+		StatsigSignerURL: value.Provider.Web.StatsigSignerURL,
+		ClearanceMode:    value.Provider.Web.ClearanceMode, FlareSolverrURL: value.Provider.Web.FlareSolverrURL,
+		ClearanceTimeout: value.Provider.Web.ClearanceTimeout.Value(), ClearanceRefresh: value.Provider.Web.ClearanceRefresh.Value(),
+		ChatTimeout: value.Provider.Web.ChatTimeout.Value(), StreamIdleTimeout: value.Provider.Web.StreamIdleTimeout.Value(),
+		ImageTimeout:     value.Provider.Web.ImageTimeout.Value(),
+		VideoTimeout:     value.Provider.Web.VideoTimeout.Value(),
+		MediaConcurrency: value.Provider.Web.MediaConcurrency, AllowNSFW: value.Provider.Web.AllowNSFW,
+		FreeVideoDurationCap: settingsdomain.NormalizeWebFreeVideoDurationCap(value.Provider.Web.FreeVideoDurationCap),
+		RecoveryBackoffBase:  value.Provider.Web.RecoveryBackoffBase.Value(), RecoveryBackoffMax: value.Provider.Web.RecoveryBackoffMax.Value(),
+	}
+}
+
+func toDomainProviderConsoleConfig(value config.Config) settingsdomain.ProviderConsoleConfig {
+	return settingsdomain.ProviderConsoleConfig{
+		BaseURL: value.Provider.Console.BaseURL, ChatTimeout: value.Provider.Console.ChatTimeout.Value(),
+		StreamIdleTimeout: value.Provider.Console.StreamIdleTimeout.Value(),
+	}
+}
+
+func toDomainMediaConfig(value config.Config) settingsdomain.MediaConfig {
+	return settingsdomain.MediaConfig{
+		MaxImageBytes: value.Media.MaxImageBytes, MaxTotalBytes: value.Media.MaxTotalBytes,
+		CleanupThresholdPercent: value.Media.CleanupThresholdPercent, CleanupInterval: value.Media.CleanupInterval.Value(),
+	}
+}
+
+func toDomainRoutingConfig(value config.Config, accountIsolatedConnections *bool) settingsdomain.RoutingConfig {
+	return settingsdomain.RoutingConfig{
+		StickyTTL: value.Routing.StickyTTL.Value(), CooldownBase: value.Routing.CooldownBase.Value(),
+		CooldownMax: value.Routing.CooldownMax.Value(), CapacityWait: value.Routing.CapacityWait.Value(), MaxAttempts: value.Routing.MaxAttempts, VideoMaxAttempts: value.Routing.VideoMaxAttempts,
+		MarkBuildChatDeniedAsReauth: value.Routing.MarkBuildChatDeniedAsReauth,
+		PreferFreeBuild:             value.Routing.PreferFreeBuild,
+		AccountIsolatedConnections:  accountIsolatedConnections,
+		SegmentedSelector: &settingsdomain.SegmentedSelectorConfig{
+			ActiveEnabled: value.Routing.SegmentedSelectorEnabled,
+			MinCandidates: value.Routing.SegmentedMinCandidates, WindowSize: value.Routing.SegmentedWindowSize,
 		},
+	}
+}
+
+func toDomainAuditConfig(value config.Config) settingsdomain.AuditConfig {
+	return settingsdomain.AuditConfig{
+		BufferSize: value.Audit.BufferSize, BatchSize: value.Audit.BatchSize, FlushInterval: value.Audit.FlushInterval.Value(), CommitDelay: value.Audit.CommitDelay.Value(),
+		RetentionDays: intPointer(value.Audit.RetentionDays),
+	}
+}
+
+func toDomainAccountsConfig(value config.Config) settingsdomain.AccountsConfig {
+	return settingsdomain.AccountsConfig{
+		MarkBuildForbiddenReauth:             value.Accounts.MarkBuildForbiddenReauth,
+		BuildForbiddenReauthCodes:            append([]string(nil), value.Accounts.BuildForbiddenReauthCodes...),
+		ExcludeBuildBotFlaggedFromScheduling: value.Accounts.ExcludeBuildBotFlaggedFromScheduling,
+		AutoCleanReauthEnabled:               value.Accounts.AutoCleanReauthEnabled,
+		AutoCleanReauthInterval:              value.Accounts.AutoCleanReauthInterval.Value(),
+		AutoCleanReauthMinAge:                value.Accounts.AutoCleanReauthMinAge.Value(),
+		AutoCleanIncludeDisabled:             value.Accounts.AutoCleanIncludeDisabled,
 	}
 }
 

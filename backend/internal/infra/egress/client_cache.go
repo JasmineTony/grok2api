@@ -30,6 +30,36 @@ func (m *Manager) clientFor(id uint64, scope domain.Scope, proxyURL, userAgent, 
 }
 
 func (m *Manager) clientForWithOptions(id uint64, scope domain.Scope, proxyURL, userAgent, cookies string, sticky bool, accountIdentity string, options clientOptions) (cachedClient, error) {
+	fingerprint, buildHeaderTimeout := m.clientCacheFingerprint(scope, proxyURL, userAgent, cookies, options)
+	cacheScope := scope
+	if cacheScope == domain.ScopeWebAsset {
+		cacheScope = domain.ScopeWeb
+	}
+	for attempt := 0; attempt < clientCreationRetryLimit; attempt++ {
+		key, loadKey, err := m.clientCacheKeyFor(id, cacheScope, fingerprint, accountIdentity, options)
+		if err != nil {
+			return cachedClient{}, err
+		}
+		if cached, ok := m.touchCachedClient(key); ok {
+			return cached, nil
+		}
+		loaded, err, _ := m.clientLoads.Do(loadKey, func() (any, error) {
+			return m.createAndCacheClient(key, id, scope, proxyURL, userAgent, sticky, buildHeaderTimeout, options)
+		})
+		if errors.Is(err, errClientCacheInvalidated) {
+			continue
+		}
+		if err != nil {
+			return cachedClient{}, err
+		}
+		return loaded.(cachedClient), nil
+	}
+	return cachedClient{}, errClientCacheInvalidated
+}
+
+// clientCacheFingerprint derives the fingerprint of the transport settings and
+// returns the Build response-header timeout it encodes.
+func (m *Manager) clientCacheFingerprint(scope domain.Scope, proxyURL, userAgent, cookies string, options clientOptions) (string, time.Duration) {
 	clientKind := "browser"
 	buildHeaderTimeout := time.Duration(0)
 	if scope == domain.ScopeBuild {
@@ -44,58 +74,52 @@ func (m *Manager) clientForWithOptions(id uint64, scope domain.Scope, proxyURL, 
 		}
 	}
 	fingerprint := fmt.Sprintf("%x", sha256.Sum256([]byte(clientKind+"\x00"+proxyURL+"\x00"+userAgent+"\x00"+cookies)))
-	cacheScope := scope
-	if cacheScope == domain.ScopeWebAsset {
-		cacheScope = domain.ScopeWeb
-	}
-	for attempt := 0; attempt < clientCreationRetryLimit; attempt++ {
-		isolated := m.accountIsolated.Load()
-		if options.requireAccountIsolation && !isolated {
-			return cachedClient{}, errAccountConnectionIsolationDisabled
-		}
-		keyAccountIdentity := ""
-		if isolated {
-			keyAccountIdentity = strings.TrimSpace(accountIdentity)
-			if keyAccountIdentity == "" {
-				keyAccountIdentity = "shared"
-			}
-		}
-		key := clientCacheKey{nodeID: id, scope: cacheScope, fingerprint: fingerprint, accountIdentity: keyAccountIdentity}
-		loadKey := strconv.FormatUint(key.nodeID, 10) + "\x00" + string(key.scope) + "\x00" + key.fingerprint + "\x00" + key.accountIdentity
-		now := time.Now().UTC()
-		m.clientMu.RLock()
-		cached, cachedOK := m.clients[key]
-		cleanupDue := m.lastClientCleanup.IsZero() || now.Sub(m.lastClientCleanup) >= clientCacheCleanupInterval
-		touchDue := cachedOK && (cached.lastUsed.IsZero() || now.Sub(cached.lastUsed) >= clientCacheTouchInterval)
-		m.clientMu.RUnlock()
-		if cachedOK && !cleanupDue && !touchDue {
-			return cached, nil
-		}
+	return fingerprint, buildHeaderTimeout
+}
 
-		m.clientMu.Lock()
-		stale := m.cleanupClientCacheLocked(now)
-		if cached, ok := m.clients[key]; ok {
-			cached.lastUsed = now
-			m.clients[key] = cached
-			m.clientMu.Unlock()
-			closeRequestClients(stale)
-			return cached, nil
+// clientCacheKeyFor derives the cache key of this attempt. The isolation mode is
+// re-read on every retry so a toggle cannot reuse a key from the other mode.
+func (m *Manager) clientCacheKeyFor(id uint64, cacheScope domain.Scope, fingerprint, accountIdentity string, options clientOptions) (clientCacheKey, string, error) {
+	isolated := m.accountIsolated.Load()
+	if options.requireAccountIsolation && !isolated {
+		return clientCacheKey{}, "", errAccountConnectionIsolationDisabled
+	}
+	keyAccountIdentity := ""
+	if isolated {
+		keyAccountIdentity = strings.TrimSpace(accountIdentity)
+		if keyAccountIdentity == "" {
+			keyAccountIdentity = "shared"
 		}
+	}
+	key := clientCacheKey{nodeID: id, scope: cacheScope, fingerprint: fingerprint, accountIdentity: keyAccountIdentity}
+	loadKey := strconv.FormatUint(key.nodeID, 10) + "\x00" + string(key.scope) + "\x00" + key.fingerprint + "\x00" + key.accountIdentity
+	return key, loadKey, nil
+}
+
+// touchCachedClient returns a cached client that needs neither cleanup nor a
+// last-used refresh; otherwise it refreshes the entry under the write lock.
+func (m *Manager) touchCachedClient(key clientCacheKey) (cachedClient, bool) {
+	now := time.Now().UTC()
+	m.clientMu.RLock()
+	cached, cachedOK := m.clients[key]
+	cleanupDue := m.lastClientCleanup.IsZero() || now.Sub(m.lastClientCleanup) >= clientCacheCleanupInterval
+	touchDue := cachedOK && (cached.lastUsed.IsZero() || now.Sub(cached.lastUsed) >= clientCacheTouchInterval)
+	m.clientMu.RUnlock()
+	if cachedOK && !cleanupDue && !touchDue {
+		return cached, true
+	}
+	m.clientMu.Lock()
+	stale := m.cleanupClientCacheLocked(now)
+	if cached, ok := m.clients[key]; ok {
+		cached.lastUsed = now
+		m.clients[key] = cached
 		m.clientMu.Unlock()
 		closeRequestClients(stale)
-
-		loaded, err, _ := m.clientLoads.Do(loadKey, func() (any, error) {
-			return m.createAndCacheClient(key, id, scope, proxyURL, userAgent, sticky, buildHeaderTimeout, options)
-		})
-		if errors.Is(err, errClientCacheInvalidated) {
-			continue
-		}
-		if err != nil {
-			return cachedClient{}, err
-		}
-		return loaded.(cachedClient), nil
+		return cached, true
 	}
-	return cachedClient{}, errClientCacheInvalidated
+	m.clientMu.Unlock()
+	closeRequestClients(stale)
+	return cachedClient{}, false
 }
 
 func (m *Manager) createAndCacheClient(key clientCacheKey, id uint64, scope domain.Scope, proxyURL, userAgent string, sticky bool, buildHeaderTimeout time.Duration, options clientOptions) (cachedClient, error) {
@@ -123,9 +147,14 @@ func (m *Manager) createAndCacheClient(key clientCacheKey, id uint64, scope doma
 		return cachedClient{}, err
 	}
 	value.lastUsed = time.Now().UTC()
+	return m.publishCachedClient(key, id, version, value, sticky)
+}
 
+// publishCachedClient installs a freshly built client, evicting the superseded
+// per-node and over-capacity entries before it becomes visible to other callers.
+func (m *Manager) publishCachedClient(key clientCacheKey, id uint64, version uint64, value cachedClient, sticky bool) (cachedClient, error) {
 	m.clientMu.Lock()
-	stale = m.cleanupClientCacheLocked(value.lastUsed)
+	stale := m.cleanupClientCacheLocked(value.lastUsed)
 	if (key.accountIdentity != "") != m.accountIsolated.Load() {
 		m.clientMu.Unlock()
 		closeRequestClients(append(stale, value.client))

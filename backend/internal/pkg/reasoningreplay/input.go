@@ -6,11 +6,27 @@ import (
 )
 
 func filterReplayItemsForInput(body []byte, items [][]byte) [][]byte {
+	inputItems, ok := replayInputItems(body)
+	if !ok {
+		return nil
+	}
+	lastAssistant, hasLastAssistant := lastAssistantMessage(inputItems)
+	cachedAssistant, hasCachedAssistant := replayAssistantMessage(items)
+	assistantMatches := hasLastAssistant && hasCachedAssistant && assistantContentEqual(lastAssistant, cachedAssistant)
+	if hasLastAssistant && hasCachedAssistant && !assistantMatches {
+		return nil
+	}
+	existingCalls, existingOutputs, existingEncrypted := replayExistingReferences(inputItems)
+	return filterReplayItems(items, existingCalls, existingOutputs, existingEncrypted, assistantMatches)
+}
+
+// replayInputItems 解析请求体中的 input 数组，返回可解析的条目以及请求体是否声明了输入。
+func replayInputItems(body []byte) ([]map[string]json.RawMessage, bool) {
 	var payload struct {
 		Input []json.RawMessage `json:"input"`
 	}
 	if json.Unmarshal(body, &payload) != nil || len(payload.Input) == 0 {
-		return nil
+		return nil, false
 	}
 	inputItems := make([]map[string]json.RawMessage, 0, len(payload.Input))
 	for _, raw := range payload.Input {
@@ -19,12 +35,11 @@ func filterReplayItemsForInput(body []byte, items [][]byte) [][]byte {
 			inputItems = append(inputItems, item)
 		}
 	}
-	lastAssistant, hasLastAssistant := lastAssistantMessage(inputItems)
-	cachedAssistant, hasCachedAssistant := replayAssistantMessage(items)
-	assistantMatches := hasLastAssistant && hasCachedAssistant && assistantContentEqual(lastAssistant, cachedAssistant)
-	if hasLastAssistant && hasCachedAssistant && !assistantMatches {
-		return nil
-	}
+	return inputItems, true
+}
+
+// replayExistingReferences 汇总请求已包含的回放引用，供过滤回放条目时判重。
+func replayExistingReferences(inputItems []map[string]json.RawMessage) (map[string]bool, map[string]string, map[string]bool) {
 	existingCalls := map[string]bool{}
 	existingOutputs := map[string]string{}
 	existingEncrypted := map[string]bool{}
@@ -53,6 +68,11 @@ func filterReplayItemsForInput(body []byte, items [][]byte) [][]byte {
 			}
 		}
 	}
+	return existingCalls, existingOutputs, existingEncrypted
+}
+
+// filterReplayItems 丢弃请求已包含的回放条目，并在调用 ID 被改写时同步改写条目。
+func filterReplayItems(items [][]byte, existingCalls map[string]bool, existingOutputs map[string]string, existingEncrypted map[string]bool, assistantMatches bool) [][]byte {
 	filtered := make([][]byte, 0, len(items))
 	for _, item := range items {
 		var typed struct {
@@ -77,13 +97,7 @@ func filterReplayItemsForInput(body []byte, items [][]byte) [][]byte {
 			if len(keys) == 0 || anyReplayCallKeyExists(existingCalls, keys) {
 				continue
 			}
-			outputCallID := ""
-			for _, candidate := range comparableReplayCallIDs(typed.CallID) {
-				if value := existingOutputs[candidate]; value != "" {
-					outputCallID = value
-					break
-				}
-			}
+			outputCallID := findReplayOutputCallID(existingOutputs, typed.CallID)
 			if outputCallID == "" {
 				continue
 			}
@@ -99,6 +113,16 @@ func filterReplayItemsForInput(body []byte, items [][]byte) [][]byte {
 		filtered = append(filtered, item)
 	}
 	return filtered
+}
+
+// findReplayOutputCallID 返回请求中与该调用 ID 对应的输出条目实际使用的 ID。
+func findReplayOutputCallID(existingOutputs map[string]string, callID string) string {
+	for _, candidate := range comparableReplayCallIDs(callID) {
+		if value := existingOutputs[candidate]; value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func comparableReplayCallIDs(callID string) []string {
@@ -283,6 +307,25 @@ func insertReplayItems(body []byte, replayItems [][]byte) ([]byte, bool) {
 }
 
 func replayInsertIndex(input []json.RawMessage, replayItems [][]byte) int {
+	replayCallIDs := replayItemCallIDs(replayItems)
+	if len(replayCallIDs) > 0 {
+		if index, ok := replayOutputInsertIndex(input, replayCallIDs); ok {
+			return index
+		}
+	}
+	if index, ok := lastAssistantInputIndex(input); ok {
+		return index
+	}
+	for index, raw := range input {
+		if shouldInsertReplayBefore(raw) {
+			return index
+		}
+	}
+	return len(input)
+}
+
+// replayItemCallIDs 汇总回放条目声明的工具调用 ID。
+func replayItemCallIDs(replayItems [][]byte) map[string]bool {
 	replayCallIDs := map[string]bool{}
 	for _, item := range replayItems {
 		var typed struct {
@@ -298,29 +341,37 @@ func replayInsertIndex(input []json.RawMessage, replayItems [][]byte) int {
 			}
 		}
 	}
-	if len(replayCallIDs) > 0 {
-		for index, raw := range input {
-			var typed struct {
-				Type   string `json:"type"`
-				CallID string `json:"call_id"`
-			}
-			if json.Unmarshal(raw, &typed) != nil {
-				continue
-			}
-			if typed.Type != "function_call_output" && typed.Type != "custom_tool_call_output" {
-				continue
-			}
-			callIDs := comparableReplayCallIDs(typed.CallID)
-			if len(callIDs) == 0 {
-				return index
-			}
-			for _, callID := range callIDs {
-				if replayCallIDs[callID] {
-					return index
-				}
+	return replayCallIDs
+}
+
+// replayOutputInsertIndex 找到回放工具调用对应的输出条目位置；缺少可比对调用 ID 时同样返回该位置。
+func replayOutputInsertIndex(input []json.RawMessage, replayCallIDs map[string]bool) (int, bool) {
+	for index, raw := range input {
+		var typed struct {
+			Type   string `json:"type"`
+			CallID string `json:"call_id"`
+		}
+		if json.Unmarshal(raw, &typed) != nil {
+			continue
+		}
+		if typed.Type != "function_call_output" && typed.Type != "custom_tool_call_output" {
+			continue
+		}
+		callIDs := comparableReplayCallIDs(typed.CallID)
+		if len(callIDs) == 0 {
+			return index, true
+		}
+		for _, callID := range callIDs {
+			if replayCallIDs[callID] {
+				return index, true
 			}
 		}
 	}
+	return 0, false
+}
+
+// lastAssistantInputIndex 返回 input 中最后一条 assistant 消息的位置。
+func lastAssistantInputIndex(input []json.RawMessage) (int, bool) {
 	for index := len(input) - 1; index >= 0; index-- {
 		var typed struct {
 			Type string `json:"type"`
@@ -331,15 +382,10 @@ func replayInsertIndex(input []json.RawMessage, replayItems [][]byte) int {
 		}
 		typeName := strings.TrimSpace(typed.Type)
 		if (typeName == "" || typeName == "message") && strings.EqualFold(strings.TrimSpace(typed.Role), "assistant") {
-			return index
+			return index, true
 		}
 	}
-	for index, raw := range input {
-		if shouldInsertReplayBefore(raw) {
-			return index
-		}
-	}
-	return len(input)
+	return 0, false
 }
 
 func shouldInsertReplayBefore(raw json.RawMessage) bool {

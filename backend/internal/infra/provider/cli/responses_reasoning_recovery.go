@@ -94,122 +94,169 @@ func (a *Adapter) recoverReasoningDecodeFailure(
 	replayKey string,
 	initialCall responseCall,
 ) (responseCall, reasoningRecoveryOutcome, error) {
-	response := initialCall.response
+	plan := &reasoningRecoveryPlan{
+		request: request, accessToken: accessToken, base: base, body: body,
+		initialCall: initialCall,
+	}
+	if done, result := a.prepareReasoningRecovery(plan); done {
+		return result, reasoningRecoveryOutcome{}, nil
+	}
+	// 一旦上游明确拒绝 opaque reasoning，立即清理该账号/平面的服务端回放，
+	// 防止下次请求再次注入同一份已失效密文。成功响应会按正常 Capture 流程写回新状态。
+	if a.replay != nil && replayKey != "" {
+		a.replay.Clear(ctx, request.Model, replayKey)
+	}
+	portableBody, encryptedChanged, retryCall, replaced, err := a.downgradeEncryptedContent(ctx, plan)
+	if err != nil {
+		return responseCall{}, plan.out, err
+	}
+	if replaced {
+		return retryCall, plan.out, nil
+	}
+	retryCall, replaced, err = a.resetReasoningSession(ctx, plan, portableBody, encryptedChanged)
+	if err != nil {
+		return responseCall{}, plan.out, err
+	}
+	if replaced {
+		return retryCall, plan.out, nil
+	}
+	return plan.originalCall, plan.out, nil
+}
+
+// reasoningRecoveryPlan 承载一次 reasoning 解码失败恢复所需的原始 400 上下文与累计结果。
+type reasoningRecoveryPlan struct {
+	request      provider.ResponseResourceRequest
+	accessToken  string
+	base         string
+	body         []byte
+	initialCall  responseCall
+	original     *http.Response
+	originalCall responseCall
+	errorBody    []byte
+	truncated    bool
+	out          reasoningRecoveryOutcome
+}
+
+// prepareReasoningRecovery 判定上游 400 是否属于可恢复的 opaque reasoning 解码失败；
+// done 为 true 时 result 已是最终响应，调用方直接返回空 outcome。
+func (a *Adapter) prepareReasoningRecovery(plan *reasoningRecoveryPlan) (bool, responseCall) {
+	response := plan.initialCall.response
 	if response == nil || response.StatusCode != http.StatusBadRequest {
-		return initialCall, reasoningRecoveryOutcome{}, nil
+		return true, plan.initialCall
 	}
 	errorBody, truncated, err := provider.ReadDiagnosticBody(response.Body)
 	_ = response.Body.Close()
 	if err != nil {
-		initialCall.response = cloneBufferedResponse(response, errorBody, truncated)
-		return initialCall, reasoningRecoveryOutcome{}, nil
+		plan.initialCall.response = cloneBufferedResponse(response, errorBody, truncated)
+		return true, plan.initialCall
 	}
 	original := cloneBufferedResponse(response, errorBody, truncated)
-	originalCall := initialCall
+	originalCall := plan.initialCall
 	originalCall.response = original
 	if truncated || !isReasoningDecodeFailure(errorBody) {
-		return originalCall, reasoningRecoveryOutcome{}, nil
+		return true, originalCall
 	}
 	// Build historically reused the compaction-decode wording for opaque
 	// reasoning and server-side session failures. Only treat that wording as a
 	// real compaction rejection when the rejected request actually carried a
 	// compaction input item. This preserves reasoning recovery without ever
 	// rewriting a client-held compact state.
-	if isCompactionBlobDecodeFailure(errorBody) && hasCompactionInputItem(body) {
-		return originalCall, reasoningRecoveryOutcome{}, nil
+	if isCompactionBlobDecodeFailure(errorBody) && hasCompactionInputItem(plan.body) {
+		return true, originalCall
 	}
-	out := reasoningRecoveryOutcome{}
-	// 一旦上游明确拒绝 opaque reasoning，立即清理该账号/平面的服务端回放，
-	// 防止下次请求再次注入同一份已失效密文。成功响应会按正常 Capture 流程写回新状态。
-	if a.replay != nil && replayKey != "" {
-		a.replay.Clear(ctx, request.Model, replayKey)
-	}
+	plan.original = original
+	plan.originalCall = originalCall
+	plan.errorBody = errorBody
+	plan.truncated = truncated
+	return false, originalCall
+}
 
-	portableBody, encryptedChanged := stripReasoningEncryptedContent(body)
-	if encryptedChanged {
-		retryCall := a.retryReasoningRecovery(ctx, request, accessToken, portableBody, base, false)
-		if retryCall.err != nil {
-			a.logReasoningRecovery(request, base, "encrypted_content", "transport_failed", 0, retryCall.err)
-			_ = original.Body.Close()
-			return responseCall{}, out, retryCall.err
-		}
-		if err := normalizeGzipResponse(retryCall.response); err != nil {
-			_ = retryCall.response.Body.Close()
-			a.logReasoningRecovery(request, base, "encrypted_content", "response_decode_failed", retryCall.response.StatusCode, err)
-			_ = original.Body.Close()
-			return responseCall{}, out, err
-		}
-		if retryCall.response.StatusCode != http.StatusBadRequest {
-			_ = original.Body.Close()
-			logResult := "retry_response"
-			auditResult := "replaced_by_retry_response"
-			if isHTTPSuccess(retryCall.response.StatusCode) {
-				logResult = "recovered"
-				auditResult = "recovered_encrypted_content_stripped"
-			} else if retryCall.response.StatusCode == http.StatusTooManyRequests {
-				auditResult = "replaced_by_rate_limit"
-			}
-			a.logReasoningRecovery(request, base, "encrypted_content", logResult, retryCall.response.StatusCode, nil)
-			out.prependOriginal(auditResult, originalCall, errorBody, truncated)
-			out.encryptedContentDowngraded = true
-			return retryCall, out, nil
-		}
-		retryBody, retryTrunc, inspectErr := provider.ReadDiagnosticBody(retryCall.response.Body)
-		_ = retryCall.response.Body.Close()
-		if inspectErr != nil {
-			a.logReasoningRecovery(request, base, "encrypted_content", "retry_rejected", retryCall.response.StatusCode, inspectErr)
-			_ = original.Body.Close()
-			return responseCall{}, out, inspectErr
-		}
-		retryResult := "retry_still_400"
-		if !retryTrunc && isReasoningDecodeFailure(retryBody) {
-			retryResult = "decode_error_persisted"
-		}
-		out.recordHidden("reasoning_encrypted_content_retry", retryResult, retryCall, retryBody, retryTrunc, nil)
-		a.logReasoningRecovery(request, base, "encrypted_content", retryResult, retryCall.response.StatusCode, nil)
+// downgradeEncryptedContent 先剥离不可解码的 opaque reasoning 再重试；
+// replaced 为 true 时 retryCall 就是最终响应。
+func (a *Adapter) downgradeEncryptedContent(ctx context.Context, plan *reasoningRecoveryPlan) ([]byte, bool, responseCall, bool, error) {
+	portableBody, encryptedChanged := stripReasoningEncryptedContent(plan.body)
+	if !encryptedChanged {
+		return portableBody, false, responseCall{}, false, nil
 	}
-
-	if !canResetReasoningSession(request, portableBody) {
-		a.logReasoningRecovery(request, base, "session_reset", "not_safe", 0, nil)
-		out.failed = true
-		return originalCall, out, nil
-	}
-	statelessBody := removePromptCacheKey(portableBody)
-	retryCall := a.retryReasoningRecovery(ctx, request, accessToken, statelessBody, base, true)
+	retryCall := a.retryReasoningRecovery(ctx, plan.request, plan.accessToken, portableBody, plan.base, false)
 	if retryCall.err != nil {
-		a.logReasoningRecovery(request, base, "session_reset", "transport_failed", 0, retryCall.err)
-		_ = original.Body.Close()
-		return responseCall{}, out, retryCall.err
+		a.logReasoningRecovery(plan.request, plan.base, "encrypted_content", "transport_failed", 0, retryCall.err)
+		_ = plan.original.Body.Close()
+		return portableBody, encryptedChanged, responseCall{}, false, retryCall.err
 	}
 	if err := normalizeGzipResponse(retryCall.response); err != nil {
 		_ = retryCall.response.Body.Close()
-		a.logReasoningRecovery(request, base, "session_reset", "response_decode_failed", retryCall.response.StatusCode, err)
-		_ = original.Body.Close()
-		return responseCall{}, out, err
+		a.logReasoningRecovery(plan.request, plan.base, "encrypted_content", "response_decode_failed", retryCall.response.StatusCode, err)
+		_ = plan.original.Body.Close()
+		return portableBody, encryptedChanged, responseCall{}, false, err
 	}
 	if retryCall.response.StatusCode != http.StatusBadRequest {
-		_ = original.Body.Close()
-		logResult := "retry_response"
-		auditResult := "replaced_by_retry_response"
-		if isHTTPSuccess(retryCall.response.StatusCode) {
-			logResult = "recovered"
-			auditResult = "recovered_session_reset"
-		} else if retryCall.response.StatusCode == http.StatusTooManyRequests {
-			auditResult = "replaced_by_rate_limit"
-		}
-		a.logReasoningRecovery(request, base, "session_reset", logResult, retryCall.response.StatusCode, nil)
-		out.prependOriginal(auditResult, originalCall, errorBody, truncated)
-		out.encryptedContentDowngraded = encryptedChanged
-		out.sessionReset = true
-		return retryCall, out, nil
+		plan.out.encryptedContentDowngraded = true
+		return portableBody, encryptedChanged, a.recordReasoningRetryReplacement(plan, "encrypted_content", "recovered_encrypted_content_stripped", retryCall), true, nil
 	}
-
 	retryBody, retryTrunc, inspectErr := provider.ReadDiagnosticBody(retryCall.response.Body)
 	_ = retryCall.response.Body.Close()
-	a.logReasoningRecovery(request, base, "session_reset", "retry_rejected", retryCall.response.StatusCode, inspectErr)
-	out.recordHidden("reasoning_session_reset", "retry_rejected", retryCall, retryBody, retryTrunc, inspectErr)
-	out.failed = true
-	return originalCall, out, nil
+	if inspectErr != nil {
+		a.logReasoningRecovery(plan.request, plan.base, "encrypted_content", "retry_rejected", retryCall.response.StatusCode, inspectErr)
+		_ = plan.original.Body.Close()
+		return portableBody, encryptedChanged, responseCall{}, false, inspectErr
+	}
+	retryResult := "retry_still_400"
+	if !retryTrunc && isReasoningDecodeFailure(retryBody) {
+		retryResult = "decode_error_persisted"
+	}
+	plan.out.recordHidden("reasoning_encrypted_content_retry", retryResult, retryCall, retryBody, retryTrunc, nil)
+	a.logReasoningRecovery(plan.request, plan.base, "encrypted_content", retryResult, retryCall.response.StatusCode, nil)
+	return portableBody, encryptedChanged, responseCall{}, false, nil
+}
+
+// resetReasoningSession 清空服务端会话身份后重试；replaced 为 true 时 retryCall 就是最终响应。
+func (a *Adapter) resetReasoningSession(ctx context.Context, plan *reasoningRecoveryPlan, portableBody []byte, encryptedChanged bool) (responseCall, bool, error) {
+	if !canResetReasoningSession(plan.request, portableBody) {
+		a.logReasoningRecovery(plan.request, plan.base, "session_reset", "not_safe", 0, nil)
+		plan.out.failed = true
+		return responseCall{}, false, nil
+	}
+	statelessBody := removePromptCacheKey(portableBody)
+	retryCall := a.retryReasoningRecovery(ctx, plan.request, plan.accessToken, statelessBody, plan.base, true)
+	if retryCall.err != nil {
+		a.logReasoningRecovery(plan.request, plan.base, "session_reset", "transport_failed", 0, retryCall.err)
+		_ = plan.original.Body.Close()
+		return responseCall{}, false, retryCall.err
+	}
+	if err := normalizeGzipResponse(retryCall.response); err != nil {
+		_ = retryCall.response.Body.Close()
+		a.logReasoningRecovery(plan.request, plan.base, "session_reset", "response_decode_failed", retryCall.response.StatusCode, err)
+		_ = plan.original.Body.Close()
+		return responseCall{}, false, err
+	}
+	if retryCall.response.StatusCode != http.StatusBadRequest {
+		plan.out.encryptedContentDowngraded = encryptedChanged
+		plan.out.sessionReset = true
+		return a.recordReasoningRetryReplacement(plan, "session_reset", "recovered_session_reset", retryCall), true, nil
+	}
+	retryBody, retryTrunc, inspectErr := provider.ReadDiagnosticBody(retryCall.response.Body)
+	_ = retryCall.response.Body.Close()
+	a.logReasoningRecovery(plan.request, plan.base, "session_reset", "retry_rejected", retryCall.response.StatusCode, inspectErr)
+	plan.out.recordHidden("reasoning_session_reset", "retry_rejected", retryCall, retryBody, retryTrunc, inspectErr)
+	plan.out.failed = true
+	return responseCall{}, false, nil
+}
+
+// recordReasoningRetryReplacement 记录恢复重试已替换原始 400 的审计结果，并返回重试响应。
+func (a *Adapter) recordReasoningRetryReplacement(plan *reasoningRecoveryPlan, stage, recoveredAuditResult string, retryCall responseCall) responseCall {
+	_ = plan.original.Body.Close()
+	logResult := "retry_response"
+	auditResult := "replaced_by_retry_response"
+	if isHTTPSuccess(retryCall.response.StatusCode) {
+		logResult = "recovered"
+		auditResult = recoveredAuditResult
+	} else if retryCall.response.StatusCode == http.StatusTooManyRequests {
+		auditResult = "replaced_by_rate_limit"
+	}
+	a.logReasoningRecovery(plan.request, plan.base, stage, logResult, retryCall.response.StatusCode, nil)
+	plan.out.prependOriginal(auditResult, plan.originalCall, plan.errorBody, plan.truncated)
+	return retryCall
 }
 
 // retryReasoningRecovery 使用新的幂等键执行同账号、同平面的恢复调用。

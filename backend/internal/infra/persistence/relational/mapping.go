@@ -23,77 +23,73 @@ func toSessionDomain(value adminSessionModel) admin.Session {
 }
 
 func toAccountDomain(value accountModel) account.Credential {
-	var expiresAt time.Time
-	var refreshDueAt, lastRefreshAt *time.Time
-	var refreshFailures int
-	var refreshUnclassifiedAuthFailures int
-	var lastRefreshErrorStatus int
-	var lastRefreshError string
-	var lastRefreshErrorMessage string
-	var lastRefreshErrorResponse string
-	var refreshPermanent bool
-	var authType account.AuthType
-	var clientID, encryptedPrimary, encryptedRefresh, encryptedCloudflareCookie string
-	if value.Credential != nil {
-		authType = account.AuthType(value.Credential.AuthType)
-		clientID = value.Credential.ClientID
-		encryptedPrimary = value.Credential.EncryptedPrimary
-		encryptedRefresh = value.Credential.EncryptedRefresh
-		encryptedCloudflareCookie = value.Credential.EncryptedCloudflareCookie
-		// The account-level Cloudflare cookie is intentionally never exposed by
-		// the transport DTO; it is only used when constructing the upstream Cookie header.
-		if value.Credential.ExpiresAt != nil {
-			expiresAt = *value.Credential.ExpiresAt
-		}
-		refreshDueAt = value.Credential.RefreshDueAt
-		lastRefreshAt = value.Credential.LastRefreshAt
-		refreshFailures = value.Credential.RefreshFailures
-		refreshUnclassifiedAuthFailures = value.Credential.RefreshUnclassifiedAuthFailures
-		lastRefreshErrorStatus = value.Credential.LastRefreshErrorStatus
-		lastRefreshError = value.Credential.LastRefreshError
-		lastRefreshErrorMessage = value.Credential.LastRefreshErrorMessage
-		lastRefreshErrorResponse = value.Credential.LastRefreshErrorResponse
-		refreshPermanent = value.Credential.RefreshPermanent
-	}
-	var webTier account.WebTier
-	var webTierSyncedAt *time.Time
-	var webNSFWEnabledAt *time.Time
-	var webTermsAcceptedAt *time.Time
-	var webTermsAcceptedVersion int
-	var webBirthDateSetAt *time.Time
-	var egressIdentity string
-	if value.WebProfile != nil {
-		webTier = account.WebTier(value.WebProfile.Tier)
-		webTierSyncedAt = value.WebProfile.SyncedAt
-		webNSFWEnabledAt = value.WebProfile.NSFWEnabledAt
-		webTermsAcceptedVersion = value.WebProfile.TermsAcceptedVersion
-		if webTermsAcceptedVersion >= account.CurrentWebTermsVersion {
-			webTermsAcceptedAt = value.WebProfile.TermsAcceptedAt
-		}
-		webBirthDateSetAt = value.WebProfile.BirthDateSetAt
-		egressIdentity = value.WebProfile.EgressIdentity
-	}
+	credential := toAccountCredentialFields(value.Credential)
+	webProfile := toAccountWebProfileFields(value.WebProfile)
 	buildRouteMode := account.BuildRouteMode(value.BuildRouteMode)
 	if account.Provider(value.Provider) != account.ProviderBuild || !buildRouteMode.IsValid() {
 		buildRouteMode = account.BuildRouteAuto
 	}
 	return account.Credential{
-		ID: value.ID, Provider: account.Provider(value.Provider), AuthType: authType, Name: value.Name, Email: value.Email,
-		UserID: value.UserID, TeamID: value.TeamID, SourceKey: value.SourceKey, OIDCClientID: clientID,
-		EncryptedAccessToken: encryptedPrimary, EncryptedRefreshToken: encryptedRefresh, EncryptedCloudflareCookie: encryptedCloudflareCookie,
-		ExpiresAt: expiresAt, RefreshDueAt: refreshDueAt, LastRefreshAt: lastRefreshAt,
-		RefreshFailureCount: refreshFailures, RefreshUnclassifiedAuthCount: refreshUnclassifiedAuthFailures, LastRefreshErrorStatus: lastRefreshErrorStatus, LastRefreshErrorCode: lastRefreshError, LastRefreshErrorMessage: lastRefreshErrorMessage, LastRefreshErrorResponse: lastRefreshErrorResponse, RefreshPermanent: refreshPermanent,
+		ID: value.ID, Provider: account.Provider(value.Provider), AuthType: credential.AuthType, Name: value.Name, Email: value.Email,
+		UserID: value.UserID, TeamID: value.TeamID, SourceKey: value.SourceKey, OIDCClientID: credential.OIDCClientID,
+		EncryptedAccessToken: credential.EncryptedAccessToken, EncryptedRefreshToken: credential.EncryptedRefreshToken, EncryptedCloudflareCookie: credential.EncryptedCloudflareCookie,
+		ExpiresAt: credential.ExpiresAt, RefreshDueAt: credential.RefreshDueAt, LastRefreshAt: credential.LastRefreshAt,
+		RefreshFailureCount: credential.RefreshFailureCount, RefreshUnclassifiedAuthCount: credential.RefreshUnclassifiedAuthCount, LastRefreshErrorStatus: credential.LastRefreshErrorStatus, LastRefreshErrorCode: credential.LastRefreshErrorCode, LastRefreshErrorMessage: credential.LastRefreshErrorMessage, LastRefreshErrorResponse: credential.LastRefreshErrorResponse, RefreshPermanent: credential.RefreshPermanent,
 		Enabled: value.Enabled, AuthStatus: account.AuthStatus(value.AuthStatus), ReauthMarkedAt: value.ReauthMarkedAt, Priority: value.Priority,
 		MaxConcurrent: value.MaxConcurrent, MinimumRemaining: value.MinimumRemaining, FailureCount: value.FailureCount,
 		CooldownUntil: value.CooldownUntil, LastError: value.LastError, LastUsedAt: value.LastUsedAt,
-		ObservedModel: value.ObservedModel, ObservedModelAt: value.ObservedModelAt, WebTier: webTier, WebTierSyncedAt: webTierSyncedAt,
-		WebNSFWEnabledAt: webNSFWEnabledAt, WebTermsAcceptedAt: webTermsAcceptedAt, WebTermsAcceptedVersion: webTermsAcceptedVersion, WebBirthDateSetAt: webBirthDateSetAt, EgressIdentity: egressIdentity,
+		ObservedModel: value.ObservedModel, ObservedModelAt: value.ObservedModelAt, WebTier: webProfile.WebTier, WebTierSyncedAt: webProfile.WebTierSyncedAt,
+		WebNSFWEnabledAt: webProfile.WebNSFWEnabledAt, WebTermsAcceptedAt: webProfile.WebTermsAcceptedAt, WebTermsAcceptedVersion: webProfile.WebTermsAcceptedVersion, WebBirthDateSetAt: webProfile.WebBirthDateSetAt, EgressIdentity: webProfile.EgressIdentity,
 		EgressNodeID: valueEgressNodeID(value.EgressNodeID), EgressAssignmentMode: account.EgressAssignmentMode(value.EgressAssignmentMode), EgressAssignedAt: value.EgressAssignedAt,
 		BuildAPIFallback: value.BuildAPIFallback, BuildRouteMode: buildRouteMode,
 		BuildSuperEntitled: value.BuildSuperEntitled && account.Provider(value.Provider) == account.ProviderBuild,
 		BuildBotFlagSource: normalizedBuildBotFlagSource(account.Provider(value.Provider), value.Credential),
 		CreatedAt:          value.CreatedAt, UpdatedAt: value.UpdatedAt,
 	}
+}
+
+// toAccountCredentialFields 映射凭据字段；账号级 Cloudflare cookie 只用于构造上游 Cookie 头。
+func toAccountCredentialFields(value *accountCredentialModel) account.Credential {
+	var credential account.Credential
+	if value == nil {
+		return credential
+	}
+	credential.AuthType = account.AuthType(value.AuthType)
+	credential.OIDCClientID = value.ClientID
+	credential.EncryptedAccessToken = value.EncryptedPrimary
+	credential.EncryptedRefreshToken = value.EncryptedRefresh
+	credential.EncryptedCloudflareCookie = value.EncryptedCloudflareCookie
+	if value.ExpiresAt != nil {
+		credential.ExpiresAt = *value.ExpiresAt
+	}
+	credential.RefreshDueAt = value.RefreshDueAt
+	credential.LastRefreshAt = value.LastRefreshAt
+	credential.RefreshFailureCount = value.RefreshFailures
+	credential.RefreshUnclassifiedAuthCount = value.RefreshUnclassifiedAuthFailures
+	credential.LastRefreshErrorStatus = value.LastRefreshErrorStatus
+	credential.LastRefreshErrorCode = value.LastRefreshError
+	credential.LastRefreshErrorMessage = value.LastRefreshErrorMessage
+	credential.LastRefreshErrorResponse = value.LastRefreshErrorResponse
+	credential.RefreshPermanent = value.RefreshPermanent
+	return credential
+}
+
+// toAccountWebProfileFields 映射 Web 账号档案中与凭据相关的字段。
+func toAccountWebProfileFields(value *webAccountProfileModel) account.Credential {
+	var profile account.Credential
+	if value == nil {
+		return profile
+	}
+	profile.WebTier = account.WebTier(value.Tier)
+	profile.WebTierSyncedAt = value.SyncedAt
+	profile.WebNSFWEnabledAt = value.NSFWEnabledAt
+	profile.WebTermsAcceptedVersion = value.TermsAcceptedVersion
+	if profile.WebTermsAcceptedVersion >= account.CurrentWebTermsVersion {
+		profile.WebTermsAcceptedAt = value.TermsAcceptedAt
+	}
+	profile.WebBirthDateSetAt = value.BirthDateSetAt
+	profile.EgressIdentity = value.EgressIdentity
+	return profile
 }
 
 func toCredentialMaterialDomain(value accountCredentialModel, provider account.Provider) account.CredentialMaterial {

@@ -146,65 +146,88 @@ func clashProxyURL(proxy clashProxy) (string, error) {
 	}
 	proxyType := strings.ToLower(strings.TrimSpace(proxy.Type))
 	switch proxyType {
-	case "http":
-		scheme := "http"
-		if proxy.TLS {
-			scheme = "https"
-		}
-		return clashStandardProxyURL(scheme, server, proxy.Username, proxy.Password), nil
-	case "socks5":
-		if proxy.TLS {
-			return "", errors.New("暂不支持 TLS SOCKS5")
-		}
-		return clashStandardProxyURL("socks5", server, proxy.Username, proxy.Password), nil
+	case "http", "socks5":
+		return clashUsernameProxyURL(proxyType, proxy, server)
 	case "ss":
-		if strings.TrimSpace(proxy.Plugin) != "" {
-			return "", errors.New("暂不支持 Shadowsocks plugin")
-		}
-		method := strings.ToLower(strings.TrimSpace(proxy.Cipher))
-		if method == "" || proxy.Password == "" {
-			return "", errors.New("Shadowsocks cipher/password 不能为空")
-		}
-		credential := base64.RawURLEncoding.EncodeToString([]byte(method + ":" + proxy.Password))
-		return "ss://" + credential + "@" + server, nil
+		return clashShadowsocksProxyURL(proxy, server)
 	case "trojan":
-		if proxy.Password == "" {
-			return "", errors.New("Trojan password 不能为空")
-		}
-		query, err := clashTunnelQuery(proxy, "tls")
-		if err != nil {
-			return "", err
-		}
-		return (&url.URL{Scheme: "trojan", User: url.User(proxy.Password), Host: server, RawQuery: query.Encode()}).String(), nil
+		return clashTrojanProxyURL(proxy, server)
 	case "vless":
-		if proxy.UUID == "" {
-			return "", errors.New("VLESS UUID 不能为空")
-		}
-		security := "none"
-		if proxy.RealityOptions.PublicKey != "" || proxy.RealityOptions.ShortID != "" {
-			security = "reality"
-		} else if proxy.TLS {
-			security = "tls"
-		}
-		query, err := clashTunnelQuery(proxy, security)
-		if err != nil {
-			return "", err
-		}
-		query.Set("encryption", "none")
-		if flow := strings.TrimSpace(proxy.Flow); flow != "" {
-			query.Set("flow", flow)
-		}
-		if security == "reality" {
-			query.Set("pbk", proxy.RealityOptions.PublicKey)
-			query.Set("sid", proxy.RealityOptions.ShortID)
-			query.Set("fp", firstNonEmptySubscription(proxy.ClientFingerprint, "chrome"))
-		}
-		return (&url.URL{Scheme: "vless", User: url.User(proxy.UUID), Host: server, RawQuery: query.Encode()}).String(), nil
+		return clashVLESSProxyURL(proxy, server)
 	case "vmess":
 		return clashVMessURL(proxy)
 	default:
 		return "", fmt.Errorf("暂不支持 Clash 代理类型 %q", proxyType)
 	}
+}
+
+func clashUsernameProxyURL(proxyType string, proxy clashProxy, server string) (string, error) {
+	if proxyType == "socks5" {
+		if proxy.TLS {
+			return "", errors.New("暂不支持 TLS SOCKS5")
+		}
+		return clashStandardProxyURL("socks5", server, proxy.Username, proxy.Password), nil
+	}
+	scheme := "http"
+	if proxy.TLS {
+		scheme = "https"
+	}
+	return clashStandardProxyURL(scheme, server, proxy.Username, proxy.Password), nil
+}
+
+func clashShadowsocksProxyURL(proxy clashProxy, server string) (string, error) {
+	if strings.TrimSpace(proxy.Plugin) != "" {
+		return "", errors.New("暂不支持 Shadowsocks plugin")
+	}
+	method := strings.ToLower(strings.TrimSpace(proxy.Cipher))
+	if method == "" || proxy.Password == "" {
+		return "", errors.New("Shadowsocks cipher/password 不能为空")
+	}
+	credential := base64.RawURLEncoding.EncodeToString([]byte(method + ":" + proxy.Password))
+	return "ss://" + credential + "@" + server, nil
+}
+
+func clashTrojanProxyURL(proxy clashProxy, server string) (string, error) {
+	if proxy.Password == "" {
+		return "", errors.New("Trojan password 不能为空")
+	}
+	query, err := clashTunnelQuery(proxy, "tls")
+	if err != nil {
+		return "", err
+	}
+	return (&url.URL{Scheme: "trojan", User: url.User(proxy.Password), Host: server, RawQuery: query.Encode()}).String(), nil
+}
+
+func clashVLESSProxyURL(proxy clashProxy, server string) (string, error) {
+	if proxy.UUID == "" {
+		return "", errors.New("VLESS UUID 不能为空")
+	}
+	security := clashVLESSSecurity(proxy)
+	query, err := clashTunnelQuery(proxy, security)
+	if err != nil {
+		return "", err
+	}
+	query.Set("encryption", "none")
+	if flow := strings.TrimSpace(proxy.Flow); flow != "" {
+		query.Set("flow", flow)
+	}
+	if security == "reality" {
+		query.Set("pbk", proxy.RealityOptions.PublicKey)
+		query.Set("sid", proxy.RealityOptions.ShortID)
+		query.Set("fp", firstNonEmptySubscription(proxy.ClientFingerprint, "chrome"))
+	}
+	return (&url.URL{Scheme: "vless", User: url.User(proxy.UUID), Host: server, RawQuery: query.Encode()}).String(), nil
+}
+
+// clashVLESSSecurity 推导 VLESS 的 security 参数：Reality 字段优先于 TLS 开关。
+func clashVLESSSecurity(proxy clashProxy) string {
+	if proxy.RealityOptions.PublicKey != "" || proxy.RealityOptions.ShortID != "" {
+		return "reality"
+	}
+	if proxy.TLS {
+		return "tls"
+	}
+	return "none"
 }
 
 func clashProxyServer(host string, port int) (string, error) {

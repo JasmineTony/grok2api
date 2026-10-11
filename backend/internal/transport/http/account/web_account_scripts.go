@@ -41,48 +41,69 @@ func (h *Handler) runWebAccountScripts(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "invalidRequest", "账号脚本请求无效")
 		return
 	}
+	if !validateWebAccountScriptsRequest(c, request) {
+		return
+	}
+	ids, ok := h.resolveWebAccountScriptIDs(c, request)
+	if !ok {
+		return
+	}
+	h.streamWebAccountScripts(c, request, ids)
+}
+
+// validateWebAccountScriptsRequest 校验账号范围与脚本动作组合，失败时已写出错误响应。
+func validateWebAccountScriptsRequest(c *gin.Context, request webAccountScriptsRequest) bool {
 	if request.All && len(request.IDs) > 0 {
 		response.Error(c, http.StatusBadRequest, "invalidRequest", "全部账号与指定账号不能同时提交")
-		return
+		return false
 	}
 	if !request.All && len(request.IDs) == 0 {
 		response.Error(c, http.StatusBadRequest, "invalidRequest", "至少选择一个账号")
-		return
+		return false
 	}
 	if len(request.IDs) > maxWebAccountScriptRequestIDs {
 		response.Error(c, http.StatusBadRequest, "invalidRequest", "单次最多处理 1000 个账号")
-		return
+		return false
 	}
 	if request.Actions.empty() {
 		response.Error(c, http.StatusBadRequest, "invalidRequest", "至少选择一个账号脚本")
-		return
+		return false
 	}
+	return true
+}
 
-	var ids []uint64
-	if !request.All {
-		var err error
-		ids, err = parseIDs(request.IDs)
-		if err != nil {
-			response.Error(c, http.StatusBadRequest, "invalidId", err.Error())
-			return
-		}
-		ids = uniqueWebAccountScriptIDs(ids)
-		if !h.validateProviderIDs(c, ids, string(accountdomain.ProviderWeb)) {
-			return
-		}
+// resolveWebAccountScriptIDs 解析并去重目标账号，同时校验账号所属通道。
+func (h *Handler) resolveWebAccountScriptIDs(c *gin.Context, request webAccountScriptsRequest) ([]uint64, bool) {
+	if request.All {
+		return nil, true
 	}
+	ids, err := parseIDs(request.IDs)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalidId", err.Error())
+		return nil, false
+	}
+	ids = uniqueWebAccountScriptIDs(ids)
+	if !h.validateProviderIDs(c, ids, string(accountdomain.ProviderWeb)) {
+		return nil, false
+	}
+	return ids, true
+}
 
+// streamWebAccountScripts 以事件流方式执行脚本并回报成功与失败数量。
+func (h *Handler) streamWebAccountScripts(c *gin.Context, request webAccountScriptsRequest, ids []uint64) {
 	stream := newAccountEventStream(c)
 	defer stream.Close()
+	options := request.Actions.options()
+	observer := stream.ProgressObserver()
 	var (
 		succeeded int
 		failed    int
 		err       error
 	)
 	if request.All {
-		succeeded, failed, err = h.service.RunAllWebAccountScriptsWithProgress(c.Request.Context(), request.Actions.options(), stream.ProgressObserver())
+		succeeded, failed, err = h.service.RunAllWebAccountScriptsWithProgress(c.Request.Context(), options, observer)
 	} else {
-		succeeded, failed, err = h.service.RunWebAccountScriptsWithProgress(c.Request.Context(), ids, request.Actions.options(), stream.ProgressObserver())
+		succeeded, failed, err = h.service.RunWebAccountScriptsWithProgress(c.Request.Context(), ids, options, observer)
 	}
 	if err != nil {
 		stream.WriteError("webAccountScriptFailed", "执行 Grok Web 账号脚本失败")

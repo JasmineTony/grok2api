@@ -29,67 +29,87 @@ func DecodeCredentialJSONEntries[T any](data []byte, expectedProvider string, li
 			}
 			return nil, fmt.Errorf("第 %d 行的账号 JSON 格式无效", jsonErrorLine(data, start, err))
 		}
-
 		line := lineAtJSONOffset(data, start)
-
-		// 顶层裸数组：外部批量导出工具产出的常见形态。
-		// 行号以数组起始行为准；元素错误额外给出序号定位。
-		if trimmed := bytes.TrimSpace(raw); len(trimmed) > 0 && trimmed[0] == '[' {
-			var elements []json.RawMessage
-			if err := json.Unmarshal(raw, &elements); err != nil {
-				return nil, fmt.Errorf("第 %d 行的账号数组 JSON 格式无效", line)
-			}
-			// 超限先于逐元素解析拦截，数组中混有非法元素时同样优先报告限额。
-			if limit > 0 && len(elements) > limit-len(entries) {
-				return nil, fmt.Errorf("%w: 单次最多导入 %d 个账号", ports.ErrCredentialLimit, limit)
-			}
-			for index, element := range elements {
-				// 结构预检：仅兼容对象与 null（null 归一为零值，交后续 normalize 报出带序号的明确错误）。
-				if e := bytes.TrimSpace(element); len(e) == 0 || (e[0] != '{' && !bytes.Equal(e, []byte("null"))) {
-					return nil, fmt.Errorf("第 %d 行账号数组的第 %d 个元素必须是 JSON 对象", line, index+1)
-				}
-				var value T
-				if err := json.Unmarshal(element, &value); err != nil {
-					return nil, fmt.Errorf("第 %d 行账号数组的第 %d 个元素内容无效", line, index+1)
-				}
-				entries = append(entries, value)
-			}
+		handled, err := appendCredentialJSONArray(&entries, raw, line, limit)
+		if err != nil {
+			return nil, err
+		}
+		if handled {
 			continue
 		}
-		var object map[string]json.RawMessage
-		if err := json.Unmarshal(raw, &object); err != nil || object == nil {
-			return nil, fmt.Errorf("第 %d 行必须是 JSON 对象", line)
-		}
-		if rawProvider, exists := object["provider"]; exists {
-			var providerName string
-			if err := json.Unmarshal(rawProvider, &providerName); err != nil {
-				return nil, fmt.Errorf("第 %d 行的 provider 必须是字符串", line)
-			}
-			providerName = strings.TrimSpace(providerName)
-			if providerName != "" && providerName != expectedProvider {
-				return nil, fmt.Errorf("第 %d 行的 Provider 必须是 %s", line, expectedProvider)
-			}
-		}
-
-		if rawAccounts, batch := object["accounts"]; batch {
-			var values []T
-			if err := json.Unmarshal(rawAccounts, &values); err != nil {
-				return nil, fmt.Errorf("第 %d 行的 accounts 必须是 JSON 对象数组", line)
-			}
-			if err := appendCredentialJSONEntries(&entries, values, limit); err != nil {
-				return nil, err
-			}
-			continue
-		}
-
-		var value T
-		if err := json.Unmarshal(raw, &value); err != nil {
-			return nil, fmt.Errorf("第 %d 行的账号 JSON 格式无效", line)
-		}
-		if err := appendCredentialJSONEntries(&entries, []T{value}, limit); err != nil {
+		if err := appendCredentialJSONObject(&entries, raw, line, expectedProvider, limit); err != nil {
 			return nil, err
 		}
 	}
+}
+
+// appendCredentialJSONArray 处理顶层裸数组形态：外部批量导出工具产出的常见形态。
+// 行号以数组起始行为准；元素错误额外给出序号定位。返回 false 表示该值不是数组。
+func appendCredentialJSONArray[T any](entries *[]T, raw json.RawMessage, line, limit int) (bool, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '[' {
+		return false, nil
+	}
+	var elements []json.RawMessage
+	if err := json.Unmarshal(raw, &elements); err != nil {
+		return true, fmt.Errorf("第 %d 行的账号数组 JSON 格式无效", line)
+	}
+	// 超限先于逐元素解析拦截，数组中混有非法元素时同样优先报告限额。
+	if limit > 0 && len(elements) > limit-len(*entries) {
+		return true, fmt.Errorf("%w: 单次最多导入 %d 个账号", ports.ErrCredentialLimit, limit)
+	}
+	for index, element := range elements {
+		// 结构预检：仅兼容对象与 null（null 归一为零值，交后续 normalize 报出带序号的明确错误）。
+		if e := bytes.TrimSpace(element); len(e) == 0 || (e[0] != '{' && !bytes.Equal(e, []byte("null"))) {
+			return true, fmt.Errorf("第 %d 行账号数组的第 %d 个元素必须是 JSON 对象", line, index+1)
+		}
+		var value T
+		if err := json.Unmarshal(element, &value); err != nil {
+			return true, fmt.Errorf("第 %d 行账号数组的第 %d 个元素内容无效", line, index+1)
+		}
+		*entries = append(*entries, value)
+	}
+	return true, nil
+}
+
+// appendCredentialJSONObject 处理单个 JSON 对象，兼容 accounts 批量字段与单账号对象。
+func appendCredentialJSONObject[T any](entries *[]T, raw json.RawMessage, line int, expectedProvider string, limit int) error {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil || object == nil {
+		return fmt.Errorf("第 %d 行必须是 JSON 对象", line)
+	}
+	if err := validateCredentialJSONProvider(object, line, expectedProvider); err != nil {
+		return err
+	}
+	if rawAccounts, batch := object["accounts"]; batch {
+		var values []T
+		if err := json.Unmarshal(rawAccounts, &values); err != nil {
+			return fmt.Errorf("第 %d 行的 accounts 必须是 JSON 对象数组", line)
+		}
+		return appendCredentialJSONEntries(entries, values, limit)
+	}
+	var value T
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return fmt.Errorf("第 %d 行的账号 JSON 格式无效", line)
+	}
+	return appendCredentialJSONEntries(entries, []T{value}, limit)
+}
+
+// validateCredentialJSONProvider 校验对象内可选的 provider 字段与目标 Provider 一致。
+func validateCredentialJSONProvider(object map[string]json.RawMessage, line int, expectedProvider string) error {
+	rawProvider, exists := object["provider"]
+	if !exists {
+		return nil
+	}
+	var providerName string
+	if err := json.Unmarshal(rawProvider, &providerName); err != nil {
+		return fmt.Errorf("第 %d 行的 provider 必须是字符串", line)
+	}
+	providerName = strings.TrimSpace(providerName)
+	if providerName != "" && providerName != expectedProvider {
+		return fmt.Errorf("第 %d 行的 Provider 必须是 %s", line, expectedProvider)
+	}
+	return nil
 }
 
 func appendCredentialJSONEntries[T any](target *[]T, values []T, limit int) error {

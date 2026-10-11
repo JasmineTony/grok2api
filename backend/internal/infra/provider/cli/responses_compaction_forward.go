@@ -64,126 +64,172 @@ func (a *Adapter) forwardGatewayCompactionWithPolicy(
 	}
 	upstreamRequest := request
 	upstreamRequest.Streaming = true
-	primaryBase := a.primaryBaseURL()
-	base := a.inferenceBaseForOperation(request.Credential, request.Billing, request.Method, request.Path)
+	run := &gatewayCompactionRun{
+		request: request, upstreamRequest: upstreamRequest,
+		accessToken: accessToken, body: body, warnings: warnings,
+		primaryBase: a.primaryBaseURL(),
+		base:        a.inferenceBaseForOperation(request.Credential, request.Billing, request.Method, request.Path),
+		maxAttempts: maxAttempts, retryDelay: retryDelay,
+	}
 	var lastErr error
-
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		stage := "compaction"
-		if attempt > 1 {
-			stage = "compaction_retry"
+	for attempt := 1; attempt <= run.maxAttempts; attempt++ {
+		result, err, retry := a.forwardGatewayCompactionAttempt(ctx, run, attempt)
+		if retry {
+			if err != nil {
+				lastErr = err
+			}
+			continue
 		}
-		attemptCtx := infraegress.WithPhysicalCallStage(ctx, stage)
-		call := a.doResponseRequest(attemptCtx, upstreamRequest, accessToken, body, base)
-		if call.err != nil {
-			lastErr = call.err
-			if attempt < maxAttempts && waitGatewayCompactionRetry(ctx, retryDelay) {
-				continue
-			}
-			return nil, call.err
-		}
-		resp, reqURL := call.response, call.upstreamURL
-
-		var recoveredPrimaryFailure *provider.DiagnosticResponse
-		if strings.EqualFold(base, primaryBase) && shouldProbeXAIInferenceFallback(request.Credential, request.Billing, request.Method, request.Path, resp.StatusCode) {
-			primaryBody, primaryTruncated, readErr := provider.ReadDiagnosticBody(resp.Body)
-			_ = resp.Body.Close()
-			if readErr != nil {
-				return nil, readErr
-			}
-			primaryResp := cloneBufferedResponse(resp, primaryBody, primaryTruncated)
-			if shouldSkipXAIFallback(primaryBody) {
-				resp = primaryResp
-			} else {
-				fallbackBase := a.fallbackBaseURL()
-				if fallbackBase != "" && !strings.EqualFold(fallbackBase, base) {
-					fallbackCtx := infraegress.WithPhysicalCallStage(attemptCtx, "plane_fallback")
-					fallbackCall := a.doResponseRequest(fallbackCtx, upstreamRequest, accessToken, body, fallbackBase)
-					if fallbackCall.err == nil && isHTTPSuccess(fallbackCall.response.StatusCode) {
-						recoveredPrimaryFailure = bufferedFailureDiagnostic(primaryResp, primaryBody, primaryTruncated)
-						a.activateBuildAPIFallback(ctx, &request.Credential)
-						resp, reqURL, base = fallbackCall.response, fallbackCall.upstreamURL, fallbackBase
-					} else {
-						if fallbackCall.err == nil && fallbackCall.response != nil {
-							_ = fallbackCall.response.Body.Close()
-						}
-						resp = primaryResp
-					}
-				} else {
-					resp = primaryResp
-				}
-			}
-		}
-
-		if err := normalizeGzipResponse(resp); err != nil {
-			_ = resp.Body.Close()
-			lastErr = err
-			if attempt < maxAttempts && waitGatewayCompactionRetry(ctx, retryDelay) {
-				continue
-			}
+		if err != nil {
 			return nil, err
 		}
-		modelCatalogChanged := a.modelCatalogChanged(request.Credential.ID, resp.Header.Get("x-models-etag"))
-		if !isHTTPSuccess(resp.StatusCode) {
-			result, transient, err := gatewayCompactionHTTPFailure(resp, reqURL, modelCatalogChanged, warnings)
-			if err != nil {
-				return nil, err
-			}
-			if transient && attempt < maxAttempts && waitGatewayCompactionRetry(ctx, retryDelay) {
-				continue
-			}
-			return result, nil
-		}
-
-		resp.Body = wrapBuildSemanticIdle(resp.Body, a.config().StreamIdleTimeout)
-		data, readErr := io.ReadAll(io.LimitReader(resp.Body, maxCompatibleResponseBytes+1))
-		_ = resp.Body.Close()
-		if readErr != nil {
-			lastErr = readErr
-			if attempt < maxAttempts && waitGatewayCompactionRetry(ctx, retryDelay) {
-				continue
-			}
-			return nil, readErr
-		}
-		if len(data) > maxCompatibleResponseBytes {
-			return gatewayCompactionFailureProviderResponse(resp.Header, reqURL, modelCatalogChanged, warnings, "上游 compaction 响应超过 128 MiB"), nil
-		}
-		sample, sampleErr := parseGatewayCompactionStream(data)
-		if sampleErr == nil && isDegenerateGatewayCompactionSummary(sample.summary) {
-			sampleErr = errGatewayCompactionDegenerate
-		}
-		if sampleErr != nil {
-			lastErr = sampleErr
-			if gatewayCompactionErrorIsTransient(sampleErr) && attempt < maxAttempts && waitGatewayCompactionRetry(ctx, retryDelay) {
-				continue
-			}
-			return gatewayCompactionFailureProviderResponse(resp.Header, reqURL, modelCatalogChanged, warnings, sampleErr.Error()), nil
-		}
-
-		continuation := gatewayCompactionContinuation(sample.summary)
-		blob, encodeErr := a.compaction.encode(request.PromptCacheKey, continuation)
-		if encodeErr != nil {
-			return gatewayCompactionFailureProviderResponse(resp.Header, reqURL, modelCatalogChanged, warnings, "服务端 compaction 编码失败"), nil
-		}
-		converted, contentType, convertErr := buildGatewayCompactionResponse(sample.response, blob, request.Model, request.Streaming)
-		if convertErr != nil {
-			return gatewayCompactionFailureProviderResponse(resp.Header, reqURL, modelCatalogChanged, warnings, "服务端 compaction 响应编码失败"), nil
-		}
-		headers := resp.Header.Clone()
-		headers.Del("Content-Encoding")
-		headers.Set("Content-Length", strconv.Itoa(len(converted)))
-		headers.Set("Content-Type", contentType)
-		if warnings != "" {
-			headers.Set("X-Grok2API-Compatibility-Warnings", warnings)
-		}
-		return &provider.Response{
-			StatusCode: resp.StatusCode, Status: resp.Status, Header: headers,
-			Body: io.NopCloser(bytes.NewReader(converted)), UpstreamURL: reqURL,
-			RecoveredPrimaryFailure: recoveredPrimaryFailure,
-			ModelCatalogChanged:     modelCatalogChanged,
-		}, nil
+		return result, nil
 	}
 	return nil, lastErr
+}
+
+// gatewayCompactionRun 承载一次 compaction 转发的循环内共享状态。
+type gatewayCompactionRun struct {
+	request         provider.ResponseResourceRequest
+	upstreamRequest provider.ResponseResourceRequest
+	accessToken     string
+	body            []byte
+	warnings        string
+	base            string
+	primaryBase     string
+	maxAttempts     int
+	retryDelay      time.Duration
+}
+
+// gatewayCompactionCall 承载单次 compaction 尝试中被上游平面切换改写的调用状态。
+type gatewayCompactionCall struct {
+	response                *http.Response
+	upstreamURL             string
+	recoveredPrimaryFailure *provider.DiagnosticResponse
+}
+
+// forwardGatewayCompactionAttempt 执行一次 compaction 尝试；retry 为 true 时调用方应在等待后重试。
+func (a *Adapter) forwardGatewayCompactionAttempt(ctx context.Context, run *gatewayCompactionRun, attempt int) (*provider.Response, error, bool) {
+	stage := "compaction"
+	if attempt > 1 {
+		stage = "compaction_retry"
+	}
+	attemptCtx := infraegress.WithPhysicalCallStage(ctx, stage)
+	call := a.doResponseRequest(attemptCtx, run.upstreamRequest, run.accessToken, run.body, run.base)
+	if call.err != nil {
+		return nil, call.err, attempt < run.maxAttempts && waitGatewayCompactionRetry(ctx, run.retryDelay)
+	}
+	state := &gatewayCompactionCall{response: call.response, upstreamURL: call.upstreamURL}
+	if err := a.probeGatewayCompactionFallback(attemptCtx, run, state); err != nil {
+		return nil, err, false
+	}
+	if err := normalizeGzipResponse(state.response); err != nil {
+		_ = state.response.Body.Close()
+		return nil, err, attempt < run.maxAttempts && waitGatewayCompactionRetry(ctx, run.retryDelay)
+	}
+	modelCatalogChanged := a.modelCatalogChanged(run.request.Credential.ID, state.response.Header.Get("x-models-etag"))
+	if !isHTTPSuccess(state.response.StatusCode) {
+		return a.failGatewayCompactionAttempt(ctx, run, state, modelCatalogChanged, attempt)
+	}
+	return a.completeGatewayCompactionAttempt(ctx, run, state, modelCatalogChanged, attempt)
+}
+
+// probeGatewayCompactionFallback 在 Build 平面明确失败时探测 XAI 推理平面，并按需改写本次调用。
+func (a *Adapter) probeGatewayCompactionFallback(ctx context.Context, run *gatewayCompactionRun, state *gatewayCompactionCall) error {
+	if !strings.EqualFold(run.base, run.primaryBase) || !shouldProbeXAIInferenceFallback(run.request.Credential, run.request.Billing, run.request.Method, run.request.Path, state.response.StatusCode) {
+		return nil
+	}
+	primaryBody, primaryTruncated, readErr := provider.ReadDiagnosticBody(state.response.Body)
+	_ = state.response.Body.Close()
+	if readErr != nil {
+		return readErr
+	}
+	primaryResp := cloneBufferedResponse(state.response, primaryBody, primaryTruncated)
+	if shouldSkipXAIFallback(primaryBody) {
+		state.response = primaryResp
+		return nil
+	}
+	fallbackBase := a.fallbackBaseURL()
+	if fallbackBase == "" || strings.EqualFold(fallbackBase, run.base) {
+		state.response = primaryResp
+		return nil
+	}
+	fallbackCtx := infraegress.WithPhysicalCallStage(ctx, "plane_fallback")
+	fallbackCall := a.doResponseRequest(fallbackCtx, run.upstreamRequest, run.accessToken, run.body, fallbackBase)
+	if fallbackCall.err != nil || !isHTTPSuccess(fallbackCall.response.StatusCode) {
+		if fallbackCall.err == nil && fallbackCall.response != nil {
+			_ = fallbackCall.response.Body.Close()
+		}
+		state.response = primaryResp
+		return nil
+	}
+	state.recoveredPrimaryFailure = bufferedFailureDiagnostic(primaryResp, primaryBody, primaryTruncated)
+	a.activateBuildAPIFallback(ctx, &run.request.Credential)
+	state.response, state.upstreamURL = fallbackCall.response, fallbackCall.upstreamURL
+	run.base = fallbackBase
+	return nil
+}
+
+// failGatewayCompactionAttempt 处理非成功状态码的 compaction 尝试。
+func (a *Adapter) failGatewayCompactionAttempt(ctx context.Context, run *gatewayCompactionRun, state *gatewayCompactionCall, modelCatalogChanged bool, attempt int) (*provider.Response, error, bool) {
+	result, transient, err := gatewayCompactionHTTPFailure(state.response, state.upstreamURL, modelCatalogChanged, run.warnings)
+	if err != nil {
+		return nil, err, false
+	}
+	if transient && attempt < run.maxAttempts && waitGatewayCompactionRetry(ctx, run.retryDelay) {
+		return nil, nil, true
+	}
+	return result, nil, false
+}
+
+// completeGatewayCompactionAttempt 解析 compaction 流并决定是否重试。
+func (a *Adapter) completeGatewayCompactionAttempt(ctx context.Context, run *gatewayCompactionRun, state *gatewayCompactionCall, modelCatalogChanged bool, attempt int) (*provider.Response, error, bool) {
+	state.response.Body = wrapBuildSemanticIdle(state.response.Body, a.config().StreamIdleTimeout)
+	data, readErr := io.ReadAll(io.LimitReader(state.response.Body, maxCompatibleResponseBytes+1))
+	_ = state.response.Body.Close()
+	if readErr != nil {
+		return nil, readErr, attempt < run.maxAttempts && waitGatewayCompactionRetry(ctx, run.retryDelay)
+	}
+	if len(data) > maxCompatibleResponseBytes {
+		return gatewayCompactionFailureProviderResponse(state.response.Header, state.upstreamURL, modelCatalogChanged, run.warnings, "上游 compaction 响应超过 128 MiB"), nil, false
+	}
+	sample, sampleErr := parseGatewayCompactionStream(data)
+	if sampleErr == nil && isDegenerateGatewayCompactionSummary(sample.summary) {
+		sampleErr = errGatewayCompactionDegenerate
+	}
+	if sampleErr != nil {
+		if gatewayCompactionErrorIsTransient(sampleErr) && attempt < run.maxAttempts && waitGatewayCompactionRetry(ctx, run.retryDelay) {
+			return nil, sampleErr, true
+		}
+		return gatewayCompactionFailureProviderResponse(state.response.Header, state.upstreamURL, modelCatalogChanged, run.warnings, sampleErr.Error()), nil, false
+	}
+	return a.buildGatewayCompactionResult(run, state, sample, modelCatalogChanged)
+}
+
+// buildGatewayCompactionResult 把 compaction 摘要编码为服务端 blob 并组装最终响应。
+func (a *Adapter) buildGatewayCompactionResult(run *gatewayCompactionRun, state *gatewayCompactionCall, sample gatewayCompactionSample, modelCatalogChanged bool) (*provider.Response, error, bool) {
+	continuation := gatewayCompactionContinuation(sample.summary)
+	blob, encodeErr := a.compaction.encode(run.request.PromptCacheKey, continuation)
+	if encodeErr != nil {
+		return gatewayCompactionFailureProviderResponse(state.response.Header, state.upstreamURL, modelCatalogChanged, run.warnings, "服务端 compaction 编码失败"), nil, false
+	}
+	converted, contentType, convertErr := buildGatewayCompactionResponse(sample.response, blob, run.request.Model, run.request.Streaming)
+	if convertErr != nil {
+		return gatewayCompactionFailureProviderResponse(state.response.Header, state.upstreamURL, modelCatalogChanged, run.warnings, "服务端 compaction 响应编码失败"), nil, false
+	}
+	headers := state.response.Header.Clone()
+	headers.Del("Content-Encoding")
+	headers.Set("Content-Length", strconv.Itoa(len(converted)))
+	headers.Set("Content-Type", contentType)
+	if run.warnings != "" {
+		headers.Set("X-Grok2API-Compatibility-Warnings", run.warnings)
+	}
+	return &provider.Response{
+		StatusCode: state.response.StatusCode, Status: state.response.Status, Header: headers,
+		Body: io.NopCloser(bytes.NewReader(converted)), UpstreamURL: state.upstreamURL,
+		RecoveredPrimaryFailure: state.recoveredPrimaryFailure,
+		ModelCatalogChanged:     modelCatalogChanged,
+	}, nil, false
 }
 
 func parseGatewayCompactionStream(data []byte) (gatewayCompactionSample, error) {
@@ -201,31 +247,13 @@ func parseGatewayCompactionStream(data []byte) (gatewayCompactionSample, error) 
 		if kind == "" {
 			kind = strings.TrimSpace(event.Event)
 		}
-		switch kind {
-		case "response.output_item.done":
-			if item, ok := payload["item"].(map[string]any); ok {
-				streamedParts = append(streamedParts, gatewayCompactionItemText(item)...)
-			}
-		case "response.completed":
-			if response, ok := payload["response"].(map[string]any); ok {
-				completed = cloneJSONObject(response)
-			}
-		case "response.failed":
-			response, _ := payload["response"].(map[string]any)
-			errorValue, _ := response["error"].(map[string]any)
-			return newGatewayCompactionStreamError(
-				strings.TrimSpace(stringField(errorValue, "code")),
-				strings.TrimSpace(stringField(errorValue, "message")),
-			)
-		case "error", "response.error":
-			errorValue, _ := payload["error"].(map[string]any)
-			if errorValue == nil {
-				errorValue = payload
-			}
-			return newGatewayCompactionStreamError(
-				strings.TrimSpace(stringField(errorValue, "code")),
-				strings.TrimSpace(stringField(errorValue, "message")),
-			)
+		parts, completedResponse, eventErr := gatewayCompactionStreamEvent(kind, payload)
+		if eventErr != nil {
+			return eventErr
+		}
+		streamedParts = append(streamedParts, parts...)
+		if completedResponse != nil {
+			completed = completedResponse
 		}
 		return nil
 	})
@@ -240,6 +268,41 @@ func parseGatewayCompactionStream(data []byte) (gatewayCompactionSample, error) 
 		summary = strings.Join(streamedParts, "\n")
 	}
 	return gatewayCompactionSample{response: completed, summary: summary}, nil
+}
+
+// gatewayCompactionStreamEvent 解析单个 compaction SSE 事件，返回文本片段或 completed 响应。
+func gatewayCompactionStreamEvent(kind string, payload map[string]any) ([]string, map[string]any, error) {
+	switch kind {
+	case "response.output_item.done":
+		item, ok := payload["item"].(map[string]any)
+		if !ok {
+			return nil, nil, nil
+		}
+		return gatewayCompactionItemText(item), nil, nil
+	case "response.completed":
+		response, ok := payload["response"].(map[string]any)
+		if !ok {
+			return nil, nil, nil
+		}
+		return nil, cloneJSONObject(response), nil
+	case "response.failed":
+		response, _ := payload["response"].(map[string]any)
+		errorValue, _ := response["error"].(map[string]any)
+		return nil, nil, newGatewayCompactionStreamError(
+			strings.TrimSpace(stringField(errorValue, "code")),
+			strings.TrimSpace(stringField(errorValue, "message")),
+		)
+	case "error", "response.error":
+		errorValue, _ := payload["error"].(map[string]any)
+		if errorValue == nil {
+			errorValue = payload
+		}
+		return nil, nil, newGatewayCompactionStreamError(
+			strings.TrimSpace(stringField(errorValue, "code")),
+			strings.TrimSpace(stringField(errorValue, "message")),
+		)
+	}
+	return nil, nil, nil
 }
 
 func newGatewayCompactionStreamError(code, message string) error {

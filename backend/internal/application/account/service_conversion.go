@@ -65,17 +65,7 @@ func (s *Service) SyncAllWebAccountsToConsoleWithStrategy(ctx context.Context, s
 	total := 0
 	initialized := false
 	for {
-		var (
-			values  []accountdomain.Credential
-			count   int64
-			skipped int64
-			err     error
-		)
-		if strategy == WebConsoleSyncMissing {
-			values, count, skipped, err = s.accounts.ListMissingConsoleSyncBatch(ctx, afterID, batchSize)
-		} else {
-			values, count, err = s.accounts.ListProviderAccountBatch(ctx, accountdomain.ProviderWeb, afterID, batchSize)
-		}
+		values, count, skipped, err := s.fetchWebConsoleSyncBatch(ctx, strategy, afterID, batchSize)
 		if err != nil {
 			return result, err
 		}
@@ -105,6 +95,15 @@ func (s *Service) SyncAllWebAccountsToConsoleWithStrategy(ctx context.Context, s
 			return result, nil
 		}
 	}
+}
+
+// fetchWebConsoleSyncBatch 按策略读取下一批待同步到 Console 的 Grok Web 账号，并返回号池总量与预跳过数。
+func (s *Service) fetchWebConsoleSyncBatch(ctx context.Context, strategy WebConsoleSyncStrategy, afterID uint64, batchSize int) ([]accountdomain.Credential, int64, int64, error) {
+	if strategy == WebConsoleSyncMissing {
+		return s.accounts.ListMissingConsoleSyncBatch(ctx, afterID, batchSize)
+	}
+	values, count, err := s.accounts.ListProviderAccountBatch(ctx, accountdomain.ProviderWeb, afterID, batchSize)
+	return values, count, 0, err
 }
 
 func (s *Service) syncWebCredentialsToConsole(ctx context.Context, values []accountdomain.Credential, observer ImportedAccountObserver, progress BatchProgressObserver) (ImportResult, error) {
@@ -221,36 +220,13 @@ func (s *Service) ConvertAllWebAccountsToBuildWithStrategy(ctx context.Context, 
 	batchSize := accountTaskBatchSize
 	result := BuildConversionResult{BuildAccountIDs: make([]uint64, 0)}
 	seenBuildIDs := make(map[uint64]struct{})
-	var observed sync.Map
-	batchObserver := observer
-	if observer != nil {
-		batchObserver = func(accountID uint64) error {
-			if _, loaded := observed.LoadOrStore(accountID, struct{}{}); loaded {
-				return nil
-			}
-			return observer(accountID)
-		}
-	}
+	batchObserver := dedupeImportedObserver(observer)
 	var afterID uint64
 	completed := 0
 	total := 0
 	initialized := false
 	for {
-		var (
-			ids   []uint64
-			count int64
-			err   error
-		)
-		if strategy == BuildConversionMissing {
-			ids, count, err = s.accounts.ListUnlinkedWebAccountIDs(ctx, afterID, batchSize)
-		} else {
-			var values []accountdomain.Credential
-			values, count, err = s.accounts.ListProviderAccountBatch(ctx, accountdomain.ProviderWeb, afterID, batchSize)
-			ids = make([]uint64, 0, len(values))
-			for _, value := range values {
-				ids = append(ids, value.ID)
-			}
-		}
+		ids, count, err := s.fetchBuildConversionBatch(ctx, strategy, afterID, batchSize)
 		if err != nil {
 			return result, err
 		}
@@ -267,17 +243,7 @@ func (s *Service) ConvertAllWebAccountsToBuildWithStrategy(ctx context.Context, 
 			return result, nil
 		}
 		current, err := s.convertWebAccountsToBuild(ctx, ids, strategy, batchObserver, offsetBatchProgress(progress, completed, total))
-		result.Created += current.Created
-		result.Linked += current.Linked
-		result.Skipped += current.Skipped
-		result.Failed += current.Failed
-		for _, buildID := range current.BuildAccountIDs {
-			if _, exists := seenBuildIDs[buildID]; exists {
-				continue
-			}
-			seenBuildIDs[buildID] = struct{}{}
-			result.BuildAccountIDs = append(result.BuildAccountIDs, buildID)
-		}
+		mergeBuildConversionResult(&result, current, seenBuildIDs)
 		if err != nil {
 			return result, err
 		}
@@ -286,6 +252,51 @@ func (s *Service) ConvertAllWebAccountsToBuildWithStrategy(ctx context.Context, 
 		if len(ids) < batchSize {
 			return result, nil
 		}
+	}
+}
+
+// dedupeImportedObserver 包装观察者，保证同一个 Build 账号 ID 在一次批量转换中只回调一次。
+func dedupeImportedObserver(observer ImportedAccountObserver) ImportedAccountObserver {
+	if observer == nil {
+		return nil
+	}
+	var observed sync.Map
+	return func(accountID uint64) error {
+		if _, loaded := observed.LoadOrStore(accountID, struct{}{}); loaded {
+			return nil
+		}
+		return observer(accountID)
+	}
+}
+
+// fetchBuildConversionBatch 按策略读取下一批待转换的 Grok Web 账号 ID 与号池总量。
+func (s *Service) fetchBuildConversionBatch(ctx context.Context, strategy BuildConversionStrategy, afterID uint64, batchSize int) ([]uint64, int64, error) {
+	if strategy == BuildConversionMissing {
+		return s.accounts.ListUnlinkedWebAccountIDs(ctx, afterID, batchSize)
+	}
+	values, count, err := s.accounts.ListProviderAccountBatch(ctx, accountdomain.ProviderWeb, afterID, batchSize)
+	if err != nil {
+		return nil, count, err
+	}
+	ids := make([]uint64, 0, len(values))
+	for _, value := range values {
+		ids = append(ids, value.ID)
+	}
+	return ids, count, nil
+}
+
+// mergeBuildConversionResult 累加一次批量转换的结果，并按 Build 账号 ID 去重后合并。
+func mergeBuildConversionResult(result *BuildConversionResult, current BuildConversionResult, seenBuildIDs map[uint64]struct{}) {
+	result.Created += current.Created
+	result.Linked += current.Linked
+	result.Skipped += current.Skipped
+	result.Failed += current.Failed
+	for _, buildID := range current.BuildAccountIDs {
+		if _, exists := seenBuildIDs[buildID]; exists {
+			continue
+		}
+		seenBuildIDs[buildID] = struct{}{}
+		result.BuildAccountIDs = append(result.BuildAccountIDs, buildID)
 	}
 }
 
@@ -307,23 +318,16 @@ func (s *Service) convertWebAccountsToBuild(ctx context.Context, ids []uint64, s
 			return BuildConversionResult{}, err
 		}
 	}
-	type outcome struct {
-		accountID uint64
-		buildID   uint64
-		created   bool
-		skipped   bool
-		err       error
-	}
 	var observed sync.Map
 	var observerMu sync.Mutex
 	var observerErr error
 	completed := 0
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	results, summary, runErr := batch.MapObserved(runCtx, ids, batch.Options{Workers: s.conversionPool.Limit(), Pool: s.conversionPool}, func(workCtx context.Context, id uint64) (outcome, error) {
+	results, summary, runErr := batch.MapObserved(runCtx, ids, batch.Options{Workers: s.conversionPool.Limit(), Pool: s.conversionPool}, func(workCtx context.Context, id uint64) (buildConversionOutcome, error) {
 		buildID, created, skipped, convertErr := s.convertWebAccountToBuild(workCtx, id, strategy)
-		return outcome{accountID: id, buildID: buildID, created: created, skipped: skipped, err: convertErr}, nil
-	}, func(_ int, execution batch.Result[outcome]) {
+		return buildConversionOutcome{accountID: id, buildID: buildID, created: created, skipped: skipped, err: convertErr}, nil
+	}, func(_ int, execution batch.Result[buildConversionOutcome]) {
 		observerMu.Lock()
 		defer observerMu.Unlock()
 		defer func() {
@@ -335,21 +339,45 @@ func (s *Service) convertWebAccountsToBuild(ctx context.Context, ids []uint64, s
 				}
 			}
 		}()
-		item := execution.Value
-		if execution.Err != nil || item.err != nil || item.skipped || observer == nil {
-			return
-		}
-		if _, loaded := observed.LoadOrStore(item.buildID, struct{}{}); loaded {
-			return
-		}
-		if err := observer(item.buildID); err != nil {
-			if observerErr == nil {
-				observerErr = err
-				cancel()
-			}
+		if err := notifyBuildConvertedAccount(observer, &observed, execution); err != nil && observerErr == nil {
+			observerErr = err
+			cancel()
 		}
 	})
 	s.logBatchSummary("web_to_build", s.conversionPool, summary, runErr)
+	result := s.summarizeBuildConversion(ids, results)
+	if runErr != nil {
+		return result, runErr
+	}
+	if observerErr != nil {
+		return result, observerErr
+	}
+	return result, nil
+}
+
+// buildConversionOutcome 记录单个 Grok Web 账号转换为 Grok Build 账号的结果。
+type buildConversionOutcome struct {
+	accountID uint64
+	buildID   uint64
+	created   bool
+	skipped   bool
+	err       error
+}
+
+// notifyBuildConvertedAccount 在转换成功且该 Build 账号首次出现时通知观察者。
+func notifyBuildConvertedAccount(observer ImportedAccountObserver, observed *sync.Map, execution batch.Result[buildConversionOutcome]) error {
+	item := execution.Value
+	if execution.Err != nil || item.err != nil || item.skipped || observer == nil {
+		return nil
+	}
+	if _, loaded := observed.LoadOrStore(item.buildID, struct{}{}); loaded {
+		return nil
+	}
+	return observer(item.buildID)
+}
+
+// summarizeBuildConversion 汇总一次转换批次的执行结果，并记录失败账号。
+func (s *Service) summarizeBuildConversion(ids []uint64, results []batch.Result[buildConversionOutcome]) BuildConversionResult {
 	result := BuildConversionResult{BuildAccountIDs: make([]uint64, 0, len(ids))}
 	seen := make(map[uint64]struct{}, len(ids))
 	for index, execution := range results {
@@ -377,25 +405,13 @@ func (s *Service) convertWebAccountsToBuild(ctx context.Context, ids []uint64, s
 			result.BuildAccountIDs = append(result.BuildAccountIDs, item.buildID)
 		}
 	}
-	if runErr != nil {
-		return result, runErr
-	}
-	if observerErr != nil {
-		return result, observerErr
-	}
-	return result, nil
+	return result
 }
 
 func (s *Service) convertWebAccountToBuild(ctx context.Context, id uint64, strategy BuildConversionStrategy) (uint64, bool, bool, error) {
-	value, err := s.accounts.Get(ctx, id)
-	if err != nil {
-		return 0, false, false, mapRepositoryError(err)
-	}
-	if value.Provider != accountdomain.ProviderWeb || value.AuthType != accountdomain.AuthTypeSSO {
-		return 0, false, false, ErrUnsupported
-	}
-	if value.LinkedAccountID != 0 && strategy == BuildConversionMissing {
-		return value.LinkedAccountID, false, true, nil
+	value, linkedID, skipped, err := s.loadBuildConversionCandidate(ctx, id, strategy)
+	if err != nil || skipped {
+		return linkedID, false, skipped, err
 	}
 	release, acquired, err := s.refreshLock.Acquire(ctx, "web-build-conversion:"+strconv.FormatUint(id, 10), 2*time.Minute)
 	if err != nil {
@@ -405,23 +421,34 @@ func (s *Service) convertWebAccountToBuild(ctx context.Context, id uint64, strat
 		return 0, false, false, ErrConversionBusy
 	}
 	defer release()
-	value, err = s.accounts.Get(ctx, id)
+	value, linkedID, skipped, err = s.loadBuildConversionCandidate(ctx, id, strategy)
+	if err != nil || skipped {
+		return linkedID, false, skipped, err
+	}
+	return s.convertLockedWebAccountToBuild(ctx, id, value)
+}
+
+// loadBuildConversionCandidate 读取待转换账号并校验其是 Grok Web SSO 账号。
+// 返回 skipped=true 表示该账号已有关联 Build 账号，按策略跳过转换。
+func (s *Service) loadBuildConversionCandidate(ctx context.Context, id uint64, strategy BuildConversionStrategy) (accountdomain.Credential, uint64, bool, error) {
+	value, err := s.accounts.Get(ctx, id)
 	if err != nil {
-		return 0, false, false, mapRepositoryError(err)
+		return accountdomain.Credential{}, 0, false, mapRepositoryError(err)
+	}
+	if value.Provider != accountdomain.ProviderWeb || value.AuthType != accountdomain.AuthTypeSSO {
+		return accountdomain.Credential{}, 0, false, ErrUnsupported
 	}
 	if value.LinkedAccountID != 0 && strategy == BuildConversionMissing {
-		return value.LinkedAccountID, false, true, nil
+		return value, value.LinkedAccountID, true, nil
 	}
-	linkedBuildSourceKey := ""
-	if value.LinkedAccountID != 0 {
-		linkedBuild, getErr := s.accounts.Get(ctx, value.LinkedAccountID)
-		if getErr != nil {
-			return 0, false, false, mapRepositoryError(getErr)
-		}
-		if linkedBuild.Provider != accountdomain.ProviderBuild || strings.TrimSpace(linkedBuild.SourceKey) == "" {
-			return 0, false, false, fmt.Errorf("已关联 Grok Build 账号身份无效")
-		}
-		linkedBuildSourceKey = linkedBuild.SourceKey
+	return value, 0, false, nil
+}
+
+// convertLockedWebAccountToBuild 在已持有转换锁的前提下完成 xAI Device Flow 转换与账号关联。
+func (s *Service) convertLockedWebAccountToBuild(ctx context.Context, id uint64, value accountdomain.Credential) (uint64, bool, bool, error) {
+	linkedBuildSourceKey, err := s.resolveLinkedBuildSourceKey(ctx, value.LinkedAccountID)
+	if err != nil {
+		return 0, false, false, err
 	}
 	converter, ok := s.providers.BuildConverter(accountdomain.ProviderWeb)
 	if !ok {
@@ -450,4 +477,19 @@ func (s *Service) convertWebAccountToBuild(ctx context.Context, id uint64, strat
 		return 0, false, false, mapRepositoryError(err)
 	}
 	return buildAccount.ID, created, false, nil
+}
+
+// resolveLinkedBuildSourceKey 读取已关联 Grok Build 账号的 SourceKey，保证重新转换后账号身份一致。
+func (s *Service) resolveLinkedBuildSourceKey(ctx context.Context, linkedAccountID uint64) (string, error) {
+	if linkedAccountID == 0 {
+		return "", nil
+	}
+	linkedBuild, err := s.accounts.Get(ctx, linkedAccountID)
+	if err != nil {
+		return "", mapRepositoryError(err)
+	}
+	if linkedBuild.Provider != accountdomain.ProviderBuild || strings.TrimSpace(linkedBuild.SourceKey) == "" {
+		return "", fmt.Errorf("已关联 Grok Build 账号身份无效")
+	}
+	return linkedBuild.SourceKey, nil
 }

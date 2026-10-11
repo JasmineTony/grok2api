@@ -84,48 +84,21 @@ func (r *ModelRepository) ListStaleAccountSyncIDs(ctx context.Context, before ti
 	return ids, err
 }
 
+type managedRouteKey struct {
+	publicID   string
+	capability model.Capability
+}
+
 func (r *ModelRepository) UpsertDiscovered(ctx context.Context, provider account.Provider, upstreamModels []string) error {
 	changed := false
 	err := r.db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var existing []modelRouteModel
-		if err := tx.Where("provider = ?", provider).Find(&existing).Error; err != nil {
+		publicIDs, err := loadManagedRouteKeys(tx, provider)
+		if err != nil {
 			return err
 		}
-		type managedRouteKey struct {
-			publicID   string
-			capability model.Capability
-		}
-		publicIDs := make(map[managedRouteKey]bool, len(existing))
-		for _, row := range existing {
-			if row.Origin != string(model.OriginManual) {
-				publicIDs[managedRouteKey{publicID: row.PublicID, capability: model.Capability(row.Capability)}] = true
-			}
-		}
-		rows := make([]modelRouteModel, 0, len(upstreamModels))
-		for _, upstreamModel := range upstreamModels {
-			localID, capability := discoveredRouteDefaults(provider, upstreamModel)
-			publicID, ok := model.NormalizePublicID(provider, localID)
-			if !ok {
-				return fmt.Errorf("Provider %s 发现了无效模型 ID %q", provider, localID)
-			}
-			// Managed routes are idempotent by canonical public_id and capability.
-			// Manual targets with the same name remain independent pool members.
-			key := managedRouteKey{publicID: publicID, capability: capability}
-			if publicIDs[key] {
-				continue
-			}
-			// A discovered model whose canonical public ID is already reserved as
-			// another route compatibility alias cannot be inserted. Skip it and
-			// keep the rest of the batch: aborting here lets one historical rename
-			// permanently hide every future model of this provider.
-			if err := ensureModelPublicIDNotAlias(tx, publicID, 0); err != nil {
-				if errors.Is(err, repository.ErrConflict) {
-					continue
-				}
-				return err
-			}
-			publicIDs[key] = true
-			rows = append(rows, modelRouteModel{PublicID: publicID, Provider: string(provider), UpstreamModel: upstreamModel, Capability: string(capability), Origin: string(model.OriginDiscovered), Enabled: true})
+		rows, err := buildDiscoveredRouteRows(tx, provider, upstreamModels, publicIDs)
+		if err != nil {
+			return err
 		}
 		if len(rows) > 0 {
 			// Concurrent discovery is guarded by the managed-route partial unique index.
@@ -139,6 +112,50 @@ func (r *ModelRepository) UpsertDiscovered(ctx context.Context, provider account
 		r.notifyInvalidation(ctx, repository.InvalidationEvent{Kind: repository.InvalidationRouteChanged, Provider: provider})
 	}
 	return err
+}
+
+func loadManagedRouteKeys(tx *gorm.DB, provider account.Provider) (map[managedRouteKey]bool, error) {
+	var existing []modelRouteModel
+	if err := tx.Where("provider = ?", provider).Find(&existing).Error; err != nil {
+		return nil, err
+	}
+	publicIDs := make(map[managedRouteKey]bool, len(existing))
+	for _, row := range existing {
+		if row.Origin != string(model.OriginManual) {
+			publicIDs[managedRouteKey{publicID: row.PublicID, capability: model.Capability(row.Capability)}] = true
+		}
+	}
+	return publicIDs, nil
+}
+
+func buildDiscoveredRouteRows(tx *gorm.DB, provider account.Provider, upstreamModels []string, publicIDs map[managedRouteKey]bool) ([]modelRouteModel, error) {
+	rows := make([]modelRouteModel, 0, len(upstreamModels))
+	for _, upstreamModel := range upstreamModels {
+		localID, capability := discoveredRouteDefaults(provider, upstreamModel)
+		publicID, ok := model.NormalizePublicID(provider, localID)
+		if !ok {
+			return nil, fmt.Errorf("Provider %s 发现了无效模型 ID %q", provider, localID)
+		}
+		// Managed routes are idempotent by canonical public_id and capability.
+		// Manual targets with the same name remain independent pool members.
+		key := managedRouteKey{publicID: publicID, capability: capability}
+		if publicIDs[key] {
+			continue
+		}
+		// A discovered model whose canonical public ID is already reserved as
+		// another route compatibility alias cannot be inserted. Skip it and
+		// keep the rest of the batch: aborting here lets one historical rename
+		// permanently hide every future model of this provider.
+		if err := ensureModelPublicIDNotAlias(tx, publicID, 0); err != nil {
+			if errors.Is(err, repository.ErrConflict) {
+				continue
+			}
+			return nil, err
+		}
+		publicIDs[key] = true
+		rows = append(rows, modelRouteModel{PublicID: publicID, Provider: string(provider), UpstreamModel: upstreamModel, Capability: string(capability), Origin: string(model.OriginDiscovered), Enabled: true})
+	}
+	return rows, nil
 }
 
 func discoveredRouteDefaults(provider account.Provider, upstreamModel string) (string, model.Capability) {

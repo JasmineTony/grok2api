@@ -148,6 +148,18 @@ func (r *Registry) CollectAndReset() []Sample {
 		}
 		shard.mu.Unlock()
 	}
+	result = r.mergeDynamicGauges(result)
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Name != result[j].Name {
+			return result[i].Name < result[j].Name
+		}
+		return labelsKey(result[i].Labels) < labelsKey(result[j].Labels)
+	})
+	return result
+}
+
+// mergeDynamicGauges 用回调读取的动态 gauge 覆盖或补充本次采集结果。
+func (r *Registry) mergeDynamicGauges(result []Sample) []Sample {
 	r.dynamicMu.RLock()
 	dynamic := make(map[metricKey]func() int64, len(r.dynamicGauges))
 	for key, read := range r.dynamicGauges {
@@ -169,12 +181,6 @@ func (r *Registry) CollectAndReset() []Sample {
 			result = append(result, value)
 		}
 	}
-	sort.Slice(result, func(i, j int) bool {
-		if result[i].Name != result[j].Name {
-			return result[i].Name < result[j].Name
-		}
-		return labelsKey(result[i].Labels) < labelsKey(result[j].Labels)
-	})
 	return result
 }
 

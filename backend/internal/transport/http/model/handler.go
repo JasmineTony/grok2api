@@ -241,6 +241,12 @@ func (h *Handler) batchDelete(c *gin.Context) {
 	response.Success(c, http.StatusOK, gin.H{"deleted": deleted})
 }
 
+// modelSyncResult 承载一次模型能力同步的结果，用于从同步 goroutine 回传给事件循环。
+type modelSyncResult struct {
+	synced int
+	err    error
+}
+
 func (h *Handler) sync(c *gin.Context) {
 	c.Header("Content-Type", "text/event-stream; charset=utf-8")
 	c.Header("Cache-Control", "no-cache, no-transform")
@@ -249,11 +255,7 @@ func (h *Handler) sync(c *gin.Context) {
 		return
 	}
 
-	type syncResult struct {
-		synced int
-		err    error
-	}
-	result := make(chan syncResult, 1)
+	result := make(chan modelSyncResult, 1)
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
 	var completed atomic.Int64
@@ -263,13 +265,18 @@ func (h *Handler) sync(c *gin.Context) {
 			completed.Store(int64(current))
 			total.Store(int64(maximum))
 		})
-		result <- syncResult{synced: synced, err: err}
+		result <- modelSyncResult{synced: synced, err: err}
 	}()
 
 	heartbeat := time.NewTicker(modelSyncHeartbeatInterval)
 	defer heartbeat.Stop()
 	progressTicker := time.NewTicker(250 * time.Millisecond)
 	defer progressTicker.Stop()
+	h.streamModelSyncProgress(c, result, heartbeat.C, progressTicker.C, &completed, &total)
+}
+
+// streamModelSyncProgress 按原有分支顺序转发心跳、进度与最终结果，直到同步结束或客户端断开。
+func (h *Handler) streamModelSyncProgress(c *gin.Context, result <-chan modelSyncResult, heartbeat, progress <-chan time.Time, completed, total *atomic.Int64) {
 	lastCompleted, lastTotal := -1, -1
 	for {
 		select {
@@ -282,11 +289,11 @@ func (h *Handler) sync(c *gin.Context) {
 			}
 			_ = writeModelSyncEvent(c, "complete", gin.H{"synced": value.synced})
 			return
-		case <-heartbeat.C:
+		case <-heartbeat:
 			if err := writeModelSyncComment(c, "heartbeat"); err != nil {
 				return
 			}
-		case <-progressTicker.C:
+		case <-progress:
 			current, maximum := int(completed.Load()), int(total.Load())
 			if maximum > 0 && (current != lastCompleted || maximum != lastTotal) {
 				if err := writeModelSyncEvent(c, "progress", gin.H{"completed": current, "total": maximum}); err != nil {

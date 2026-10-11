@@ -263,15 +263,11 @@ func ensureReasoningInclude(payload map[string]any) {
 func normalizeConsoleTools(payload map[string]any) (bool, error) {
 	value, exists := payload["tools"]
 	if !exists || value == nil {
-		delete(payload, "tools")
-		delete(payload, "tool_choice")
-		return false, nil
+		return clearConsoleTools(payload), nil
 	}
 	tools, ok := value.([]any)
 	if !ok {
-		delete(payload, "tools")
-		delete(payload, "tool_choice")
-		return false, nil
+		return clearConsoleTools(payload), nil
 	}
 	hasClientViewImage := hasConsoleFunctionTool(tools, "view_image")
 	result := make([]any, 0, len(tools))
@@ -281,87 +277,126 @@ func normalizeConsoleTools(payload map[string]any) (bool, error) {
 		if !ok {
 			continue
 		}
-		typeName, _ := tool["type"].(string)
-		switch strings.ToLower(strings.TrimSpace(typeName)) {
-		case "web_search", "web_search_preview", "web_search_preview_2025_03_11", "web_search_2025_08_26":
-			// xAI equips web_search with a server-side tool also named view_image
-			// when image understanding is enabled. Prefer the client's function of
-			// that name so Codex can still inspect local files without mgw rejecting
-			// the request as a duplicate tool definition.
-			clean := map[string]any{"type": "web_search", "enable_image_understanding": !hasClientViewImage}
-			if enabled, ok := tool["enable_image_understanding"].(bool); ok && !hasClientViewImage {
-				clean["enable_image_understanding"] = enabled
-			}
-			// Forward the image-search toggle (enable_image_search) so clients
-			// can explicitly enable/disable it; absent when not requested.
-			if enabled, ok := tool["enable_image_search"].(bool); ok {
-				clean["enable_image_search"] = enabled
-			}
-			result = append(result, clean)
-		case "x_search":
-			clean := map[string]any{"type": "x_search", "enable_video_understanding": true}
-			if enabled, ok := tool["enable_video_understanding"].(bool); ok {
-				clean["enable_video_understanding"] = enabled
-			}
-			// Forward the X-search time bounds (from_date/to_date, YYYY-MM-DD).
-			// Invalid formats and empty strings are dropped; if from_date is
-			// later than to_date both are dropped to avoid an upstream 400.
-			for _, field := range []string{"from_date", "to_date"} {
-				text, ok := tool[field].(string)
-				if !ok || text == "" {
-					continue
-				}
-				if date, err := time.Parse("2006-01-02", text); err == nil && date.Format("2006-01-02") == text {
-					clean[field] = text
-				}
-			}
-			from, hasFrom := clean["from_date"].(string)
-			to, hasTo := clean["to_date"].(string)
-			if hasFrom && hasTo {
-				fromDate, _ := time.Parse("2006-01-02", from)
-				toDate, _ := time.Parse("2006-01-02", to)
-				if fromDate.After(toDate) {
-					delete(clean, "from_date")
-					delete(clean, "to_date")
-				}
-			}
-			result = append(result, clean)
-		case "function":
-			name, _ := tool["name"].(string)
-			if strings.TrimSpace(name) == "" {
-				continue
-			}
-			clean := map[string]any{"type": "function", "name": strings.TrimSpace(name)}
-			for _, field := range []string{"description", "parameters", "strict"} {
-				if fieldValue, exists := tool[field]; exists {
-					if field == "parameters" {
-						normalized, _, err := cli.NormalizeBuildFunctionParametersRoot(fieldValue, "tools.parameters", strings.TrimSpace(name))
-						if err != nil {
-							return false, err
-						}
-						clean[field] = normalized
-						continue
-					}
-					clean[field] = fieldValue
-				}
-			}
-			result = append(result, clean)
-			retainedClientTools = true
-		case "mcp", "shell", "image_generation", "collections_search", "file_search", "code_execution", "code_interpreter":
-			// These are native xAI Responses tool variants. Keep their payloads,
-			// while namespace/tool_search remain client-side abstractions and are
-			// intentionally omitted instead of causing an upstream 400.
-			result = append(result, tool)
-			retainedClientTools = true
+		normalized, retained, err := normalizeConsoleTool(tool, hasClientViewImage)
+		if err != nil {
+			return false, err
 		}
+		if normalized == nil {
+			continue
+		}
+		result = append(result, normalized)
+		retainedClientTools = retainedClientTools || retained
 	}
 	if len(result) == 0 {
-		delete(payload, "tools")
-		delete(payload, "tool_choice")
-		return false, nil
+		return clearConsoleTools(payload), nil
 	}
 	payload["tools"] = result
 	return retainedClientTools, nil
+}
+
+// clearConsoleTools drops client-side tool definitions Console cannot consume
+// and reports that no client tool survived normalization.
+func clearConsoleTools(payload map[string]any) bool {
+	delete(payload, "tools")
+	delete(payload, "tool_choice")
+	return false
+}
+
+// normalizeConsoleTool rewrites one Console tool definition. A nil result means
+// the tool is dropped; retained marks client-side tool names the model sees.
+func normalizeConsoleTool(tool map[string]any, hasClientViewImage bool) (any, bool, error) {
+	typeName, _ := tool["type"].(string)
+	switch strings.ToLower(strings.TrimSpace(typeName)) {
+	case "web_search", "web_search_preview", "web_search_preview_2025_03_11", "web_search_2025_08_26":
+		return normalizeConsoleWebSearchTool(tool, hasClientViewImage), false, nil
+	case "x_search":
+		return normalizeConsoleXSearchTool(tool), false, nil
+	case "function":
+		normalized, err := normalizeConsoleFunctionTool(tool)
+		if err != nil || normalized == nil {
+			return nil, false, err
+		}
+		return normalized, true, nil
+	case "mcp", "shell", "image_generation", "collections_search", "file_search", "code_execution", "code_interpreter":
+		// These are native xAI Responses tool variants. Keep their payloads,
+		// while namespace/tool_search remain client-side abstractions and are
+		// intentionally omitted instead of causing an upstream 400.
+		return tool, true, nil
+	}
+	return nil, false, nil
+}
+
+// normalizeConsoleWebSearchTool forwards the client's web_search toggles. xAI
+// equips web_search with a server-side tool also named view_image when image
+// understanding is enabled, so the client's own view_image function wins to
+// avoid an upstream duplicate tool definition rejection.
+func normalizeConsoleWebSearchTool(tool map[string]any, hasClientViewImage bool) map[string]any {
+	clean := map[string]any{"type": "web_search", "enable_image_understanding": !hasClientViewImage}
+	if enabled, ok := tool["enable_image_understanding"].(bool); ok && !hasClientViewImage {
+		clean["enable_image_understanding"] = enabled
+	}
+	// Forward the image-search toggle (enable_image_search) so clients
+	// can explicitly enable/disable it; absent when not requested.
+	if enabled, ok := tool["enable_image_search"].(bool); ok {
+		clean["enable_image_search"] = enabled
+	}
+	return clean
+}
+
+// normalizeConsoleXSearchTool forwards X-search toggles and date bounds.
+// Invalid or reversed from_date/to_date pairs are dropped to avoid an
+// upstream 400.
+func normalizeConsoleXSearchTool(tool map[string]any) map[string]any {
+	clean := map[string]any{"type": "x_search", "enable_video_understanding": true}
+	if enabled, ok := tool["enable_video_understanding"].(bool); ok {
+		clean["enable_video_understanding"] = enabled
+	}
+	for _, field := range []string{"from_date", "to_date"} {
+		text, ok := tool[field].(string)
+		if !ok || text == "" {
+			continue
+		}
+		if date, err := time.Parse("2006-01-02", text); err == nil && date.Format("2006-01-02") == text {
+			clean[field] = text
+		}
+	}
+	from, hasFrom := clean["from_date"].(string)
+	to, hasTo := clean["to_date"].(string)
+	if hasFrom && hasTo {
+		fromDate, _ := time.Parse("2006-01-02", from)
+		toDate, _ := time.Parse("2006-01-02", to)
+		if fromDate.After(toDate) {
+			delete(clean, "from_date")
+			delete(clean, "to_date")
+		}
+	}
+	return clean
+}
+
+// normalizeConsoleFunctionTool keeps the client function definition and
+// normalizes its JSON schema parameters before forwarding.
+func normalizeConsoleFunctionTool(tool map[string]any) (map[string]any, error) {
+	name, _ := tool["name"].(string)
+	if strings.TrimSpace(name) == "" {
+		return nil, nil
+	}
+	clean := map[string]any{"type": "function", "name": strings.TrimSpace(name)}
+	for _, field := range []string{"description", "parameters", "strict"} {
+		fieldValue, exists := tool[field]
+		if !exists {
+			continue
+		}
+		if field == "parameters" {
+			normalized, _, err := cli.NormalizeBuildFunctionParametersRoot(fieldValue, "tools.parameters", strings.TrimSpace(name))
+			if err != nil {
+				return nil, err
+			}
+			clean[field] = normalized
+			continue
+		}
+		clean[field] = fieldValue
+	}
+	return clean, nil
 }
 
 func hasConsoleFunctionTool(tools []any, target string) bool {

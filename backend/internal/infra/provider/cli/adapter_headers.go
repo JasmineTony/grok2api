@@ -22,44 +22,11 @@ func (a *Adapter) applyHeaders(req *http.Request, credential account.Credential,
 	req.Header.Set("x-grok-client-mode", "headless")
 
 	if trace {
-		requestID := uuid.NewString()
-		// Set x-grok-conv-id and session-id only when a stable session exists.
-		// Never generate a random UUID per request; it breaks xAI session affinity and keeps cached_tokens at zero.
-		sessionID, err := grokSessionID(promptCacheKey)
-		if err != nil {
+		if err := a.applyTraceHeaders(req, credential, promptCacheKey); err != nil {
 			return err
 		}
-		req.Header.Set("x-authenticateresponse", "authenticate-response")
-		req.Header.Set("x-grok-agent-id", a.agentID)
-		if sessionID != "" {
-			req.Header.Set("x-grok-session-id", sessionID)
-			req.Header.Set("x-grok-conv-id", sessionID)
-			// grok-build derives x-grok-conv-group-id from the root session so the
-			// proxy can group a root conversation with its subagent descendants.
-			req.Header.Set("x-grok-conv-group-id", grokConversationGroupID(sessionID))
-		}
-		req.Header.Set("x-grok-req-id", requestID)
-		// The gateway cannot reliably recover the CLI prompt index from a stateless API request.
-		// The field is optional in the official protocol, so do not fabricate x-grok-turn-idx.
-		if credential.UserID != "" {
-			req.Header.Set("x-grok-user-id", credential.UserID)
-		}
-		traceID, traceErr := randomHex(16)
-		if traceErr != nil {
-			return traceErr
-		}
-		spanID, spanErr := randomHex(8)
-		if spanErr != nil {
-			return spanErr
-		}
-		req.Header.Set("traceparent", "00-"+traceID+"-"+spanID+"-01")
 	} else {
-		if credential.UserID != "" {
-			req.Header.Set("x-userid", credential.UserID)
-		}
-		if credential.Email != "" {
-			req.Header.Set("x-email", credential.Email)
-		}
+		applyAccountHeaders(req, credential)
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Accept-Encoding", "gzip")
@@ -68,6 +35,51 @@ func (a *Adapter) applyHeaders(req *http.Request, credential account.Credential,
 		req.Header.Set("x-grok-model-override", model)
 	}
 	return nil
+}
+
+// applyTraceHeaders 写入 grok-build 追踪头；x-grok-conv-id 与 session-id 只在存在稳定会话时写入，
+// 每个请求随机生成 UUID 会破坏 xAI 会话亲和性并使 cached_tokens 恒为 0。
+func (a *Adapter) applyTraceHeaders(req *http.Request, credential account.Credential, promptCacheKey string) error {
+	requestID := uuid.NewString()
+	sessionID, err := grokSessionID(promptCacheKey)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("x-authenticateresponse", "authenticate-response")
+	req.Header.Set("x-grok-agent-id", a.agentID)
+	if sessionID != "" {
+		req.Header.Set("x-grok-session-id", sessionID)
+		req.Header.Set("x-grok-conv-id", sessionID)
+		// grok-build derives x-grok-conv-group-id from the root session so the
+		// proxy can group a root conversation with its subagent descendants.
+		req.Header.Set("x-grok-conv-group-id", grokConversationGroupID(sessionID))
+	}
+	req.Header.Set("x-grok-req-id", requestID)
+	// The gateway cannot reliably recover the CLI prompt index from a stateless API request.
+	// The field is optional in the official protocol, so do not fabricate x-grok-turn-idx.
+	if credential.UserID != "" {
+		req.Header.Set("x-grok-user-id", credential.UserID)
+	}
+	traceID, err := randomHex(16)
+	if err != nil {
+		return err
+	}
+	spanID, err := randomHex(8)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("traceparent", "00-"+traceID+"-"+spanID+"-01")
+	return nil
+}
+
+// applyAccountHeaders 在非追踪调用中透传账号身份，不写入会话与追踪头。
+func applyAccountHeaders(req *http.Request, credential account.Credential) {
+	if credential.UserID != "" {
+		req.Header.Set("x-userid", credential.UserID)
+	}
+	if credential.Email != "" {
+		req.Header.Set("x-email", credential.Email)
+	}
 }
 
 // grokSessionID converts a stable session key to the upstream x-grok-conv-id.

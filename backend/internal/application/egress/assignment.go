@@ -74,21 +74,58 @@ func (s *Service) rebalanceProvider(ctx context.Context, provider accountdomain.
 	nodeShare, migrationShare := s.autoAssignBounds()
 	nodes = capAutomaticAssignmentShare(nodes, accounts, nodeShare)
 	migrationLimit := autoAssignmentMigrationLimit(accounts, migrationShare)
-	migrations := 0
+	loads, byID := nodeLoadIndex(nodes)
+	original, assignment := initialAssignmentIndex(accounts)
+	freshMove := make(map[uint64]bool)
+	result := RebalanceResult{}
+
+	result, migrations := placeUnplacedAccounts(accounts, nodes, byID, loads, assignment, freshMove, autoAssign, autoBalance, migrationLimit, result)
+	// Capacity is a placement constraint, not an optional balancing preference.
+	// Repair automatic assignments that became over capacity even when ordinary
+	// load balancing is disabled. Manual assignments remain immovable.
+	capacityMoveLimit := maxAutomaticReassignments
+	if migrationLimit >= 0 {
+		capacityMoveLimit = min(maxAutomaticReassignments, max(0, migrationLimit-migrations))
+	}
+	result, moves := relieveOverCapacityNodes(accounts, nodes, loads, assignment, freshMove, now, capacityMoveLimit, result)
+	if autoBalance {
+		result, _ = balanceNodeLoads(accounts, nodes, loads, assignment, freshMove, now, capacityMoveLimit-moves, result)
+	}
+	if err := s.persistProviderAssignments(ctx, provider, accounts, original, assignment, now); err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+// nodeLoadIndex snapshots the load and definition of every eligible node so the
+// placement stages can reason about capacity without re-reading the node list.
+func nodeLoadIndex(nodes []domain.Node) (map[uint64]int, map[uint64]domain.Node) {
 	loads := make(map[uint64]int, len(nodes))
 	byID := make(map[uint64]domain.Node, len(nodes))
 	for _, node := range nodes {
 		loads[node.ID] = node.AssignedAccountCount
 		byID[node.ID] = node
 	}
+	return loads, byID
+}
+
+// initialAssignmentIndex records the persisted binding of every account before
+// the placement stages start moving them.
+func initialAssignmentIndex(accounts []accountdomain.Credential) (map[uint64]uint64, map[uint64]uint64) {
 	original := make(map[uint64]uint64, len(accounts))
 	assignment := make(map[uint64]uint64, len(accounts))
-	freshMove := make(map[uint64]bool)
-	result := RebalanceResult{}
-
 	for _, credential := range accounts {
 		original[credential.ID] = credential.EgressNodeID
 		assignment[credential.ID] = credential.EgressNodeID
+	}
+	return original, assignment
+}
+
+// placeUnplacedAccounts binds every auto-assignable account that has no healthy
+// node and returns how many of the cycle's migration budget it spent.
+func placeUnplacedAccounts(accounts []accountdomain.Credential, nodes []domain.Node, byID map[uint64]domain.Node, loads map[uint64]int, assignment map[uint64]uint64, freshMove map[uint64]bool, autoAssign, autoBalance bool, migrationLimit int, result RebalanceResult) (RebalanceResult, int) {
+	migrations := 0
+	for _, credential := range accounts {
 		if !isAutoAssignable(credential, autoAssign, autoBalance) {
 			continue
 		}
@@ -123,17 +160,15 @@ func (s *Service) rebalanceProvider(ctx context.Context, provider accountdomain.
 			result.Rebalanced++
 		}
 	}
+	return result, migrations
+}
 
-	// Capacity is a placement constraint, not an optional balancing preference.
-	// Repair automatic assignments that became over capacity even when ordinary
-	// load balancing is disabled. Manual assignments remain immovable.
+// relieveOverCapacityNodes moves automatic bindings off nodes that exceed their
+// account capacity and returns how many moves it consumed.
+func relieveOverCapacityNodes(accounts []accountdomain.Credential, nodes []domain.Node, loads map[uint64]int, assignment map[uint64]uint64, freshMove map[uint64]bool, now time.Time, moveLimit int, result RebalanceResult) (RebalanceResult, int) {
 	moves := 0
-	capacityMoveLimit := maxAutomaticReassignments
-	if migrationLimit >= 0 {
-		capacityMoveLimit = min(maxAutomaticReassignments, max(0, migrationLimit-migrations))
-	}
 	blockedCapacitySources := make(map[uint64]bool)
-	for moves < capacityMoveLimit {
+	for moves < moveLimit {
 		source, destination, found := overCapacityPair(nodes, loads, blockedCapacitySources)
 		if !found {
 			break
@@ -150,28 +185,37 @@ func (s *Service) rebalanceProvider(ctx context.Context, provider accountdomain.
 		moves++
 		result.Rebalanced++
 	}
+	return result, moves
+}
 
-	if autoBalance {
-		blocked := make(map[uint64]bool)
-		for moves < capacityMoveLimit {
-			source, destination, found := rebalancePair(nodes, loads, blocked)
-			if !found {
-				break
-			}
-			candidateID, movable := findMovableAccount(accounts, assignment, freshMove, source.ID, now)
-			if !movable {
-				blocked[source.ID] = true
-				continue
-			}
-			assignment[candidateID] = destination.ID
-			loads[source.ID]--
-			loads[destination.ID]++
-			freshMove[candidateID] = true
-			moves++
-			result.Rebalanced++
+// balanceNodeLoads evens the load between healthy nodes while automatic
+// balancing is enabled and returns how many moves it consumed.
+func balanceNodeLoads(accounts []accountdomain.Credential, nodes []domain.Node, loads map[uint64]int, assignment map[uint64]uint64, freshMove map[uint64]bool, now time.Time, moveLimit int, result RebalanceResult) (RebalanceResult, int) {
+	moves := 0
+	blocked := make(map[uint64]bool)
+	for moves < moveLimit {
+		source, destination, found := rebalancePair(nodes, loads, blocked)
+		if !found {
+			break
 		}
+		candidateID, movable := findMovableAccount(accounts, assignment, freshMove, source.ID, now)
+		if !movable {
+			blocked[source.ID] = true
+			continue
+		}
+		assignment[candidateID] = destination.ID
+		loads[source.ID]--
+		loads[destination.ID]++
+		freshMove[candidateID] = true
+		moves++
+		result.Rebalanced++
 	}
+	return result, moves
+}
 
+// persistProviderAssignments writes only the bindings this pass changed, grouped
+// by their target node.
+func (s *Service) persistProviderAssignments(ctx context.Context, provider accountdomain.Provider, accounts []accountdomain.Credential, original, assignment map[uint64]uint64, now time.Time) error {
 	updates := make(map[uint64][]uint64)
 	for _, credential := range accounts {
 		target := assignment[credential.ID]
@@ -182,10 +226,10 @@ func (s *Service) rebalanceProvider(ctx context.Context, provider accountdomain.
 	}
 	for nodeID, ids := range updates {
 		if _, err := s.accounts.UpdateEgressBindings(ctx, provider, ids, &nodeID, accountdomain.EgressAssignmentAuto, now); err != nil {
-			return result, err
+			return err
 		}
 	}
-	return result, nil
+	return nil
 }
 
 // capAutomaticAssignmentShare optionally prevents a cascading node quarantine
@@ -418,47 +462,70 @@ func (s *Service) RunMaintenance(ctx context.Context) error {
 		return err
 	}
 	var resultErr error
+	resultErr = s.syncDueSources(ctx, operations, resultErr)
+	resultErr = s.probeDueNodes(ctx, operations, config, resultErr)
+	return s.runDueAssignment(ctx, config, resultErr)
+}
+
+// syncDueSources refreshes every source whose interval elapsed and folds the
+// failures into resultErr so one broken subscription cannot stop the pass.
+func (s *Service) syncDueSources(ctx context.Context, operations OperationsRepository, resultErr error) error {
 	sources, err := operations.ListDueEgressSources(ctx, time.Now().UTC(), 3)
 	if err != nil {
-		resultErr = errors.Join(resultErr, err)
-	} else {
-		for _, source := range sources {
-			if _, syncErr := s.syncSource(ctx, operations, source); syncErr != nil {
-				resultErr = errors.Join(resultErr, syncErr)
-			}
+		return errors.Join(resultErr, err)
+	}
+	for _, source := range sources {
+		if _, syncErr := s.syncSource(ctx, operations, source); syncErr != nil {
+			resultErr = errors.Join(resultErr, syncErr)
 		}
 	}
+	return resultErr
+}
+
+// probeDueNodes probes every node whose probe interval elapsed and folds the
+// failures into resultErr.
+func (s *Service) probeDueNodes(ctx context.Context, operations OperationsRepository, config domain.OperationsConfig, resultErr error) error {
 	nodes, err := operations.ListDueEgressNodes(ctx, time.Now().UTC(), time.Duration(config.ProbeIntervalSeconds)*time.Second, 32)
 	if err != nil {
-		resultErr = errors.Join(resultErr, err)
-	} else if len(nodes) > 0 {
-		ids := make([]uint64, 0, len(nodes))
-		for _, node := range nodes {
-			ids = append(ids, node.ID)
-		}
-		if _, probeErr := s.TestNodes(ctx, ids); probeErr != nil {
-			resultErr = errors.Join(resultErr, probeErr)
-		}
+		return errors.Join(resultErr, err)
 	}
-	if config.AutoAssignEnabled || config.AutoBalanceEnabled {
-		s.mu.Lock()
-		due := !s.assignmentRunning && (s.lastAssignmentRun.IsZero() || time.Since(s.lastAssignmentRun) >= time.Duration(config.AssignmentIntervalSeconds)*time.Second)
-		if due {
-			s.assignmentRunning = true
-		}
-		s.mu.Unlock()
-		if due {
-			_, balanceErr := s.RebalanceAccounts(ctx, config.AutoAssignEnabled, config.AutoBalanceEnabled, time.Duration(config.ProbeIntervalSeconds)*time.Second)
-			s.mu.Lock()
-			s.assignmentRunning = false
-			if balanceErr == nil {
-				s.lastAssignmentRun = time.Now().UTC()
-			}
-			s.mu.Unlock()
-			if balanceErr != nil {
-				resultErr = errors.Join(resultErr, balanceErr)
-			}
-		}
+	if len(nodes) == 0 {
+		return resultErr
+	}
+	ids := make([]uint64, 0, len(nodes))
+	for _, node := range nodes {
+		ids = append(ids, node.ID)
+	}
+	if _, probeErr := s.TestNodes(ctx, ids); probeErr != nil {
+		resultErr = errors.Join(resultErr, probeErr)
+	}
+	return resultErr
+}
+
+// runDueAssignment starts one rebalance pass when the assignment interval
+// elapsed and no other pass is still running.
+func (s *Service) runDueAssignment(ctx context.Context, config domain.OperationsConfig, resultErr error) error {
+	if !config.AutoAssignEnabled && !config.AutoBalanceEnabled {
+		return resultErr
+	}
+	s.mu.Lock()
+	due := !s.assignmentRunning && (s.lastAssignmentRun.IsZero() || time.Since(s.lastAssignmentRun) >= time.Duration(config.AssignmentIntervalSeconds)*time.Second)
+	if due {
+		s.assignmentRunning = true
+	}
+	s.mu.Unlock()
+	if !due {
+		return resultErr
+	}
+	_, balanceErr := s.RebalanceAccounts(ctx, config.AutoAssignEnabled, config.AutoBalanceEnabled, time.Duration(config.ProbeIntervalSeconds)*time.Second)
+	s.mu.Lock()
+	s.assignmentRunning = false
+	if balanceErr == nil {
+		s.lastAssignmentRun = time.Now().UTC()
+	}
+	s.mu.Unlock()
+	if balanceErr != nil {
+		return errors.Join(resultErr, balanceErr)
 	}
 	return resultErr
 }

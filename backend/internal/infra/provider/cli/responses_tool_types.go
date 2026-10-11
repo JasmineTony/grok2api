@@ -91,61 +91,21 @@ func (c *responsesToolCompatibility) normalizeXSearchTool(tool map[string]any, p
 // normalizeWebSearchTool preserves Build's allowed/excluded domain constraints and safely
 // reduces newer controls that cannot be represented with equivalent semantics.
 func (c *responsesToolCompatibility) normalizeWebSearchTool(tool map[string]any, kind, param string) ([]any, error) {
-	if external, exists := tool["external_web_access"]; exists {
-		enabled, ok := external.(bool)
-		if !ok {
-			return nil, &responsesRequestError{Message: "external_web_access 必须是布尔值", Param: param + ".external_web_access", Code: "invalid_parameter"}
-		}
-		if !enabled {
-			// Build cannot express indexed-only search without external access. Sending a minimal
-			// web_search would broaden the client's authorization, so remove the tool instead.
-			c.webSearchDisabled = true
-			c.changed = true
-			c.addWarning("web_search_disabled_no_external_access")
-			return nil, nil
-		}
+	drop, err := c.reduceExternalWebAccess(tool, param)
+	if err != nil {
+		return nil, err
+	}
+	if drop {
+		return nil, nil
 	}
 	filters, err := c.normalizeWebSearchFilters(tool, param)
 	if err != nil {
 		return nil, err
 	}
-	if contentTypes, exists := tool["search_content_types"]; exists {
-		values, ok := contentTypes.([]any)
-		if !ok {
-			return nil, &responsesRequestError{Message: "search_content_types 必须是数组", Param: param + ".search_content_types", Code: "invalid_parameter"}
-		}
-		for _, value := range values {
-			if value != "text" {
-				c.changed = true
-				c.addWarning("web_search_non_text_content_ignored")
-			}
-		}
+	if err := c.reportWebSearchContentTypes(tool, param); err != nil {
+		return nil, err
 	}
-	for key := range tool {
-		if key == "type" {
-			continue
-		}
-		if key == "filters" {
-			continue
-		}
-		if key == "allowed_domains" {
-			c.changed = true
-			c.addWarning("web_search_allowed_domains_normalized")
-			continue
-		}
-		if key == "excluded_domains" {
-			c.changed = true
-			c.addWarning("web_search_excluded_domains_normalized")
-			continue
-		}
-		if _, compatible := webSearchCompatibilityFields[key]; !compatible {
-			c.changed = true
-			c.addWarning("web_search_unknown_controls_ignored")
-			continue
-		}
-		c.changed = true
-		c.addWarning("web_search_controls_downgraded")
-	}
+	c.reportWebSearchControlDowngrades(tool)
 	if kind == "web_search" && len(tool) == 1 {
 		return []any{cloneJSONValue(tool)}, nil
 	}
@@ -159,43 +119,144 @@ func (c *responsesToolCompatibility) normalizeWebSearchTool(tool map[string]any,
 	return []any{converted}, nil
 }
 
-func (c *responsesToolCompatibility) normalizeWebSearchFilters(tool map[string]any, param string) (map[string]any, error) {
-	nested := make(map[string][]any, 2)
-	if rawFilters, exists := tool["filters"]; exists && rawFilters != nil {
-		filters, ok := rawFilters.(map[string]any)
-		if !ok {
-			return nil, &responsesRequestError{Message: "web_search filters 必须是对象", Param: param + ".filters", Code: "invalid_parameter"}
+// reduceExternalWebAccess 处理 external_web_access；返回 true 表示该工具必须整体移除。
+func (c *responsesToolCompatibility) reduceExternalWebAccess(tool map[string]any, param string) (bool, error) {
+	external, exists := tool["external_web_access"]
+	if !exists {
+		return false, nil
+	}
+	enabled, ok := external.(bool)
+	if !ok {
+		return false, &responsesRequestError{Message: "external_web_access 必须是布尔值", Param: param + ".external_web_access", Code: "invalid_parameter"}
+	}
+	if enabled {
+		return false, nil
+	}
+	// Build cannot express indexed-only search without external access. Sending a minimal
+	// web_search would broaden the client's authorization, so remove the tool instead.
+	c.webSearchDisabled = true
+	c.changed = true
+	c.addWarning("web_search_disabled_no_external_access")
+	return true, nil
+}
+
+// reportWebSearchContentTypes 校验 search_content_types，并登记非 text 内容被忽略。
+func (c *responsesToolCompatibility) reportWebSearchContentTypes(tool map[string]any, param string) error {
+	contentTypes, exists := tool["search_content_types"]
+	if !exists {
+		return nil
+	}
+	values, ok := contentTypes.([]any)
+	if !ok {
+		return &responsesRequestError{Message: "search_content_types 必须是数组", Param: param + ".search_content_types", Code: "invalid_parameter"}
+	}
+	for _, value := range values {
+		if value != "text" {
+			c.changed = true
+			c.addWarning("web_search_non_text_content_ignored")
 		}
-		for key := range filters {
-			if key != "allowed_domains" && key != "excluded_domains" {
+	}
+	return nil
+}
+
+// reportWebSearchControlDowngrades 逐字段登记无法用等价语义表达的搜索控制项。
+func (c *responsesToolCompatibility) reportWebSearchControlDowngrades(tool map[string]any) {
+	for key := range tool {
+		switch key {
+		case "type", "filters":
+			continue
+		case "allowed_domains":
+			c.changed = true
+			c.addWarning("web_search_allowed_domains_normalized")
+		case "excluded_domains":
+			c.changed = true
+			c.addWarning("web_search_excluded_domains_normalized")
+		default:
+			if _, compatible := webSearchCompatibilityFields[key]; !compatible {
 				c.changed = true
-				c.addWarning("web_search_filters_downgraded")
-			}
-		}
-		for _, field := range []string{"allowed_domains", "excluded_domains"} {
-			rawDomains, exists := filters[field]
-			if !exists {
+				c.addWarning("web_search_unknown_controls_ignored")
 				continue
 			}
-			values, err := normalizeWebSearchDomains(rawDomains, field, param+".filters."+field)
-			if err != nil {
-				return nil, err
-			}
-			nested[field] = values
+			c.changed = true
+			c.addWarning("web_search_controls_downgraded")
 		}
 	}
+}
 
+func (c *responsesToolCompatibility) normalizeWebSearchFilters(tool map[string]any, param string) (map[string]any, error) {
+	nested, err := c.collectNestedWebSearchDomains(tool, param)
+	if err != nil {
+		return nil, err
+	}
+	topLevel, err := c.collectTopLevelWebSearchDomains(tool, param)
+	if err != nil {
+		return nil, err
+	}
+	result, err := mergeWebSearchDomainDeclarations(nested, topLevel, param)
+	if err != nil {
+		return nil, err
+	}
+	if _, hasAllowed := result["allowed_domains"]; hasAllowed {
+		if _, hasExcluded := result["excluded_domains"]; hasExcluded {
+			return nil, &responsesRequestError{Message: "web_search 不能同时设置 allowed_domains 和 excluded_domains", Param: param + ".filters", Code: "invalid_parameter"}
+		}
+	}
+	if len(result) == 0 {
+		return nil, nil
+	}
+	return result, nil
+}
+
+// collectNestedWebSearchDomains 收集 filters 内嵌的域名约束，并登记被忽略的过滤器字段。
+func (c *responsesToolCompatibility) collectNestedWebSearchDomains(tool map[string]any, param string) (map[string][]any, error) {
+	nested := make(map[string][]any, 2)
+	rawFilters, exists := tool["filters"]
+	if !exists || rawFilters == nil {
+		return nested, nil
+	}
+	filters, ok := rawFilters.(map[string]any)
+	if !ok {
+		return nil, &responsesRequestError{Message: "web_search filters 必须是对象", Param: param + ".filters", Code: "invalid_parameter"}
+	}
+	for key := range filters {
+		if key != "allowed_domains" && key != "excluded_domains" {
+			c.changed = true
+			c.addWarning("web_search_filters_downgraded")
+		}
+	}
+	for _, field := range []string{"allowed_domains", "excluded_domains"} {
+		rawDomains, exists := filters[field]
+		if !exists {
+			continue
+		}
+		values, err := normalizeWebSearchDomains(rawDomains, field, param+".filters."+field)
+		if err != nil {
+			return nil, err
+		}
+		nested[field] = values
+	}
+	return nested, nil
+}
+
+// collectTopLevelWebSearchDomains 收集工具顶层的域名约束。
+func (c *responsesToolCompatibility) collectTopLevelWebSearchDomains(tool map[string]any, param string) (map[string][]any, error) {
 	topLevel := make(map[string][]any, 2)
 	for _, field := range []string{"allowed_domains", "excluded_domains"} {
-		if rawDomains, exists := tool[field]; exists {
-			values, err := normalizeWebSearchDomains(rawDomains, field, param+"."+field)
-			if err != nil {
-				return nil, err
-			}
-			topLevel[field] = values
+		rawDomains, exists := tool[field]
+		if !exists {
+			continue
 		}
+		values, err := normalizeWebSearchDomains(rawDomains, field, param+"."+field)
+		if err != nil {
+			return nil, err
+		}
+		topLevel[field] = values
 	}
+	return topLevel, nil
+}
 
+// mergeWebSearchDomainDeclarations 合并内嵌与顶层域名声明，冲突时直接拒绝。
+func mergeWebSearchDomainDeclarations(nested, topLevel map[string][]any, param string) (map[string]any, error) {
 	result := make(map[string]any, 2)
 	for _, field := range []string{"allowed_domains", "excluded_domains"} {
 		nestedDomains := nested[field]
@@ -210,14 +271,6 @@ func (c *responsesToolCompatibility) normalizeWebSearchFilters(tool map[string]a
 		if len(domains) > 0 {
 			result[field] = cloneJSONValue(domains)
 		}
-	}
-	if _, hasAllowed := result["allowed_domains"]; hasAllowed {
-		if _, hasExcluded := result["excluded_domains"]; hasExcluded {
-			return nil, &responsesRequestError{Message: "web_search 不能同时设置 allowed_domains 和 excluded_domains", Param: param + ".filters", Code: "invalid_parameter"}
-		}
-	}
-	if len(result) == 0 {
-		return nil, nil
 	}
 	return result, nil
 }

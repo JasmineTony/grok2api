@@ -48,6 +48,26 @@ func normalizeArgumentValue(value any, schema, root map[string]any, depth int) (
 	if depth > 64 {
 		return value, false
 	}
+	value, changed := normalizeArgumentSchemaRefs(value, schema, root, depth)
+	if number, ok := value.(json.Number); ok && schemaRequiresInteger(schema) {
+		if normalized, ok := normalizeIntegralNumber(number); ok {
+			return normalized, true
+		}
+		return value, changed
+	}
+	switch typed := value.(type) {
+	case map[string]any:
+		current := normalizeArgumentObject(typed, schema, root, depth)
+		return typed, changed || current
+	case []any:
+		current := normalizeArgumentArray(typed, schema, root, depth)
+		return typed, changed || current
+	}
+	return value, changed
+}
+
+// normalizeArgumentSchemaRefs 按 $ref 与组合关键字把同一个值继续向内归一化。
+func normalizeArgumentSchemaRefs(value any, schema, root map[string]any, depth int) (any, bool) {
 	changed := false
 	if ref, ok := schema["$ref"].(string); ok {
 		if resolved, ok := resolveLocalSchemaRef(root, ref); ok {
@@ -68,51 +88,53 @@ func normalizeArgumentValue(value any, schema, root map[string]any, depth int) (
 			changed = changed || current
 		}
 	}
-	if number, ok := value.(json.Number); ok && schemaRequiresInteger(schema) {
-		if normalized, ok := normalizeIntegralNumber(number); ok {
-			return normalized, true
-		}
-		return value, changed
-	}
-	switch typed := value.(type) {
-	case map[string]any:
-		properties, _ := schema["properties"].(map[string]any)
-		additional, _ := schema["additionalProperties"].(map[string]any)
-		for key, item := range typed {
-			property, ok := properties[key].(map[string]any)
-			if !ok {
-				property = additional
-			}
-			if property == nil {
-				continue
-			}
-			normalized, current := normalizeArgumentValue(item, property, root, depth+1)
-			if current {
-				typed[key] = normalized
-				changed = true
-			}
-		}
-	case []any:
-		prefixItems, _ := schema["prefixItems"].([]any)
-		items, _ := schema["items"].(map[string]any)
-		for index, item := range typed {
-			itemSchema := items
-			if index < len(prefixItems) {
-				if prefixSchema, ok := prefixItems[index].(map[string]any); ok {
-					itemSchema = prefixSchema
-				}
-			}
-			if itemSchema == nil {
-				continue
-			}
-			normalized, current := normalizeArgumentValue(item, itemSchema, root, depth+1)
-			if current {
-				typed[index] = normalized
-				changed = true
-			}
-		}
-	}
 	return value, changed
+}
+
+// normalizeArgumentObject 按 schema 归一化对象字段，返回是否发生改写。
+func normalizeArgumentObject(value map[string]any, schema, root map[string]any, depth int) bool {
+	properties, _ := schema["properties"].(map[string]any)
+	additional, _ := schema["additionalProperties"].(map[string]any)
+	changed := false
+	for key, item := range value {
+		property, ok := properties[key].(map[string]any)
+		if !ok {
+			property = additional
+		}
+		if property == nil {
+			continue
+		}
+		normalized, current := normalizeArgumentValue(item, property, root, depth+1)
+		if current {
+			value[key] = normalized
+			changed = true
+		}
+	}
+	return changed
+}
+
+// normalizeArgumentArray 按 schema 归一化数组元素，返回是否发生改写。
+func normalizeArgumentArray(value []any, schema, root map[string]any, depth int) bool {
+	prefixItems, _ := schema["prefixItems"].([]any)
+	items, _ := schema["items"].(map[string]any)
+	changed := false
+	for index, item := range value {
+		itemSchema := items
+		if index < len(prefixItems) {
+			if prefixSchema, ok := prefixItems[index].(map[string]any); ok {
+				itemSchema = prefixSchema
+			}
+		}
+		if itemSchema == nil {
+			continue
+		}
+		normalized, current := normalizeArgumentValue(item, itemSchema, root, depth+1)
+		if current {
+			value[index] = normalized
+			changed = true
+		}
+	}
+	return changed
 }
 
 func schemaRequiresInteger(schema map[string]any) bool {
@@ -139,12 +161,7 @@ func normalizeIntegralNumber(number json.Number) (json.Number, bool) {
 	if len(raw) > maxNormalizedNumberBytes || !strings.ContainsAny(raw, ".eE") {
 		return number, false
 	}
-	mantissa := raw
-	exponentText := ""
-	if index := strings.IndexAny(mantissa, "eE"); index >= 0 {
-		exponentText = mantissa[index+1:]
-		mantissa = mantissa[:index]
-	}
+	mantissa, exponentText := splitNumberExponent(raw)
 	negative := strings.HasPrefix(mantissa, "-")
 	if negative {
 		mantissa = strings.TrimPrefix(mantissa, "-")
@@ -180,6 +197,21 @@ func normalizeIntegralNumber(number json.Number) (json.Number, bool) {
 	if len(digits) > len(maxExactJSONIntegerText) || len(digits) == len(maxExactJSONIntegerText) && digits > maxExactJSONIntegerText {
 		return number, false
 	}
+	return signedIntegralNumber(digits, negative, raw)
+}
+
+// splitNumberExponent 把 JSON 数字文本拆成尾数与指数文本。
+func splitNumberExponent(raw string) (mantissa, exponentText string) {
+	mantissa = raw
+	if index := strings.IndexAny(mantissa, "eE"); index >= 0 {
+		exponentText = mantissa[index+1:]
+		mantissa = mantissa[:index]
+	}
+	return mantissa, exponentText
+}
+
+// signedIntegralNumber 还原带符号的整数字面量，并报告字面量是否与上游文本不同。
+func signedIntegralNumber(digits string, negative bool, raw string) (json.Number, bool) {
 	normalized := digits
 	if negative {
 		normalized = "-" + normalized

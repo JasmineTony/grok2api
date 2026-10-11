@@ -13,91 +13,131 @@ import (
 	"github.com/chenyme/grok2api/backend/internal/repository"
 )
 
+// clearanceRefreshSettings is the configuration snapshot that one clearance
+// solve runs against.
+type clearanceRefreshSettings struct {
+	config             ClearanceConfig
+	version            uint64
+	solver             clearanceSolver
+	lock               repository.DistributedLock
+	timeout            time.Duration
+	fingerprint        string
+	bindingFingerprint string
+	interval           time.Duration
+}
+
 func (m *Manager) refreshNode(ctx context.Context, node domain.Node, proxyURL, key string, persist, force, waitForPeer bool, refreshAfter time.Time) (clearanceSolution, error) {
-	m.clearanceMu.Lock()
-	cfg := m.clearanceConfig
-	solveVersion := m.clearanceVersion
-	solver := m.solver
-	lock := m.clearanceLock
-	m.clearanceMu.Unlock()
-	if cfg.Mode != "flaresolverr" && cfg.Mode != "on_demand" {
+	settings := m.clearanceRefreshSettingsFor(proxyURL)
+	if settings.config.Mode != "flaresolverr" && settings.config.Mode != "on_demand" {
 		return clearanceSolution{}, errors.New("FlareSolverr Clearance 未启用")
 	}
-	timeout := cfg.Timeout
-	if timeout <= 0 {
-		timeout = time.Minute
-	}
-	fingerprint := clearanceFingerprint(cfg, proxyURL)
-	bindingFingerprint := clearanceBindingFingerprint(cfg, proxyURL)
-	interval := clearanceRefreshInterval(cfg)
-	if persist && node.ID != 0 && lock != nil {
-		release, acquired, err := lock.Acquire(ctx, "egress-clearance:"+strconv.FormatUint(node.ID, 10), timeout+clearanceLockGrace)
-		if err != nil {
-			return clearanceSolution{}, fmt.Errorf("协调 Clearance 刷新: %w", err)
-		}
-		if !acquired {
-			if !force {
-				if solution, refreshedAt, ok := m.loadPersistedClearance(ctx, node.ID, fingerprint, bindingFingerprint, interval); ok {
-					m.cacheClearance(key, solution, refreshedAt, solveVersion, fingerprint, bindingFingerprint, interval)
-					return solution, nil
-				}
-			}
-			if waitForPeer {
-				if solution, refreshedAt, ok := m.waitPersistedClearance(ctx, node.ID, fingerprint, bindingFingerprint, interval, timeout, refreshAfter); ok {
-					m.cacheClearance(key, solution, refreshedAt, solveVersion, fingerprint, bindingFingerprint, interval)
-					return solution, nil
-				}
-			}
-			return clearanceSolution{}, errors.New("另一个实例正在刷新 Cloudflare Clearance")
+	if persist && node.ID != 0 && settings.lock != nil {
+		release, solution, handled, err := m.acquireClearanceRefreshLock(ctx, settings, node, key, force, waitForPeer, refreshAfter)
+		if handled {
+			return solution, err
 		}
 		defer release()
-		if solution, refreshedAt, ok := m.loadPersistedClearance(ctx, node.ID, fingerprint, bindingFingerprint, interval); ok {
-			// A peer may have refreshed the rejected Clearance immediately before
-			// this instance acquired the distributed lock. Reuse that newer result
-			// instead of performing a duplicate browser solve. A force refresh with
-			// no newer persisted generation must still reach the solver.
-			if !force || (!refreshAfter.IsZero() && refreshedAt.After(refreshAfter)) {
-				m.cacheClearance(key, solution, refreshedAt, solveVersion, fingerprint, bindingFingerprint, interval)
-				return solution, nil
+	}
+	return m.solveAndPersistClearance(ctx, settings, node, proxyURL, key, persist)
+}
+
+func (m *Manager) clearanceRefreshSettingsFor(proxyURL string) clearanceRefreshSettings {
+	m.clearanceMu.Lock()
+	settings := clearanceRefreshSettings{
+		config:  m.clearanceConfig,
+		version: m.clearanceVersion,
+		solver:  m.solver,
+		lock:    m.clearanceLock,
+	}
+	m.clearanceMu.Unlock()
+	settings.timeout = settings.config.Timeout
+	if settings.timeout <= 0 {
+		settings.timeout = time.Minute
+	}
+	settings.fingerprint = clearanceFingerprint(settings.config, proxyURL)
+	settings.bindingFingerprint = clearanceBindingFingerprint(settings.config, proxyURL)
+	settings.interval = clearanceRefreshInterval(settings.config)
+	return settings
+}
+
+// acquireClearanceRefreshLock coordinates the refresh across instances. handled
+// reports that the caller must return the returned values immediately; otherwise
+// the returned release function holds the distributed lock for the solve.
+func (m *Manager) acquireClearanceRefreshLock(ctx context.Context, settings clearanceRefreshSettings, node domain.Node, key string, force, waitForPeer bool, refreshAfter time.Time) (func(), clearanceSolution, bool, error) {
+	release, acquired, err := settings.lock.Acquire(ctx, "egress-clearance:"+strconv.FormatUint(node.ID, 10), settings.timeout+clearanceLockGrace)
+	if err != nil {
+		return nil, clearanceSolution{}, true, fmt.Errorf("协调 Clearance 刷新: %w", err)
+	}
+	if !acquired {
+		if !force {
+			if solution, refreshedAt, ok := m.loadPersistedClearance(ctx, node.ID, settings.fingerprint, settings.bindingFingerprint, settings.interval); ok {
+				m.cacheClearance(key, solution, refreshedAt, settings.version, settings.fingerprint, settings.bindingFingerprint, settings.interval)
+				return nil, solution, true, nil
 			}
 		}
+		if waitForPeer {
+			if solution, refreshedAt, ok := m.waitPersistedClearance(ctx, node.ID, settings.fingerprint, settings.bindingFingerprint, settings.interval, settings.timeout, refreshAfter); ok {
+				m.cacheClearance(key, solution, refreshedAt, settings.version, settings.fingerprint, settings.bindingFingerprint, settings.interval)
+				return nil, solution, true, nil
+			}
+		}
+		return nil, clearanceSolution{}, true, errors.New("另一个实例正在刷新 Cloudflare Clearance")
 	}
-	solveCtx, cancel := context.WithTimeout(ctx, timeout)
+	if solution, refreshedAt, ok := m.loadPersistedClearance(ctx, node.ID, settings.fingerprint, settings.bindingFingerprint, settings.interval); ok {
+		// A peer may have refreshed the rejected Clearance immediately before
+		// this instance acquired the distributed lock. Reuse that newer result
+		// instead of performing a duplicate browser solve. A force refresh with
+		// no newer persisted generation must still reach the solver.
+		if !force || (!refreshAfter.IsZero() && refreshedAt.After(refreshAfter)) {
+			m.cacheClearance(key, solution, refreshedAt, settings.version, settings.fingerprint, settings.bindingFingerprint, settings.interval)
+			release()
+			return nil, solution, true, nil
+		}
+	}
+	return release, clearanceSolution{}, false, nil
+}
+
+// solveAndPersistClearance solves a new clearance and persists it to the node
+// when the caller asked for persistence.
+func (m *Manager) solveAndPersistClearance(ctx context.Context, settings clearanceRefreshSettings, node domain.Node, proxyURL, key string, persist bool) (clearanceSolution, error) {
+	solveCtx, cancel := context.WithTimeout(ctx, settings.timeout)
 	defer cancel()
-	solution, err := solver.Solve(solveCtx, cfg, proxyURL)
+	solution, err := settings.solver.Solve(solveCtx, settings.config, proxyURL)
 	if err != nil {
 		m.recordClearanceError(ctx, node, persist)
 		return clearanceSolution{}, fmt.Errorf("刷新出口 %q 的 Cloudflare Clearance: %w", node.Name, err)
 	}
 	now := time.Now().UTC()
 	if persist && node.ID != 0 {
-		encryptedCookies, encryptErr := m.cipher.Encrypt(solution.Cookies)
-		if encryptErr != nil {
-			return clearanceSolution{}, encryptErr
-		}
-		if stateRepository, ok := m.repository.(egressStateRepository); ok {
-			if updateErr := stateRepository.UpdateEgressNodeClearance(ctx, node.ID, encryptedCookies, solution.UserAgent, fingerprint, bindingFingerprint, now); updateErr != nil {
-				return clearanceSolution{}, updateErr
-			}
-		} else {
-			latest, loadErr := m.repository.GetEgressNode(ctx, node.ID)
-			if loadErr != nil {
-				return clearanceSolution{}, loadErr
-			}
-			latest.EncryptedCloudflareCookie = encryptedCookies
-			latest.UserAgent = solution.UserAgent
-			latest.ClearanceFingerprint = fingerprint
-			latest.ClearanceBindingFingerprint = bindingFingerprint
-			latest.ClearanceRefreshedAt = &now
-			latest.LastError = ""
-			if _, updateErr := m.repository.UpdateEgressNode(ctx, latest); updateErr != nil {
-				return clearanceSolution{}, updateErr
-			}
+		if err := m.persistNodeClearance(ctx, settings, node, solution, now); err != nil {
+			return clearanceSolution{}, err
 		}
 		m.invalidateNodes(node.Scope)
 	}
-	m.cacheClearance(key, solution, now, solveVersion, fingerprint, bindingFingerprint, interval)
+	m.cacheClearance(key, solution, now, settings.version, settings.fingerprint, settings.bindingFingerprint, settings.interval)
 	return solution, nil
+}
+
+func (m *Manager) persistNodeClearance(ctx context.Context, settings clearanceRefreshSettings, node domain.Node, solution clearanceSolution, now time.Time) error {
+	encryptedCookies, encryptErr := m.cipher.Encrypt(solution.Cookies)
+	if encryptErr != nil {
+		return encryptErr
+	}
+	if stateRepository, ok := m.repository.(egressStateRepository); ok {
+		return stateRepository.UpdateEgressNodeClearance(ctx, node.ID, encryptedCookies, solution.UserAgent, settings.fingerprint, settings.bindingFingerprint, now)
+	}
+	latest, loadErr := m.repository.GetEgressNode(ctx, node.ID)
+	if loadErr != nil {
+		return loadErr
+	}
+	latest.EncryptedCloudflareCookie = encryptedCookies
+	latest.UserAgent = solution.UserAgent
+	latest.ClearanceFingerprint = settings.fingerprint
+	latest.ClearanceBindingFingerprint = settings.bindingFingerprint
+	latest.ClearanceRefreshedAt = &now
+	latest.LastError = ""
+	_, updateErr := m.repository.UpdateEgressNode(ctx, latest)
+	return updateErr
 }
 
 func (m *Manager) RefreshClearance(ctx context.Context, nodeID uint64) error {
@@ -165,6 +205,35 @@ func (m *Manager) ForgetClearance(nodeID uint64) {
 // thousands of nodes, so repeating the global snapshot invalidation per ID
 // would add avoidable lock contention and CPU work.
 func (m *Manager) ForgetClearances(nodeIDs []uint64) {
+	ids, prefixes := forgottenClearancePrefixes(nodeIDs)
+	if len(ids) == 0 {
+		return
+	}
+	m.clearanceMu.Lock()
+	m.nodeMu.Lock()
+	m.clientMu.Lock()
+	m.evictClearanceEntriesLocked(prefixes)
+	// Node mutations are rare administration operations. Clearing the small
+	// one-second snapshots prevents a just-edited proxy from being used once
+	// more before its scope cache expires.
+	if m.nodeVersions == nil {
+		m.nodeVersions = make(map[domain.Scope]uint64)
+	}
+	for _, scope := range allEgressScopes() {
+		m.nodeVersions[scope]++
+	}
+	clear(m.nodes)
+	clear(m.healthyNodes)
+	stale := m.evictNodeClientsLocked(ids)
+	m.clientMu.Unlock()
+	m.nodeMu.Unlock()
+	m.clearanceMu.Unlock()
+	closeRequestClients(stale)
+}
+
+// forgottenClearancePrefixes deduplicates the requested node IDs and maps each
+// one to the clearance cache prefix that stores its runtime state.
+func forgottenClearancePrefixes(nodeIDs []uint64) (map[uint64]struct{}, map[string]struct{}) {
 	ids := make(map[uint64]struct{}, len(nodeIDs))
 	prefixes := make(map[string]struct{}, len(nodeIDs))
 	for _, nodeID := range nodeIDs {
@@ -178,36 +247,35 @@ func (m *Manager) ForgetClearances(nodeIDs []uint64) {
 		}
 		prefixes[prefix] = struct{}{}
 	}
-	if len(ids) == 0 {
-		return
-	}
-	m.clearanceMu.Lock()
-	m.nodeMu.Lock()
-	m.clientMu.Lock()
+	return ids, prefixes
+}
+
+func (m *Manager) evictClearanceEntriesLocked(prefixes map[string]struct{}) {
 	for key := range m.clearances {
-		prefix := key
-		if strings.HasPrefix(key, "node:") {
-			if separator := strings.IndexByte(key[len("node:"):], ':'); separator >= 0 {
-				prefix = key[:len("node:")+separator]
-			}
-		} else if strings.HasPrefix(key, "direct:") {
-			prefix = "direct"
-		}
-		if _, selected := prefixes[prefix]; selected {
+		if _, selected := prefixes[clearanceKeyPrefix(key)]; selected {
 			delete(m.clearances, key)
 		}
 	}
-	// Node mutations are rare administration operations. Clearing the small
-	// one-second snapshots prevents a just-edited proxy from being used once
-	// more before its scope cache expires.
-	if m.nodeVersions == nil {
-		m.nodeVersions = make(map[domain.Scope]uint64)
+}
+
+// clearanceKeyPrefix reduces a clearance cache key to the node scope that owns
+// it, so a batch forget can match every cached variant of one node.
+func clearanceKeyPrefix(key string) string {
+	if strings.HasPrefix(key, "node:") {
+		if separator := strings.IndexByte(key[len("node:"):], ':'); separator >= 0 {
+			return key[:len("node:")+separator]
+		}
+		return key
 	}
-	for _, scope := range allEgressScopes() {
-		m.nodeVersions[scope]++
+	if strings.HasPrefix(key, "direct:") {
+		return "direct"
 	}
-	clear(m.nodes)
-	clear(m.healthyNodes)
+	return key
+}
+
+// evictNodeClientsLocked drops the cached clients and version tombstones of the
+// forgotten nodes and returns the clients that must be closed.
+func (m *Manager) evictNodeClientsLocked(ids map[uint64]struct{}) []requestClient {
 	var stale []requestClient
 	for nodeID := range ids {
 		m.invalidateClientVersionLocked(nodeID)
@@ -219,10 +287,7 @@ func (m *Manager) ForgetClearances(nodeIDs []uint64) {
 		delete(m.clients, key)
 		stale = append(stale, cached.client)
 	}
-	m.clientMu.Unlock()
-	m.nodeMu.Unlock()
-	m.clearanceMu.Unlock()
-	closeRequestClients(stale)
+	return stale
 }
 
 func (m *Manager) RefreshDueClearances(ctx context.Context, force bool) error {
@@ -247,51 +312,63 @@ func (m *Manager) RefreshDueClearances(ctx context.Context, force bool) error {
 			continue
 		}
 		webNodeCount++
-		proxyURL, decryptErr := m.cipher.Decrypt(node.EncryptedProxyURL)
-		if decryptErr != nil {
-			refreshErrors = append(refreshErrors, decryptErr)
-			continue
-		}
-		if strings.Contains(proxyURL, application.ProxyAccountPlaceholder) {
-			// Resin clearance is account/IP bound and has no safe node-wide value
-			// for a background task to solve or persist.
-			continue
-		}
-		proxyURL, normalizeErr := application.NormalizeProxyURL(proxyURL)
-		if normalizeErr != nil {
-			refreshErrors = append(refreshErrors, normalizeErr)
-			continue
-		}
-		m.clearanceMu.Lock()
-		key := clearanceCacheKey(node.ID, proxyURL, false)
-		state, known := m.clearances[key]
-		m.clearanceMu.Unlock()
-		fingerprint := clearanceFingerprint(cfg, proxyURL)
-		memoryFresh := known && !state.invalid && state.version == version && state.fingerprint == fingerprint && now.Sub(state.refreshedAt) < interval
-		persistedFresh := (!known || !state.invalid) && node.ClearanceRefreshedAt != nil && node.ClearanceFingerprint == fingerprint && now.Sub(*node.ClearanceRefreshedAt) < interval
-		if !force && (memoryFresh || persistedFresh) {
-			continue
-		}
-		refreshForce := force || (known && state.invalid)
-		refreshAfter := time.Time{}
-		if refreshForce && known && state.invalid {
-			refreshAfter = state.refreshedAt
-		}
-		_, refreshErr, _ := m.clearanceLoads.Do(key, func() (any, error) {
-			return m.refreshNode(ctx, node, proxyURL, key, true, refreshForce, false, refreshAfter)
-		})
-		if refreshErr != nil {
+		if refreshErr := m.refreshDueNodeClearance(ctx, node, cfg, version, interval, now, force); refreshErr != nil {
 			refreshErrors = append(refreshErrors, refreshErr)
 		}
 	}
-	shouldUseDirect := direct.used || force && webNodeCount == 0
-	if shouldUseDirect && (force || direct.invalid || direct.userAgent == "" || direct.version != version || now.Sub(direct.refreshedAt) >= interval) {
-		_, err, _ := m.clearanceLoads.Do("direct", func() (any, error) {
-			return m.refreshNode(ctx, domain.Node{Name: "direct", Scope: domain.ScopeWeb, Enabled: true}, "", "direct", false, force, false, time.Time{})
-		})
-		if err != nil {
-			refreshErrors = append(refreshErrors, err)
-		}
-	}
+	refreshErrors = m.appendDirectClearanceRefresh(ctx, refreshErrors, direct, version, interval, now, force, webNodeCount)
 	return errors.Join(refreshErrors...)
+}
+
+// refreshDueNodeClearance refreshes one node when neither its in-memory nor its
+// persisted clearance still satisfies the configured refresh interval.
+func (m *Manager) refreshDueNodeClearance(ctx context.Context, node domain.Node, cfg ClearanceConfig, version uint64, interval time.Duration, now time.Time, force bool) error {
+	proxyURL, decryptErr := m.cipher.Decrypt(node.EncryptedProxyURL)
+	if decryptErr != nil {
+		return decryptErr
+	}
+	if strings.Contains(proxyURL, application.ProxyAccountPlaceholder) {
+		// Resin clearance is account/IP bound and has no safe node-wide value
+		// for a background task to solve or persist.
+		return nil
+	}
+	proxyURL, normalizeErr := application.NormalizeProxyURL(proxyURL)
+	if normalizeErr != nil {
+		return normalizeErr
+	}
+	m.clearanceMu.Lock()
+	key := clearanceCacheKey(node.ID, proxyURL, false)
+	state, known := m.clearances[key]
+	m.clearanceMu.Unlock()
+	fingerprint := clearanceFingerprint(cfg, proxyURL)
+	memoryFresh := known && !state.invalid && state.version == version && state.fingerprint == fingerprint && now.Sub(state.refreshedAt) < interval
+	persistedFresh := (!known || !state.invalid) && node.ClearanceRefreshedAt != nil && node.ClearanceFingerprint == fingerprint && now.Sub(*node.ClearanceRefreshedAt) < interval
+	if !force && (memoryFresh || persistedFresh) {
+		return nil
+	}
+	refreshForce := force || (known && state.invalid)
+	refreshAfter := time.Time{}
+	if refreshForce && known && state.invalid {
+		refreshAfter = state.refreshedAt
+	}
+	_, refreshErr, _ := m.clearanceLoads.Do(key, func() (any, error) {
+		return m.refreshNode(ctx, node, proxyURL, key, true, refreshForce, false, refreshAfter)
+	})
+	return refreshErr
+}
+
+// appendDirectClearanceRefresh refreshes the direct-transport clearance when
+// web traffic uses it and no web node can cover it.
+func (m *Manager) appendDirectClearanceRefresh(ctx context.Context, refreshErrors []error, direct clearanceState, version uint64, interval time.Duration, now time.Time, force bool, webNodeCount int) []error {
+	shouldUseDirect := direct.used || force && webNodeCount == 0
+	if !shouldUseDirect || (!force && !direct.invalid && direct.userAgent != "" && direct.version == version && now.Sub(direct.refreshedAt) < interval) {
+		return refreshErrors
+	}
+	_, err, _ := m.clearanceLoads.Do("direct", func() (any, error) {
+		return m.refreshNode(ctx, domain.Node{Name: "direct", Scope: domain.ScopeWeb, Enabled: true}, "", "direct", false, force, false, time.Time{})
+	})
+	if err != nil {
+		refreshErrors = append(refreshErrors, err)
+	}
+	return refreshErrors
 }

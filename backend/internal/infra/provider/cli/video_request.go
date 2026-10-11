@@ -41,6 +41,42 @@ var (
 )
 
 func videoCreatePayload(request provider.VideoRequest, uploadURL string, profile videoRequestProfile) (map[string]any, error) {
+	payload := videoBasePayload(request, profile)
+	if strings.TrimSpace(request.ImageURL) != "" && (len(request.ReferenceURLs) > 0 || len(request.ReferenceAudios) > 0) {
+		return nil, fmt.Errorf("image 不能与 reference_images/reference_audios 同时使用")
+	}
+	references, err := videoReferenceImages(request.ReferenceURLs, profile)
+	if err != nil {
+		return nil, err
+	}
+	if references != nil {
+		// A single reference must stay in reference_images; do not coerce to image.
+		payload["reference_images"] = references
+	}
+	audios, err := videoReferenceAudios(request.ReferenceAudios)
+	if err != nil {
+		return nil, err
+	}
+	if audios != nil {
+		payload["reference_audios"] = audios
+	}
+	hasReferenceMode := len(request.ReferenceURLs) > 0 || len(request.ReferenceAudios) > 0
+	if hasReferenceMode {
+		if err := validateVideoReferenceMode(request); err != nil {
+			return nil, err
+		}
+	}
+	if err := validateVideoPromptRequirement(payload, hasReferenceMode); err != nil {
+		return nil, err
+	}
+	if uploadURL = strings.TrimSpace(uploadURL); uploadURL != "" {
+		payload["output"] = map[string]any{"upload_url": uploadURL}
+	}
+	return payload, nil
+}
+
+// videoBasePayload 写入模型与可选生成参数；字段名与官方 xAI 视频协议保持一致。
+func videoBasePayload(request provider.VideoRequest, profile videoRequestProfile) map[string]any {
 	payload := map[string]any{
 		"model": profile.model,
 	}
@@ -59,55 +95,67 @@ func videoCreatePayload(request provider.VideoRequest, uploadURL string, profile
 	if imageURL := strings.TrimSpace(request.ImageURL); imageURL != "" {
 		payload["image"] = map[string]any{profile.imageURLField: imageURL}
 	}
-	if strings.TrimSpace(request.ImageURL) != "" && (len(request.ReferenceURLs) > 0 || len(request.ReferenceAudios) > 0) {
-		return nil, fmt.Errorf("image 不能与 reference_images/reference_audios 同时使用")
+	return payload
+}
+
+// videoReferenceImages 构造 reference_images：空 URL 报错，单个参考图仍保留在 reference_images。
+func videoReferenceImages(rawURLs []string, profile videoRequestProfile) ([]map[string]any, error) {
+	if len(rawURLs) == 0 {
+		return nil, nil
 	}
-	if len(request.ReferenceURLs) > 0 {
-		references := make([]map[string]any, 0, len(request.ReferenceURLs))
-		for _, rawURL := range request.ReferenceURLs {
-			refURL := strings.TrimSpace(rawURL)
-			if refURL == "" {
-				return nil, fmt.Errorf("视频参考图 URL 不能为空")
-			}
-			references = append(references, map[string]any{profile.imageURLField: refURL})
+	references := make([]map[string]any, 0, len(rawURLs))
+	for _, rawURL := range rawURLs {
+		refURL := strings.TrimSpace(rawURL)
+		if refURL == "" {
+			return nil, fmt.Errorf("视频参考图 URL 不能为空")
 		}
-		// A single reference must stay in reference_images; do not coerce to image.
-		payload["reference_images"] = references
+		references = append(references, map[string]any{profile.imageURLField: refURL})
 	}
-	if len(request.ReferenceAudios) > 0 {
-		if len(request.ReferenceAudios) > 3 {
-			return nil, fmt.Errorf("reference_audios 最多 3 个")
-		}
-		audios := make([]map[string]any, 0, len(request.ReferenceAudios))
-		for _, raw := range request.ReferenceAudios {
-			voiceID := strings.TrimSpace(raw)
-			if voiceID == "" {
-				return nil, fmt.Errorf("reference_audios.voice_id 不能为空")
-			}
-			audios = append(audios, map[string]any{"voice_id": voiceID})
-		}
-		payload["reference_audios"] = audios
+	return references, nil
+}
+
+// videoReferenceAudios 构造 reference_audios：最多 3 个，voice_id 不能为空。
+func videoReferenceAudios(rawAudios []string) ([]map[string]any, error) {
+	if len(rawAudios) == 0 {
+		return nil, nil
 	}
-	hasReferenceMode := len(request.ReferenceURLs) > 0 || len(request.ReferenceAudios) > 0
+	if len(rawAudios) > 3 {
+		return nil, fmt.Errorf("reference_audios 最多 3 个")
+	}
+	audios := make([]map[string]any, 0, len(rawAudios))
+	for _, raw := range rawAudios {
+		voiceID := strings.TrimSpace(raw)
+		if voiceID == "" {
+			return nil, fmt.Errorf("reference_audios.voice_id 不能为空")
+		}
+		audios = append(audios, map[string]any{"voice_id": voiceID})
+	}
+	return audios, nil
+}
+
+// validateVideoReferenceMode 校验参考图/参考音频视频的 prompt 与分辨率上限。
+func validateVideoReferenceMode(request provider.VideoRequest) error {
+	if strings.TrimSpace(request.Prompt) == "" {
+		return fmt.Errorf("参考图/参考音频视频必须提供 prompt")
+	}
+	if strings.EqualFold(strings.TrimSpace(request.Resolution), "1080p") {
+		return fmt.Errorf("参考图视频 resolution 最高 720p")
+	}
+	return nil
+}
+
+// validateVideoPromptRequirement 保证文本生视频必须带 prompt；图片与参考模式可以省略。
+func validateVideoPromptRequirement(payload map[string]any, hasReferenceMode bool) error {
+	if _, hasPrompt := payload["prompt"]; hasPrompt {
+		return nil
+	}
+	if _, hasImage := payload["image"]; hasImage {
+		return nil
+	}
 	if hasReferenceMode {
-		if strings.TrimSpace(request.Prompt) == "" {
-			return nil, fmt.Errorf("参考图/参考音频视频必须提供 prompt")
-		}
-		if strings.EqualFold(strings.TrimSpace(request.Resolution), "1080p") {
-			return nil, fmt.Errorf("参考图视频 resolution 最高 720p")
-		}
+		return nil
 	}
-	if _, hasPrompt := payload["prompt"]; !hasPrompt {
-		if _, hasImage := payload["image"]; !hasImage {
-			if !hasReferenceMode {
-				return nil, fmt.Errorf("文本生视频必须提供 prompt；图片生视频可以省略 prompt")
-			}
-		}
-	}
-	if uploadURL = strings.TrimSpace(uploadURL); uploadURL != "" {
-		payload["output"] = map[string]any{"upload_url": uploadURL}
-	}
-	return payload, nil
+	return fmt.Errorf("文本生视频必须提供 prompt；图片生视频可以省略 prompt")
 }
 
 func (a *Adapter) doVideoJSON(ctx context.Context, credential account.Credential, accessToken, method, base, path string, body []byte, profile videoRequestProfile, withTrace bool) ([]byte, error) {

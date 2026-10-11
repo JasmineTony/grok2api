@@ -52,44 +52,19 @@ func newPinnedHTTPSClient(proxyURL, serverName string, tlsConfig *tls.Config) (*
 		return nil, errors.New("TLS ServerName 不能为空")
 	}
 	direct := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
-	if tlsConfig == nil {
-		tlsConfig = &tls.Config{MinVersion: tls.VersionTLS12}
-	} else {
-		tlsConfig = tlsConfig.Clone()
-	}
-	tlsConfig.ServerName = serverName
 	transport := &http.Transport{
 		Proxy:                 nil,
 		DialContext:           direct.DialContext,
 		ForceAttemptHTTP2:     true,
 		DisableKeepAlives:     true,
-		TLSClientConfig:       tlsConfig,
+		TLSClientConfig:       pinnedClientTLSConfig(tlsConfig, serverName),
 		TLSHandshakeTimeout:   10 * time.Second,
 		ResponseHeaderTimeout: 30 * time.Second,
 		ExpectContinueTimeout: time.Second,
 	}
 	if strings.TrimSpace(proxyURL) != "" {
-		parsed, err := url.Parse(proxyURL)
-		if err != nil {
-			return nil, fmt.Errorf("解析固定地址出口代理: %w", err)
-		}
-		switch strings.ToLower(parsed.Scheme) {
-		case "http", "https":
-			transport.Proxy = http.ProxyURL(parsed)
-		case "socks4", "socks4a", "socks5", "socks5h":
-			dialer, err := xproxy.FromURL(parsed, direct)
-			if err != nil {
-				return nil, fmt.Errorf("创建固定地址 SOCKS 代理: %w", err)
-			}
-			transport.DialContext = dialContext(dialer)
-		case "trojan", "vless", "ss", "vmess":
-			dialer, err := tunnelproxy.NewDialer(proxyURL)
-			if err != nil {
-				return nil, fmt.Errorf("创建固定地址隧道代理: %w", err)
-			}
-			transport.DialContext = dialer.DialContext
-		default:
-			return nil, fmt.Errorf("固定地址请求不支持代理协议 %q", parsed.Scheme)
+		if err := configurePinnedProxyTransport(transport, direct, proxyURL); err != nil {
+			return nil, err
 		}
 	}
 	return &http.Client{
@@ -98,4 +73,44 @@ func newPinnedHTTPSClient(proxyURL, serverName string, tlsConfig *tls.Config) (*
 			return http.ErrUseLastResponse
 		},
 	}, nil
+}
+
+// pinnedClientTLSConfig 复制调用方提供的 TLS 配置并固定 ServerName；
+// 未提供时使用仅允许 TLS 1.2 及以上版本的默认配置。
+func pinnedClientTLSConfig(tlsConfig *tls.Config, serverName string) *tls.Config {
+	if tlsConfig == nil {
+		tlsConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	} else {
+		tlsConfig = tlsConfig.Clone()
+	}
+	tlsConfig.ServerName = serverName
+	return tlsConfig
+}
+
+// configurePinnedProxyTransport 按出口代理协议改写 transport 的 Proxy 或 DialContext，
+// 协议不受支持或代理不可用时返回固定地址请求使用的错误。
+func configurePinnedProxyTransport(transport *http.Transport, direct *net.Dialer, proxyURL string) error {
+	parsed, err := url.Parse(proxyURL)
+	if err != nil {
+		return fmt.Errorf("解析固定地址出口代理: %w", err)
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+		transport.Proxy = http.ProxyURL(parsed)
+	case "socks4", "socks4a", "socks5", "socks5h":
+		dialer, err := xproxy.FromURL(parsed, direct)
+		if err != nil {
+			return fmt.Errorf("创建固定地址 SOCKS 代理: %w", err)
+		}
+		transport.DialContext = dialContext(dialer)
+	case "trojan", "vless", "ss", "vmess":
+		dialer, err := tunnelproxy.NewDialer(proxyURL)
+		if err != nil {
+			return fmt.Errorf("创建固定地址隧道代理: %w", err)
+		}
+		transport.DialContext = dialer.DialContext
+	default:
+		return fmt.Errorf("固定地址请求不支持代理协议 %q", parsed.Scheme)
+	}
+	return nil
 }

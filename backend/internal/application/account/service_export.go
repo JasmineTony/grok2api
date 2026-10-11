@@ -122,48 +122,61 @@ func (s *Service) marshalProviderCredentials(providerValue accountdomain.Provide
 	if !ok {
 		return ExportResult{}, fmt.Errorf("Provider %s 不支持凭据导出", providerValue)
 	}
-	var err error
 	seeds := make([]provider.CredentialSeed, 0, len(values))
 	for _, value := range values {
-		if value.Provider != providerValue {
-			continue
+		seed, included, err := s.exportCredentialSeed(providerValue, value)
+		if err != nil {
+			return ExportResult{}, err
 		}
-		accessToken := ""
-		if value.EncryptedAccessToken != "" {
-			accessToken, err = s.cipher.Decrypt(value.EncryptedAccessToken)
-			if err != nil {
-				return ExportResult{}, fmt.Errorf("解密账号 %d access token: %w", value.ID, err)
-			}
+		if included {
+			seeds = append(seeds, seed)
 		}
-		refreshToken := ""
-		if value.EncryptedRefreshToken != "" {
-			refreshToken, err = s.cipher.Decrypt(value.EncryptedRefreshToken)
-			if err != nil {
-				return ExportResult{}, fmt.Errorf("解密账号 %d refresh token: %w", value.ID, err)
-			}
-		}
-		cloudflareCookies := ""
-		if value.EncryptedCloudflareCookie != "" {
-			cloudflareCookies, err = s.cipher.Decrypt(value.EncryptedCloudflareCookie)
-			if err != nil {
-				return ExportResult{}, fmt.Errorf("解密账号 %d Cloudflare Cookie: %w", value.ID, err)
-			}
-		}
-		if accessToken == "" && refreshToken == "" {
-			return ExportResult{}, fmt.Errorf("账号 %d 没有可导出的凭据", value.ID)
-		}
-		seeds = append(seeds, provider.CredentialSeed{
-			Provider: value.Provider, AuthType: value.AuthType, WebTier: value.WebTier,
-			Name: value.Name, Email: value.Email, UserID: value.UserID, TeamID: value.TeamID,
-			OIDCClientID: value.OIDCClientID, AccessToken: accessToken, RefreshToken: refreshToken,
-			CloudflareCookies: cloudflareCookies, ExpiresAt: value.ExpiresAt,
-			WebNSFWEnabledAt: value.WebNSFWEnabledAt, WebTermsAcceptedAt: value.WebTermsAcceptedAt,
-			WebTermsAcceptedVersion: value.WebTermsAcceptedVersion, WebBirthDateSetAt: value.WebBirthDateSetAt,
-		})
 	}
 	data, err := adapter.MarshalCredentials(seeds)
 	if err != nil {
 		return ExportResult{}, err
 	}
 	return ExportResult{Data: data, Count: len(seeds)}, nil
+}
+
+// exportCredentialSeed 解密单个账号的凭据并组装导出种子；included=false 表示该账号不属于目标 Provider。
+func (s *Service) exportCredentialSeed(providerValue accountdomain.Provider, value accountdomain.Credential) (provider.CredentialSeed, bool, error) {
+	if value.Provider != providerValue {
+		return provider.CredentialSeed{}, false, nil
+	}
+	accessToken, err := s.decryptExportCredential(value.ID, "access token", value.EncryptedAccessToken)
+	if err != nil {
+		return provider.CredentialSeed{}, false, err
+	}
+	refreshToken, err := s.decryptExportCredential(value.ID, "refresh token", value.EncryptedRefreshToken)
+	if err != nil {
+		return provider.CredentialSeed{}, false, err
+	}
+	cloudflareCookies, err := s.decryptExportCredential(value.ID, "Cloudflare Cookie", value.EncryptedCloudflareCookie)
+	if err != nil {
+		return provider.CredentialSeed{}, false, err
+	}
+	if accessToken == "" && refreshToken == "" {
+		return provider.CredentialSeed{}, false, fmt.Errorf("账号 %d 没有可导出的凭据", value.ID)
+	}
+	return provider.CredentialSeed{
+		Provider: value.Provider, AuthType: value.AuthType, WebTier: value.WebTier,
+		Name: value.Name, Email: value.Email, UserID: value.UserID, TeamID: value.TeamID,
+		OIDCClientID: value.OIDCClientID, AccessToken: accessToken, RefreshToken: refreshToken,
+		CloudflareCookies: cloudflareCookies, ExpiresAt: value.ExpiresAt,
+		WebNSFWEnabledAt: value.WebNSFWEnabledAt, WebTermsAcceptedAt: value.WebTermsAcceptedAt,
+		WebTermsAcceptedVersion: value.WebTermsAcceptedVersion, WebBirthDateSetAt: value.WebBirthDateSetAt,
+	}, true, nil
+}
+
+// decryptExportCredential 解密导出所需的凭据字段；加密值为空时视为无该字段。
+func (s *Service) decryptExportCredential(accountID uint64, field, encrypted string) (string, error) {
+	if encrypted == "" {
+		return "", nil
+	}
+	plain, err := s.cipher.Decrypt(encrypted)
+	if err != nil {
+		return "", fmt.Errorf("解密账号 %d %s: %w", accountID, field, err)
+	}
+	return plain, nil
 }
