@@ -38,7 +38,10 @@ func TestReadCloserCancelsBlockedReadWithSharedSentinel(t *testing.T) {
 
 func TestReadCloserResetsDeadlineOnProgress(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(context.Background())
-	wrapper := New(io.NopCloser(&pacedReader{chunks: 3, gap: 10 * time.Millisecond}), 30*time.Millisecond, cancel)
+	// 计时余量：单次进度间隔（gap）必须远小于空闲阈值，且整段流的耗时必须大于阈值
+	// ——前者避免机器负载把一次 sleep 拖过阈值造成假失败，后者保证「未重置定时器」时本用例仍会失败
+	// （缺少 Reset 时定时器会在 150ms 触发，io.Copy 立即报错）。
+	wrapper := New(io.NopCloser(&pacedReader{chunks: 30, gap: 10 * time.Millisecond}), 150*time.Millisecond, cancel)
 	defer wrapper.Close()
 	if _, err := io.Copy(io.Discard, wrapper); err != nil {
 		t.Fatal(err)
@@ -51,7 +54,7 @@ func TestReadCloserResetsDeadlineOnProgress(t *testing.T) {
 func TestReadCloserReportsProgressBeforeIdleTimeout(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	reader, writer := io.Pipe()
-	wrapper := New(reader, 30*time.Millisecond, cancel)
+	wrapper := New(reader, 200*time.Millisecond, cancel)
 	defer wrapper.Close()
 
 	go func() {
