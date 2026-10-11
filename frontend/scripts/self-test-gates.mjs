@@ -8,10 +8,10 @@
  *    具名嵌套函数重置为独立作用域）与输出中的键名、深度断言。
  *  - check-bundle-budget：首屏闭包超限 / 路由新增闭包超限 / 无法识别路由 / 相对基线增长 → 非零退出
  * 并通过「阈值放宽」与「符合基线」两组反例，确认门禁不是无条件失败。
- *  - check-test-results：清单文件缺失 / 通过数低于棘轮 / 出现未登记跳过 / E2E 存在 flaky / 报告早于清单文件
- *    mtime / 报告缺失 → 非零退出；并以健康报告（含 E2E 三种 file 形态：报告自带 `config.rootDir` + 纯文件名、
- *    绝对路径、缺 `config.rootDir`）与「缺 startTime 时改用报告文件 mtime 兜底」两组反例，确认门禁既不是
- *    无条件失败，也不会静默跳过新鲜度检查。
+ *  - check-test-results：清单文件缺失 / 通过数低于棘轮 / 必填用例标题缺失或未通过 / 报告文件总数低于棘轮 /
+ *    出现未登记跳过 / E2E 存在 flaky / 报告早于清单文件 mtime / 报告缺失 → 非零退出；并以健康报告（含 E2E
+ *    三种 file 形态：报告自带 `config.rootDir` + 纯文件名、绝对路径、缺 `config.rootDir`）与「缺 startTime 时
+ *    改用报告文件 mtime 兜底」两组反例，确认门禁既不是无条件失败，也不会静默跳过新鲜度检查。
  *
  * 装置全部建立在系统临时目录，不写入仓库；路径通过环境变量注入被测脚本。
  */
@@ -259,28 +259,92 @@ const budgetEnv = { BUDGET_DIST_DIR: distDir };
 
 // ---- 测试执行性门禁装置（check-test-results.mjs：TEST-3 / TEST-5 / EVID-1）----
 // 报告与清单文件都写在临时目录，用 TEST_REPORT_ROOT 注入（该变量仅供自测使用），
-// 既不读取也不覆盖仓库内 .artifacts 的真实报告。下面的用例数按被测脚本的棘轮值构造，棘轮上调时必须同步更新。
+// 既不读取也不覆盖仓库内 .artifacts 的真实报告。下面的用例数、必填标题与文件总数按被测脚本的棘轮值构造
+// （minPassed / requiredTitles / MIN_VITEST_FILES / MIN_E2E_FILES），棘轮调整时必须同步更新，否则正样本会失败。
 const probeNow = Date.now();
 const freshInputMs = probeNow - 60_000;
 const staleMs = probeNow - 3_600_000;
+/** 必填标题逐字取自真实测试文件，与被测脚本的 REQUIRED_VITEST.requiredTitles 保持一致。 */
 const vitestProbe = [
-  { file: "src/features/auth/login-page.test.tsx", passed: 11 },
-  { file: "src/app/deferred-pages.test.tsx", passed: 13 },
-  { file: "src/app/deferred-pages-loading.test.tsx", passed: 7 },
+  {
+    file: "src/features/auth/login-page.test.tsx",
+    passed: 11,
+    titles: [
+      "提供稳定定位、可访问名称、密码管理器语义与键盘顺序",
+      "错误凭据显示真实 API 本地化错误、聚焦密码，修正后可以重试",
+      "请求中禁用提交，双击、再次点击和密码框 Enter 均不产生重复登录",
+      "键盘与粘贴登录保留密码原文，真实解码更新身份和令牌，并替换登录历史",
+    ],
+  },
+  {
+    file: "src/app/deferred-pages.test.tsx",
+    passed: 13,
+    titles: ["StrictMode 双挂载下懒加载仍解析成功，卸载后不残留页面"],
+  },
+  {
+    file: "src/app/deferred-pages-loading.test.tsx",
+    passed: 7,
+    titles: ["StrictMode 首次挂载、重渲染及重新挂载均复用加载结果，卸载不残留页面"],
+  },
 ];
+/** 必填标题逐字取自真实 spec，与被测脚本的 REQUIRED_E2E.requiredTitles 保持一致。 */
 const e2eProbe = [
-  { file: "e2e/auth.e2e.ts", passed: 6 },
-  { file: "e2e/client-keys.e2e.ts", passed: 4 },
-  { file: "e2e/navigation.e2e.ts", passed: 5 },
-  { file: "e2e/request-audits.e2e.ts", passed: 3 },
-  { file: "e2e/settings.e2e.ts", passed: 3 },
+  {
+    file: "e2e/auth.e2e.ts",
+    passed: 6,
+    titles: [
+      "未登录访问受保护路由会被重定向到登录页",
+      "正确凭据登录成功、进入受保护页面并在刷新后保持登录",
+      "空账号池下推理未就绪，但健康检查与管理 API 可用",
+    ],
+  },
+  {
+    file: "e2e/client-keys.e2e.ts",
+    passed: 4,
+    titles: ["创建密钥：表单校验失败后成功创建并展示一次性明文", "删除密钥：确认后行与真实服务端记录同时消失"],
+  },
+  {
+    file: "e2e/navigation.e2e.ts",
+    passed: 5,
+    titles: [
+      "侧栏导航到账号和设置，深链接刷新后保持页面与当前导航状态",
+      "账号菜单切换英文和中文，导航与刷新后仍使用所选语言",
+      "375px 登录页与横屏无横向溢出，Tab 和 Enter 可完成真实登录",
+    ],
+  },
+  {
+    file: "e2e/request-audits.e2e.ts",
+    passed: 3,
+    titles: ["状态筛选改变真实查询范围并显示激活计数，清除后恢复空态"],
+  },
+  {
+    file: "e2e/settings.e2e.ts",
+    passed: 3,
+    titles: ["设置页分页可切换：Grok Build 与 Grok Web 面板按标签显隐"],
+  },
 ];
-const vitestProbeTotal = vitestProbe.reduce((total, entry) => total + entry.passed, 0);
+/** 被测脚本的必需文件总数棘轮；用只含 1 个通过用例的填充文件补足，正样本在真实下限上通过。 */
+const MIN_VITEST_PROBE_FILES = 123;
+function padVitestEntries(entries, target = MIN_VITEST_PROBE_FILES) {
+  const padded = entries.map((entry) => entry);
+  for (let index = padded.length; index < target; index += 1) {
+    padded.push({ file: `src/shared/gate-fixture-${index + 1}.test.tsx`, passed: 1 });
+  }
+  return padded;
+}
+const vitestHealthyEntries = padVitestEntries(vitestProbe);
+const vitestHealthyTotal = vitestHealthyEntries.reduce((total, entry) => total + entry.passed, 0);
 const e2eProbeTotal = e2eProbe.reduce((total, entry) => total + entry.passed, 0);
 /** 一支用例重试后才通过：其余计数不变，用于验证 flaky 不被计入通过。 */
 const e2eProbeFlaky = e2eProbe.map((entry, index) => (index === 0 ? { ...entry, flaky: 1 } : entry));
 const vitestBelowRatchet = vitestProbe.map((entry, index) =>
   index === 0 ? { ...entry, passed: entry.passed - 1 } : entry,
+);
+/** 必填标题被删除（换成普通通过用例，计数不变），用于验证标题断言独立于通过数棘轮。 */
+const vitestMissingTitle = vitestProbe.map((entry, index) => (index === 1 ? { ...entry, titles: [] } : entry));
+/** 必填标题存在但状态为 failed，用于验证「必须为 passed」而不只是「存在于报告」。 */
+const vitestFailedTitle = vitestProbe.map((entry, index) =>
+  index === 1 ? { ...entry, titles: [], failedTitles: entry.titles, failed: 1 } : entry,
 );
 
 /** 写文件并固定 mtime，使新鲜度判定与写入顺序无关。 */
@@ -301,8 +365,10 @@ function vitestJson(rootDir, entries, startMs) {
       name: path.join(rootDir, entry.file),
       status: "passed",
       assertionResults: [
-        ...statusAssertions(entry.file, "passed", entry.passed),
-        ...statusAssertions(entry.file, "failed", entry.failed ?? 0),
+        ...(entry.titles ?? []).map((title) => ({ fullName: `装置用例 ${title}`, status: "passed" })),
+        ...(entry.failedTitles ?? []).map((title) => ({ fullName: `装置用例 ${title}`, status: "failed" })),
+        ...statusAssertions(entry.file, "passed", entry.passed - (entry.titles ?? []).length),
+        ...statusAssertions(entry.file, "failed", (entry.failed ?? 0) - (entry.failedTitles ?? []).length),
         ...statusAssertions(entry.file, "skipped", entry.skipped ?? 0),
       ],
     })),
@@ -314,15 +380,31 @@ function vitestJson(rootDir, entries, startMs) {
  * 纯文件名（`auth.e2e.ts`）；`shape` 用于构造绝对路径形态与缺 rootDir 形态。
  */
 function playwrightJson(entries, startMs, shape) {
-  const specOf = (file, status, index) => ({ title: `${file} ${status} #${index + 1}`, file, tests: [{ status }] });
+  const specOf = (file, status, index, expectedStatus = "passed") => ({
+    title: `${file} ${status} #${index + 1}`,
+    file,
+    tests: [{ status, expectedStatus }],
+  });
   const suitesOf = (entry) => {
     const file = shape.fileOf(entry.file);
+    const named = (entry.titles ?? []).length;
+    const expectedFailure = entry.expectedFailure ?? 0;
+    const unknownStatus = entry.unknownStatus ?? 0;
     return {
       title: entry.file,
       file,
       suites: [],
       specs: [
-        ...Array.from({ length: entry.passed }, (_, index) => specOf(file, "expected", index)),
+        ...(entry.titles ?? []).map((title) => ({
+          title,
+          file,
+          tests: [{ status: "expected", expectedStatus: "passed" }],
+        })),
+        ...Array.from({ length: Math.max(entry.passed - named - expectedFailure - unknownStatus, 0) }, (_, index) =>
+          specOf(file, "expected", index),
+        ),
+        ...Array.from({ length: expectedFailure }, (_, index) => specOf(file, "expected", index, "failed")),
+        ...Array.from({ length: unknownStatus }, (_, index) => specOf(file, "weird", index)),
         ...Array.from({ length: entry.flaky ?? 0 }, (_, index) => specOf(file, "flaky", index)),
         ...Array.from({ length: entry.skipped ?? 0 }, (_, index) => specOf(file, "skipped", index)),
       ],
@@ -378,55 +460,106 @@ function e2eShapeOf(dir, options) {
 }
 
 const healthyReportRoot = buildReportRoot("report-healthy", {
-  vitest: vitestProbe,
+  vitest: vitestHealthyEntries,
   vitestStartMs: probeNow,
   e2e: e2eProbe,
   e2eStartMs: probeNow,
 });
 const missingEntryReportRoot = buildReportRoot("report-missing-entry", {
-  vitest: vitestProbe.filter((entry) => !entry.file.includes("login-page")),
+  vitest: padVitestEntries(vitestProbe.filter((entry) => !entry.file.includes("login-page"))),
   vitestStartMs: probeNow,
 });
 const belowRatchetReportRoot = buildReportRoot("report-below-ratchet", {
-  vitest: vitestBelowRatchet,
+  vitest: padVitestEntries(vitestBelowRatchet),
+  vitestStartMs: probeNow,
+});
+const missingTitleReportRoot = buildReportRoot("report-missing-title", {
+  vitest: padVitestEntries(vitestMissingTitle),
+  vitestStartMs: probeNow,
+});
+const failedTitleReportRoot = buildReportRoot("report-failed-title", {
+  vitest: padVitestEntries(vitestFailedTitle),
+  vitestStartMs: probeNow,
+});
+const belowMinFilesReportRoot = buildReportRoot("report-below-min-files", {
+  vitest: padVitestEntries(vitestProbe, MIN_VITEST_PROBE_FILES - 1),
   vitestStartMs: probeNow,
 });
 const skippedReportRoot = buildReportRoot("report-skipped", {
-  vitest: vitestProbe.map((entry, index) => (index === 0 ? { ...entry, skipped: 1 } : entry)),
+  vitest: padVitestEntries(vitestProbe.map((entry, index) => (index === 0 ? { ...entry, skipped: 1 } : entry))),
   vitestStartMs: probeNow,
 });
-const staleReportRoot = buildReportRoot("report-stale", { vitest: vitestProbe, vitestStartMs: staleMs });
+const staleReportRoot = buildReportRoot("report-stale", { vitest: vitestHealthyEntries, vitestStartMs: staleMs });
 const noTimestampReportRoot = buildReportRoot("report-no-timestamp", {
-  vitest: vitestProbe,
+  vitest: vitestHealthyEntries,
   vitestStartMs: undefined,
   reportMtimeMs: staleMs,
 });
 const staleE2eReportRoot = buildReportRoot("report-stale-e2e", {
-  vitest: vitestProbe,
+  vitest: vitestHealthyEntries,
   vitestStartMs: probeNow,
   e2e: e2eProbe,
   e2eStartMs: staleMs,
 });
 const flakyE2eReportRoot = buildReportRoot("report-flaky-e2e", {
-  vitest: vitestProbe,
+  vitest: vitestHealthyEntries,
   vitestStartMs: probeNow,
   e2e: e2eProbeFlaky,
   e2eStartMs: probeNow,
 });
+const missingTitleE2eReportRoot = buildReportRoot("report-missing-title-e2e", {
+  vitest: vitestHealthyEntries,
+  vitestStartMs: probeNow,
+  e2e: e2eProbe.map((entry, index) => (index === 4 ? { ...entry, titles: [] } : entry)),
+  e2eStartMs: probeNow,
+});
+const belowMinFilesE2eReportRoot = buildReportRoot("report-below-min-files-e2e", {
+  vitest: vitestHealthyEntries,
+  vitestStartMs: probeNow,
+  e2e: e2eProbe.filter((entry) => entry.file !== "e2e/settings.e2e.ts"),
+  e2eStartMs: probeNow,
+});
 const absoluteE2eReportRoot = buildReportRoot("report-absolute-e2e", {
-  vitest: vitestProbe,
+  vitest: vitestHealthyEntries,
   vitestStartMs: probeNow,
   e2e: e2eProbe,
   e2eStartMs: probeNow,
   e2eAbsoluteShape: true,
 });
 const noRootDirE2eReportRoot = buildReportRoot("report-no-rootdir-e2e", {
-  vitest: vitestProbe,
+  vitest: vitestHealthyEntries,
   vitestStartMs: probeNow,
   e2e: e2eProbe,
   e2eStartMs: probeNow,
   e2eWithoutRootDir: true,
 });
+/** 夹具：首个 E2E 文件含一个 test.fail() 预期失败用例（status="expected" + expectedStatus="failed"）。 */
+const expectedFailureE2eEntries = e2eProbe.map((entry, index) =>
+  index === 0 ? { ...entry, passed: entry.passed - 1, expectedFailure: 1 } : entry,
+);
+const expectedFailureE2eReportRoot = buildReportRoot("report-e2e-expected-failure", {
+  vitest: vitestHealthyEntries,
+  vitestStartMs: probeNow,
+  e2e: expectedFailureE2eEntries,
+  e2eStartMs: probeNow,
+});
+/** 夹具：首个 E2E 文件含一个未知状态用例（既非 expected/unexpected/flaky/skipped）。 */
+const unknownStatusE2eEntries = e2eProbe.map((entry, index) =>
+  index === 0 ? { ...entry, passed: entry.passed - 1, unknownStatus: 1 } : entry,
+);
+const unknownStatusE2eReportRoot = buildReportRoot("report-e2e-unknown-status", {
+  vitest: vitestHealthyEntries,
+  vitestStartMs: probeNow,
+  e2e: unknownStatusE2eEntries,
+  e2eStartMs: probeNow,
+});
+/** 夹具：只写报告、不写清单文件——新鲜度无法核对时旧报告不得放行。 */
+const absentFilesReportRoot = path.join(root, "report-absent-files");
+writeProbeFile(
+  path.join(absentFilesReportRoot, ".artifacts", "vitest", "results.json"),
+  vitestJson(absentFilesReportRoot, vitestHealthyEntries, staleMs),
+  probeNow,
+);
 const missingReportRoot = path.join(root, "report-missing");
 
 const cases = [
@@ -549,11 +682,11 @@ const cases = [
       runLint("scripts/lint-contract-probe.ts", "export function gateValue(input: any): number { return input; }"),
   },
   {
-    name: "测试执行：Vitest 健康报告应通过（清单齐 / 达棘轮 / 时间戳新）",
+    name: "测试执行：Vitest 健康报告应通过（清单齐 / 必填标题齐 / 达棘轮 / 文件总数达标 / 时间戳新）",
     expect: 0,
     contains: [
       "必需前端场景执行门禁通过",
-      `Vitest 报告：参与判定的文件 ${vitestProbe.length} 个、用例 ${vitestProbeTotal} 个`,
+      `Vitest 报告：参与判定的文件 ${vitestHealthyEntries.length} 个、用例 ${vitestHealthyTotal} 个`,
     ],
     run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: healthyReportRoot }),
   },
@@ -625,6 +758,62 @@ const cases = [
     expect: 1,
     contains: ["重试后才通过（flaky）", "flaky：重试后才通过"],
     run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: flakyE2eReportRoot }, ["--e2e"]),
+  },
+  {
+    name: "测试执行：必需用例标题缺失应失败（通过数不变也不能放行）",
+    expect: 1,
+    contains: ["必填用例「StrictMode 双挂载下懒加载仍解析成功，卸载后不残留页面」不在报告中（被删除、改名或未运行）"],
+    absent: ["少于要求的"],
+    run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: missingTitleReportRoot }),
+  },
+  {
+    name: "测试执行：必需用例标题存在但未通过应失败（必须为 passed）",
+    expect: 1,
+    contains: ["必填用例「StrictMode 双挂载下懒加载仍解析成功，卸载后不残留页面」未通过："],
+    run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: failedTitleReportRoot }),
+  },
+  {
+    name: "测试执行：报告文件总数低于棘轮应失败（防删文件绕过）",
+    expect: 1,
+    contains: ["Vitest：报告只含 122 个文件，少于要求的 123 个（测试文件被删除或未运行）"],
+    absent: ["必需文件未出现在报告中"],
+    run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: belowMinFilesReportRoot }),
+  },
+  {
+    name: "测试执行：E2E 必需用例标题缺失应失败",
+    expect: 1,
+    contains: [
+      "E2E：e2e/settings.e2e.ts 必填用例「设置页分页可切换：Grok Build 与 Grok Web 面板按标签显隐」不在报告中",
+    ],
+    absent: ["少于要求的"],
+    run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: missingTitleE2eReportRoot }, ["--e2e"]),
+  },
+  {
+    name: "测试执行：E2E 必需文件总数低于棘轮应失败",
+    expect: 1,
+    contains: [
+      "E2E：报告只含 4 个文件，少于要求的 5 个（测试文件被删除或未运行）",
+      "E2E：必需文件未出现在报告中 e2e/settings.e2e.ts",
+    ],
+    run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: belowMinFilesE2eReportRoot }, ["--e2e"]),
+  },
+  {
+    name: "测试执行：E2E 用例被标记为 test.fail() 预期失败应失败（不得掩盖断言）",
+    expect: 1,
+    contains: ["被标记为预期失败 test.fail()，不得用于必需场景", "E2E：e2e/auth.e2e.ts 有 1 个失败用例"],
+    run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: expectedFailureE2eReportRoot }, ["--e2e"]),
+  },
+  {
+    name: "测试执行：E2E 用例出现未知状态应失败（fail-closed）",
+    expect: 1,
+    contains: ["未知状态 weird，不得放行"],
+    run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: unknownStatusE2eReportRoot }, ["--e2e"]),
+  },
+  {
+    name: "测试执行：清单文件全部不在磁盘时应失败（旧报告不得放行）",
+    expect: 1,
+    contains: ["清单文件全部不在磁盘上，无法核对报告新鲜度（旧报告不得放行）"],
+    run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: absentFilesReportRoot }),
   },
 ];
 

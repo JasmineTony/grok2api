@@ -13,8 +13,10 @@
  *   node scripts/check-test-results.mjs          # 校验 Vitest 组件/集成报告（需先 pnpm test:ui:coverage）
  *   node scripts/check-test-results.mjs --e2e    # 同时校验 Playwright 全栈 E2E 报告（需先 pnpm test:e2e）
  *
- * 断言三件事：① 清单内文件出现在报告中；② 通过数不少于棘轮 minPassed，且无失败 / 未登记跳过 / flaky
- * （重试后才通过不放行）；③ 报告不比清单文件旧（报告开始时间不早于清单文件最新 mtime），避免沿用过期报告假通过。
+ * 断言五件事：① 清单内文件出现在报告中；② 通过数不少于棘轮 minPassed，且无失败 / 未登记跳过 / flaky
+ * （重试后才通过不放行）；③ 清单登记的必填用例标题（requiredTitles，逐字取自真实测试文件的 it/test 名称）出现在
+ * 报告中且为 passed；④ 报告内文件总数不少于实测棘轮（防止整体删除测试文件绕过）；⑤ 报告不比清单文件旧
+ * （报告开始时间不早于清单文件最新 mtime），避免沿用过期报告假通过。
  *
  * E2E 报告的 `suite.file` / `spec.file` 相对报告自带 `config.rootDir`（Playwright 1.64 等于 testDir）解析，
  * 再相对 frontend/ 归一为 `e2e/xxx.e2e.ts`；`config.rootDir` 缺失时退回 `frontend/e2e`。
@@ -33,27 +35,83 @@ const frontendDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const reportRoot = process.env.TEST_REPORT_ROOT ? path.resolve(process.env.TEST_REPORT_ROOT) : frontendDir;
 const withE2e = process.argv.includes("--e2e");
 /**
- * Vitest 组件/集成报告：文件 → 最少通过用例数。新增必需场景必须在此登记。
+ * 报告内必需文件最小总数（棘轮，防止整体删除测试文件绕过清单 / 标题检查）。
+ * 实测值（2026-10-11，本工作树；复现：`pnpm test:ui:coverage && node scripts/check-test-results.mjs`
+ * 输出「参与判定的文件 123 个」）：Vitest 123 个；E2E 5 个（`pnpm test:e2e && node scripts/check-test-results.mjs --e2e`）。
+ * 只增不减；确实需要下调时必须是可见改动并说明理由。
+ */
+const MIN_VITEST_FILES = 123;
+const MIN_E2E_FILES = 5;
+
+/**
+ * Vitest 组件/集成报告：文件 → 最少通过用例数 + 必填用例标题。新增必需场景必须在此登记。
  * minPassed 是棘轮（ratchet），取实测通过数（2026-10-11 的 .artifacts/vitest/results.json：
  * login 11 / deferred-pages 13 / deferred-pages-loading 7），只增不减。
- * 用例被删减或改写导致通过数下降时，必须在本文件显式下调该数字：让「少跑用例」是可见改动，而不是静默通过。
+ * requiredTitles 逐字取自对应测试文件的 it() 名称（按包含匹配），必须出现在报告中且为 passed；
+ * 用例被删减、改名或跳过时，「少跑用例」是可见改动，而不是静默通过。
  */
 const REQUIRED_VITEST = [
-  { file: "src/features/auth/login-page.test.tsx", minPassed: 11 },
-  { file: "src/app/deferred-pages.test.tsx", minPassed: 13 },
-  { file: "src/app/deferred-pages-loading.test.tsx", minPassed: 7 },
+  {
+    file: "src/features/auth/login-page.test.tsx",
+    minPassed: 11,
+    requiredTitles: [
+      "提供稳定定位、可访问名称、密码管理器语义与键盘顺序",
+      "错误凭据显示真实 API 本地化错误、聚焦密码，修正后可以重试",
+      "请求中禁用提交，双击、再次点击和密码框 Enter 均不产生重复登录",
+      "键盘与粘贴登录保留密码原文，真实解码更新身份和令牌，并替换登录历史",
+    ],
+  },
+  {
+    file: "src/app/deferred-pages.test.tsx",
+    minPassed: 13,
+    requiredTitles: ["StrictMode 双挂载下懒加载仍解析成功，卸载后不残留页面"],
+  },
+  {
+    file: "src/app/deferred-pages-loading.test.tsx",
+    minPassed: 7,
+    requiredTitles: ["StrictMode 首次挂载、重渲染及重新挂载均复用加载结果，卸载不残留页面"],
+  },
 ];
 
 /**
- * Playwright 全栈 E2E 报告：文件 → 最少通过用例数（棘轮，语义同上）。
- * 计数口径为 spec 内 test() 实测（2026-10-11：auth 6 / client-keys 4 / navigation 5 / request-audits 3 / settings 3）。
+ * Playwright 全栈 E2E 报告：文件 → 最少通过用例数 + 必填用例标题（棘轮，语义同上）。
+ * 计数口径为 spec 内 test() 实测（2026-10-11：auth 6 / client-keys 4 / navigation 5 / request-audits 3 / settings 3）；
+ * requiredTitles 逐字取自对应 spec 的 test() 名称（按包含匹配）。
  */
 const REQUIRED_E2E = [
-  { file: "e2e/auth.e2e.ts", minPassed: 6 },
-  { file: "e2e/client-keys.e2e.ts", minPassed: 4 },
-  { file: "e2e/navigation.e2e.ts", minPassed: 5 },
-  { file: "e2e/request-audits.e2e.ts", minPassed: 3 },
-  { file: "e2e/settings.e2e.ts", minPassed: 3 },
+  {
+    file: "e2e/auth.e2e.ts",
+    minPassed: 6,
+    requiredTitles: [
+      "未登录访问受保护路由会被重定向到登录页",
+      "正确凭据登录成功、进入受保护页面并在刷新后保持登录",
+      "空账号池下推理未就绪，但健康检查与管理 API 可用",
+    ],
+  },
+  {
+    file: "e2e/client-keys.e2e.ts",
+    minPassed: 4,
+    requiredTitles: ["创建密钥：表单校验失败后成功创建并展示一次性明文", "删除密钥：确认后行与真实服务端记录同时消失"],
+  },
+  {
+    file: "e2e/navigation.e2e.ts",
+    minPassed: 5,
+    requiredTitles: [
+      "侧栏导航到账号和设置，深链接刷新后保持页面与当前导航状态",
+      "账号菜单切换英文和中文，导航与刷新后仍使用所选语言",
+      "375px 登录页与横屏无横向溢出，Tab 和 Enter 可完成真实登录",
+    ],
+  },
+  {
+    file: "e2e/request-audits.e2e.ts",
+    minPassed: 3,
+    requiredTitles: ["状态筛选改变真实查询范围并显示激活计数，清除后恢复空态"],
+  },
+  {
+    file: "e2e/settings.e2e.ts",
+    minPassed: 3,
+    requiredTitles: ["设置页分页可切换：Grok Build 与 Grok Web 面板按标签显隐"],
+  },
 ];
 
 /**
@@ -118,8 +176,9 @@ function checkFreshness({ label, required, startMs, rerunCommand }) {
     console.warn(`  ${label}：清单文件不在磁盘上，未参与新鲜度核对：${absent.join("、")}`);
   }
   if (present.length === 0) {
-    console.warn(`  ${label}：清单文件全部不在磁盘上，无法核对报告新鲜度`);
-    return [];
+    return [
+      `${label}：清单文件全部不在磁盘上，无法核对报告新鲜度（旧报告不得放行），请先恢复清单文件或重新运行：${rerunCommand}`,
+    ];
   }
   const newest = Math.max(...present.map((file) => fs.statSync(file).mtimeMs));
   if (startMs >= newest) return [];
@@ -129,13 +188,26 @@ function checkFreshness({ label, required, startMs, rerunCommand }) {
 }
 
 function emptyTally() {
-  return { passed: 0, failed: 0, skipped: 0, flaky: 0, skippedTitles: [], flakyTitles: [] };
+  return {
+    passed: 0,
+    failed: 0,
+    skipped: 0,
+    flaky: 0,
+    passedTitles: [],
+    failedTitles: [],
+    skippedTitles: [],
+    flakyTitles: [],
+  };
 }
 
 function tallyStatus(tally, status, title) {
-  if (status === "passed") tally.passed += 1;
-  else if (status === "failed") tally.failed += 1;
-  else {
+  if (status === "passed") {
+    tally.passed += 1;
+    tally.passedTitles.push(title);
+  } else if (status === "failed") {
+    tally.failed += 1;
+    tally.failedTitles.push(title);
+  } else {
     tally.skipped += 1;
     tally.skippedTitles.push(`${title}（${String(status)}）`);
   }
@@ -176,15 +248,32 @@ function walkPlaywrightSuites(suites, files, baseDir) {
     for (const spec of suite.specs ?? []) {
       const file = normalizeSpecFile(baseDir, spec.file);
       const tally = files.get(file) ?? emptyTally();
-      const statuses = (spec.tests ?? []).flatMap((test) => test.status ?? []);
-      if (statuses.includes("unexpected")) tally.failed += 1;
-      else if (statuses.includes("flaky")) {
+      const tests = spec.tests ?? [];
+      const statuses = tests.map((test) => test.status ?? "");
+      // Playwright 把「正常通过」与「test.fail() 预期失败且真的失败」都记为 status="expected"，
+      // 区别只在 expectedStatus（前者 "passed"、后者 "failed"）。只读 status 会让被标记为预期失败的
+      // 必需场景整段失效却仍计为通过，因此这里显式判失败。
+      const expectedFailure = tests.some((test) => (test.expectedStatus ?? "passed") !== "passed");
+      if (expectedFailure) {
+        tally.failed += 1;
+        tally.failedTitles.push(`${spec.title}（被标记为预期失败 test.fail()，不得用于必需场景）`);
+      } else if (statuses.includes("unexpected")) {
+        tally.failed += 1;
+        tally.failedTitles.push(spec.title);
+      } else if (statuses.includes("flaky")) {
         tally.flaky += 1;
         tally.flakyTitles.push(`${spec.title}（flaky：重试后才通过）`);
       } else if (statuses.includes("skipped")) {
         tally.skipped += 1;
         tally.skippedTitles.push(`${spec.title}（skipped）`);
-      } else if (statuses.length > 0) tally.passed += 1;
+      } else if (statuses.length > 0 && statuses.every((status) => status === "expected")) {
+        tally.passed += 1;
+        tally.passedTitles.push(spec.title);
+      } else {
+        // 未知状态 fail-closed（与 Vitest 分支同一口径）：宁可失败，也不放行无法解释的报告。
+        tally.failed += 1;
+        tally.failedTitles.push(`${spec.title}（未知状态 ${statuses.join("|") || "空"}，不得放行）`);
+      }
       files.set(file, tally);
     }
   }
@@ -195,11 +284,29 @@ function isAllowedSkip(file, title) {
   return ALLOWED_SKIPS.some((entry) => entry.file === file && title.includes(entry.title));
 }
 
-/** 逐文件断言：存在、通过数足够、无失败、无未登记跳过；返回失败原因数组。 */
+/**
+ * 必填用例标题断言：清单登记的标题必须出现在报告中且状态为 passed。
+ * 标题做包含匹配（Vitest 的 fullName 带 describe 前缀、Playwright 用 spec.title），
+ * 已存在但未通过时给出实际状态，避免只报「缺失」掩盖真实原因。
+ */
+function missingRequiredTitles(label, file, tally, requiredTitles) {
+  const failures = [];
+  const unpassedTitles = [...tally.failedTitles, ...tally.flakyTitles, ...tally.skippedTitles];
+  for (const title of requiredTitles ?? []) {
+    if (tally.passedTitles.some((observed) => observed.includes(title))) continue;
+    const unpassed = unpassedTitles.find((observed) => observed.includes(title));
+    failures.push(
+      `${label}：${file} 必填用例「${title}」${unpassed ? `未通过：${unpassed}` : "不在报告中（被删除、改名或未运行）"}`,
+    );
+  }
+  return failures;
+}
+
+/** 逐文件断言：存在、通过数足够、必填用例标题通过、无失败、无未登记跳过；返回失败原因数组。 */
 function checkRequired(label, files, required) {
   const failures = [];
   const skippedOutsideRequired = [];
-  for (const { file, minPassed } of required) {
+  for (const { file, minPassed, requiredTitles } of required) {
     const tally = files.get(file);
     if (!tally) {
       failures.push(`${label}：必需文件未出现在报告中 ${file}（用例被删除、改名或未运行）`);
@@ -208,7 +315,12 @@ function checkRequired(label, files, required) {
     if (tally.passed < minPassed) {
       failures.push(`${label}：${file} 通过 ${tally.passed} 个，少于要求的 ${minPassed} 个`);
     }
-    if (tally.failed > 0) failures.push(`${label}：${file} 有 ${tally.failed} 个失败用例`);
+    failures.push(...missingRequiredTitles(label, file, tally, requiredTitles));
+    if (tally.failed > 0) {
+      // 失败标题必须一并打印：否则「预期失败 test.fail() 被计为失败」与「普通失败」在输出上不可区分，
+      // 夹具也就无法对判定原因做断言。
+      failures.push(`${label}：${file} 有 ${tally.failed} 个失败用例：${tally.failedTitles.join("、")}`);
+    }
     const unregistered = tally.skippedTitles.filter((title) => !isAllowedSkip(file, title));
     if (unregistered.length > 0) {
       failures.push(`${label}：${file} 存在未登记跳过用例 ${unregistered.join("、")}`);
@@ -250,13 +362,17 @@ function flakyEntries(files) {
 }
 
 /**
- * 单份报告的完整断言：清单命中 + 棘轮通过数 + 无未登记跳过 + 无 flaky + 报告新鲜度。
+ * 单份报告的完整断言：清单命中 + 棘轮通过数 + 必填用例标题 + 报告文件总数下限 + 无未登记跳过 + 无 flaky + 报告新鲜度。
  * `totals` 与 `fileCount` 供汇总行自证门禁不是空转。
  */
-function checkReport({ label, files, required, startMs, rerunCommand }) {
+function checkReport({ label, files, required, minimumFiles, startMs, rerunCommand }) {
   const check = checkRequired(label, files, required);
   const totals = totalsOf(files);
-  const failures = [...check.failures, ...checkFreshness({ label, required, startMs, rerunCommand })];
+  const failures = [...check.failures];
+  if (files.size < minimumFiles) {
+    failures.push(`${label}：报告只含 ${files.size} 个文件，少于要求的 ${minimumFiles} 个（测试文件被删除或未运行）`);
+  }
+  failures.push(...checkFreshness({ label, required, startMs, rerunCommand }));
   const flaky = flakyEntries(files);
   if (flaky.length > 0) {
     failures.push(`${label}：${flaky.length} 个用例重试后才通过（flaky），禁止以重试掩盖缺陷：${flaky.join("、")}`);
@@ -288,6 +404,7 @@ function main() {
     label: "Vitest",
     files: vitestFiles,
     required: REQUIRED_VITEST,
+    minimumFiles: MIN_VITEST_FILES,
     startMs: vitestStartMs,
     rerunCommand: "pnpm test:ui:coverage",
   });
@@ -305,6 +422,7 @@ function main() {
       label: "E2E",
       files: e2eFiles,
       required: REQUIRED_E2E,
+      minimumFiles: MIN_E2E_FILES,
       startMs: e2eStartMs,
       rerunCommand: "pnpm test:e2e",
     });
