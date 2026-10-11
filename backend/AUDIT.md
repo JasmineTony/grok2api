@@ -741,3 +741,189 @@ v0.1.2 发布后继续清空已登记存量：**BE-01 的 >1000 行文件类清�
 
 - **未运行（如实登记）**：`bash scripts/verify.sh`（含全量 `go test ./...`）、`go test ./... -count=1`、`go build ./...`、`go test -race ./...` 未在本轮复跑（本轮改动为文档与 `structurecheck` 的一行输出，未触及业务代码）；`go test ./tools/...` 已覆盖被改工具本身。
 - **回滚**：`git revert <本提交>`；无数据、协议、配置或依赖迁移。
+
+## 20. 2026-10-11 验收审计、边界测试判别力与静态托管收口（BE-18）
+
+本节记录 2026-10-11 验收审计轮（工作树 `E:\grok2api\.pi\worktrees\acceptance-audit-20261011`，分支 `maint/acceptance-audit-20261011`，基线 HEAD `12e03be94e774dc72148443098e9512561ef395c`）的后端结论。目的：扩展模块边界测试并冻结真实存量例外（BA-01）、给出 `ports/security` 迁移影响设计而不执行迁移（BA-02）、用变异注入取证边界测试的判别力（TEST-7），并收口审计发现的 `/.build-manifest.json` 静态托管缺陷。**只记录实际执行过的命令与原生退出码；未执行、未取到退出码的一律 `Pending`/`Blocked`（§10 EVID-1/EVID-2）。**
+
+### 20.1 本轮后端改动范围
+
+| 类别 | 文件 | 变更（`git diff --numstat`） | 说明 |
+| --- | --- | --- | --- |
+| 边界规则 | `backend/internal/ports/provider/import_boundary_test.go` | +126 / −40（212 行） | 4 条层规则、精确 (文件,包) 例外表、棘轮、语法/作用域夹具与假通过护栏 |
+| 边界夹具 | `backend/internal/ports/provider/import_boundary_fixtures_test.go`（新增） | 272 行（未跟踪） | 对扫描器逻辑做不经文件系统的单元夹具 |
+| 静态托管 | `backend/internal/transport/http/frontend.go` | +11 / −0 | 新增 `isHiddenArtifact()`（按已解析相对路径识别产物根点文件）并在 `frontendFile()` 命中分支中拒绝；见 20.7 |
+| 回归测试 | `backend/internal/transport/http/server_test.go` | +6 / −0 | 夹具写入 dist 根 `.build-manifest.json`，表驱动新增 3 行（精确路径 + 大小写别名 + 反斜杠别名，均期望 404） |
+| 容器构建 | `.dockerignore` | +3 / −0 | 白名单补 `frontend/vitest.config.ts`、`frontend/scripts/`、`frontend/scripts/build-inputs.ts` |
+
+### 20.2 边界规则与冻结例外（BA-01）
+
+规则数组 `layerBoundaries`（`import_boundary_test.go:59-78`），单条结构 `layerBoundary{name,directory,forbidden,includeTests,exceptions}`（:19-25）；匹配语义 `forbids`（:190-198）按包路径前缀判定（`imported == …/internal/<layer>` 或 `HasPrefix(imported, …/internal/<layer>+"/")`），例外按精确 (模块相对文件, 完整包路径) 对匹配（`collectForbiddenImports` :181-184）：
+
+| 规则（name 原文） | directory | 禁入方向 | includeTests | 行号 |
+| --- | --- | --- | --- | --- |
+| `domain 不反向依赖上层或 infra` | domain | app / application / transport / infra | true | :60-63 |
+| `repository 不反向依赖上层或 infra` | repository | app / application / transport / infra | true | :64-67 |
+| `ports 不反向依赖上层或 infra` | ports | app / application / transport / infra | true | :68-71 |
+| `application 生产依赖边界及 infra 存量` | application | app / transport / infra | false（`_test.go` 豁免，注释 :73-74） | :72-77 |
+
+冻结例外 `applicationInfraExceptions`（:29-57）**27 个生产文件 / 29 对依赖**：`infra/security` 16、`infra/egress` 10、`infra/config` 3（分类统计来自 `classify.ps1`，2026-10-11）。独立核对（`verify_exceptions.ps1` + `go list -e -f '{{.ImportPath}}|{{.Imports}}' ./internal/application/...`，2026-10-11）：**declared 27/29 = actual 27/29，未登记 0 条、冗余 0 条**；`go list` 判定的 6 个命中包（account、adminauth、clientkey、egress、gateway、settings）与文件级结果一致。棘轮 `unusedImportExceptions`（:200-212）+ 断言（:106-108）：依赖消失后例外必须删除，否则 `必须删除已消失的依赖例外`。假通过护栏：`result.files == 0` 直接 `t.Fatal("未扫描到 Go 文件，不能判定边界通过")`（:97-99），并在 :96 输出参与判定的作用域计数。反向依赖实测：domain 30 文件（20 生产 / 10 测试）、repository 14（13/1）、ports 19（12/7），对上层与 infra 命中均为 **0**；application 187 个 `.go` 中 64 个 `_test.go` 被跳过、123 个生产文件参与判定。
+
+### 20.3 判别力取证（TEST-7）：`-overlay` 方法学与 B/C 组
+
+对照（2026-10-11，`backend/`）：`go test ./internal/ports/provider/ -count=1` **exit 0**（`ok … 2.636s`）；`go test -v -run TestLayerImportBoundaries ./internal/ports/provider/ -count=1` **exit 0**，扫描范围非空自证：domain 30 文件/52 imports、repository 14/38、ports 19/69、application 123/960（豁免测试 64、存量依赖 29、违规 0）。
+
+**A 组（任务指定的 `-overlay` 注入生产源）实测失败**：
+
+| 变体 | 注入 | `go test -overlay <ov> ./internal/ports/provider/ -count=1` | 判定 |
+| --- | --- | --- | --- |
+| A1 | domain/account 副本加 `import _ ".../internal/app"` | exit 1 | Go 编译器先报 `import cycle not allowed`，边界断言未执行，**不是 TEST-7 正样本** |
+| A2 | 新增 application 层 `overlay_probe.go`（`import _ infra/security`） | **exit 0** | **未检出（假绿）** |
+| A3 | 新增 domain 包内违规文件（`import _ infra/security`，无环） | **exit 0** | **未检出（假绿）** |
+| A4 | 新增 `internal/domain/overlay_probe` 包（`import _ app`） | **exit 0** | **未检出（假绿）** |
+
+根因（精确到行）：`forbiddenImports`（`import_boundary_test.go:134-158`）在**测试运行期**用 `filepath.WalkDir` 读真实文件系统；`-overlay` 只替换 go 命令**构建期**的文件读取，测试二进制不看 overlay。**方法学结论：任何「用 `-overlay` 注入生产源来证明本套件判别力」的做法对运行期自扫文件系统的测试必然假绿；A2/A3/A4 的 exit 0 不能判定测试无判别力**（C 组证明落盘违规会被抓到）。有效取证路径只有两条：变异扫描器本身（B 组，被测逻辑就在 `_test.go` 内、无独立生产实现），或在模块副本中落盘违规（C 组）。
+
+| B 组（变异扫描器 `import_boundary_test.go` 副本，工作树不动） | 变异（原→改） | exit | 失败规模与示例原文 |
+| --- | --- | --- | --- |
+| B1 | :193 `if imported == prefix \|\| strings.HasPrefix(imported, prefix+"/")` → `if imported == prefix`（丢子包匹配） | 1 | 53 个失败子用例；`import_boundary_fixtures_test.go:23: 扫描结果={...violations:[]}, 期望={...violations:[internal/domain/nested/fixture.go:3 -> .../internal/app/bootstrap]}` |
+| B2 | :181 例外键 `boundary.exceptions[display]` → `[filepath.Base(display)]`（改为按文件名匹配） | 1 | 7 个失败；`ExceptionsAreExactFilePackagePairs/registered`：`扫描结果={...violations:[internal/application/account/service.go:3 -> .../infra/security] exceptions:[]}` |
+| B3 | :144 去掉 `!boundary.includeTests` 条件（下层 `_test.go` 被误豁免） | 1 | 25 个失败；`domain/app_test.go`：`扫描结果={files:0..., skippedTests:1}, 期望={files:1, imports:1}` |
+| B4 | :205 `!slices.Contains(...)` 取反（棘轮反向） | 1 | `ExceptionRatchet/keep_dependency` 失败 + 真实树测试触发 :107 `必须删除已消失的依赖例外` |
+| B5 | :193 改为 `strings.HasPrefix(imported, prefix)`（丢包边界） | 1 | `SyntaxAndScope/...`：误报 `appsupport`、`infraextra/security`；真实树测试 `违规=12`（:96） |
+
+| C 组（模块副本 `backend-boundary-overlay\C\backend` 落盘违规，工作树不动） | 注入 | exit | 原文 |
+| --- | --- | --- | --- |
+| C0 | 无（副本保真基线） | 0 | `ok … 3.428s` |
+| C1 | `//go:build never_built_probe` + `import _ app`（编译器不可见、扫描可见） | 1 | `test.go:104: 违反分层边界:` / `internal/domain/account/zz_boundary_probe.go:5 -> .../internal/app` |
+| C2 | application `service.go` 第 4 行插 `_ "infra/provider"`（该包不在本命令构建图内） | 1 | `internal/application/account/service.go:4 -> .../internal/infra/provider` |
+| C3 | 删除 `service.go` 的 `infra/security` import（例外变陈旧） | 1 | `test.go:107: 必须删除已消失的依赖例外:`（存量 29→28、违规 0） |
+| C4 | 新增下层 `_test.go`（`package account_test`，`import _ infra/security`，includeTests=true） | 1 | `internal/domain/account/zz_boundary_probe_test.go:3 -> .../internal/infra/security` |
+| C5（负对照） | 新增 application `zz_boundary_probe_test.go`（`import _ infra/provider`，本应豁免） | **0** | `ok …` — 证明夹具不是一律失败，R5 豁免是刻意行为 |
+
+判别力映射：R1←C1/C4（编译可见部分由编译器兜底，见 A1）、R2←C2、R3←B2、R4←C3/B4、R5←C4 正例 + C5 负例、R6/R7←B5 与 SyntaxAndScope 夹具。边界测试相对编译器的独有价值：build tag/其它 GOOS 排除文件、下层 `_test.go`、application 冻结清单与棘轮（C2/C3）——这些编译器永远看不到。
+
+### 20.4 R8 FailFast 变异结论（追加轮，同一副本，工作树未动）
+
+命令均为 `cd <copy>; go test ./internal/ports/provider/ -count=1`；原始输出见 scratch `backend-boundary-overlay\C\R8-*.txt`。
+
+| 变异体 | 注入 | exit | 报错关键行 |
+| --- | --- | --- | --- |
+| base | 无 | 0 | `ok … 3.589s` |
+| M-R8a-1 | 构建图内包新增语法错误（无 build tag） | 1 | **编译失败，断言未执行**：`[build failed]` / `syntax error: unexpected {` |
+| M-R8a-2 | 同文件加 `//go:build never_built_r8`（编译不可见、扫描可见） | 1 | `import_boundary_test.go:94: 扫描 internal/domain 失败: …zz_r8_syntax.go:5:16: expected ')', found '{'` |
+| M-R8a-3 | `internal/application` 新增语法错误文件（不在本命令构建图） | 1 | `import_boundary_test.go:94: 扫描 internal/application 失败: …` |
+| M-R8b | 被扫描根目录缺失（`internal/repository` 改名） | 1 | `扫描 internal/repository 失败: … The system cannot find the file specified.` |
+| M-R8c | 扫描根存在但 0 个 `.go`（全部改名） | 1 | `test.go:98: 未扫描到 Go 文件，不能判定边界通过` |
+| base_after_restore | 全部还原 | 0 | `ok … 2.632s` |
+| M-R8d（覆盖缺口探针） | 新增 `internal/zz_r8_newlayer/`（禁 import + 语法错误） | **0** | **未被任何 boundary 覆盖，两类问题都不被发现** |
+
+R8 缺口登记（P2，未改代码）：**G-1** `layerBoundaries` 硬编码 domain/repository/ports/application 四个目录（:59-78），且无「所有 `internal/*` 目录都被某条 boundary 覆盖」的断言——新增 `internal/<new>/` 的禁 import 与语法错误均 exit 0（M-R8d）；R8c 的 0 文件守卫只对硬编码根生效。**G-2** 编译可见文件的语法错误由编译器先兜（M-R8a-1），R8 的正样本必须用 build tag 排除文件、其它 GOOS 文件或不在构建图内的包（M-R8a-2/a3）。
+
+### 20.5 门禁覆盖缺口（BA-01 未收口部分）
+
+边界测试只有 domain/repository/ports/application 四条规则，`internal/transport`、`internal/infra`、`internal/app` **无规则覆盖**，因此下列真实跨层边不判违规、也无豁免登记：
+
+- `internal/transport/http/middleware/request.go:11` → `infra/security`，使用点 `:24 security.NewOpaqueToken(12)`。这是 transport→infra 直连（1 个生产文件），与「Transport → Application → Domain」约定冲突，**但没有任何规则会拦住它，也不在冻结例外表中**（P2 登记，未在本轮扩大改动）。
+- `internal/infra/**` 生产文件 → `application`/`app`：0 条（干净）；`internal/infra/**` 测试文件 → `application` 存在（`infra/provider/web/security_test.go:9`、`infra/provider/cli/oauth_test.go:7`、`infra/persistence/relational/*_test.go`），属测试专用且规则未覆盖。
+- `internal/app/assemble.go` 是唯一装配入口（`internal/app` 下 5 生产 + 3 测试文件），import infra 属预期，但无门禁约束其扩展。
+
+### 20.6 BA-02：`security` 契约迁移影响清单（本轮只出设计，不执行）
+
+`backend/api-baseline.txt` 的 `internal/infra/security` 条目 16 条（:1628-1643），其中随 `Cipher`/`TokenService` 迁移会改变 scope 前缀的 9 条：`:1631` `NewCipher`、`:1634` `NewTokenService`、`:1637` `(*Cipher).Decrypt`、`:1638` `(*Cipher).Encrypt`、`:1639` `(*TokenService).CreateAccessToken`、`:1640` `(*TokenService).ParseAccessToken`、`:1641` `AdminTokenIdentity`、`:1642` `Cipher`、`:1643` `TokenService`；留在原包的 7 条为密码/令牌原语（`FormatClientKey`、`HashPassword`、`HashToken`、`NewHexToken`、`NewOpaqueToken`、`SplitClientKey`、`VerifyPassword`）。
+
+| 影响项 | 量化结论（`apicheck` 口径推导，非实测输出） |
+| --- | --- |
+| 基线条目 | 9 removed + 9 added = 18 条 diff，**总数 16→16 不变**；包名保持 `security` 且调用方不改别名时，19 条调用方契约条目（`:27`、`:162`、`:192`、`:200`、`:258`、`:281`、`:322`、`:393`、`:1055`、`:1101`、`:1127`、`:1361`、`:1402`、`:1425`、`:1434`、`:1461`、`:1488`、`:1497` 等）文本不变；引入别名或改包名则最多 19 removed + 19 added |
+| 生产改动面 | 引用被迁移符号的生产文件 12 个（`Cipher` 11 + `TokenService` 2，去重 12，清单见 `BA-01-BA-02-boundary-evidence.md` §6.2）+ 迁移源 2 个（`infra/security/cipher.go`、`token.go`）+ 对应测试 2 个；引用面测试文件 39 个 |
+| 例外表联动 | `account/service.go`、`clientkey/service.go` 的 `infra/security` 例外迁移后可整条删除（−2），其余 25 条仍需保留；`unusedImportExceptions`（:106-108）会强制删除过期例外；application→ports 不需登记例外 |
+| 依赖边界 | `infra/security/token.go:12` 依赖 `github.com/golang-jwt/jwt/v5`；把 `TokenService` 移入 `ports/security` 会把该第三方依赖引入 ports 契约层（`Cipher` 只依赖 stdlib）——若要求 ports 零第三方，`TokenService` 应留 infra 或改为端口接口 |
+| 生成物 | `backend/api-baseline.txt` 只能由 `go run ./tools/apicheck --update` 改写（§11 CHG-8）；本迁移属**有意公共契约平移**，需单独批准（§1/§8），**本轮不执行** |
+
+### 20.7 本轮修复的真实缺陷：`/.build-manifest.json` 经 SPA 回退公开托管
+
+背景：前端构建新增 `dist/.build-manifest.json`（输入/产物指纹，`frontend/scripts/build-inputs.ts:5`）。该文件无任何 HTTP 消费方（E2E 只读磁盘 `frontend/.artifacts/e2e/build-manifest.json`，`frontend/e2e/paths.ts:19`），但后端 SPA 回退会把静态目录内的它当公开文件返回。
+
+**判别力证据（§3 TEST-7，先测试后实现）**：在 `server_test.go` 夹具写入 `dist/.build-manifest.json`（:107）并新增表行 `{path: "/.build-manifest.json", status: http.StatusNotFound}`（:122）后、实现前，`go test ./internal/transport/http/ -run TestFrontendStaticFilesAndSPAFallback -count=1` → **exit 1**，原文 `server_test.go:133: status = 200, want 404`（证明该路径此前确实被公开托管 200）。
+
+**修复（最终实现）**：判定改为**按已解析的相对路径**识别「产物根目录下的点文件」——`frontend.go:26-30` 在 `frontendFile()` 命中后调用 `isHiddenArtifact(filePath)`（`frontend.go:94-99`：`path.Dir(path.Clean("/"+filepath.ToSlash(relative))) == "/" && strings.HasPrefix(base, ".")`）。早先的实现（在 `NoRoute` 早退条件里用 `path.Clean(requestPath) == "/.build-manifest.json"` 精确匹配请求路径）已被替换：它只看请求路径，而 `frontendFile` 用 `filepath.Join` 按 OS 语义解析，二者不一致 → Windows 上 `/.BUILD-MANIFEST.JSON`、`/x\..\.build-manifest.json` 这类别名会绕过判定并返回 200（生产 Linux 不受影响，但 E2E 跑在 Windows，断言不具代表性）。改为看解析结果后，别名与大小写差异都被同一处判定覆盖，且不误伤子目录（如 `.well-known/**` 不在根目录，不受影响）。
+**回归测试**：`server_test.go` 表新增三行——`/.build-manifest.json`、`/.BUILD-MANIFEST.JSON`、`/x\..\.build-manifest.json`（均期望 404）；夹具在 dist 根写入真实 `.build-manifest.json`（:107）。**平台前提实测**：本机 NTFS 上 `Test-Path ".BUILD-MANIFEST.JSON"` 与 `Test-Path "x\..\.build-manifest.json"` 均为 `True`（两种别名确实解析到同一文件）→ 修复前这两行会 200。
+
+**复测**：实现后 `go test ./internal/transport/http/ -count=1 -run TestFrontendStaticFilesAndSPAFallback -v` → **exit 0（8 个子测试全部 PASS）**；整包 `go test ./internal/transport/http/ -count=1` **exit 0**（3.3s）；`gofmt -l` 两文件 clean；随后 `bash scripts/verify.sh` 再一次 **exit 0**（20:46:10→20:48:24，含结构与 API 基线门禁）。**影响边界**：仅拒绝产物根目录下点文件的公开访问，不影响 `/assets/**` 静态资源、SPA 回退或构建/测试/预算链路（该文件不参与体积预算，`check-bundle-budget.mjs` 只统计 `assets/` 与 HTML 入口）。
+
+### 20.8 后端复验（`bash scripts/verify.sh`，exit 0）
+
+| 项 | 实测（2026-10-11 20:46:10→20:48:24，cwd=`backend`，`D:\softwares\Git\bin\bash.exe`） |
+| --- | --- |
+| 命令 / 退出码 | `bash scripts/verify.sh` → **exit 0**（133.4s，日志 `be-verify2.out.log` / `be-verify2.exit.txt`） |
+| `go build ./...` / `go vet ./...` | 5.609s / 2.740s，均通过 |
+| `go run ./tools/structurecheck` | 478 个生产文件；超限文件 0 / 超限函数 0 / 越限嵌套 0；**参与判定的作用域（REV-3）：5473 个**；「结构门禁通过」 |
+| `go run ./tools/apicheck` | 基线条目 2062，当前 2062，逐条一致 |
+| `go test ./... -count=1` | 66 包 `ok` / 0 `FAIL`（122.879s）；结尾「全部通过」 |
+
+本机限制（如实登记）：`-race` 需 CGO 而本机 `CGO_ENABLED=0` 且无 C 编译器 → **Blocked**（由 Linux CI 的 Race job 覆盖）；PostgreSQL/Redis 集成用例依赖 `TEST_POSTGRES_*`/`TEST_REDIS_*` 隔离服务，本机 `go test` 未带 `-v`，**跳过数未在本轮日志体现 → Pending**（历史登记为 20 条；CI 的「集成用例 0 跳过」断言为唯一硬门禁）。
+
+### 20.9 未达标/未覆盖项与 P2/P3 登记
+
+| 编号 | 项 | 状态与恢复条件 |
+| --- | --- | --- |
+| BE-G1 | `internal/transport`、`internal/infra`、`internal/app` 无边界规则；`middleware/request.go:11` 的 transport→infra 直连未登记例外 | P2；扩展 `layerBoundaries` 或登记豁免后复跑 `go test ./internal/ports/provider/ -count=1` |
+| BE-G2 | R8 新目录覆盖缺口（M-R8d exit 0） | P2；补「所有 `internal/*` 目录均被覆盖」断言或目录清单守卫 |
+| BE-G3 | BA-02 `ports/security` 迁移未执行 | P2/需单独批准；执行时按 20.6 清单 + `apicheck --update` + §8 证据 |
+| BE-B1 | `go test -race` 本机不可执行 | Blocked（`CGO_ENABLED=0`）；由 CI `Race backend` 覆盖 |
+| BE-B2 | 本机无隔离 PostgreSQL/Redis；集成用例跳过数未取到 | Pending；`TEST_POSTGRES_DSN`/`TEST_REDIS_ADDRESS` 就绪后 `go test ./... -count=1 -v` 取 `--- SKIP` 计数，CI 断言 0 跳过 |
+
+### 20.10 后端 benchmark 实测（2026-10-11 21:11–21:17，本轮补跑）
+
+命令（公共形式，**逐包串行**、目录 `backend/`、环境 go1.26.1 windows/amd64、CGO_ENABLED=0、8 逻辑核、`GOMAXPROCS` 未设故 leaf 名带 `-8` 后缀）：
+
+```
+go test <pkg> -run '^$' -bench '<正则>' -benchmem -count=5
+```
+
+结果：**10/10 包退出码 0**（31 个 leaf × 5 次 = 155 样本，无 `SKIP`/`FAIL`/`panic`）；10 条命令墙钟合计 317.2s，包络约 7m31s。原始输出（含每条命令原文、CWD、START/END 与时区、`EXIT(<包>)=<码>`、每步 `AMBIENT` 采样）见 `scratch/benchmark-run.log`（25,672 B / 304 行，会话 69d18091）。
+
+| leaf（去 `Benchmark` 前缀与 `-8`） | 中位 ns/op | B/op | allocs/op |
+| --- | ---: | ---: | ---: |
+| ServiceListPageAggregation | 9,217,142 | 1,608,867 | 19,643 |
+| SelectorCandidatePlanning | 744,626 | 343,781 | 5,907 |
+| SelectorMultiModelCandidateLoad/models_2 | 14,846,243 | 2,818,818 | 34,952 |
+| SelectorMultiModelCandidateLoad/models_8 | 28,590,988 | 5,493,095 | 50,920 |
+| SelectorSegmentedCandidatePlanning/3000/full | 2,846,571 | 478,708 | 5,924 |
+| SelectorSegmentedCandidatePlanning/3000/active_segmented_64 | 1,967,493 | 79,330 | 160 |
+| SelectorSegmentedCandidatePlanning/3000/active_segmented_64_full_fallback | 3,542,755 | 693,449 | 5,998 |
+| SelectorSegmentedCandidatePlanning/10000/full | 8,166,107 | 1,787,257 | 19,952 |
+| SelectorSegmentedCandidatePlanning/10000/active_segmented_64 | 6,243,079 | 236,916 | 162 |
+| SelectorSegmentedCandidatePlanning/10000/active_segmented_64_full_fallback | 14,645,858 | 2,539,412 | 20,082 |
+| AuditServiceSQLite/attempts-0 | 510,192 | 10,865 | 91 |
+| AuditServiceSQLite/attempts-2 | 509,621 | 17,804 | 157 |
+| DashboardUsageAggregate/legacy | 80,163,371 | 13,553 | 113 |
+| DashboardUsageAggregate/performance | 100,696,825 | 22,236 | 130 |
+| RoutingAccountBaseProjectionWithLargePayloads | 74,234,007 | 3,111,974 | 62,257 |
+| SelectedCredentialHydration | 258,343 | 143,194 | 155 |
+| ConsumeJSONObjects | 407,705 | 180,256 | 4 |
+| ParseUpstreamFrame | 8,188 | 3,285 | 48 |
+| NormalizeOpenAIInput | 174,768 | 56,085 | 680 |
+| BuildOpenAIChatResult | 12,508 | 10,320 | 85 |
+| ParseWeeklyCreditsResponse | 948.6 | 376 | 7 |
+| InferWebTierFromQuota | 141.3 | 0 | 0 |
+| ManagerAcquireCachedBuild | 1,808 | 1,633 | 12 |
+| ConcurrencyLimiterCurrentMany | 266,013 | 219,442 | 32 |
+| RegistryParallel | 391.7 | 0 | 0 |
+| FirstTokenInspection/responses | 1,783 | 320 | 7 |
+| FirstTokenInspection/responses_custom_tool | 1,475 | 336 | 7 |
+| FirstTokenInspection/chat | 1,798 | 504 | 11 |
+| FirstTokenInspection/anthropic | 1,863 | 408 | 10 |
+| RequestBodyObservation/plain | 2,842 | 5,382 | 15 |
+| RequestBodyObservation/observed | 4,496 | 5,453 | 16 |
+
+口径与限制（不得越读）：
+
+- 中位数为 5 次输出的排序第 3 位；本机无 `benchstat`，未做统计检验。
+- 与 §3、§13.2、§16 历史值的差异**不是本轮前后对比**：历史条件未固定（§13.2 自述 `-count=3` 且未固定 CPU），且本轮测量期间有 5–6 个常驻 `node` 进程（对端门禁自测）、`Win32_Processor LoadPercentage` 采样 41% → 偏离 >10% 不可归因于代码变化；分配指纹多数逐字一致（routing projection 62,257 vs 历史 62,220–62,272；`provider/web` 6 个 leaf 的 B/op、allocs/op 与历史完全相同）说明 ns/op 差异主要来自负载与调度。
+- `DashboardUsageAggregate` 的 legacy 子基准首个样本是预热离群点（B/op 17,501、allocs 137，其余 4 次 13,539–13,572 / 113），两子基准共享同一 DB 与页缓存，**禁止**把 legacy 与 performance 的差值当收益。
+- 本轮未改动任何被基准覆盖的生产路径（diff 只有 `frontend.go` 静态托管排除与测试），故这些数字是**当前基线**，不是优化成果。
+- 未覆盖：`-race`（本机 `CGO_ENABLED=0` 不可用，由 CI `Race backend` 覆盖）、隔离 PostgreSQL/Redis 用例（本机无服务，`relational.TestMain` 在无 DSN 时正常结束，集成用例被 `-run '^$'` 过滤，无 `--- SKIP` 行）。
+### 20.11 回滚
+
+按类别独立回滚：边界测试与夹具回退 `import_boundary_test.go` 并删除 `import_boundary_fixtures_test.go`；静态托管收口回退 `frontend.go` +6/−1 与 `server_test.go` +4/−0（回退后 `/.build-manifest.json` 会重新 200 公开返回，不建议）；`.dockerignore` 三行白名单回退不影响本机验证（真实容器判定仍以 CI `check_ghcr_image` 为准）。本轮无数据、协议、配置（除 `.dockerignore`）或依赖迁移。

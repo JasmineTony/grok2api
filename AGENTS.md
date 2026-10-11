@@ -86,8 +86,8 @@
 
 ### DEV-4 前端质量门禁（机器门禁）
 
-- `frontend/` 下 `pnpm verify` 必须退出 0，覆盖 12 步：`format:check → oxlint → lint → typecheck → typecheck:e2e → test → test:ui:coverage → check:architecture → check:structure → test:gates → build → check:budget`。
-- `pnpm verify:full` 在质量门禁之后运行真实全栈 E2E；CI 必须同时运行前端质量、E2E、后端与镜像检查，不能以快速命令代替全部验收。
+- `frontend/` 下 `pnpm verify` 必须退出 0，覆盖 13 步：`format:check → oxlint → lint → typecheck → typecheck:e2e → test → test:ui:coverage → test:results → check:architecture → check:structure → test:gates → build → check:budget`；其中 `test:results` 解析 Vitest 原生 JSON 报告，断言必需前端用例确实执行、通过数达标且无未登记跳过。
+- `pnpm verify:full` = `pnpm verify` + `pnpm test:e2e` + `pnpm test:results:e2e`：质量门禁之后运行真实全栈 E2E，并对 Playwright 报告做同样的必需用例执行/跳过断言；CI 必须同时运行前端质量、E2E、后端与镜像检查，不能以快速命令代替全部验收。
 - 聚合命令不重复运行同一套测试。独立 `pnpm test` 用于开发反馈，`pnpm test:ui:coverage` 保留覆盖率入口。
 - 不以 `Skipped`、`Blocked`、未运行、只写好配置或重试后偶然通过代替 `Passed`（§10）。
 - 门禁与实际证据位置见 `frontend/AUDIT.md`、`backend/AUDIT.md`；规则变更须同步本文件。
@@ -123,7 +123,7 @@
 
 - 登录/鉴权、导入与凭据刷新、额度/模型封锁、审计筛选、客户端密钥增删、设置冲突、版本更新等均需覆盖 UI → API → 状态/错误。
 - 网络边界可替换，被测业务组件、hook、decoder 与状态流保持真实；不能只检查 mock 调用次数。
-- 判定：评审准则；CI 的「集成用例 0 跳过」断言是唯一硬门禁（§7）。
+- 判定：评审准则；CI 的两条报告断言为硬门禁：后端 Go 集成用例「0 跳过」断言，以及前端 `pnpm test:results`（Vitest）与 `pnpm test:results:e2e`（Playwright）的必需用例执行/跳过断言（§7、§8）。
 
 ### TEST-4 禁止弱化测试（评审准则）
 
@@ -137,7 +137,7 @@
 - Playwright 使用生产前端产物和真实 Go HTTP/Auth/Application/SQLite/Memory。mock 管理 API 的浏览器测试必须单列，不作为全栈通过证明。
 - 每 worker 独立端口、临时数据库/媒体目录、合成凭据；只监听 loopback，不读取真实 `config.yaml`，不继承指向真实服务的环境配置。
 - 外部 Provider/OAuth/更新查询使用明确的测试 client 或本地替身；未知外部调用失败，不放宽 TLS、鉴权或生产 readiness，不新增生产后门。
-- 已实现的隔离手段（证据在 `frontend/e2e/backend-process.ts`、`frontend/e2e/global-setup.ts`）：子进程设 `HTTP_PROXY`/`HTTPS_PROXY` 指向未监听端口使未知外呼快速失败；剔除 `GROK2API_*`、`TEST_POSTGRES_*`、`TEST_REDIS_*`；globalSetup 在 dist 缺失或早于构建输入时重建，避免测到过期产物。
+- 已实现的隔离手段（证据在 `frontend/e2e/backend-process.ts`、`frontend/e2e/global-setup.ts`）：子进程设 `HTTP_PROXY`/`HTTPS_PROXY` 指向未监听端口使未知外呼快速失败；剔除 `GROK2API_*`、`TEST_POSTGRES_*`、`TEST_REDIS_*`；globalSetup 用内容指纹（`frontend/scripts/build-inputs.ts` 的 `inputHash`/`outputHash`）判定 dist 与构建输入是否一致，缺失或不一致即重建，避免测到过期产物。
 - 空账号池 `/readyz` 未就绪与管理面可用分别断言。清理只针对测试自有 PID/目录，日志与 trace 不包含真实秘密。
 - 判定：`pnpm test:e2e`、`pnpm verify:full`；登录/会话/密码、密钥 CRUD、账号、审计、设置/模型/出口、创作/媒体、语言主题与路由刷新按阶段纳入。
 
@@ -376,6 +376,13 @@ git remote -v
 ### CHG-11 临时文件不入库（评审准则，可检索）
 
 调试用临时脚本/测试只能放在会话 scratch 目录；提交前 `git status --porcelain` 不得出现 `zz-*`、`__probe*`、`tmp-*` 等调试产物。
+
+### CHG-12 分支隔离：每轮工作使用新分支（评审准则，可检索）
+
+- 每轮（一个可独立交付的批次）必须从当前集成分支切出**新的维护分支**（`maint/<主题>-<日期>[-<轮次>]`），禁止在上一轮已使用的分支上继续堆积新一批改动或提交。
+- 轮次开始时记录：分支名、基点 `git rev-parse HEAD`、`git status --porcelain` 基线；轮次结束时该分支至少有一个可独立回滚的提交，或按 §10 明确登记「未提交原因」。
+- 判定：`git branch --show-current` 与上一轮记录的分支名不同；`git log --oneline <基点>..HEAD` 非空（或 AUDIT 中已登记未提交原因）。
+- 反例（本次取证）：验收审计轮把三批改动全部留在同一个 `maint/acceptance-audit-20261011` 分支上且始终未提交，导致无法按阶段回滚、也无法用分支名区分工作范围；后续轮次改为切新分支 `maint/acceptance-audit-20261011-closeout` 并分阶段提交。
 
 ## 12. 文档分层（DOC）
 
