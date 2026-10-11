@@ -932,3 +932,9 @@ M4a 的解释（避免误读）：当前接线里 `writeBundle` 只在成功构�
 - **更正（EVID-8）**：§19.8 验证表、§19.10 覆盖边界说明与 scratch 的 `plan-section6-completion-mapping.md` 曾记「全部改动未提交」→ **现已提交**；根因是上一轮未切新分支、也未分阶段提交；复现：`git log --oneline 12e03be9..maint/acceptance-audit-20261011-closeout` 与 `git status --porcelain`（应为空）。
 - **Swagger 阻塞关闭（真实复现，非静态推断）**：用 Makefile 的等价调用 `go run github.com/swaggo/swag/cmd/swag@v1.16.6 init -g main.go -d cmd/grok2api,internal/transport/http --parseInternal --output <scratch>/docs --outputTypes go,json,yaml`（cwd `backend/`，`GOCACHE=<repo>/.gocache`）→ **exit 0**；生成结果与 `backend/docs/**` **字节一致**（`docs.go` 30,474 B SHA256 `D70FD3F2…3080`、`swagger.json` 29,791 B `0BA68021…FB90`、`swagger.yaml` 13,959 B `9B269170…4B58`），`git diff --no-index --exit-code` = 0，且 `git hash-object` 等于 `HEAD:backend/docs/*` 的 blob ⇒ CI 的 `make swagger` + `git diff --exit-code -- backend/docs/{docs.go,swagger.json,swagger.yaml}` 会 **exit 0**。运行前后 `backend/docs/**` 的 SHA256 与 mtime 均未变（未写入仓库）。
 - **复现要点（子发现）**：swag 用 `--output` 目录的**最后一段**作为生成 Go 文件的 package 名（输出到 `swagger-out` 会得到 `package swagger_out`，与仓库的 `package docs` 差 4 行）；复现 CI 断言时输出目录必须命名为 `docs`。
+
+### 19.12 收口轮：CI 运行阻塞与所需授权（2026-10-11 22:40–23:00）
+
+- **实测**：`git push -u origin maint/acceptance-audit-20261011-closeout` → **exit 1**，原文 `refusing to allow an OAuth App to create or update workflow '.github/workflows/codeql.yml' without 'workflow' scope`（凭据来自 本地凭据助手，含 `repo`/`仓库删除作用域` 但无工作流作用域；本机无 `gh` CLI）。因此**本轮 17 个提交尚未进入远端，CI 尚未运行**，`verify job`（race / PG+Redis 0 跳过 / 前端 E2E / `test:results:e2e`）与 `check_ghcr_image` 均无 run id。
+- **本地已覆盖的等价证据**：前端 `pnpm verify:full` exit 0（§19.10，含真实 E2E 21/21 与新报告门禁）；后端 `bash scripts/verify.sh` exit 0（`backend/AUDIT.md` §20.8）；Swagger 精确 diff 本机闭环（§19.11）；后端 race 与隔离 PG/Redis 的本机阻塞取证见 `backend/AUDIT.md` §20.13。
+- **所需用户动作**（阻塞解除条件）：提供具备工作流作用域的推送凭据（或执行 `gh auth login`）→ 重新推送该分支 → 开草稿 PR 到 `main` 即触发 CI；PR 的镜像 job 为 `push: false`，不会推送镜像。**未授权前不推送、不合并、不打 tag**。
