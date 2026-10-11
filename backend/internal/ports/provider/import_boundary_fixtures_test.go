@@ -228,6 +228,49 @@ func TestImportBoundaryExceptionRatchet(t *testing.T) {
 	}
 }
 
+func TestImportBoundaryTransportRule(t *testing.T) {
+	boundary := importBoundaryFor(t, "transport")
+	for _, target := range []string{"infra", "infra/security", "infra/security/nested"} {
+		t.Run("unregistered_"+target, func(t *testing.T) {
+			file := "internal/transport/http/fixture.go"
+			imported := internalModulePrefix + target
+			checkImportBoundaryFixture(t, boundary, map[string]string{file: importFixtureSource(imported)}, importBoundaryScan{
+				files: 1, imports: 1, violations: []string{file + ":3 -> " + imported},
+			})
+		})
+	}
+	cases := []struct {
+		name, file, target string
+		allowed            bool
+	}{
+		{"frozen_exception", "internal/transport/http/middleware/request.go", "infra/security", true},
+		{"same_package_other_file", "internal/transport/http/middleware/request_id.go", "infra/security", false},
+		{"same_basename_other_directory", "internal/transport/http/request.go", "infra/security", false},
+		{"frozen_file_other_package", "internal/transport/http/middleware/request.go", "infra/config", false},
+		{"frozen_file_subpackage", "internal/transport/http/middleware/request.go", "infra/security/nested", false},
+	}
+	for _, fixture := range cases {
+		t.Run(fixture.name, func(t *testing.T) {
+			imported := internalModulePrefix + fixture.target
+			want := importBoundaryScan{files: 1, imports: 1}
+			if fixture.allowed {
+				want.exceptions = []string{fixture.file + " -> " + imported}
+			} else {
+				want.violations = []string{fixture.file + ":3 -> " + imported}
+			}
+			checkImportBoundaryFixture(t, boundary, map[string]string{fixture.file: importFixtureSource(imported)}, want)
+		})
+	}
+}
+
+func TestImportBoundaryTransportTestFilesExempt(t *testing.T) {
+	boundary := importBoundaryFor(t, "transport")
+	// includeTests=false：只有生产文件受约束，handler 测试可用真实 infra 装配。
+	relative := "internal/transport/http/fixture_test.go"
+	source := strings.Replace(importFixtureSource(internalModulePrefix+"infra/security"), "package fixture", "package fixture_test", 1)
+	checkImportBoundaryFixture(t, boundary, map[string]string{relative: source}, importBoundaryScan{skippedTests: 1})
+}
+
 func importBoundaryFor(t *testing.T, directory string) layerBoundary {
 	t.Helper()
 	for _, boundary := range layerBoundaries {
