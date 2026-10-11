@@ -4,14 +4,17 @@
  *
  * 校验 dist 的四类硬阈值与冻结基线增长：
  *  - 首屏关键 JS 依赖闭包（index.html 的 module 入口 + modulepreload 的静态闭包）
- *  - 单个业务路由相对首屏闭包的新增闭包
+ *  - 单个业务路由实际会加载的新增闭包 = 静态闭包 ∪ 该入口的 __vite__mapDeps 预加载子集
  *  - 全部生产 JS / CSS（按文件去重）
  *  - 最大单个 JS chunk 原始体积
  *
  * 依赖关系通过 TypeScript AST 读取，不使用正则匹配，避免把普通字符串或注释误判为依赖。
  * 注意 Vite 8 的真实产物形态：
  *  - 懒加载入口是 `import(`./x.js`)`（NoSubstitutionTemplateLiteral，不是 StringLiteral）；
- *  - `__vite__mapDeps` 的预加载清单是 dist 根相对路径（`assets/x.js`，无前导 `./` 或 `/`）。
+ *  - 预加载清单是 `d=(m.f||(m.f=["assets/x.js", ...]))`，调用点写成 `__vitePreload(() => import(...),
+ *    __vite__mapDeps([索引]))`；`__vite__mapDeps` 清单是同一 chunk 内所有动态入口的并集，
+ *    因此只能取「该入口自己的索引子集」，否则会把其它路由的 chunk 误算进当前路由；
+ *  - 清单里的路径是 dist 根相对路径（`assets/x.js`，无前导 `./` 或 `/`），且可能包含 CSS。
  * 因此解析必须同时覆盖「相对当前 chunk」与「相对 dist 根」两种写法，否则路由检查会静默失效。
  *
  * 用法：
@@ -120,6 +123,109 @@ function resolveSpecifier(fromFile, specifier) {
   return candidate;
 }
 
+/** 预加载清单的载体：`m.f = ["assets/x.js", ...]`（Vite 固定写法，元素全为路径字面量）。 */
+function isPreloadManifestArray(node) {
+  return (
+    ts.isBinaryExpression(node) &&
+    node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+    ts.isPropertyAccessExpression(node.left) &&
+    ts.isArrayLiteralExpression(node.right) &&
+    node.right.elements.length > 0 &&
+    node.right.elements.every(isPathLiteral)
+  );
+}
+
+/** 子树里第一个动态 import 字面量；用于把预加载调用绑回它服务的入口。 */
+function firstDynamicImportSpecifier(node) {
+  let specifier = null;
+  const visit = (current) => {
+    if (specifier !== null) return;
+    if (ts.isCallExpression(current) && current.expression.kind === ts.SyntaxKind.ImportKeyword) {
+      const argument = current.arguments[0];
+      if (argument && isPathLiteral(argument)) specifier = argument.text;
+      return;
+    }
+    ts.forEachChild(current, visit);
+  };
+  visit(node);
+  return specifier;
+}
+
+/**
+ * 读取 `__vite__mapDeps` 清单与调用点：`d=(m.f||(m.f=[...]))` 是清单，
+ * `__vite__mapDeps([索引])` 是某个动态入口自己的子集（清单本身含同一 chunk 内其它路由的条目）。
+ */
+function preloadManifestOf(sourceFile) {
+  const manifest = [];
+  const usages = [];
+  const dynamicImports = [];
+  const visit = (node) => {
+    if (ts.isCallExpression(node)) {
+      if (node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+        const argument = node.arguments[0];
+        if (argument && isPathLiteral(argument)) {
+          dynamicImports.push({ pos: node.getStart(sourceFile), text: argument.text });
+        }
+      } else if (ts.isIdentifier(node.expression) && node.expression.text === "__vite__mapDeps") {
+        const argument = node.arguments[0];
+        if (
+          argument &&
+          ts.isArrayLiteralExpression(argument) &&
+          argument.elements.every((e) => ts.isNumericLiteral(e))
+        ) {
+          usages.push({ node, indexes: argument.elements.map((element) => Number(element.text)) });
+        }
+      }
+    } else if (isPreloadManifestArray(node)) {
+      manifest.push(...node.right.elements.filter(isPathLiteral).map((element) => element.text));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return { manifest, usages, dynamicImports };
+}
+
+/** 预加载调用的归属入口：优先取包裹调用的动态 import，退化时取源码位置最近的同文件动态 import。 */
+function preloadOwnerOf(usage, dynamicImports, sourceFile) {
+  let node = usage.node.parent;
+  while (node !== undefined) {
+    const isSelf =
+      ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "__vite__mapDeps";
+    if (ts.isCallExpression(node) && !isSelf) {
+      for (const argument of node.arguments) {
+        const specifier = firstDynamicImportSpecifier(argument);
+        if (specifier !== null) return specifier;
+      }
+    }
+    node = node.parent;
+  }
+  const usagePos = usage.node.getStart(sourceFile);
+  const nearest = dynamicImports.filter((item) => item.pos < usagePos).sort((a, b) => b.pos - a.pos)[0];
+  return nearest === undefined ? null : nearest.text;
+}
+
+/** 该 chunk 声明的「动态入口 → 该入口会预加载的文件」映射（只取该入口自己的索引子集）。 */
+function preloadTargetsOf(file) {
+  const sourceFile = parseSource(file);
+  const { manifest, usages, dynamicImports } = preloadManifestOf(sourceFile);
+  const targets = new Map();
+  if (manifest.length === 0) return targets;
+  for (const usage of usages) {
+    const specifier = preloadOwnerOf(usage, dynamicImports, sourceFile);
+    if (specifier === null) continue;
+    const target = resolveSpecifier(file, specifier);
+    if (target === null || !target.endsWith(".js")) continue;
+    const files = targets.get(target) ?? new Set();
+    for (const index of usage.indexes) {
+      const listed = manifest[index];
+      const resolved = listed === undefined ? null : resolveSpecifier(file, listed);
+      if (resolved !== null) files.add(resolved);
+    }
+    targets.set(target, files);
+  }
+  return targets;
+}
+
 function collectClosure(entryFiles) {
   const seen = new Set();
   const queue = [...entryFiles];
@@ -149,16 +255,41 @@ function indexEntryFiles() {
   return files;
 }
 
-function collectRouteMetrics(initialClosure) {
+/**
+ * 路由入口来自首屏闭包里的动态 import；预加载子集来自发起方 chunk 的 `__vite__mapDeps([索引])`，
+ * 只取该入口自己的索引项，避免把同一清单里其它路由的 chunk 算进当前路由。
+ */
+function collectRouteEntries(initialClosure) {
   const routeEntries = new Set();
+  const preloadedByEntry = new Map();
   for (const file of initialClosure) {
     for (const target of dynamicImportSpecifiersOf(file)) {
       if (!initialClosure.has(target)) routeEntries.add(target);
     }
+    for (const [target, files] of preloadTargetsOf(file)) {
+      if (initialClosure.has(target)) continue;
+      routeEntries.add(target);
+      preloadedByEntry.set(target, mergePreloadFiles(initialClosure, files, preloadedByEntry.get(target)));
+    }
   }
+  return { routeEntries, preloadedByEntry };
+}
+
+/** 合并同一入口在多处声明的预加载文件，并剔除首屏闭包已计入的部分。 */
+function mergePreloadFiles(initialClosure, files, existing) {
+  const merged = existing ?? new Set();
+  for (const preloaded of files) {
+    if (!initialClosure.has(preloaded)) merged.add(preloaded);
+  }
+  return merged;
+}
+
+function collectRouteMetrics(initialClosure) {
+  const { routeEntries, preloadedByEntry } = collectRouteEntries(initialClosure);
   const metrics = [];
   for (const entry of [...routeEntries].sort()) {
-    const incremental = [...collectClosure([entry])].filter((file) => !initialClosure.has(file));
+    const reachable = collectClosure([entry, ...(preloadedByEntry.get(entry) ?? [])]);
+    const incremental = [...reachable].filter((file) => !initialClosure.has(file));
     metrics.push({
       entry: path.relative(distDir, entry).replaceAll("\\", "/"),
       closureGzipBytes: sum(incremental.map(measure)).gzipBytes,
