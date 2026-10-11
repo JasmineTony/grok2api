@@ -111,16 +111,16 @@ go test ./internal/infra/egress ./internal/infra/runtime/memory ./internal/pkg/p
 
 - `internal/domain/**` → 无越界依赖。**方向正确。**
 - `internal/repository/**` → 无越界依赖（仅依赖 domain）。**方向正确。**
-- `internal/application/**` → 存在 **26 处**（分布在 20 个文件）对 infra 的依赖，需登记并逐步收敛（按 import 行计；文件级拆分后同一逻辑依赖可能分布在更多文件）：
+- `internal/application/**` → **生产代码 26 处**（分布在 **24 个文件** / 3 个包：`security` 13、`egress` 10、`config` 3）对 infra 的依赖，需登记并逐步收敛（按 import 行计；文件级拆分后同一逻辑依赖可能分布在更多文件）。测试代码另有 110 处 infra import（`persistence/relational` 36、`provider` 23、`runtime/memory` 20 等），属集成测试装配、不计入分层违规（2026-10-11 `go/parser` 全量复核；原记录「20 个文件」漏计 `settings/` 3 个 config 文件与 `egress/quality_lease.go`）。
 
 | 目标 infra 包    | 引用位置（示例）                                                                          | 判定                                                                                                                                                     |
 | ---------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `infra/provider` | account、accountsync、gateway/{attempt,failure,image,service,video,voice,voice_ws}、model | 阶段 3 已完成契约收敛：`internal/ports/provider`（35 个接口 + 值类型 + 错误类型 + `Registry`），`internal/infra/provider/provider.go` 由 1468 行降至 **465** 行；application 仍直接依赖 provider 的能力接口，属已登记 P2（BE-02），剩余收敛按消费者数量逐项评估 |
-| `infra/security` | account、adminauth、clientkey、egress、gateway/{quality_probe,service,video}              | `Cipher`/`TokenService` 为具体实现，application 直接依赖具体类型                                                                                         |
-| `infra/egress`   | gateway/{egress_audit,image,quality_probe,quality_retry,service,video,voice,voice_ws}     | 同上                                                                                                                                                     |
-| `infra/config`   | settings                                                                                  | 配置结构体被应用层直接消费                                                                                                                               |
+| `infra/provider`（根） | **生产 0 处**（实测仅测试引用 23 处） | 阶段 3 已完成契约收敛：`internal/ports/provider`（35 个接口 + 值类型 + 错误类型 + `Registry`），`internal/infra/provider/provider.go` 由 1468 行降至 **465** 行；2026-10-11 更正：application **生产代码已不直接依赖**该包，原表把它列为生产依赖已过期 |
+| `infra/security` | 13 处：account、adminauth、clientkey、egress、gateway/{quality_probe,service,video} | `Cipher`/`TokenService` 为具体实现，application 直接依赖具体类型；可迁 `internal/ports/security`（新建，实测 `ports` 当前 0 处 import infra/application，无环） |
+| `infra/egress` | 10 处：gateway/{egress_audit,image,quality_probe,quality_retry,service,video,voice,voice_ws} | `Trace`/`Selection` 值类型可迁 ports；`WithTrace`/`WithQualityProbe`/`WithPhysicalCallTrace` 的 context key 由 infra 侧读写，搬进 ports 等于暴露实现细节 → **该项无法归零**，只能减少类型依赖 |
+| `infra/config` | 3 处：settings | 配置结构体被应用层直接消费；`domain/settings/settings.go:32` 已有并行 `Config`（14 类型）且 application/settings 现做双向映射，**不新建 `ports/config`**（否则产生第三套配置类型，违反「禁止第二套业务语义」），保持现状并登记 |
 
-处理原则：**区分"契约放错层"与"真实实现耦合"**。优先把确属公共能力的 provider 契约迁到 `internal/ports/provider/`；security/config/egress 的依赖按消费者数量与隔离价值逐项评估，只在确有收益时引入窄接口，不做全库机械搬迁。
+处理原则：**区分「契约放错层」与「真实实现耦合」**。优先把确属公共能力的契约迁到 `internal/ports/**`（`provider` 已完成，`security` 为下一项）；`egress` 只做可迁部分、context 注入保留在 infra；`config` 因会产生第三套配置类型而**不迁**；测试装配用的 `persistence/relational` / `runtime/memory` 与 GORM/Redis 具体类型耦合，接口化会削弱集成测试真实性，**不迁**。不做全库机械搬迁。
 
 ### 4.2 结构与体量基线
 
@@ -158,7 +158,7 @@ go test ./internal/infra/egress ./internal/infra/runtime/memory ./internal/pkg/p
 
 ## 5. 问题清单
 
-状态列的 `Pending` 均属 `AGENTS.md` §6 定义的 P2 计划内债务：已登记、未扩张、不阻塞阶段验收与发布；`Passed` 必须附可复核证据。
+状态列的 `Pending` 均属 `AGENTS.md` §6 定义的 P2/P3 计划内债务：已登记、未扩张、不阻塞阶段验收与发布；`Passed` 必须附可复核证据。
 
 | 编号  | 证据                                                                                                                                                                      | 现有/新增                           | 影响                                        | 优先级 | 阶段   | 验证方法                                   | 状态                                                                                                                                                  |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ------------------------------------------- | ------ | ------ | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -175,10 +175,10 @@ go test ./internal/infra/egress ./internal/infra/runtime/memory ./internal/pkg/p
 | BE-08 | `merge` 的 `Create manifest list` 循环缺 `set -euo pipefail`，管道退出码只反映 `while` 最后一次迭代 | 新增（只读代码审查发现） | 前面的 `imagetools create` 失败可被后续成功掩盖，留下陈旧标签却报绿 | P3 | 发布 | 在 `run:` 首行加 `set -euo pipefail` | **Passed**（`a4f58384`；两条路径 CI 全绿，§11/§14） |
 | BE-09 | `merge` 的 `Inspect image` 原为单行 `docker buildx imagetools inspect`，只打印不断言：单架构索引也会绿色通过，发布验收只能靠人工读日志 | 新增（2026-10-11 只读审查） | 发布验收证据强度不足 | P2 | 发布 | 断言索引同时含 `linux/amd64` 与 `linux/arm64`，缺失即非零退出 | **Passed**（`0de5cc72` 实现；main run `38107489273` 与 tag run `38108809200` 的 `Merge image` 全 success，日志实测 `多架构断言通过：linux/amd64 + linux/arm64`） |
 | BE-10 | 根 `VERSION` 与 `frontend/package.json` 一致性是 `AGENTS.md` §8 的硬要求，但无自动门禁（历史上长期不一致：`v3.1.6` vs `0.1.0`） | 新增（2026-10-11） | 版本载体可能再次漂移且无人发现 | P2 | 发布 | `verify` 增加比对步骤，不一致即非零退出 | **Passed**（`0de5cc72` 实现；main run `38107489273` 与 tag run `38108809200` 中该步骤 success 且两条 run 整体 success。首次执行该步骤的是 `workflow_dispatch` run `38106888325`（该步骤 success），但该 run 随后被 `concurrency` 取消，**不作为通过证据**） |
-| BE-11 | `concurrency.cancel-in-progress: true` 按 ref 取消：同一 ref 连推会取消正在运行的 run（本轮实测 3 次 `cancelled`，含 dispatch run `38106888325` 被 main push run 取消）；若取消落在 per-arch 推送之后、merge 之前，会短暂留下不完整标签（后续 run 收敛） | 新增（2026-10-11 观察） | 发布期间可能短暂存在不完整标签 | P3 | 发布 | 可改为 `cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}` | Pending（P3 建议，本轮未实施，仅登记） |
-| BE-12 | 各 job 无 `timeout-minutes`，卡死最长占用 runner 6h（GitHub 默认上限） | 新增 | 资源占用与排障延迟 | P3 | 发布 | 为 verify/publish/merge 设合理超时 | Pending（P3 建议，本轮未实施，仅登记） |
-| BE-13 | `Assert required integration tests ran` 按**用例名**匹配 `Postgres\|Redis`；新增集成用例若命名不同会被漏检（当前 20 个用例名均含关键字，故现状有效） | 新增 | 未来新增集成用例可能不被门禁覆盖 | P3 | 发布 | 改为「包路径白名单 ∪ 用例名」双重断言 | Pending（P3 建议，本轮未实施，仅登记） |
-| BE-14 | 工作流中所有 `uses:` 固定 tag（`@v4`/`@v6`）而非 commit SHA；CI 使用 Node 22，本机为 Node 24，仓库未声明 `engines` | 新增 | 供应链与工具链一致性 | P3 | 发布 | 固定 SHA / 声明 `engines` | Pending（P3 建议，本轮未实施，仅登记） |
+| BE-11 | `concurrency.cancel-in-progress: true` 按 ref 取消：同一 ref 连推会取消正在运行的 run（本轮实测 3 次 `cancelled`，含 dispatch run `38106888325` 被 main push run 取消）；若取消落在 per-arch 推送之后、merge 之前，会短暂留下不完整标签（后续 run 收敛） | 新增（2026-10-11 观察） | 发布期间可能短暂存在不完整标签 | P3 | 发布 | 可改为 `cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}` | **Passed**（`e57fadda` 实施：`ghcr-image.yml:20` 即为该表达式，分支推送仍允许取消。**局限**：`v0.1.2` 的 tag run 早于该提交，此后无真实 tag 推送执行该分支，见 §16.5） |
+| BE-12 | 各 job 无 `timeout-minutes`，卡死最长占用 runner 6h（GitHub 默认上限） | 新增 | 资源占用与排障延迟 | P3 | 发布 | 为 verify/publish/merge 设合理超时 | **Passed**（`e57fadda` 实施：`ghcr-image.yml:29` verify 60 / `:195` check 30 / `:233` build 45 / `:288` merge 15 分钟。`codeql.yml`/`stale.yml` 未设，属登记保留项，见 §16.5） |
+| BE-13 | `Assert required integration tests ran` 原按**用例名**匹配 `Postgres\|Redis`；新增集成用例若命名不同会被漏检（当前 20 个集成用例名均含关键字，故现状有效） | 新增 | 未来新增集成用例可能不被门禁覆盖 | P3 | 发布 | 改为「包路径白名单 ∪ 用例名」双重断言 | **Passed**（`e57fadda` 实施：`ghcr-image.yml:86-107` 两路 `grep` 任一命中即 `exit 1`；白名单为 `persistence/relational$`、`runtime/redis$`、`application/account$`。run `38121078190` 第 7 步 success，见 §16.5） |
+| BE-14 | 工作流中 `uses:` 未固定 commit SHA；CI 使用 Node 22 而本机 Node 24，仓库未声明 `engines` | 新增 | 供应链与工具链一致性 | P3 | 发布 | 固定 SHA / 声明 `engines` | **Passed**（`e57fadda` 固定 `ghcr-image.yml` 18 处；2026-10-11 补固定 `codeql.yml:38/41/47`（checkout v4.4.0、codeql-action v4.38.3）与 `stale.yml:19`（stale v10.4.0），全仓 22/22 处已固定；`79230b36` 声明 `frontend/package.json` `engines.node >=22` 并同步 `frontend/README.md:15`） |
 
 ## 6. 强制保留的前轮修复（回归清单）
 
@@ -586,3 +586,12 @@ v0.1.2 发布后继续清空已登记存量：**BE-01 的 >1000 行文件类清�
 - **函数级 REV-2 存量 7 个未变**（纯文件级搬运不重构函数体）：`createResponseAt` 908、`runVideoJob` 288、`OpenVoiceWebSocket` 247、`acquire` 246、`executeImage` 57、`executeVoice` 54、`CreateVideo` 52（stdlib `go/ast` 复核，仅统计生产代码；`inference` 与 `provider-web` 生产代码为 0）。
 - 测试文件 >600 行 38 个（最大 `gateway/service_test.go` 4928）属既有约定，不在门禁范围。
 - 语义等价性由「逐行搬运 + 多重集比对 + 编译 + 全量测试」保证；PostgreSQL/Redis 专属路径本机未执行（`Skipped`）。
+
+- **2026-10-11 全量口径复核（新增测量，非新增债务）**：此前 §12.2 / §16.4 的「REV-2 存量 7 个」只统计 `gateway` / `inference` / `provider-web` 三个包（其中 `inference` 0、`provider-web` 0）。以 stdlib `go/parser`+`go/ast` 对 `backend/internal/**` 全量复核（427 个生产文件 / 4113 个函数，口径 `Rbrace.Line - Lbrace.Line + 1`，与 §12.2 登记口径一致，校验点 `createResponseAt` = 908 行吻合）：**>50 行生产函数 174 个**（大型 >200：8；中等 61–200：110；轻微 51–60：56），**>600 行生产文件 12 个**（`docs/docs.go` 945 行为 swag 生成物，已排除）。`gateway` 实测为 5 个——`executeImage` 57→40、`executeVoice` 54→40 已随阶段 6 收尾下降，登记值未同步。
+- 结论：后端函数级 REV-2 的「7 项」是**三包口径**，全后端口径为 **174 项 / 12 文件**；两者都不得记为「已通过」，均按 P2/P3 分阶段清偿。后端不在 REV-1 文件门禁扫描范围（`AGENTS.md` §5），该 12 个文件按 P3 登记。
+
+### 16.5 CI 加固实施与登记（BE-11~BE-14，2026-10-11）
+
+- 实施提交：`e57fadda`（`ghcr-image.yml`：tag 推送不取消、四个 job 超时、集成用例双重断言、`uses:` 固定 SHA）、`79230b36`（`frontend/package.json` 声明 `engines.node >=22` 并同步 README）；本机 2026-10-11 补固定 `codeql.yml` / `stale.yml` 的 4 处浮动 `uses:`。
+- 验证 run：`38121078190`（main，`1a510f5d`，其工作流定义含上述全部加固）`conclusion=success`，`Verify` job 第 5–17 步（含 `Verify version carriers are aligned`、`Assert required integration tests ran`、`Race backend`、`Vet backend`、`Verify Swagger document`、`Verify frontend`、`Run full-stack E2E`）全 success，`Publish image (amd64)` / `Publish image (arm64)` / `Merge image` 全 success；同提交 `CodeQL Advanced` run `38121078196` success。
+- 未覆盖（如实登记）：`ghcr-image.yml:20` 的 tag 专用表达式自实施后**尚无真实 tag 推送执行**（`v0.1.2` tag run `38108809200` 早于 `e57fadda`），故「tag 推送不被取消」目前只有静态证据；`codeql.yml` / `stale.yml` 仍未设 `timeout-minutes`。
