@@ -38,9 +38,26 @@ function isMissing(error: unknown): boolean {
   return error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ENOTDIR");
 }
 
+/** 具名输入与 treeDigests 的条目共用同一软链契约：显式失败，绝不静默跟随目标内容。 */
+function symlinkError(name: string): Error {
+  return new Error(`构建指纹不支持符号链接：${name}`);
+}
+
+/** 具名输入：条目自身是符号链接即失败，缺失按空输入处理，其它 I/O 错误照旧中断。 */
 function fileDigest(root: string, name: string): FileDigest {
+  const file = path.join(root, name);
+  let linked: boolean;
   try {
-    return [name, hash(readFileSync(path.join(root, name)))];
+    // 只判定具名条目自身：node_modules/<包名> 由包管理器软链到 .pnpm 存储（Dockerfile 的 pnpm 布局），
+    // 属路径中间层；对整条路径判定软链会让容器内的 `pnpm build` 直接失败。
+    linked = lstatSync(file).isSymbolicLink();
+  } catch (error) {
+    if (isMissing(error)) return [name, null];
+    throw error;
+  }
+  if (linked) throw symlinkError(name);
+  try {
+    return [name, hash(readFileSync(file))];
   } catch (error) {
     if (isMissing(error)) return [name, null];
     throw error;
@@ -59,7 +76,7 @@ function treeDigests(root: string, directory: string, excluded = ""): FileDigest
   for (const entry of directoryEntries) {
     const name = directory ? `${directory}/${entry.name}` : entry.name;
     if (name === excluded) continue;
-    if (entry.isSymbolicLink()) throw new Error(`构建指纹不支持符号链接：${name}`);
+    if (entry.isSymbolicLink()) throw symlinkError(name);
     if (entry.isDirectory()) entries.push(...treeDigests(root, name, excluded));
     else if (entry.isFile()) entries.push(fileDigest(root, name));
     else throw new Error(`构建指纹不支持非普通文件：${name}`);

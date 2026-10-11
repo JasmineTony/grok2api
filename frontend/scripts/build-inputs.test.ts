@@ -7,6 +7,7 @@ import {
   renameSync,
   rmSync,
   statSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -55,6 +56,22 @@ function fixture(t: TestContext, reverse = false): { root: string; outDir: strin
   writeBuildManifest(outDir, buildInputHash(root, inputOptions));
   assert.equal(isBuildFresh(root, outDir, inputOptions), true);
   return { root, outDir };
+}
+
+/** Windows 未开启开发者模式时无法创建符号链接；junction 无需特权且 lstat 同样判定为符号链接，POSIX 忽略该类型参数。 */
+function linkDirectory(target: string, linkPath: string): void {
+  mkdirSync(path.dirname(linkPath), { recursive: true });
+  symlinkSync(target, linkPath, "junction");
+}
+
+/** 取回错误文案；调用没有抛错本身就是缺陷，必须让用例失败而不是静默通过。 */
+function failureMessage(action: () => unknown): string {
+  try {
+    action();
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  throw new Error("期望调用抛错，但它成功返回");
 }
 
 function fixtureViteConfig(root: string): InlineConfig {
@@ -233,6 +250,56 @@ describe("构建内容指纹", () => {
     rmSync(path.join(root, "pnpm-lock.yaml"));
     mkdirSync(path.join(root, "pnpm-lock.yaml"));
     assert.throws(() => buildInputHash(root, inputOptions));
+  });
+
+  it("具名输入被替换为符号链接必须显式失败并含相对路径，不得静默跟随目标内容", (t) => {
+    const { root, outDir } = fixture(t);
+    writeFixtureFile(root, "synthetic-link-target/payload.ts", "export const payload = 1;\n");
+    rmSync(path.join(root, "pnpm-lock.yaml"));
+    linkDirectory(path.join(root, "synthetic-link-target"), path.join(root, "pnpm-lock.yaml"));
+    const message = failureMessage(() => buildInputHash(root, inputOptions));
+    assert.match(message, /^构建指纹不支持符号链接：pnpm-lock\.yaml$/);
+    assert.equal(message.includes(root), false, "错误文案不得泄漏本机绝对路径");
+    assert.equal(
+      failureMessage(() => isBuildFresh(root, outDir, inputOptions)),
+      message,
+    );
+  });
+
+  it("目录树内的符号链接与具名输入共用同一软链判定与相对路径格式", (t) => {
+    const { root, outDir } = fixture(t);
+    writeFixtureFile(root, "synthetic-link-target/payload.ts", "export const payload = 1;\n");
+    linkDirectory(path.join(root, "synthetic-link-target"), path.join(root, "src/vendor"));
+    const message = failureMessage(() => buildInputHash(root, inputOptions));
+    assert.match(message, /^构建指纹不支持符号链接：src\/vendor$/);
+    assert.equal(message.includes(root), false, "错误文案不得泄漏本机绝对路径");
+    assert.equal(
+      failureMessage(() => isBuildFresh(root, outDir, inputOptions)),
+      message,
+    );
+  });
+
+  it("isBuildFresh 必须向上抛出输入读取错误，而不是把错误当成陈旧产物", (t) => {
+    const { root, outDir } = fixture(t);
+    rmSync(path.join(root, "pnpm-lock.yaml"));
+    mkdirSync(path.join(root, "pnpm-lock.yaml"));
+    const isDirectoryReadError = (error: unknown): boolean =>
+      error instanceof Error && "code" in error && error.code === "EISDIR";
+    assert.throws(() => buildInputHash(root, inputOptions), isDirectoryReadError);
+    assert.throws(() => isBuildFresh(root, outDir, inputOptions), isDirectoryReadError);
+  });
+
+  it("包管理器建立的中间目录软链不误报，其目标仍按内容参与指纹", (t) => {
+    const { root, outDir } = fixture(t);
+    const baseline = buildInputHash(root, inputOptions);
+    writeFixtureFile(root, "synthetic-store/vite/package.json", '{"name":"vite","version":"0.0.0"}\n');
+    linkDirectory(path.join(root, "synthetic-store/vite"), path.join(root, "node_modules/vite"));
+    const linked = buildInputHash(root, inputOptions);
+    assert.notEqual(linked, baseline, "经中间目录软链解析的工具链输入必须参与指纹");
+    writeBuildManifest(outDir, linked);
+    assert.equal(isBuildFresh(root, outDir, inputOptions), true);
+    writeFixtureFile(root, "synthetic-store/vite/package.json", '{"name":"vite","version":"0.0.1"}\n');
+    assert.equal(isBuildFresh(root, outDir, inputOptions), false, "软链目标的修改必须使构建失效");
   });
 });
 
