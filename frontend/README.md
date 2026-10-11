@@ -12,6 +12,8 @@ Grok2API 的管理端 SPA，用于管理账号池、模型路由、客户端密�
 
 ## 本地开发
 
+- Node.js ≥ 22（CI 固定 Node 22；仓库通过 `frontend/package.json` 的 `engines` 声明）；包管理器使用 `packageManager` 声明的 pnpm 12.10.1。
+
 先启动根目录中的 Go 后端，再运行：
 
 ```bash
