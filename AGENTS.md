@@ -5,13 +5,13 @@
 
 ## 0. 适用范围、判定方式与失败后果（META）
 
-| 项         | 定义                                                                                                     |
-| ---------- | -------------------------------------------------------------------------------------------------------- |
-| 适用主体   | 人类贡献者、自动化代理（含子代理）、维护线负责人；三者同受约束                                           |
-| 触发时机   | 写入前（§9/§2）、提交前（§11）、PR/合并前（§3/§4/§7）、发布前（§8）                                      |
-| 判定方式   | **机器门禁** = 有命令与退出码（表见 §14.4）；**评审准则** = 无门禁、人工判断，违反须在 PR/汇报中说明理由 |
-| 失败后果   | 见 META-4；P0/P1 阻塞合并与发布，P2/P3 只登记                                                            |
-| 规则元信息 | 每条规则标注适用主体、判定方式；未标注判定的条目一律视为评审准则                                         |
+| 项         | 定义                                                                                                      |
+| ---------- | --------------------------------------------------------------------------------------------------------- |
+| 适用主体   | 人类贡献者、自动化代理（含子代理）、维护线负责人；三者同受约束                                            |
+| 触发时机   | 写入前（§9/§2）、提交前（§11）、PR/合并前（§3/§4/§7）、发布前（§8）                                       |
+| 判定方式   | **机器门禁** = 有命令与退出码（表见 BIND-4）；**评审准则** = 无门禁、人工判断，违反须在 PR/汇报中说明理由 |
+| 失败后果   | 见 META-4；P0/P1 阻塞合并与发布，P2/P3 只登记                                                             |
+| 规则元信息 | 每条规则标注适用主体、判定方式；未标注判定的条目一律视为评审准则                                          |
 
 ### META-1 规则必须可判定
 
@@ -27,12 +27,8 @@
 
 ### META-4 优先级与阻塞语义
 
-- **P0**：安全、数据损坏、计费/额度/审计不变量失效 → 立即阻塞。
-- **P1**：必需检查失败或未运行、新增架构/预算/结构违规、生产隔离失败 → 阻塞阶段验收与发布。
-- **P2**：已登记且未扩张的存量债务 → 不阻塞，按棘轮只许持平或下降。
-- **P3**：无缺陷证据的改进建议 → 只登记，不扩大任务。
-
-规则与 P 级绑定：违反 §2/§3/§4/§7 的机器门禁 = P1；违反 §13 = P0；违反 §10 的虚假通过 = P1；其余见各节。
+- 阻塞语义：P0/P1 阻塞合并与发布；P2 不阻塞，按棘轮只许持平或下降；P3 只登记，不扩大任务。P0–P3 的完整定义见 §6。
+- 规则与 P 级绑定：违反 §2/§3/§4/§7 的机器门禁 = P1；违反 §8 的发布前置与版本载体一致性门禁 = P1；违反 §13 的 SEC-1/SEC-3/SEC-4 = P0、SEC-2 = P1；违反 §10 的虚假通过 = P1；其余见各节。
 
 ### META-5 编号稳定
 
@@ -43,7 +39,7 @@
 - 本仓库是 [`chenyme/grok2api`](https://github.com/chenyme/grok2api) 的衍生维护线，不是无关的独立重写。
 - 上游对外行为契约优先，其**载体**是 `backend/api-baseline.txt`、`make swagger` 的精确 diff、`backend/api-baseline.txt` 覆盖不到的公开协议由 E2E 用例固定。偏离须在 PR 说明理由、影响与回滚方式；通用修复优先采用可回馈上游的实现。
 - `origin` 必须指向 `https://github.com/JasmineTony/grok2api.git`，`upstream` 指向 `https://github.com/chenyme/grok2api.git`。推送前执行 `git remote -v`（评审准则，无自动化校验），**禁止推送 upstream**。
-- 技术栈与版本不在本文件复制，以 `backend/go.mod`、`frontend/package.json` 为准（§14.2）。
+- 技术栈与版本不在本文件复制，以 `backend/go.mod`、`frontend/package.json` 为准（BIND-2）。
 - 架构重构不默认授权改变 API、模型路由 ID、凭据/数据库格式、鉴权、计费、账号范围、审计或取消语义；不可逆迁移与生产发布单独确认（§8）。
 - 在维护分支分阶段提交；草稿 PR/CI 验证不等于允许合并 `main`、发布或部署。合并 `main`、创建 tag/Release、推送生产镜像属不可逆操作，逐次单独授权并登记证据（§8）。
 
@@ -117,13 +113,13 @@
 - 覆盖订阅、定时器、请求/流取消、重复操作、StrictMode 和边界入参；按生命周期实际断言清理。
 - 可将 hook 与展示职责分离以单独设置 100% 门槛，不能为了覆盖率改变行为或隐藏未测试分支。
 - 新增 hook 必须在同一次改动内加入阈值，或登记未纳入的原因（不得静默留在门槛外）。
-- 判定：`vitest.config.ts` 的阈值条目与覆盖率报告一致；当前纳入数量见 §5。
+- 判定：`frontend/vitest.config.ts` 的 `thresholds` 条目与覆盖率报告一致；纳入条目数以该文件的 `thresholds` 为准，不在本文件复制数字（META-2）。
 
 ### TEST-3 关键路径组件集成测试（评审准则 + CI 硬门禁）
 
 - 登录/鉴权、导入与凭据刷新、额度/模型封锁、审计筛选、客户端密钥增删、设置冲突、版本更新等均需覆盖 UI → API → 状态/错误。
 - 网络边界可替换，被测业务组件、hook、decoder 与状态流保持真实；不能只检查 mock 调用次数。
-- 判定：评审准则；CI 的「集成用例 0 跳过」断言是唯一硬门禁（§7）。
+- 判定：评审准则；CI 步骤 `Assert required integration tests ran`（`.github/workflows/ghcr-image.yml`）的「集成用例 0 跳过」断言是唯一硬门禁（§8）。
 
 ### TEST-4 禁止弱化测试（评审准则）
 
@@ -160,20 +156,20 @@
 
 - 新增或完成重构的 `.ts`/`.tsx` 与生产 Go 文件 ≤600 行；存量豁免必须在阶段基线中明确，不得把未超限文件推过阈值。
 - 判定：前端 `pnpm check:structure`（扫描 `src/**/*.ts(x)`，排除 `*.test.*`/`*.spec.*`/`*.d.ts`）与后端 `go run ./tools/structurecheck`（排除 `*_test.go`、`docs/`、`testdata/`）。
-- 行数仅是边界，不是只搬文件即可通过的理由。测试文件不在该门禁范围内（存量 >600 行测试文件已在 §5 登记）。
+- 行数仅是边界，不是只搬文件即可通过的理由。测试文件不在该门禁范围内（存量 >600 行测试文件登记在 `frontend/AUDIT.md` 的未达标/未覆盖章节）。
 
 ### REV-2 函数不超过 50 行（前后端双侧机器门禁）
 
 - 新增或完成重构的函数、组件、回调 ≤50 行；拆分应命名实际职责，不能生成无语义 helper（后者为评审准则）。
 - 判定：同 REV-1 的两个工具；未完成阶段的旧函数不得继续扩大。
-- 已知口径边界（登记为 P2，不得据此声称已全覆盖）：前端 `check-structure.mjs` 要求函数具名，**匿名内联回调不参与判定**；后端 `structurecheck` 按函数体行数计算（含签名）。
+- 已知口径边界（登记为 P2，不得据此声称已全覆盖）：前端 `check-structure.mjs` 只对**具名**函数/方法/具名回调按函数体行数判定，匿名内联回调的行数不单独判定（其嵌套计入 REV-3 的口径差异）；后端 `structurecheck` 按函数体行数计算（含签名）。
 
 ### REV-3 控制流嵌套最多 3 层（前后端双侧机器门禁）
 
 - `if`/`for`/`try`/三元链最多 3 层，优先提前返回、明确条件与职责拆分。
-- 统一口径：计入 `if`（含 `else` 分支，但 **`else if` 与 `if` 同层**）/ `for` / `range` / `switch` / type switch / `select`；`case` / `comm` 子句体不额外加层；函数字面量是独立作用域（Go 侧按 `<closure>` 上报，前端侧归属最近外层具名作用域）。`else { if ... }` 比 `else if` 多一层，属有意保留的不对称口径。
+- 统一口径：计入 `if`（含 `else` 分支，但 **`else if` 与 `if` 同层**）/ `for` / `range` / `switch` / type switch / `select`；`case` / `comm` 子句体不额外加层；`else { if ... }` 比 `else if` 多一层，属有意保留的不对称口径。两侧对**具名**作用域与 `case` / `comm` / `else if` 的口径完全一致；函数字面量两侧都参与判定，但**深度基线不同**：后端 `structurecheck` 把函数字面量当独立作用域、从 0 起算深度并上报为 `<closure>`（键含定位）；前端 `check-structure.mjs` 不为其新建键，而是把匿名回调体内的嵌套累加到最近外层具名作用域的当前深度上。**这是已登记的口径差异（P2，不是漏报）**：同一段代码，当匿名回调出现在已有 1 层嵌套的位置时，前端报 5 层、后端报 4 层，两侧都会判失败。
 - 判定：同 REV-1 的两个工具，> 3 层即失败，存量由两侧 `structure-baseline.json` 棘轮冻结。
-- **「0 越限」必须附带参与判定的作用域总数**，以证明不是漏报通道造成的假通过（§10 的 EVID-3）。两个工具均已输出该行：`参与判定的作用域（REV-3）：N 个`（前端 404 文件 / 2524 个作用域，后端 478 个生产文件 / 5472 个作用域，见两个 AUDIT）。
+- **「0 越限」必须附带参与判定的作用域总数**，以证明不是漏报通道造成的假通过（§10 的 EVID-3）。两个工具均已输出该行：`参与判定的作用域（REV-3）：N 个`；当次实测值以工具输出为准，历次实测与口径见 `frontend/AUDIT.md` / `backend/AUDIT.md`（META-3：逐轮实测不写在本文件）。
 
 ### REV-4 使用业务命名（评审准则）
 
@@ -197,17 +193,17 @@
 ## 5. 债务与基线（棘轮）
 
 - 本文件只登记**当前基线**与指针；历史演进、逐轮实测与更正记录见 `frontend/AUDIT.md`、`backend/AUDIT.md`（§12）。
-- 结构基线（REV-1/REV-2/REV-3）：`frontend/structure-baseline.json` 与 `backend/structure-baseline.json` 的 `files`/`functions`/`nesting` **当前均为空** → 存量 0 项，只允许持平或下降；新增越限即违规。
+- 结构基线（REV-1/REV-2/REV-3）：`frontend/structure-baseline.json` 与 `backend/structure-baseline.json` 的 `files`/`functions`/`nesting` **当前均为空**（复现：`pnpm check:structure`（`frontend/`）、`cd backend && go run ./tools/structurecheck`）→ 存量 0 项，只允许持平或下降；新增越限即违规。
 - 契约基线：`backend/api-baseline.txt`（由 `go run ./tools/apicheck --update` 生成）；当前条数以 `go run ./tools/apicheck` 的输出为准（数字不在此复制，META-2）。
 - 前端跨 feature 依赖：`frontend/.dependency-cruiser.cjs` 的 `frozenCrossFeatureDebt` 为空对象 → 任何新增跨 feature 直接依赖即违规。
 - 覆盖率与用例数、体积实测值、hook 阈值条目数：以 `pnpm test:ui:coverage`、`pnpm check:budget` 的当次输出为准，历史值见两个 AUDIT。
 - 测试分层现状（已决策接受）：`pnpm test` 运行纯逻辑 `src/**/*.test.ts`（node:test，Node 环境），`pnpm test:ui:coverage` 运行组件/集成 `src/**/*.test.tsx`（Vitest + jsdom）。双运行器不迁移（理由见 `frontend/AUDIT.md` 的 FE-08）。
-- 已登记的 P2/P3 未收口项（含前端 >600 行测试文件、未纳入 100% 阈值的 hook、匿名回调不参与 REV-2 判定、`uses:` 未固定 SHA 等）见两个 AUDIT 的「未达标/未覆盖」章节；按 META-4 不阻塞，但不得扩张。
+- 已登记的 P2/P3 未收口项（含前端 >600 行测试文件、未纳入 100% 阈值的 hook、匿名回调行数不参与 REV-2 判定、REV-3 两侧深度基线差异等）见两个 AUDIT 的「未达标/未覆盖」章节；按 META-4 不阻塞，但不得扩张。
 - 棘轮更新必须满足 CHG-5：只在工作区静止时执行，并记录 `git rev-parse HEAD` 与在跑任务数。
 
 ## 6. 文档与验收状态
 
-- 本文件编号稳定；条目废弃保留编号，不复用。规则变化同步配置、命令、README 与审计报告（META-5）。
+- 编号稳定性（条目废弃保留编号、不复用）与规则变更的同步要求见 META-5。
 - 问题记录包含编号、`file:line`/日志证据、现有/新增、影响、优先级、阶段、验证方法、结果与回滚点。
 - P0：安全、数据损坏、范围/计费/审计不变量失效，立即阻塞。
 - P1：必需检查失败/未运行、预算或新架构违规、生产环境隔离失败，阶段验收阻塞。
@@ -256,6 +252,7 @@ git remote -v
 - 发布后登记（必须附 run id + step + conclusion，见 EVID-2）：在两个 `AUDIT.md` 中记录 tag、commit sha、CI run id 与镜像 digest；任何未达成的环节按 §6 记为 `Blocked`/`Failed` 并写明精确补救步骤，不得以「配置已写好」代替。
 - 固有局限（必须一并登记）：tag 指向发布提交，其 `AUDIT.md` 不含 tag run 之后的登记；如需 tag 自带登记只能重打 tag（不可逆，默认不做）。
 - 授权与边界：合并 `main`、创建 tag/Release、推送镜像、删除/重建远端仓库或容器包属不可逆操作，逐次单独授权；`upstream` 永不推送。执行前必须逐项列出并确认外部依赖（CI 包权限、Secrets、Release、Webhook、镜像 tag、下游消费者），无法确认则阻塞（§11 的 CHG-9）。
+- 绑定事实：`ghcr.io` 容器包必须与 `origin` 仓库建立链接，否则 `GITHUB_TOKEN` 即使声明 `packages: write` 也会以 `permission_denied: write_package` 失败（证据与根因见 `backend/AUDIT.md` §11）。
 
 ## 9. 执行与委派纪律（EXEC）
 
@@ -299,7 +296,7 @@ git remote -v
 
 ### EVID-1 未运行不得称通过（评审准则，可检索）
 
-`Passed` 只能来自**实际执行**的命令。配置已写好、脚本已存在、静态读取到步骤 → 只能记 `Pending` 或「部分实施」。
+`Passed` 只能来自**实际执行**的命令。配置已写好、脚本已存在、静态读取到步骤 → 只能记 `Pending` 或「部分实施」。其余状态：`Failed` = 命令实际执行且退出码非 0 或断言失败；`Skipped` = 命令主动跳过且必须记录跳过原因；`Blocked` = 因环境/外部依赖不足未执行，必须写明精确原因与可复现命令；四者不得互相替代。
 
 ### EVID-2 Passed 三要素（评审准则，可检索）
 
@@ -406,7 +403,7 @@ git remote -v
 
 ### SEC-2 供应链（P1，评审准则）
 
-CI 的 `uses:` 应固定到 commit SHA（当前为 tag，登记为 P3）；新增依赖须说明现有能力不足、版本兼容性、许可证、体积与回滚方式；`frontend/pnpm-workspace.yaml` 的 `minimumReleaseAge` 策略不得为个别包随意放宽。
+CI 的 `uses:` 已全部固定到 commit SHA（`.github/workflows/` 下每条均形如 `owner/repo@<40 位 sha> # vX.Y.Z`；核验命令 `rg -n "uses:" .github/workflows`）；**新增或更新 action 时必须继续固定到 SHA，不得退回 tag**。新增依赖须说明现有能力不足、版本兼容性、许可证、体积与回滚方式；`frontend/pnpm-workspace.yaml` 的 `minimumReleaseAge` 策略不得为个别包随意放宽。
 
 ### SEC-3 外部调用与网络（P0，评审准则）
 
@@ -442,21 +439,23 @@ CI 的 `uses:` 应固定到 commit SHA（当前为 tag，登记为 P3）；新�
 
 ### BIND-4 机器门禁表
 
-| 规则       | 判定命令（工作目录）                                                                 | 基线 / 配置                                          | CI 步骤 | 违反后果 |
-| ---------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------- | ------- | -------- |
-| DEV-2      | `pnpm typecheck`、`pnpm lint`（`frontend/`）                                          | `eslint.config.js`                                   | Verify  | P1       |
-| DEV-3      | `pnpm check:architecture`（`frontend/`）                                              | `.dependency-cruiser.cjs`                            | Verify  | P1       |
-| DEV-4      | `pnpm verify`（`frontend/`）                                                          | `frontend/package.json`                              | Verify  | P1       |
-| DEV-5      | `pnpm format:check`、`pnpm install --frozen-lockfile`（`frontend/`）                  | `.prettierrc`、`.gitattributes`                      | Verify  | P1       |
-| TEST-1/2   | `pnpm test:ui:coverage`（`frontend/`）                                                | `vitest.config.ts`                                   | Verify  | P1       |
-| TEST-5     | `pnpm test:e2e`（`frontend/`）                                                        | `playwright.config.ts`                               | Verify  | P1       |
-| TEST-6     | `bash scripts/verify.sh`（`backend/`）                                                | `backend/tools/*`                                    | Verify  | P1       |
-| REV-1/2/3  | `pnpm check:structure`（`frontend/`）、`go run ./tools/structurecheck`（`backend/`）  | 两侧 `structure-baseline.json`                       | Verify  | P1       |
-| REV-5      | `pnpm check:budget`（`frontend/`）                                                    | `bundle-budget.json`                                 | Verify  | P1       |
-| REL 版本载体 | CI 步骤「Verify version carriers are aligned」                                        | `VERSION`、`frontend/package.json`                   | Verify  | P1       |
-| EVID-3     | `pnpm test:gates`（`frontend/`）                                                      | `scripts/self-test-gates.mjs`                        | Verify  | P1       |
+| 规则         | 判定命令（工作目录）                                                                  | 基线 / 配置                                                                                | CI 步骤 | 违反后果 |
+| ------------ | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------- | -------- |
+| DEV-2        | `pnpm typecheck`、`pnpm lint`（`frontend/`）                                          | `frontend/eslint.config.js`                                                                | Verify  | P1       |
+| DEV-3        | `pnpm check:architecture`（`frontend/`）                                              | `frontend/.dependency-cruiser.cjs`                                                         | Verify  | P1       |
+| DEV-4        | `pnpm verify`（`frontend/`）                                                          | `frontend/package.json` 的 `verify` 脚本                                                   | Verify  | P1       |
+| DEV-5        | `pnpm format:check`、`pnpm install --frozen-lockfile`（`frontend/`）                  | `frontend/.prettierrc`、`.gitattributes`（仓库根）                                         | Verify  | P1       |
+| TEST-1/2     | `pnpm test:ui:coverage`（`frontend/`）                                                | `frontend/vitest.config.ts`                                                                | Verify  | P1       |
+| TEST-3       | CI 步骤 `Assert required integration tests ran`（`.github/workflows/ghcr-image.yml`） | `.github/workflows/ghcr-image.yml`                                                         | Verify  | P1       |
+| TEST-5       | `pnpm test:e2e`（`frontend/`）                                                        | `frontend/playwright.config.ts`                                                            | Verify  | P1       |
+| TEST-6       | `bash scripts/verify.sh`（`backend/`）                                                | `backend/scripts/verify.sh`、`backend/structure-baseline.json`、`backend/api-baseline.txt` | Verify  | P1       |
+| REV-1/2/3    | `pnpm check:structure`（`frontend/`）、`go run ./tools/structurecheck`（`backend/`）  | `frontend/structure-baseline.json`、`backend/structure-baseline.json`                      | Verify  | P1       |
+| REV-5        | `pnpm check:budget`（`frontend/`）                                                    | `frontend/bundle-budget.json`                                                              | Verify  | P1       |
+| REL 版本载体 | CI 步骤「Verify version carriers are aligned」                                        | `VERSION`、`frontend/package.json`                                                         | Verify  | P1       |
+| EVID-3       | `pnpm test:gates`（`frontend/`）                                                      | `frontend/scripts/self-test-gates.mjs`                                                     | Verify  | P1       |
 
 ### BIND-5 只有评审准则、没有机器门禁的规则
 
-DEV-1、DEV-3 的复用/职责部分、DEV-5 的编码与文本比对、TEST-3、TEST-4、TEST-7、REV-2 的匿名回调边界、REV-4、REV-5 的后端性能、SEC-1…SEC-4、§9 全部、§10 除 EVID-3、§11 全部、§12 全部。
+DEV-1、DEV-3 的复用/职责部分、DEV-5 的编码与文本比对、TEST-4、TEST-7、REV-2 的匿名回调行数边界、REV-4、REV-5 的后端性能、SEC-1…SEC-4、§9 全部、§10 除 EVID-3、§11 全部、§12 全部。
+未在上文列出的条目（§0 的 META-1…META-5、§1、§6、§8 除版本载体，以及上述章节中未列入 BIND-4 的部分）同样按评审准则执行。
 违反这些条目必须说明理由，**不得声称「已由门禁保证」**。

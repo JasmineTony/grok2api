@@ -135,12 +135,17 @@ type violation struct {
 	value int    // 实测度量值：文件行数 / 函数体行数 / 嵌套深度
 }
 
-// key 返回基线键：文件用相对路径，函数与嵌套用「相对路径#函数名」。
+// key 返回基线键：文件用相对路径，具名函数用「相对路径#函数名」，闭包再追加函数体起始行。
+// 同文件内每个闭包因此各有稳定且互不相同的键，避免被 keepMax 合并成一个键后互相掩盖。
 func (v violation) key() string {
 	if v.kind == fileKind {
 		return v.path
 	}
-	return v.path + "#" + v.name
+	key := v.path + "#" + v.name
+	if v.name == closureName {
+		return fmt.Sprintf("%s@%d", key, v.line)
+	}
+	return key
 }
 
 // severity 是 --list 的严重度排序依据：度量值相对阈值的超出比例。
@@ -254,14 +259,14 @@ func countLines(data []byte) int {
 }
 
 // checkDecls 检查文件内每个具名函数，以及每个函数字面量（独立作用域，上报为 <closure>）。
+// 函数字面量既可能在具名函数体内，也可能在包级声明（var / const 的初始化器）中；后者若不计入，
+// 就是 REV-2 / REV-3 的漏报通道。两类声明树互不包含，因此同一声明不会被重复计数。
 func (s *scanner) checkDecls(rel string, parsed *ast.File) {
 	for _, decl := range parsed.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Body == nil {
-			continue
+		if fn, isFunc := decl.(*ast.FuncDecl); isFunc && fn.Body != nil {
+			s.checkFunc(rel, funcDeclName(fn), fn.Body)
 		}
-		s.checkFunc(rel, funcDeclName(fn), fn.Body)
-		ast.Inspect(fn.Body, func(node ast.Node) bool {
+		ast.Inspect(decl, func(node ast.Node) bool {
 			if literal, isLiteral := node.(*ast.FuncLit); isLiteral {
 				s.checkFunc(rel, closureName, literal.Body)
 			}
@@ -401,7 +406,7 @@ type baseline struct {
 	Nesting   map[string]int `json:"nesting"`
 }
 
-// currentBaseline 把当前越限记录折算成基线形态；同键取最大值，避免多个函数字面量互相掩盖。
+// currentBaseline 把当前越限记录折算成基线形态；同键取最大值（闭包键已含行号，这里是同名键兜底）。
 func (s *scanner) currentBaseline() (map[string]int, map[string]int, map[string]int) {
 	files := map[string]int{}
 	functions := map[string]int{}

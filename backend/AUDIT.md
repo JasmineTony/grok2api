@@ -741,3 +741,120 @@ v0.1.2 发布后继续清空已登记存量：**BE-01 的 >1000 行文件类清�
 
 - **未运行（如实登记）**：`bash scripts/verify.sh`（含全量 `go test ./...`）、`go test ./... -count=1`、`go build ./...`、`go test -race ./...` 未在本轮复跑（本轮改动为文档与 `structurecheck` 的一行输出，未触及业务代码）；`go test ./tools/...` 已覆盖被改工具本身。
 - **回滚**：`git revert <本提交>`；无数据、协议、配置或依赖迁移。
+
+## 20. 2026-10-11（续四）门禁自证补强与结构门禁两处真实缺陷修复（BE-18）
+
+### 20.1 背景与取证方式
+
+§18/§19 交付 `tools/structurecheck`、`tools/apicheck` 与 REV-3 的「参与判定的作用域」输出后，本轮以 **3 组独立只读对抗审查**对上一轮产物取证：① `AGENTS.md` 规则自洽（交叉引用、编号唯一性、BIND-3/BIND-4 与仓库实际命令比对、自相矛盾）；② 后端门禁工具与 CI 接线（口径边界、夹具、退出码、workflow 步骤）；③ 前后端 REV-3 口径交叉验证（7 组语义等价夹具，同一输入喂两套工具比对）。另加主代理的独立复现。
+
+审查发现 **2 处结构门禁真实缺陷**（都会让「0 越限」变成假通过）、**1 处前后端口径差异**与 **6 处 `AGENTS.md` 规则失真**，已全部修复并补夹具与判别力证据。
+
+### 20.2 缺陷 1：包级函数字面量是漏报通道（P1，已修）
+
+| 项 | 内容 |
+| --- | --- |
+| 现象 | `checkDecls` 只遍历 `parsed.Decls` 里的 `*ast.FuncDecl`，`GenDecl` 初始化器里的 `*ast.FuncLit`（`var h = func(){…}`、`var hs = []func(){…}`、`var m = map[string]func(){…}`）既不参与 REV-2/REV-3，也不计入 `scopeCount` |
+| 最小复现 | 夹具 = 包级闭包 + 体内 4 层嵌套；`cd backend && go run ./tools/structurecheck --root <夹具> --list` → 「扫描生产 Go 文件 1 个，当前越限 0 项」，exit 0；check 路径 → 「参与判定的作用域（REV-3）：0 个」 |
+| 后果 | 直接违反 REV-3 与 §10 EVID-3 的「0 越限必须附带作用域总数以证明不是漏报」——该数字在这条路径上恰为 0，即判定为假通过 |
+| 修复 | `main.go` 的 `checkDecls` 改为对整棵声明树 `ast.Inspect(decl, …)`；`FuncDecl` 与 `GenDecl` 两棵声明树互不包含，闭包仍只计一次（`testdata/deep_nesting.go` 的 `closureNesting` 仍只上报 1 项） |
+| 夹具 | 负样本 `testdata/package_closure.go`（包级闭包体内 4 层）；正样本 `testdata/clean.go` 新增 `cleanPackageClosure`（3 层，证明不是无条件报错） |
+
+### 20.3 缺陷 2：闭包基线键碰撞会掩盖恶化（P1，已修）
+
+| 项 | 内容 |
+| --- | --- |
+| 现象 | 闭包统一用常量键 `<路径>#<closure>`，`currentBaseline` 用 `keepMax` 合并同文件全部闭包 → 同文件 A 闭包 6 层、B 闭包 4 层时，若 A 降到 4 而 B 升到 5，该键仍为 5 < 冻结的 6，被判「已整改」，**B 的恶化被掩盖** |
+| 最小复现 | 夹具 v1（A=6 / B=4）→ `--update` 冻结 `probe.go#<closure>` = 6；夹具 v2（A=4 / B=5）→ check 输出「越限嵌套：当前 1 个，基线 2 个」「已整改 2 项」，**exit 0** |
+| 修复 | 闭包键改为 `<相对路径>#<closure>@<函数体 { 行号>`（`main.go` 的 `key()`）；具名函数/方法/文件键不变；`keepMax` 仅作同名键兜底 |
+| 修复后验证 | 同夹具 v2 → 「超限嵌套继续恶化：`two_closures.go#<closure>@<B 行>` = 5（基线 4）」，exit 1；主代理另以 `probe.go#<closure>@15 = 5（阈值 3）` 独立复现同一结论 |
+| 键方案取舍 | 选**行号**而非「文件内闭包序号」：与 `--list` 的 `路径:行号` 定位口径一致、可直接回指源码；代价是闭包整体上下移动会让键变化（旧键报「已整改」、新键报「新增」并**失败**——方向是 fail-fast，不会静默通过）。两侧基线当前均为空对象，无冻结闭包键，抖动成本为零。残余局限：同一物理行内两个都越限的闭包仍共享一个键（越限闭包要求体 >50 行或嵌套 >3 层，实践中不可达） |
+
+### 20.4 前后端 REV-3 口径差异（P2，已登记，非漏报）
+
+7 组语义等价夹具交叉比对结论：**具名**作用域与 `case`/`comm`/`else if` 的口径两侧完全一致；函数字面量两侧都参与判定，但**深度基线不同**：
+
+- 后端 `structurecheck`：函数字面量是独立作用域，从 0 起算深度，上报为 `<closure>`（键含定位）；
+- 前端 `check-structure.mjs:193-201`：匿名内联回调不新建键（归属最近外层具名作用域），且**不重置深度**——回调体内嵌套累加到该具名作用域的当前深度。
+
+实测（同一段代码：外层 1 层 + 匿名回调内 4 层）：后端报 `<closure> = 4`、前端报 `closureAtDepth = 5`。两侧都会判失败（**不是漏报**），差异只在数值。已按 §10 EVID-8 在 `AGENTS.md` 的 REV-3 口径段写明并标注 P2；**本项不改变任何一侧的行为**（改行为会动到前端 404 个文件的判定与基线语义，收益不足）。
+
+### 20.5 门禁自证补强（§10 EVID-3）
+
+| 工具 | 补强内容 |
+| --- | --- |
+| `structurecheck` | 新增 `TestCheckReportsScopeCount`（作用域总数断言）、`TestListDetectsPackageLevelClosure`、`TestCheckFailsOnPackageLevelClosureNesting`、`TestScopeCountIncludesPackageLevelClosures`、`TestScopeCountCountsPackageLevelLiteralForms`（var 组 / `[]func()` / `map[string]func()` 各计一次）、`TestClosureBaselineKeysDoNotMaskEachOther`；`--list` 钉死清单由 5 项改为 6 项；闭包键断言同步为含行号形式 |
+| `apicheck` | `main()` 抽出可测入口 `run(args []string, stdout, stderr io.Writer) int`（退出码 0/1/2 与 stderr 文案逐条不变，纯重构）；新增 `testdata/fixture`（1 导出函数 + 1 导出类型 + 1 导出常量）与 6 个端到端用例（正样本、新增/删除/签名变化三个负样本、`--update` 写盘、基线缺失 exit 2）；`valueEntries` 补登记已知口径边界（iota 续行常量不渲染取值：实测 2062 条中 7 条无取值 = const 6 + var 1） |
+
+**判别力证据（§3 TEST-7；全部用 Go `-overlay` 注入错误变体，变体脚本与 overlay JSON 只存在于会话 scratch，不入库）**
+
+| 变体 | 结果 |
+| --- | --- |
+| structurecheck：恢复旧 `checkDecls`（跳过 `GenDecl`） | exit 1，8 个用例 FAIL，含「包级函数字面量未被 `--list` 检出」「含 4 层包级闭包的夹具应判失败，实际退出码 0」 |
+| structurecheck：恢复旧 `key()`（常量闭包键） | exit 1，3 个用例 FAIL，含「越限嵌套：当前 1 个，基线 2 个」+「已整改：`two_closures.go#<closure>@18` / `@3`」（B 的恶化被掩盖） |
+| apicheck：`reportDiff` 恒判一致 | exit 1，3 个负样本 FAIL |
+| apicheck：基线缺失不报错 | exit 1，仅 `TestRunReportsMissingBaseline` FAIL |
+| apicheck：`--update` 不写盘 | exit 1，`TestRunUpdateWritesBaselineFile` + 4 个依赖夹具基线的用例 FAIL |
+| apicheck：删除检测失效 | exit 1，`TestRunDetectsRemovedExportInFixture`、`TestRunDetectsSignatureChangeInFixture` FAIL（新增用例仍通过 → 每个负样本各自命中自己的路径，不是同一断言重复） |
+
+### 20.6 `AGENTS.md` 规则失真更正（§10 EVID-8）
+
+| 编号 | 条目 | 原值 | 新值 | 复现命令 |
+| --- | --- | --- | --- | --- |
+| C-41 | `AGENTS.md` SEC-2 的 `uses:` 固定状态 | 「当前为 tag，登记为 P3」 | **已全部固定到 40 位 SHA**；新增/更新 action 必须继续固定 | `rg -n "uses:" .github/workflows` → 22 处全部形如 `owner/repo@<40 位 sha> # vX.Y.Z`（独立复核：SHA 22 处 / TAG 0 处） |
+| C-42 | `AGENTS.md` REV-2 的「匿名内联回调不参与判定」 | 与实现相反 | 改为「只对**具名**函数/方法/具名回调按函数体行数判定」 | 读 `frontend/scripts/check-structure.mjs:193-201` |
+| C-43 | `AGENTS.md` REV-3 的「统一口径」 | 未说明深度基线差异 | 补「后端独立从 0 计 / 前端累加到外层具名作用域当前深度」并标注 P2 | §20.4 夹具：后端 4 / 前端 5 |
+| C-44 | `AGENTS.md` TEST-3 的 CI 硬门禁指针 | 误指 §7 | 指向 §8 与 `.github/workflows/ghcr-image.yml:86` 的 `Assert required integration tests ran` | 读该 workflow |
+| C-45 | `AGENTS.md` 的 `§14.2` / `§14.4` | 编号形式不存在（§14 的子节是 `BIND-n`） | 改为 `BIND-2` / `BIND-4` | 全文检索 `§14\.\d` → 0 处 |
+| C-46 | `AGENTS.md` REV-3 的当次实测作用域数（写在规则文件里） | `2524` / `5472` | 删除具体数字，改为「以工具输出为准 + 指向两个 AUDIT」（META-3：逐轮实测不写规范文件） | `go run ./tools/structurecheck` → 见 §20.7 |
+
+其余同批修正（均在同一次改动内完成，未改任何编号）：BIND-4 新增 `TEST-3` 行并从 BIND-5 的枚举中移除、BIND-4 基线列补目录前缀、META-4 的 P 级绑定精确化为「SEC-1/SEC-3/SEC-4 = P0、SEC-2 = P1」并补 §8、META-4/META-5 与 §6 的重复定义按 DOC-1 去重、EVID-1 补 `Failed`/`Skipped`/`Blocked` 语义、§8 恢复「`ghcr.io` 容器包必须与 `origin` 仓库建立链接」的绑定事实（根因见 §11）、§5 补复现命令、BIND-5 补未列条目说明。
+
+### 20.7 验证（本机实测）
+
+| 检查 | 结果 |
+| --- | --- |
+| `go build ./...` / `go vet ./...` | exit 0 |
+| `go run ./tools/structurecheck` | exit 0；478 个生产文件，超限文件 0 / 超限函数 0 / 越限嵌套 0，参与判定的作用域 **5474**（修复前 5472；两个 +1 已分别定位：本修复计入的真实包级闭包 `internal/transport/http/inference/voice_ws_handler.go:27`，以及 `apicheck` 抽出 `run()` 引入的函数） |
+| `go run ./tools/apicheck` | exit 0；基线条目 2062，当前 2062，逐条一致（真实基线未被改动：`git diff --numstat -- backend/api-baseline.txt` 为空） |
+| `go test ./tools/... -count=1` | exit 0（`apicheck` / `structurecheck` 均 ok） |
+| `go test ./... -count=1` | exit 0；66 包 ok、0 FAIL、0 跳过（时点见下） |
+| 前端 `pnpm verify` 12 步 | 逐条单独执行全部 exit 0；覆盖率 121 文件 / 1471 用例，98 / 94.3 / 98.28 / 98.68；`check:structure` 404 文件 / 2524 作用域 / 0 越限；`test:gates` 15 用例（含 10 个必须失败）；预算全部在阈值内 |
+
+- **时点说明（EVID-5/EVID-6）**：`go test ./... -count=1` 与前端 `pnpm verify` 的**单命令**执行时点早于本轮修复（`pnpm verify` 的单命令形式还因并发写者改 `frontend/AUDIT.md` 在第 1 步 `format:check` 失败；12 步改为逐条单独执行后全绿）。修复收敛后由主代理重跑的单命令结果见同一次提交的 `frontend/AUDIT.md` 与本节后续更新。两侧基线 JSON 与 `backend/api-baseline.txt` 全程未被改动。
+- **未验证/未执行**：`go test -race ./...`（本机无 C 编译器 → Blocked，由 Linux CI 覆盖）；`bash scripts/verify.sh`（本机 PATH 无 `bash`）；CI 远端执行结果需推送后登记。
+- **回滚**：门禁修复与文档更正可分别 `git revert`；无数据、协议、配置或依赖迁移。
+
+## 21. 2026-10-11（续五）修复收敛后的单命令全量门禁复测 + 一处 flaky 用例登记（BE-19）
+
+§20.7 留出的「修复收敛后由主代理重跑的单命令结果」如下。所有命令均在 `E:\grok2api\backend`（或 `frontend/`）原样执行，退出码在命令后立即读取 `$LASTEXITCODE`。
+
+### 21.1 复测结果（本机实测）
+
+| 检查 | 结果 |
+| --- | --- |
+| `go build ./...` / `go vet ./...` | exit 0 |
+| `go run ./tools/structurecheck` | exit 0；478 个生产文件，超限文件 0 / 超限函数 0 / 越限嵌套 0，参与判定的作用域 **5474** |
+| `go run ./tools/apicheck` | exit 0；基线条目 2062，当前 2062，逐条一致 |
+| `go test ./tools/... -count=1` | exit 0（`apicheck` 3.020s、`structurecheck` 3.182s） |
+| `go test ./... -count=1` | **exit 1**；77 个包中 65 `ok` / 11 `[no test files]` / **1 `FAIL`**，唯一失败用例见 §21.2 |
+| 前端 `pnpm verify`（单命令 12 步） | **exit 0**，逐步明细与数值见 `frontend/AUDIT.md` §20 |
+| 四个基线/契约文件 | 未被改动（`git diff --numstat -- backend/api-baseline.txt backend/structure-baseline.json frontend/structure-baseline.json frontend/bundle-budget.json` 为空） |
+
+### 21.2 flaky 用例登记（P2，既有缺陷，非本轮引入）
+
+| 项 | 内容 |
+| --- | --- |
+| 用例 | `TestWebAccountScriptsRejectConcurrentWorkForTheSameAccount`（`internal/application/account/web_account_scripts_test.go:198`） |
+| 现象 | 全量 `go test ./... -count=1` 下 FAIL：`web_account_scripts_test.go:201: context deadline exceeded`（5.71s），该包 170.541s |
+| 隔离复现 | `go test ./internal/application/account -run '^TestWebAccountScriptsRejectConcurrentWorkForTheSameAccount$' -count=1` → **exit 0**（5.104s） |
+| 根因 | 用例自身用 `context.WithTimeout(..., 3*time.Second)`（同文件 `:198`），而被测写路径进入 `db.WithContext(ctx).Transaction(...)`（`internal/infra/persistence/relational/account_repository_write.go:200`）；SQLite DSN 的 `_pragma=busy_timeout(5000)&_txlock=immediate`（`internal/infra/persistence/relational/database.go:49`）允许 5s 锁等待——满载（该包大量 `t.Parallel()` + 并发会话同时跑前端门禁）时 3s 调用方 deadline 先到期 |
+| 归属 | **既有 flaky，与本次改动无关**：本次改动只涉及 `backend/tools/**` 与文档；该用例属 `internal/application/account` |
+| 处置 | 按 §6 登记为 P2。按 TEST-4 **不得**以「扩大超时/无条件重试」掩盖；正确修法是让夹具的 deadline 大于 busy_timeout（或注入可控时钟）并给出判别力证据。本轮不做，避免夹带与范围外改动 |
+
+### 21.3 与 §20.7 的口径对齐（EVID-6）
+
+§20.7 记 `go test ./... -count=1` 为「66 包 ok、0 FAIL、0 跳过」，§21.1 记同一条命令为「65 ok + 1 FAIL」。两者**不矛盾**：有测试的包集合相同（66 个），差异只出现在 §21.2 那条对负载敏感的用例上——§20.7 的运行未与该用例争抢 CPU/锁，§21.1 的运行与另一会话的前端全量门禁并发。按 EVID-1，`go test ./...` 在本轮**只能记为 `Failed`（1 条 flaky 用例）**，不得记为 `Passed`；其「非本轮引入」的判定见 §21.2 的归属与隔离复现证据。
+
+- **未验证/未执行**：`go test -race ./...`（本机无 C 编译器 → `Blocked`，由 Linux CI 覆盖）；`bash scripts/verify.sh`（本机 PATH 无 `bash`）；`pnpm test:e2e`；CI 远端执行结果需推送后登记。
+- **回滚**：本轮无代码语义改动（门禁工具与其夹具、文档），可 `git revert`；无数据、协议、配置或依赖迁移。

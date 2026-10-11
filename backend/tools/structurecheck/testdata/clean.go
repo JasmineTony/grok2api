@@ -59,3 +59,17 @@ func cleanClosure() int {
 	}
 	return run()
 }
+
+// cleanPackageClosure 是包级函数字面量，内部最大嵌套 3 层：for(1) → if(2) → for(3)，
+// 证明包级闭包被纳入统计后不会被无条件判为越限。
+var cleanPackageClosure = func() int {
+	total := 0
+	for i := 0; i < 3; i++ {
+		if i > 0 {
+			for j := 0; j < 2; j++ {
+				total += j
+			}
+		}
+	}
+	return total
+}
