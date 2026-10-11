@@ -1,3 +1,5 @@
+import type { ReactElement } from "react";
+
 import { ShellAccountControl } from "@/app/shell-account-control";
 import { ShellBrandLink, ShellGitHubLink } from "@/app/shell-brand";
 import { ShellNavigation } from "@/app/shell-navigation";
@@ -17,7 +19,7 @@ export function ShellSidebar({
   onToggleSection,
   onNavigate,
   onOpenPasswordDialog,
-}: ShellSidebarProps) {
+}: ShellSidebarProps): ReactElement {
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden h-screen w-[288px] flex-col overflow-hidden bg-sidebar px-4 py-6 lg:flex">
       <div className="flex h-7 shrink-0 items-center justify-between px-2.5">

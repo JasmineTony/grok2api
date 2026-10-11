@@ -1,5 +1,5 @@
 import { Check, Copy } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -17,7 +17,14 @@ type CopyButtonProps = {
   onError?: (error: unknown) => void;
 };
 
-export function CopyButton({ value, className, disabled, copyLabel, onCopied, onError }: CopyButtonProps) {
+export function CopyButton({
+  value,
+  className,
+  disabled,
+  copyLabel,
+  onCopied,
+  onError,
+}: CopyButtonProps): ReactElement {
   const { t } = useTranslation();
   const [copiedValue, setCopiedValue] = useState<string | null>(null);
   const resetTimerRef = useRef<number | null>(null);

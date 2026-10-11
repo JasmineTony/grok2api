@@ -1,9 +1,20 @@
 import { z } from "zod";
 
+import type { BuildRouteMode } from "@/entities/accounts/types";
 import type { Translate } from "@/features/accounts/accounts-view-model";
 
 /** 账号编辑表单的校验契约：随账号编辑弹窗一起维护，页面只负责创建与提交。 */
-export function createAccountFormSchema(t: Translate) {
+export function createAccountFormSchema(t: Translate): z.ZodObject<{
+  name: z.ZodString;
+  enabled: z.ZodBoolean;
+  priority: z.ZodNumber;
+  maxConcurrent: z.ZodNumber;
+  minimumRemaining: z.ZodNumber;
+  cloudflareCookies: z.ZodString;
+  clearCloudflareCookies: z.ZodBoolean;
+  buildSuperEntitled: z.ZodBoolean;
+  buildRouteMode: z.ZodEnum<{ [Mode in BuildRouteMode]: Mode }>;
+}> {
   return z.object({
     name: z.string().min(1, t("errors.required")),
     enabled: z.boolean(),

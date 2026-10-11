@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { deleteImages } from "@/features/media/media-api";
@@ -10,7 +11,7 @@ import { useMediaListState } from "@/features/media/use-media-list-state";
 import { useMediaSelection } from "@/features/media/use-media-selection";
 
 /** 图库页：持有分页/搜索/选中状态与查询、删除变更；工具栏、卡片网格与确认弹窗均为独立组件。 */
-export function GalleryPage() {
+export function GalleryPage(): ReactElement {
   const { t, i18n } = useTranslation();
   const list = useMediaListState();
   const gallery = useGalleryImages({ page: list.page, pageSize: list.pageSize, search: list.normalizedSearch });

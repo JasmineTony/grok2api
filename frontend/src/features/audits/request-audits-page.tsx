@@ -1,5 +1,5 @@
 import { RefreshCw } from "lucide-react";
-import { useCallback, type ReactNode } from "react";
+import { useCallback, type ReactElement, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -68,7 +68,7 @@ function buildSummaryDisplay(summary: AuditSummaryDTO | undefined, locale: strin
   };
 }
 
-export function RequestAuditsPage() {
+export function RequestAuditsPage(): ReactElement {
   const { t, i18n } = useTranslation();
   const list = useAuditList();
   const filterOptions = useAuditFilterOptions();

@@ -1,10 +1,17 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Badge } from "@/components/ui/badge";
 import type { ClientKeyDTO } from "@/entities/client-keys/types";
 
 /** 密钥状态徽标：停用优先于过期，避免同一密钥出现两个状态。 */
-export function ClientKeyStatus({ value, referenceTime }: { value: ClientKeyDTO; referenceTime: number }) {
+export function ClientKeyStatus({
+  value,
+  referenceTime,
+}: {
+  value: ClientKeyDTO;
+  referenceTime: number;
+}): ReactElement {
   const { t } = useTranslation();
   const testId = `client-keys-status-${value.id}`;
   if (!value.enabled) {

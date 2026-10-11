@@ -1,7 +1,7 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
 import { Check, ChevronLeft, ChevronRight, ChevronsUpDown, Plus, Search } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -32,7 +32,7 @@ export function ProxyProfilePicker({
   value: string;
   onChange: (value: string) => void;
   onCreate: () => void;
-}) {
+}): ReactElement {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");

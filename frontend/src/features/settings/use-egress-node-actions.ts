@@ -158,7 +158,12 @@ function useEgressNodeProbeMutations() {
 export type EgressNodeMutationDeps = EgressNodeOverlayDeps & { form: EgressNodeForm };
 
 /** 出口节点全部写操作：保存、批量、清理与探测，共用失效范围与失败提示语义。 */
-export function useEgressNodeMutations({ list, selection, overlays, form }: EgressNodeMutationDeps) {
+export function useEgressNodeMutations({
+  list,
+  selection,
+  overlays,
+  form,
+}: EgressNodeMutationDeps): EgressNodeMutations {
   const save = useEgressNodeSaveMutation(form);
   const bulk = useEgressNodeBulkMutations({ list, selection, overlays });
   const cleanup = useEgressNodeCleanupMutations({ list, selection, overlays });
@@ -166,4 +171,8 @@ export function useEgressNodeMutations({ list, selection, overlays, form }: Egre
   return { save, ...bulk, ...cleanup, ...probe };
 }
 
-export type EgressNodeMutations = ReturnType<typeof useEgressNodeMutations>;
+export type EgressNodeMutations = {
+  save: ReturnType<typeof useEgressNodeSaveMutation>;
+} & ReturnType<typeof useEgressNodeBulkMutations> &
+  ReturnType<typeof useEgressNodeCleanupMutations> &
+  ReturnType<typeof useEgressNodeProbeMutations>;

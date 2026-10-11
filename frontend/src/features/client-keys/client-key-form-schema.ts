@@ -35,7 +35,7 @@ function clientKeyFields(t: TFunction) {
 
 export type ClientKeyFormValues = z.infer<ReturnType<typeof clientKeyFields>>;
 
-export function createClientKeySchema(t: TFunction) {
+export function createClientKeySchema(t: TFunction): ReturnType<typeof clientKeyFields> {
   return clientKeyFields(t).superRefine((value, context) => {
     if (!value.expiryUnlimited && !value.expiresAt) {
       context.addIssue({ code: "custom", path: ["expiresAt"], message: t("errors.required") });

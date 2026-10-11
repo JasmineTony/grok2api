@@ -1,4 +1,5 @@
 import { Search } from "lucide-react";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Input } from "@/components/ui/input";
@@ -23,7 +24,7 @@ export type AuditFiltersToolbarProps = {
   filterOptions: AuditFilterOptions;
 };
 
-export function AuditFiltersToolbar(props: AuditFiltersToolbarProps) {
+export function AuditFiltersToolbar(props: AuditFiltersToolbarProps): ReactElement {
   const { t } = useTranslation();
   const filters = buildAuditFilters({
     t,

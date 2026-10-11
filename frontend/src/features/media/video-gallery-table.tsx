@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { Eye } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -56,7 +56,7 @@ const VIDEO_SORT_COLUMNS: Array<{ field: string; labelKey: string; initialOrder?
 ];
 
 /** 视频任务表格区：工具栏、分页与虚拟滚动行。 */
-export function VideoGalleryTable(props: VideoGalleryTableProps) {
+export function VideoGalleryTable(props: VideoGalleryTableProps): ReactElement {
   return (
     <DataTableShell
       toolbar={<VideoTableToolbar {...props} />}

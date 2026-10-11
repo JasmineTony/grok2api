@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -86,7 +87,7 @@ function BillingBreakdown({ billing, locale }: { billing: AuditBillingBreakdownD
   );
 }
 
-export function BillingValue({ audit }: { audit: AuditDTO }) {
+export function BillingValue({ audit }: { audit: AuditDTO }): ReactElement {
   const { t, i18n } = useTranslation();
   const billing = audit.billing ?? fallbackBillingBreakdown(audit);
   const amount = billing ? formatUSDTicks(billing.totalInUsdTicks, 2) : t("audits.unbilled");

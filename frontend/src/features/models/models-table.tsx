@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -45,7 +46,7 @@ type ModelsTableProps = {
   onDelete: (group: ModelRouteGroup) => void;
 };
 
-export function ModelsTable({ list, selection, onEdit, onDelete }: ModelsTableProps) {
+export function ModelsTable({ list, selection, onEdit, onDelete }: ModelsTableProps): ReactElement {
   const { query, result } = list;
   return (
     <>

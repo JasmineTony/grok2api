@@ -1,4 +1,5 @@
 import { ChevronDown } from "lucide-react";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { NavLink } from "react-router-dom";
 
@@ -20,7 +21,12 @@ const NAV_CLASSES: Record<ShellNavigationVariant, string> = {
 };
 
 /** 侧栏与移动端抽屉共用的主导航：业务导航 + 可折叠文档分组。 */
-export function ShellNavigation({ variant, openSections, onToggleSection, onNavigate }: ShellNavigationProps) {
+export function ShellNavigation({
+  variant,
+  openSections,
+  onToggleSection,
+  onNavigate,
+}: ShellNavigationProps): ReactElement {
   const { t } = useTranslation();
   return (
     <nav className={NAV_CLASSES[variant]} aria-label={t("shell.navigation")}>

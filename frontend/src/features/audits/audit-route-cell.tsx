@@ -1,5 +1,5 @@
 import { CornerDownRight, Globe2 } from "lucide-react";
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -84,7 +84,7 @@ export function ModelRouteValue({
   provider,
   operation,
   sources,
-}: RouteValueProps) {
+}: RouteValueProps): ReactElement {
   const { t } = useTranslation();
   return (
     <Tooltip>

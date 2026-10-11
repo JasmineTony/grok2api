@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 
@@ -32,7 +33,13 @@ type ClientKeyFormDialogProps = {
 };
 
 /** 创建/编辑密钥弹窗：表单实例由页面持有，弹窗只负责结构与提交入口。 */
-export function ClientKeyFormDialog({ editing, form, isPending, onClose, onSubmit }: ClientKeyFormDialogProps) {
+export function ClientKeyFormDialog({
+  editing,
+  form,
+  isPending,
+  onClose,
+  onSubmit,
+}: ClientKeyFormDialogProps): ReactElement {
   const { t } = useTranslation();
   const isCreate = editing === "new";
 

@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ImageCard } from "@/features/media/gallery-card";
@@ -29,7 +30,7 @@ export function GalleryContent({
   selected,
   onSelectedChange,
   locale,
-}: GalleryContentProps) {
+}: GalleryContentProps): ReactElement {
   const { t } = useTranslation();
   const items = result?.items ?? [];
   return (

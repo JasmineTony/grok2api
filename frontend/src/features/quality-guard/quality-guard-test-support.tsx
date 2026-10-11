@@ -1,9 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render, screen, type RenderResult } from "@testing-library/react";
+import userEvent, { type UserEvent } from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { Toaster } from "sonner";
-import { vi } from "vitest";
+import { vi, type Mock } from "vitest";
 import type { ReactNode } from "react";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -438,7 +438,10 @@ function createResponder(options: GuardApiOptions) {
   };
 }
 
-export function installQualityGuardApi(options: GuardApiOptions = {}) {
+export function installQualityGuardApi(options: GuardApiOptions = {}): {
+  requests: RecordedRequest[];
+  fetchMock: Mock<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>;
+} {
   const requests: RecordedRequest[] = [];
   const respond = createResponder(options);
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -471,15 +474,15 @@ function renderWithProviders(node: ReactNode) {
   );
 }
 
-export function renderQualityGuardPage() {
+export function renderQualityGuardPage(): RenderResult {
   return renderWithProviders(<QualityGuardPage />);
 }
 
-export function renderDegradeAccountsPanel() {
+export function renderDegradeAccountsPanel(): RenderResult {
   return renderWithProviders(<DegradeAccountsPanel softTPS={500} hardTPS={1000} failClosed />);
 }
 
-export function setupUser() {
+export function setupUser(): UserEvent {
   // 覆盖率插桩 + 并发环境下逐键等待很敏感，统一关闭按键间隔。
   return userEvent.setup({ delay: null });
 }

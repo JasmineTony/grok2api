@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Spinner } from "@/components/ui/spinner";
@@ -15,7 +16,11 @@ type DashboardProviderDistributionProps = {
 };
 
 /** Provider 分布面板：顶部为请求占比色带，下方为三类 Provider 明细。 */
-export function DashboardProviderDistribution({ dashboard, locale, loading }: DashboardProviderDistributionProps) {
+export function DashboardProviderDistribution({
+  dashboard,
+  locale,
+  loading,
+}: DashboardProviderDistributionProps): ReactElement {
   const { t } = useTranslation();
   const usage = useProviderUsage(dashboard);
 

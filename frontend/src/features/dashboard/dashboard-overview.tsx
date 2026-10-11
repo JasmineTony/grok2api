@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { DashboardDTO } from "@/features/dashboard/dashboard-api";
@@ -11,7 +12,7 @@ type DashboardDataProps = {
 };
 
 /** 概览指标区：五项指标卡，数值与补充说明由 buildOverviewMetrics 计算。 */
-export function DashboardOverview({ dashboard, locale, loading }: DashboardDataProps) {
+export function DashboardOverview({ dashboard, locale, loading }: DashboardDataProps): ReactElement {
   const { t } = useTranslation();
   const metrics = buildOverviewMetrics(dashboard, locale, t);
 

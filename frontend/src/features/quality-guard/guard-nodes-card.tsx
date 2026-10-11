@@ -1,5 +1,6 @@
 import type { TFunction } from "i18next";
 import { Plus, Power, PowerOff, RefreshCw, Search, Trash2 } from "lucide-react";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -187,7 +188,7 @@ function GuardNodesToolbar({ filters }: { filters: GuardNodeFilters }) {
   );
 }
 
-export function GuardNodesCard({ controller }: { controller: GuardNodesController }) {
+export function GuardNodesCard({ controller }: { controller: GuardNodesController }): ReactElement {
   const { nodesQuery, filters } = controller;
   return (
     <section

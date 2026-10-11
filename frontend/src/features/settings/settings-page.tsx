@@ -1,3 +1,5 @@
+import type { ReactElement } from "react";
+
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs } from "@/components/ui/tabs";
 import { SettingsAccountsPane } from "@/features/settings/settings-accounts-pane";
@@ -13,7 +15,7 @@ import { useSettings } from "@/features/settings/use-settings";
 import { VersionUpdateSection } from "@/entities/system/version-update";
 import { ErrorState } from "@/shared/components/data-state";
 
-export function SettingsPage() {
+export function SettingsPage(): ReactElement {
   const { form, settingsQuery, updateMutation, reset } = useSettings();
 
   if (settingsQuery.isError) {

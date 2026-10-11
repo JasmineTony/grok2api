@@ -1,4 +1,5 @@
 import { AlertTriangle, Gauge, PowerOff, Users } from "lucide-react";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { DegradeSummaryDTO } from "@/features/quality-guard/quality-guard-api";
@@ -44,7 +45,7 @@ function DegradeMetric({
   );
 }
 
-export function DegradeSummaryMetrics({ summary }: { summary: DegradeSummaryDTO }) {
+export function DegradeSummaryMetrics({ summary }: { summary: DegradeSummaryDTO }): ReactElement {
   const { t } = useTranslation();
   return (
     <section

@@ -1,9 +1,10 @@
 import { CircleAlert } from "lucide-react";
+import type { ReactElement } from "react";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 /** 表格内的悬浮错误说明：节点 lastError 与订阅源 lastSyncError 共用。 */
-export function EgressErrorTooltip({ message }: { message: string }) {
+export function EgressErrorTooltip({ message }: { message: string }): ReactElement {
   return (
     <Tooltip>
       <TooltipTrigger asChild>

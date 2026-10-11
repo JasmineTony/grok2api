@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { ChartConfig } from "@/components/ui/chart";
@@ -11,7 +12,7 @@ type DashboardTrendLegendProps = {
 };
 
 /** 可点击图例：按序列显示样式标记与启用状态，点击切换显隐。 */
-export function DashboardTrendLegend({ config, hiddenSeries, onToggle }: DashboardTrendLegendProps) {
+export function DashboardTrendLegend({ config, hiddenSeries, onToggle }: DashboardTrendLegendProps): ReactElement {
   const { t } = useTranslation();
   return (
     <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 pt-3 text-xs text-muted-foreground">

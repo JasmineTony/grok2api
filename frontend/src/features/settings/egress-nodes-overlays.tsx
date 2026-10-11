@@ -1,3 +1,5 @@
+import type { ReactElement } from "react";
+
 import {
   EgressNodesBatchDeleteDialog,
   EgressNodesCleanupDialog,
@@ -13,7 +15,7 @@ import type { EgressNodesPageModel } from "@/features/settings/use-egress-nodes-
  */
 
 /** 批量删除确认：展示选中数量与受影响账号/订阅源数量。 */
-export function EgressNodesBatchDeleteOverlay({ page }: { page: EgressNodesPageModel }) {
+export function EgressNodesBatchDeleteOverlay({ page }: { page: EgressNodesPageModel }): ReactElement {
   const { overlays, selection, mutations } = page;
   return (
     <EgressNodesBatchDeleteDialog
@@ -29,7 +31,7 @@ export function EgressNodesBatchDeleteOverlay({ page }: { page: EgressNodesPageM
 }
 
 /** 清理不可用节点确认：清理进行中不允许关闭弹窗，关闭时清空预览结果。 */
-export function EgressNodesCleanupOverlay({ page }: { page: EgressNodesPageModel }) {
+export function EgressNodesCleanupOverlay({ page }: { page: EgressNodesPageModel }): ReactElement {
   const { overlays, mutations } = page;
   return (
     <EgressNodesCleanupDialog
@@ -53,7 +55,7 @@ export function EgressNodeEditorOverlay({
 }: {
   clearanceMode: ClearanceMode;
   page: EgressNodesPageModel;
-}) {
+}): ReactElement {
   const { form, list, overlays, mutations, scopeLabel } = page;
   return (
     <EgressNodeDialog
@@ -77,7 +79,7 @@ export function EgressNodeEditorOverlay({
 }
 
 /** 代理文本批量导入弹窗。 */
-export function EgressImportOverlay({ page }: { page: EgressNodesPageModel }) {
+export function EgressImportOverlay({ page }: { page: EgressNodesPageModel }): ReactElement {
   const { importFlow, scopeLabel } = page;
   return (
     <EgressImportDialog
@@ -93,7 +95,7 @@ export function EgressImportOverlay({ page }: { page: EgressNodesPageModel }) {
 }
 
 /** 代理配置库弹窗：工具栏按管理模式打开，节点弹窗按创建模式打开并回填绑定。 */
-export function EgressProxyLibraryOverlay({ page }: { page: EgressNodesPageModel }) {
+export function EgressProxyLibraryOverlay({ page }: { page: EgressNodesPageModel }): ReactElement | null {
   const { form, overlays } = page;
   if (!overlays.profileLibraryOpen) return null;
   return (

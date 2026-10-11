@@ -1,5 +1,6 @@
 import type { TFunction } from "i18next";
 import { Network, Plus, Power, PowerOff, RefreshCw, Search, Trash2, Upload } from "lucide-react";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -103,7 +104,7 @@ function assignmentFilter(t: TFunction, value: string, onChange: (value: string)
 }
 
 /** 出口节点工具栏：搜索 + 作用域/启用/探测/账号绑定筛选，右侧为批量与全局操作。 */
-export function EgressNodesToolbar(props: EgressNodesToolbarProps) {
+export function EgressNodesToolbar(props: EgressNodesToolbarProps): ReactElement {
   return (
     <>
       <EgressNodesFilterBar {...props} />

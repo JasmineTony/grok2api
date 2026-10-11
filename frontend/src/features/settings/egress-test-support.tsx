@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render } from "@testing-library/react";
+import { render, type RenderResult } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { Toaster } from "sonner";
 import type { ReactNode } from "react";
@@ -244,7 +244,7 @@ if (typeof Element !== "undefined" && !Element.prototype.scrollIntoView) {
 }
 
 /** 出口节点分区测试脚手架：真实 EgressNodes + react-query + i18n + Toaster。 */
-export function renderEgressNodes(clearanceMode: "manual" | "flaresolverr" | "on_demand" = "manual") {
+export function renderEgressNodes(clearanceMode: "manual" | "flaresolverr" | "on_demand" = "manual"): RenderResult {
   const node: ReactNode = <EgressNodes title={i18n.t("settings.egress.title")} clearanceMode={clearanceMode} />;
   return render(
     <QueryClientProvider

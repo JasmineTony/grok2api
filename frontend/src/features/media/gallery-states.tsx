@@ -1,7 +1,8 @@
+import type { ReactElement } from "react";
 import { Image as ImageIcon } from "lucide-react";
 
 /** 图库空态：图标 + 文案（搜索无结果与完全空库共用）。 */
-export function GalleryEmptyState({ message }: { message: string }) {
+export function GalleryEmptyState({ message }: { message: string }): ReactElement {
   return (
     <div
       className="flex min-h-72 flex-col items-center justify-center gap-3 text-center text-muted-foreground"
@@ -16,7 +17,7 @@ export function GalleryEmptyState({ message }: { message: string }) {
 }
 
 /** 首屏加载骨架：10 个卡片占位。 */
-export function ImageGridLoading() {
+export function ImageGridLoading(): ReactElement {
   return (
     <div
       className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"

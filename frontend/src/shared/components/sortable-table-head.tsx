@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
-import type { ComponentProps, ReactNode } from "react";
+import type { ComponentProps, ReactElement, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { TableHead } from "@/components/ui/table";
@@ -26,7 +26,7 @@ export function SortableTableHead({
   className,
   onSort,
   ...props
-}: SortableTableHeadProps) {
+}: SortableTableHeadProps): ReactElement {
   const { t } = useTranslation();
   const active = sortBy === field;
   const nextOrder = active && sortOrder === "asc" ? "desc" : active ? "asc" : initialOrder;

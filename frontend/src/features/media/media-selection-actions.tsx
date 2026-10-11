@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -9,7 +10,7 @@ type MediaSelectionActionsProps = {
 };
 
 /** 批量操作区：显示选中数量并提供删除入口，图库与视频列表共用。 */
-export function MediaSelectionActions({ selectedCount, onRequestDelete }: MediaSelectionActionsProps) {
+export function MediaSelectionActions({ selectedCount, onRequestDelete }: MediaSelectionActionsProps): ReactElement {
   const { t } = useTranslation();
   return (
     <div className="flex h-8 items-center gap-2" data-testid="media-selection-actions">

@@ -1,5 +1,5 @@
 import { CircleHelp } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Input } from "@/components/ui/input";
@@ -37,7 +37,7 @@ export type EgressAutomationSettingsProps = {
 };
 
 /** 出口自动化参数区：探测/分配参数 + 各作用域兜底策略。 */
-export function EgressAutomationSettings(props: EgressAutomationSettingsProps) {
+export function EgressAutomationSettings(props: EgressAutomationSettingsProps): ReactElement {
   return (
     <div className="space-y-0">
       <EgressProbeRows form={props.form} onChange={props.onChange} />

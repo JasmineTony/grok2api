@@ -1,3 +1,5 @@
+import type { ReactElement } from "react";
+
 import type { DashboardDTO } from "@/features/dashboard/dashboard-api";
 import { DashboardActivity } from "@/features/dashboard/dashboard-activity";
 import { DashboardProviderDistribution } from "@/features/dashboard/dashboard-provider-distribution";
@@ -12,7 +14,7 @@ type DashboardPanelsProps = {
 };
 
 /** 图表与明细区：趋势/Provider 分布、Top 模型/活动/账号资源的两列布局。 */
-export function DashboardPanels({ dashboard, locale, loading }: DashboardPanelsProps) {
+export function DashboardPanels({ dashboard, locale, loading }: DashboardPanelsProps): ReactElement {
   return (
     <>
       <div className="grid items-stretch gap-2 xl:grid-cols-[minmax(0,3fr)_minmax(360px,2fr)]">

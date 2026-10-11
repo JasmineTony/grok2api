@@ -1,5 +1,5 @@
 import { CheckCircle2, KeyRound, Network, Server, TriangleAlert } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Badge } from "@/components/ui/badge";
@@ -86,7 +86,13 @@ function AttemptButton({
   );
 }
 
-export function UpstreamAttemptsPanel({ audit, attempts }: { audit: AuditDTO; attempts: AuditAttemptDTO[] }) {
+export function UpstreamAttemptsPanel({
+  audit,
+  attempts,
+}: {
+  audit: AuditDTO;
+  attempts: AuditAttemptDTO[];
+}): ReactElement {
   const { t } = useTranslation();
   const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
   if (attempts.length === 0) {

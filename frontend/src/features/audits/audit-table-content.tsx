@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -111,7 +112,7 @@ function AuditTable(props: AuditTableProps) {
   );
 }
 
-export function AuditTableContent(props: AuditTableProps) {
+export function AuditTableContent(props: AuditTableProps): ReactElement {
   const result = props.query.data;
   const showTable = props.query.isPending || Boolean(result && result.items.length > 0);
   return (

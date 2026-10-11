@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Input } from "@/components/ui/input";
@@ -9,7 +10,7 @@ import {
 } from "@/features/settings/settings-form-layout";
 import { SettingsRoutingSection } from "@/features/settings/settings-routing-section";
 
-export function SettingsPoliciesPane({ form }: { form: SettingsFormApi }) {
+export function SettingsPoliciesPane({ form }: { form: SettingsFormApi }): ReactElement {
   return (
     <SettingsPane value="policies">
       <SettingsServerSection form={form} />

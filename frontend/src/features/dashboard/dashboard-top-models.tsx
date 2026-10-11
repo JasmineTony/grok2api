@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -15,7 +16,7 @@ type DashboardTopModelsProps = {
 const COLUMN_COUNT = 4;
 
 /** Top 模型面板：模型、计费、tokens 与请求数四列，空数据展示空态。 */
-export function DashboardTopModels({ dashboard, locale, loading }: DashboardTopModelsProps) {
+export function DashboardTopModels({ dashboard, locale, loading }: DashboardTopModelsProps): ReactElement {
   const { t } = useTranslation();
   const models = dashboard?.topModels ?? [];
 

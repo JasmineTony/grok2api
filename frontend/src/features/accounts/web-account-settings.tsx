@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { Cake, FileCheck2, Settings2, ShieldCheck } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -33,7 +34,7 @@ type MenuProps = {
   onConfirm: (target: WebAccountConfirmationTarget) => void;
 };
 
-export function WebAccountSettingsMenu({ account, disabled, onConfirm }: MenuProps) {
+export function WebAccountSettingsMenu({ account, disabled, onConfirm }: MenuProps): ReactElement {
   const { t } = useTranslation();
   return (
     <DropdownMenuSub>
@@ -91,7 +92,7 @@ export function WebAccountSettingsDialogs({
   confirmationPending,
   onConfirmationClose,
   onConfirm,
-}: DialogsProps) {
+}: DialogsProps): ReactElement {
   const { t } = useTranslation();
   const copy = confirmationCopies[confirmationTarget?.action ?? "acceptTerms"];
 

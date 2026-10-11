@@ -1,4 +1,5 @@
 import { Eye, EyeOff } from "lucide-react";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,7 @@ export type EgressProxyProfileFieldsProps = {
 };
 
 /** 代理配置表单字段：名称与代理地址（地址支持按需显示明文）。 */
-export function EgressProxyProfileFields(props: EgressProxyProfileFieldsProps) {
+export function EgressProxyProfileFields(props: EgressProxyProfileFieldsProps): ReactElement {
   const { t } = useTranslation();
   return (
     <>

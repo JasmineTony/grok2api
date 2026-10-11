@@ -1,6 +1,6 @@
 import type { TFunction } from "i18next";
 import { MoreHorizontal, Pencil, Power, PowerOff, RotateCw, Trash2 } from "lucide-react";
-import { memo } from "react";
+import { memo, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Badge } from "@/components/ui/badge";
@@ -360,7 +360,7 @@ function NodeTableBody({ controller }: { controller: GuardNodesController }) {
   );
 }
 
-export function GuardNodesTable({ controller }: { controller: GuardNodesController }) {
+export function GuardNodesTable({ controller }: { controller: GuardNodesController }): ReactElement {
   const { view, nodesQuery, selection } = controller;
   return (
     <div className="overflow-x-auto">

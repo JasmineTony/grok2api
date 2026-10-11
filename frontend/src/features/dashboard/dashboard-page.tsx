@@ -1,5 +1,5 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { getDashboard, type DashboardDTO, type DashboardPeriod } from "@/features/dashboard/dashboard-api";
@@ -24,7 +24,7 @@ const DASHBOARD_PREFERENCES_KEY = "grok2api:dashboard-preferences";
 const DEFAULT_DASHBOARD_PREFERENCES: DashboardPreferences = { periodDays: 30 };
 
 /** 仪表盘页：持有周期偏好与 dashboard 查询，头部与各面板均为独立组件。 */
-export function DashboardPage() {
+export function DashboardPage(): ReactElement {
   const { i18n } = useTranslation();
   const [preferences, setPreferences] = useState<DashboardPreferences>(readDashboardPreferences);
   const [manualRefreshing, setManualRefreshing] = useState(false);

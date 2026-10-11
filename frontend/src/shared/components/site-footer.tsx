@@ -1,4 +1,6 @@
-export function SiteFooter() {
+import type { ReactElement } from "react";
+
+export function SiteFooter(): ReactElement {
   return (
     <footer className="fixed right-0 bottom-0 z-20 flex h-10 w-fit max-w-[calc(100vw-2rem)] items-center justify-end gap-1.5 whitespace-nowrap px-5 text-right text-[11px] text-muted-foreground sm:px-6">
       <a

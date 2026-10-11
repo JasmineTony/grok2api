@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { Controller } from "react-hook-form";
 
@@ -20,7 +21,7 @@ export function SettingsDeliveryPane({
 }: {
   form: SettingsFormApi;
   serverClearanceMode: ClearanceMode;
-}) {
+}): ReactElement {
   const { t } = useTranslation();
   return (
     <SettingsPane value="delivery">

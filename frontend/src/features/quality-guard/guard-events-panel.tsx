@@ -1,4 +1,5 @@
 import type { TFunction } from "i18next";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { formatTPS, formatTime } from "@/features/quality-guard/guard-format";
@@ -48,7 +49,7 @@ function GuardEventRow({ event, locale }: { event: QualityGuardEvent; locale: st
   );
 }
 
-export function EventList({ events, locale }: { events: QualityGuardEvent[]; locale: string }) {
+export function EventList({ events, locale }: { events: QualityGuardEvent[]; locale: string }): ReactElement {
   const { t } = useTranslation();
   return (
     <section className="rounded-lg bg-card p-4 sm:p-5" aria-labelledby="guard-events-title" data-testid="guard-events">

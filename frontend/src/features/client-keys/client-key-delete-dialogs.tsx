@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -54,7 +55,7 @@ export function ClientKeyDeleteDialog({
   target: ClientKeyDTO | null;
   onClose: () => void;
   onConfirm: (id: string) => void;
-}) {
+}): ReactElement {
   const { t } = useTranslation();
   return (
     <DeleteConfirmDialog
@@ -78,7 +79,7 @@ export function ClientKeysBatchDeleteDialog({
   count: number;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
-}) {
+}): ReactElement {
   const { t } = useTranslation();
   return (
     <DeleteConfirmDialog

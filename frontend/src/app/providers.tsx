@@ -1,12 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
-import { useState, type ReactNode } from "react";
+import { useState, type ReactElement, type ReactNode } from "react";
 import { Toaster } from "sonner";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/shared/auth/auth-context";
 
-export function AppProviders({ children }: { children: ReactNode }) {
+export function AppProviders({ children }: { children: ReactNode }): ReactElement {
   const [queryClient] = useState(
     () =>
       new QueryClient({

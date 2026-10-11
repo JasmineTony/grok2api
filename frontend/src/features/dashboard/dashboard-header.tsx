@@ -1,4 +1,5 @@
 import { RefreshCw } from "lucide-react";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,13 @@ type DashboardHeaderProps = {
 };
 
 /** 仪表盘头部：标题、时间范围选择、刷新按钮与版本更新横幅。 */
-export function DashboardHeader({ periodDays, onPeriodChange, refreshing, spinning, onRefresh }: DashboardHeaderProps) {
+export function DashboardHeader({
+  periodDays,
+  onPeriodChange,
+  refreshing,
+  spinning,
+  onRefresh,
+}: DashboardHeaderProps): ReactElement {
   const { t } = useTranslation();
   return (
     <div className="space-y-5">

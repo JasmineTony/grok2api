@@ -1,5 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { TFunction } from "i18next";
+import type { ReactElement } from "react";
 import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -25,7 +26,7 @@ type ChangePasswordDialogProps = {
 };
 
 /** 修改密码弹窗：标题展示当前账号，表单与成功后的退出登录在 ChangePasswordForm。 */
-export function ChangePasswordDialog({ open, onOpenChange, username }: ChangePasswordDialogProps) {
+export function ChangePasswordDialog({ open, onOpenChange, username }: ChangePasswordDialogProps): ReactElement {
   const { t } = useTranslation();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

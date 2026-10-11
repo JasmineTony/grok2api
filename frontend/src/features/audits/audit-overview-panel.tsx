@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { OverviewField } from "@/features/audits/audit-detail-common";
@@ -7,7 +7,7 @@ import type { AuditDTO } from "@/features/audits/request-audits-api";
 import { formatNumber } from "@/shared/lib/format";
 import { formatUSDTicksWithEstimate } from "@/shared/lib/usd";
 
-export function AuditOverviewPanel({ audit }: { audit: AuditDTO }) {
+export function AuditOverviewPanel({ audit }: { audit: AuditDTO }): ReactElement {
   const { t, i18n } = useTranslation();
   const fields = useMemo(() => {
     const cost = formatUSDTicksWithEstimate(audit.costInUsdTicks, audit.estimatedCostInUsdTicks, t("audits.estimated"));
