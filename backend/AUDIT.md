@@ -107,15 +107,15 @@ go test ./internal/infra/egress ./internal/infra/runtime/memory ./internal/pkg/p
 
 目标方向：Transport → Application → Domain；Repository/Ports 定义契约，Infra 实现；`internal/app` 为装配入口。
 
-静态扫描（247 个非测试 Go 文件）结果：
+静态扫描（334 个非测试 Go 文件）结果：
 
 - `internal/domain/**` → 无越界依赖。**方向正确。**
 - `internal/repository/**` → 无越界依赖（仅依赖 domain）。**方向正确。**
-- `internal/application/**` → 存在 **28 处**对 infra 的依赖，需登记并逐步收敛：
+- `internal/application/**` → 存在 **23 处**（分布在 15 个文件）对 infra 的依赖，需登记并逐步收敛：
 
 | 目标 infra 包    | 引用位置（示例）                                                                          | 判定                                                                                                                                                     |
 | ---------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `infra/provider` | account、accountsync、gateway/{attempt,failure,image,service,video,voice,voice_ws}、model | provider 包内含大量**能力契约**（`Adapter`、`BillingAdapter`、`CredentialCodecAdapter`…约 30 个接口），契约与实现同包是根因；应把契约收敛到独立 ports 包 |
+| `infra/provider` | account、accountsync、gateway/{attempt,failure,image,service,video,voice,voice_ws}、model | 阶段 3 已完成契约收敛：`internal/ports/provider`（35 个接口 + 值类型 + 错误类型 + `Registry`），`internal/infra/provider/provider.go` 由 1468 行降至 **465** 行；application 仍直接依赖 provider 的能力接口，属已登记 P2（BE-02），剩余收敛按消费者数量逐项评估 |
 | `infra/security` | account、adminauth、clientkey、egress、gateway/{quality_probe,service,video}              | `Cipher`/`TokenService` 为具体实现，application 直接依赖具体类型                                                                                         |
 | `infra/egress`   | gateway/{egress_audit,image,quality_probe,quality_retry,service,video,voice,voice_ws}     | 同上                                                                                                                                                     |
 | `infra/config`   | settings                                                                                  | 配置结构体被应用层直接消费                                                                                                                               |
@@ -124,30 +124,24 @@ go test ./internal/infra/egress ./internal/infra/runtime/memory ./internal/pkg/p
 
 ### 4.2 结构与体量基线
 
-- 源码文件：247 个（不含 `_test.go`）。
-- 最大的文件：
+- 源码文件：334 个（不含 `_test.go`）。
+- 最大的文件：下列为阶段 3–6 拆分后的现状（`git log` 与逐文件计数实测）；阶段 0 基线为 16 个 >1000 行文件、最大 4717 行（`application/account/service.go`），该基线值见本文件 §10 与 `AGENTS.md` §5。
 
 | 文件                                                          | 行数 |
 | ------------------------------------------------------------- | ---: |
-| `internal/application/account/service.go`                     | 4717 |
-| `internal/infra/persistence/relational/account_repository.go` | 2846 |
-| `internal/infra/provider/web/chat.go`                         | 2733 |
-| `internal/transport/http/inference/handler.go`                | 2475 |
-| `internal/infra/egress/manager.go`                            | 2342 |
-| `internal/application/gateway/selector.go`                    | 2247 |
-| `internal/application/gateway/service.go`                     | 2194 |
-| `internal/infra/provider/web/image.go`                        | 1850 |
-| `internal/transport/http/account/handler.go`                  | 1642 |
-| `internal/transport/http/egress/handler.go`                   | 1579 |
-| `internal/infra/provider/provider.go`                         | 1468 |
-| `internal/application/egress/service.go`                      | 1443 |
-| `internal/application/gateway/video.go`                       | 1414 |
+| `internal/application/gateway/service.go`                     | 1931 |
+| `internal/transport/http/account/handler.go`                  | 1634 |
 | `internal/infra/persistence/relational/model_repository.go`   | 1327 |
-| `internal/infra/provider/cli/adapter.go`                      | 1308 |
+| `internal/application/gateway/video.go`                       | 1326 |
+| `internal/infra/provider/cli/adapter.go`                      | 1306 |
 | `internal/infra/persistence/relational/audit_repository.go`   | 1133 |
+| `internal/infra/provider/conversation/stream.go`              | 1055 |
+| `internal/application/audit/service.go`                       | 1047 |
+| `internal/application/gateway/selector.go`                    | 1044 |
+| `internal/infra/config/config.go`                             | 1003 |
 
-- 装配入口 `internal/app/application.go`（865 行）：单个 `New()` 内完成数据库、运行态存储、三个 Provider 适配器、全部应用服务与 HTTP 路由装配；`Run()`（约 180 行）串行启动 20+ 个后台任务。属于"职责正确但函数过长"，需按数据库/运行态、Provider、应用服务、HTTP、后台生命周期拆分。
-- `internal/app/startup.go` 的 `readinessSnapshot` 约 135 行，混合了就绪判定与组件状态拼装。
+- 装配入口 `internal/app/application.go`（861 行）：单个 `New()` 内完成数据库、运行态存储、三个 Provider 适配器、全部应用服务与 HTTP 路由装配（实测 `New()` 354 行，`application.go:91` 起）；`Run()`（实测 182 行，`application.go:525` 起）串行启动 20+ 个后台任务。属于"职责正确但函数过长"，需按数据库/运行态、Provider、应用服务、HTTP、后台生命周期拆分。
+- `internal/app/startup.go` 的 `readinessSnapshot` 实测 138 行（`startup.go:119-256`），混合了就绪判定与组件状态拼装。
 
 ### 4.3 已具备且不应重复建设的能力
 
@@ -162,16 +156,18 @@ go test ./internal/infra/egress ./internal/infra/runtime/memory ./internal/pkg/p
 
 ## 5. 问题清单
 
+状态列的 `Pending` 均属 `AGENTS.md` §6 定义的 P2 计划内债务：已登记、未扩张、不阻塞阶段验收与发布；`Passed` 必须附可复核证据。
+
 | 编号  | 证据                                                                                                                                                                      | 现有/新增                           | 影响                                        | 优先级 | 阶段   | 验证方法                                   | 状态                                                                                                                                                  |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ------------------------------------------- | ------ | ------ | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| BE-01 | `application/account/service.go` 4717 行等 16 个 >1000 行文件                                                                                                             | 现有                                | 可维护性、审查成本                          | P2     | 4–6    | 按用例/读写/调度拆分                       | Pending                                                                                                                                               |
-| BE-02 | 28 处 application → infra 依赖（§4.1）                                                                                                                                    | 现有                                | 分层模糊，契约与实现同包                    | P2     | 3      | 契约迁 ports + 边界测试                    | Pending                                                                                                                                               |
+| BE-01 | 阶段 0 基线 16 个 >1000 行文件（最大 `application/account/service.go` 4717 行）→ 阶段 3–6 拆分后实测 **10 个**（最大 `application/gateway/service.go` 1931 行，§4.2）     | 现有                                | 可维护性、审查成本                          | P2     | 4–6    | 按用例/读写/调度拆分                       | Pending（P2 计划内债务，不阻塞发布）                                                                                                                  |
+| BE-02 | 23 处 / 15 个文件 application → infra 依赖（§4.1，阶段 0 基线为 28 处）                                                                                                   | 现有                                | 分层模糊，契约与实现同包                    | P2     | 3      | 契约迁 ports + 边界测试                    | Pending（P2 计划内债务，不阻塞发布）                                                                                                                  |
 | BE-03 | 账号列表已按页批量（6 次查询），非 N+1                                                                                                                                    | 现有                                | 不应虚构缺陷                                | P2     | 4      | 补查询次数断言与基准                       | **Passed**（阶段 4：`TestListPageAggregationQueryCountIsPageSizeIndependent` 断言 pageSize 1–300 恒为固定 6 次批量调用；§10）                         |
 | QA-01 | 20 个 PostgreSQL/Redis 集成用例在本机跳过，含并发/锁/账本不变量                                                                                                           | 现有                                | 关键一致性无本地证据                        | P1     | 1、7   | CI 隔离 service 真实执行                   | **Passed**（CI 0 跳过 / 2842 通过，并暴露并修复 1 个用例缺陷）                                                                                        |
 | QA-02 | `go test -race` 本机 Blocked（无 cgo）                                                                                                                                    | 现有                                | 竞态检测缺失                                | P1     | 7      | Linux CI 执行                              | **Passed**（CI `go test -race ./... -count=1` success）                                                                                               |
 | QA-03 | `internal/application/account` 无 benchmark                                                                                                                               | 现有                                | 最重读路径无可比基线                        | P2     | 4      | 新增分页聚合基准                           | **Passed**（阶段 4 新增 `BenchmarkServiceListPageAggregation`：8.60 / 9.81 / 9.61 ms/op；§10）                                                        |
-| BE-04 | `app.New()`/`Run()` 单函数过长，装配与生命周期混合                                                                                                                        | 现有                                | 变更风险集中                                | P2     | 3      | 拆分后回归装配与关闭顺序                   | Pending                                                                                                                                               |
-| BE-05 | `infra/provider/provider.go` 1468 行含约 30 个能力接口                                                                                                                    | 现有                                | 契约与实现同包                              | P2     | 3      | 迁至 ports 并同步调用方                    | Pending                                                                                                                                               |
+| BE-04 | `app.New()`/`Run()` 单函数过长，装配与生命周期混合（`New()` 354 行 / `Run()` 182 行 / `readinessSnapshot` 138 行，§4.2）                                                  | 现有                                | 变更风险集中                                | P2     | 3      | 拆分后回归装配与关闭顺序                   | Pending（P2 计划内债务，不阻塞发布）                                                                                                                  |
+| BE-05 | `infra/provider/provider.go` 由 1468 行降至 **465** 行；能力契约已迁 `internal/ports/provider`（35 个接口，阶段 3，§9）                                                   | 现有                                | 契约与实现同包                              | P2     | 3      | 迁至 ports 并同步调用方                    | Pending（P2 计划内债务，不阻塞发布）                                                                                                                  |
 | BE-06 | 媒体尝试循环跨轮携带 `err`，判定换号/重试后下一轮跳过 `Acquire`，健康账号仍在池中却返回 503 `ErrNoAvailableAccount`（`gateway/voice_execution.go`、`image_execution.go`） | 现有（基线即有，阶段 6 收尾前未修） | 单账号凭据失效/传输抖动被放大为下游可见 503 | P1     | 6 收尾 | 两账号夹具回归测试断言第二个账号被真正租用 | **Passed**（§13.1：改为每轮独立 `acquireErr`；`media_attempt_loop_test.go` 3 条断言；`go build`/`vet`/`go test ./... -count=1` exit 0，64 包 0 FAIL） |
 | BE-07 | `.github/workflows/ghcr-image.yml` 两个 `Docker metadata` 步骤未设 `flavor`；run `38054220100` job `114229640946` 日志 `ERROR: ghcr.io/jasminetony/grok2api:latest-arm64: not found` | 新增（2026-10-10 发布时暴露） | tag 推送时 `Merge image` 必然失败；per-arch 另推单架构裸 `latest` | P1 | 发布 | 加 `flavor: latest=false` 并用临时 tag 实测 tag 推送路径 | **Passed**（`b4068303`；tag 推送 run `38060494037`、main 推送 run `38060467337` 全部 job success，§11/§14） |
 | BE-08 | `merge` 的 `Create manifest list` 循环缺 `set -euo pipefail`，管道退出码只反映 `while` 最后一次迭代 | 新增（只读代码审查发现） | 前面的 `imagetools create` 失败可被后续成功掩盖，留下陈旧标签却报绿 | P3 | 发布 | 在 `run:` 首行加 `set -euo pipefail` | **Passed**（`a4f58384`；两条路径 CI 全绿，§11/§14） |
