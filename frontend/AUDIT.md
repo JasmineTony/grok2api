@@ -1061,3 +1061,75 @@ main 线的 AUDIT 章节（`backend/AUDIT.md` §20/§21（BE-18/BE-19）、`fron
 真/假阳性 triage 进行中（登记为**待裁定项**，不预判结论）。
 
 **附**：`Upload Playwright artifacts` 的 `skipped` 由该 step 的 `if: failure()` 决定（工作流 `:179-180`）；Verify job 无失败步骤 ⇒ 条件为假 ⇒ `skipped` 属预期，非缺陷。
+
+## 21. 2026-10-11（续二）报告门禁强化、构建指纹与真实移动 E2E（FE-15）
+
+本节登记并行子任务在 `maint/acceptance-audit-20261011-residual` 上的成果，每条附命令与退出码。
+
+### 21.1 报告门禁：必需用例标题、文件总数下限与两处可绕过路径（FE-19-1）
+
+提交 `197d4fee`：`scripts/check-test-results.mjs`（+148/−30）、`scripts/self-test-gates.mjs`（+219/−30）。
+
+- **requiredTitles**：Vitest 3 个文件与 E2E 5 个 spec 逐字登记必需用例标题（标题取自真实测试文件，非臆造），必须出现在报告中且为 `passed`；
+- **文件总数下限**：`MIN_VITEST_FILES = 123`、`MIN_E2E_FILES = 5`，防止删文件绕过；
+- **修复 P1（独立复审发现）**：Playwright 对「正常通过」与「`test.fail()` 预期失败且真的失败」都写 `status = "expected"`，区别只在 `expectedStatus`。原实现只读 status，导致被标记为预期失败的必需场景可整段失效却仍计为通过。现显式判失败，并对未知状态 **fail-closed**（与 Vitest 分支同口径）；
+- **修复 P2（独立复审发现）**：`checkFreshness` 在「清单文件全部不在磁盘」时静默 `return []`，旧报告 + 删除测试文件可假通过；现改为返回失败；
+- 失败信息同时打印失败用例标题——否则「预期失败被计为失败」与「普通失败」在输出上不可区分，夹具无法断言判定原因。
+
+验证（cwd = `frontend/`）：
+
+```
+pnpm test:gates   → exit 0；门禁自测通过：41 个用例（含 30 个必须失败的用例）
+pnpm exec prettier --check scripts/check-test-results.mjs scripts/self-test-gates.mjs → exit 0
+pnpm exec eslint  scripts/check-test-results.mjs scripts/self-test-gates.mjs → exit 0
+pnpm exec oxlint  scripts/check-test-results.mjs scripts/self-test-gates.mjs → exit 0
+```
+
+新增夹具 3 个（EVID-3）：`test.fail()` 预期失败、未知状态、清单文件全部缺失——**三者在修复前的实现下都不会失败**（判别力）。
+
+### 21.2 构建指纹软链语义与 rethrow 覆盖（FE-19-9 / FE-19-10）
+
+提交 `816f38e2`：`scripts/build-inputs.ts`（+19/−2）、`scripts/build-inputs.test.ts`（+67）。
+
+- 具名输入与 `treeDigests` 共用同一软链契约（`symlinkError`）：条目自身是软链即显式失败，绝不静默跟随；**只判具名条目自身、不判路径中间层**——实测 pnpm 布局下 `node_modules/vite`、`node_modules/typescript`、`node_modules/@tailwindcss/vite` 本身即软链，按整条路径判定会让 `Dockerfile` 的容器内 `pnpm build` 每次直接失败；
+- 补 `isBuildFresh` 的 rethrow 分支用例（输入读取错误必须上抛，不得被当作陈旧产物）；
+- 测试 45 → 49 用例；判别力：还原旧 `fileDigest` → 1 fail；弱化 catch → 1 fail；还原后文件 SHA256 与实验前一致；
+- 未覆盖：文件级软链无法在本机构造（`fs.symlinkSync(file)` 报 `EPERM`），新增用例改用目录链接形态；覆盖「软链指向同内容文件仍必须拒绝」需 Linux CI 上的文件软链。
+
+### 21.3 构建清单插件抽取与真实移动设备 project（FE-19-7 / FE-19-12）
+
+提交 `f8145ff9`。
+
+- 插件逻辑从 `vite.config.ts` 抽到 `scripts/build-manifest-plugin.ts`（95 行）+ `scripts/build-manifest-plugin.test.ts`（204 行 / 9 用例）；其中「`finish` 收到 error 时不得登记成功清单」「未调用 `markWritten` 时不得凭空登记」两条负样例具备判别力——移除 `!failed && written` 任一子条件都会失败；
+- `playwright.config.ts` 新增 `mobile-chromium` project（Pixel 5 真实设备描述符：`isMobile`/`hasTouch`/`deviceScaleFactor`/`userAgent`），仅在桌面布局成立的用例标 `@desktop` 并由移动 project `grepInvert` 排除；**桌面 project 不过滤、用例数不减**；新增 `e2e/mobile-device.e2e.ts`（29 行）断言设备描述符本身。
+
+验证（cwd = `frontend/`）：
+
+```
+pnpm build                     → exit 0（1.65s；dist/.build-manifest.json 产出，outputHash 与上一版一致）
+node --experimental-strip-types --test "scripts/**/*.test.ts" → exit 0；tests 58 / pass 58 / fail 0
+pnpm typecheck                 → exit 0
+pnpm test:e2e --list           → exit 0；Total: 35 tests in 6 files（新增 mobile-chromium project）
+```
+
+无断言弱化：`git diff` 统计 `expect(` 删除 15 = 新增 15、`test(` 删除 5 = 新增 5。`pnpm test:e2e` 全量执行由最终 `verify:full` 覆盖（§21.5）。
+
+### 21.4 认证后首屏真实浏览器测量（FE-19-5-B / X-01）
+
+测量方式：复刻 `e2e/backend-process.ts` 的隔离启动真实 Go 后端（动态 loopback 端口、临时 SQLite/Memory、合成管理员、`HTTP(S)_PROXY` 指向未监听端口）+ Playwright chromium 录制；探针与原始数据在会话 scratch（`probe/FE-19-5-B-X-01-report.md`），**工作树未被修改**，`isBuildFresh = true`（dist 与当前输入一致）。
+
+| 场景                                        | 请求数 | 原始传输    | gzip 折算（等价）                                              | 关键性能（近似）                                                                 |
+| ------------------------------------------- | ------ | ----------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| 登录提交 → `/dashboard`（档 A）             | 34     | 740.54 KiB  | **282.30**（= 首屏 193.58 + app-shell 31.47 + deferred 57.25） | 点击→标题 1252 ms；longtask 3 次 / 452 ms / 最长 268 ms；DOM 791                 |
+| 冷加载 `/dashboard`（档 B，两次逐字节一致） | 40     | 1459.99 KiB | **402.13**（= 282.30 + dashboard 增量 119.83）                 | FCP 232/300 ms；LCP 1036/1168 ms；longtask 3 次 501/524 ms；DCL 143/228；DOM 791 |
+| 软导航 → `/accounts`（档 C）                | 22     | 196.60 KiB  | 55.31                                                          | 点击→标题 518/864 ms；DOM 791 → 362                                              |
+| 冷加载 `/accounts`（档 D）                  | 56     | 1188.43 KiB | 340.84                                                         | FCP 248/264 ms；LCP 760/768 ms；DOM 357                                          |
+
+**结论（口径缺口已实测坐实）**：
+
+1. **认证后首屏 282.30 KiB > REV-5 的 260 KiB**（超 22.30 KiB = 8.58%）——门禁测得的 193.58 KiB 是**未认证**闭包；`app-shell`（31.47）与 `deferred`（57.25）在门禁里被当作两条独立「业务路由」各自判定（均 ≤180 KiB 故通过），但在认证后首屏它们是**必然同时加载**的内容。两档独立运行逐字节一致，不是噪声。
+2. `runtime-config.js`（84 B）每次文档加载都会请求且不入门禁闭包（不在 `/assets/` 前缀）→ **漏算通道实测成立**（量级 0.09 KiB）。
+3. **服务端未启用传输压缩**：270 条响应 `Content-Encoding` 全为空 ⇒ 真实传输是原始字节（认证后首屏 882.69 KiB、`/dashboard` 1460 KiB）；`/assets/*` 为 `public,max-age=31536000,immutable`，文档与 `runtime-config.js` 为 `no-cache`（`backend/internal/transport/http/frontend.go:31-35`）。**gzip 预算 ≠ 线上已启用压缩**。
+4. 缓存语义与预期一致：软导航档 shell 重取 0/26，`/accounts` 增量只差 2 个已缓存文件。
+
+**限制（不得当作门禁依据）**：loopback 无 RTT/TLS、未做 CPU 节流与移动视口、每档仅 2 次；测量窗口内有其它并行任务（8 逻辑核）。未验证生产反向代理/CDN 的压缩配置。

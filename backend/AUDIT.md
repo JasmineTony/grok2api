@@ -1044,3 +1044,92 @@ cd backend && go run ./tools/structurecheck                                     
 - BE-G1 只收口 transport→infra 方向；`infra` 目录的豁免理由中已登记存量缺口：`infra/egress` 8 个生产文件依赖 `application/egress`，加规则前需先冻结这 8 条例外（不扩大本轮范围）。
 - `app`（唯一装配入口）保持无自动规则、仅豁免（评审准则）。
 - 本包改动后未重跑 `go test ./...`、`bash scripts/verify.sh` 与 `-race`（改动仅 `_test.go`；相关包测试 + `vet` + `structurecheck` 已闭环）；CI 侧由探针分支覆盖（见 §21.2）。
+
+## 23. 2026-10-11（续六）静态托管别名断言的平台语义显式化（BE-22）
+
+提交 `0dc4ac5f`（`test(backend)`）：`internal/transport/http/server_test.go`，+39/−0，生产代码未改动。
+
+**背景（独立复审发现 P3-2）**：`frontend.go` 的根级隐藏产物判定在**解析后的相对路径**上做（`:26-30` + `:99-101`），解析失败时由 `path.Ext(...) != ""` 兜底（`:40-42`）。原两条别名断言（`/.BUILD-MANIFEST.JSON`、`/x\..\.build-manifest.json`）在 NTFS 上走 `isHiddenArtifact`，在大小写敏感的 Linux 上走 `path.Ext` 兜底——**断言读起来像两平台都覆盖了别名归一化，实际覆盖的分支不同**，CI 抓不到 Windows 侧回归。
+
+**改动**：
+
+- 保留两条别名的 HTTP 404 断言（未删、未放宽）；
+- 新增白盒分支断言：解析成功且被 `isHiddenArtifact` 命中 → 记录「由 isHiddenArtifact 拦截」；未解析 → 记录「404 依赖 path.Ext 兜底」；**解析成功却未被拦截 → 直接失败**；
+- 新增平台无关的 `TestIsHiddenArtifactOnResolvedAliases`：直接断言 `isHiddenArtifact` 把 `".BUILD-MANIFEST.JSON"` 判为根级隐藏产物，而 `build-manifest.json`（非点前缀）、`assets/.build-manifest.json`（非根级）、`assets/app.js` 判为非隐藏——这是 Linux CI 上唯一能覆盖「别名相对路径仍被拦截」的回归点。
+
+**验证（本机实测，命令 + 退出码 + 关键输出）**：
+
+```
+cd backend && go test ./internal/transport/http/ -run TestFrontendStaticFilesAndSPAFallback -v -count=1   # exit 0
+  server_test.go:124: 别名 /.BUILD-MANIFEST.JSON 归一到 ".BUILD-MANIFEST.JSON"，404 由 isHiddenArtifact 拦截
+  server_test.go:124: 别名 /x\..\.build-manifest.json 归一到 ".build-manifest.json"，404 由 isHiddenArtifact 拦截
+cd backend && go vet ./internal/transport/http/          # exit 0
+cd backend && go test ./internal/transport/http/ -count=1 # exit 0（整包）
+cd backend && go run ./tools/structurecheck               # exit 0（REV-3 作用域 5475）
+```
+
+**判别力**：删除 `isHiddenArtifact` 调用 → Windows 上别名变为 200 提供文件，断言失败；删除 `path.Ext` 兜底 → 任一平台 `/assets/missing.js` 与别名变为 SPA 200，断言失败；把判定改为精确匹配 `build-manifest.json` → 新增单测在所有平台失败。
+
+**未覆盖（如实登记）**：Linux 侧分支归属为**代码路径推断**（本机无 WSL 发行版、无 docker），由 CI 的 `go test ./...` 落地；分支归属在 HTTP 层不可观测（两条分支都是空 body + 404），故「未解析」分支只做覆盖透明度记录，不构成对 `path.Ext` 谓词的独立断言。
+
+## 24. 2026-10-11（续七）CodeQL 5 条高危告警 triage（BE-23）：全部假阳性
+
+PR #1（head `ci-probe/acceptance-audit-20261011`，`b59e5ff6`）上名为「CodeQL」的 check 报出 5 条高危告警（现象见 `frontend/AUDIT.md` §20.6）。本轮完成 triage。报告与探针在会话 scratch 的 `codeql-triage.md`，**工作树未被修改**。
+
+**前提核对**：两个被点名文件在 PR head `b59e5ff6` 与工作树 HEAD 上**逐字节相同**（blob `2635a64a…`、`78501bc8…`），triage 结论直接适用于被分析版本。
+
+### 24.1 4 × `Clear-text logging of sensitive information` → 假阳性
+
+| 维度 | 事实 | 证据 |
+| --- | --- | --- |
+| 日志终点 | JSON handler → **stdout**（LevelInfo）；无文件 sink、不写 DB/审计表 | `internal/infra/observability/logger.go:10`（唯一构造者 `internal/cli/run.go:33`） |
+| 记录字段 | `request_id`/`account_id`/`provider`/`status`/`upstream_code`/`account_scoped`/`account_blocked` | `service_request_failure.go:154,180,182,284` |
+| 秘密字段 | `EncryptedAccessToken`/`EncryptedRefreshToken`/`EncryptedCloudflareCookie`/`OIDCClientID`/`Email`/`UserID` **一个都没记录** | 同上 |
+| `credential.ID` | accounts 主键，已由管理 API（`internal/transport/http/account/handler_requests.go:119` 的 `json:"id,string"`）与审计表（`internal/domain/audit/audit.go:49-50`）明文暴露 | 同左 |
+| 命中原因 | Go 的**变量名启发式**（`credential` 命中 credential/token/secret 正则），与字段是否为秘密无关 | 字段集合对照 |
+| 变更性质 | 本 PR 只**搬运**：归一化后逐字等价于 `origin/main` 的 `gateway/service_request.go`；包级 `account_id` 计数 origin/main = 37、工作树 = 37 | `git diff` + 计数 |
+
+### 24.2 1 × `Uncontrolled data used in path expression` → 假阳性（远程不可达）
+
+- sink `os.Stat(fullPath)`（`internal/transport/http/frontend.go:80`）与 `origin/main` 的同函数体**逐字节相同**，且**第 80 行不在本 PR 的变更行集合内**（本 PR 在该文件只新增 `:27-30`、`:96-102`）；
+- 防护链：`:71` `path.Clean("/" + requestPath)`（前导 `/` 吃掉前置 `..`）→ `:76-79` `filepath.Rel` + `..` 前缀拒绝 → `:36-37` 只把包含化后的相对路径交给 `http.FileServer`；
+- **实测**（真实 `httpserver.New(deps)` 路由 + 真实 gin NoRoute，静态根外放 marker 文件）：18 条载荷（`/../`、`/../../`、`%2e%2e/`、`..%2f`、`..%5c`、`/x\..\`、`/assets/%2e%2e/%2e%2e/`、`//../`、绝对 `C:/…` 等）**全部 404 且 body 无 marker**；正对照 `/public-marker.txt` = 200 + marker（证明探针有判别力）；既有回归 `go test ./internal/transport/http/ -run "TestFrontendStaticFilesAndSPAFallback|TestIsHiddenArtifactOnResolvedAliases" -count=1` → exit 0；
+- **残余向量（P3，部署期前提）**：产物根目录内指向外部的 **junction/symlink** 会被服务（`/link/linked.txt` → 200 返回根外内容）——因为 `os.Stat` 跟随重解析点，而 `filepath.Rel` 是纯字符串比较。非 HTTP 可达、本 PR 前后行为一致；建议仅补注释说明「不解析链接目标」。
+
+### 24.3 处理决定（按 §6 分级）
+
+| 项 | 级别 | 依据 |
+| --- | --- | --- |
+| CodeQL 5 条告警 | **P2（假阳性，已 triage，不阻塞、不扩张）** | 无秘密泄露、无不变量失效；P0 不成立；P1 的形式依据（check 为 `failure`）根因是假阳性 |
+| junction/symlink 残余向量 | P3 | 需「产物目录内含外部链接」的部署期前提，且非 HTTP 可达 |
+| 是否要求该 check 变绿 | **维护线口径决策（登记）** | 若要求必需 check 全绿，应在 CodeQL 侧落 allowlist/query-filter 并在此登记；**不得**为消警而改字段集合、删日志或重命名业务字段 |
+
+**未验证**：① 未取到 CodeQL 原始分析 JSON（本机无 `gh`，code-scanning API 返回 401），「为何 path 告警被算成 new」的最小复现命令记录在 `codeql-triage.md` §5；② 未在 Linux 重跑探针（Windows 是别名风险最高的平台）。
+
+## 25. 2026-10-11（续八）静态托管契约核对与缺口（BE-24）
+
+方法：`go build` 真实二进制 + scratch 内隔离 config（`staticPath` 指向只读的 `frontend/dist`）在 `127.0.0.1` 探测；条件请求与暴露实验在 scratch 副本上做。工作树未改动。报告：会话 scratch 的 `stage3-8-static-serving.md`。
+
+### 25.1 已核实成立（代码 + 实测）
+
+| 契约 | 结论 | 证据 |
+| --- | --- | --- |
+| SPA 回退范围 | `NoRoute` 仅在 `frontendRoot` 成功时注册；非 GET/HEAD 与 `isBackendPath` 前缀（`/api`、`/v1`、`/swagger`、`/healthz`、`/readyz`）→ 404；有扩展名的缺失文件 → 404；其余 → `index.html` + `no-cache` | `frontend.go:14-47,87-95`；实测 `GET /api/admin/v1/does-not-exist`、`/v1/…`、`POST /dashboard`、`/assets/missing.js` 全部 `404 text/plain 18B`；`GET /dashboard` → 200 HTML 657 B |
+| 穿越防护 | 原始 socket 载荷 `/../config.yaml`、`/%2e%2e/config.yaml`、`/assets/..%2f..%2fconfig.yaml` 全部 404 | 同左，另见 §24.2 的 18 载荷矩阵 |
+| 哈希资源缓存 | `/assets/**` = `public, max-age=31536000, immutable`；其余（`index.html`、`runtime-config.js`、`favicon.ico`、`sponner/**`）= `no-cache` | `frontend.go:31-35`；实测响应头；`dist/assets` 76 文件 100% 匹配 `-<8+字符>.(js|css)` |
+| 条件请求 | 内容未变 → 304；内容变更且 mtime 前进 → 200 新内容 | scratch 副本实测 |
+| 内部产物 | 根级点文件（`.build-manifest.json`）不可达；镜像内二进制与 `VERSION` 与静态根分离 | `frontend.go:27-30,99-101`；`Dockerfile:65-67` |
+
+### 25.2 未成文未测的三处风险（登记）
+
+1. **无 ETag + 保留 mtime ⇒ 304 陈旧 HTML**：`index.html` 非 `no-store` 且无 `must-revalidate`，正确性依赖「部署会改变 mtime」这一外部假设；实测「内容变更但保留 mtime」返回 304。
+2. **Go 侧零传输压缩**：`server.go:122` 中间件链无压缩、`assemble.go:574` 无 wrapper、`go.mod` 的压缩依赖均为 indirect；`dist` 内无 `.gz/.br/.zst`，仓库亦无补压缩的反代。同参数复现：首屏 5 文件 raw = 736,732 B（719.46 KiB）vs gzip9 = 215,744 B（210.69 KiB）⇒ **门禁口径 210.69 KiB vs 真实传输 719.46 KiB（≈3.4×）**。
+3. **`staticPath` 指到父目录即公开 config/二进制/数据库**：代码只拒「产物根点文件」，无其他白名单；实测把静态根指向父目录后 `/config.yaml`、`/grok2api.exe`、`/data/backend.db` 全部 200（`/.build-manifest.json` 仍 404）。默认配置安全（`config_defaults.go:22` 为 `./frontend/dist`），风险来自误配置。
+
+### 25.3 测试缺口（按可测性排序，仅建议）
+
+① 穿越/编码别名（httptest + 哨兵文件，删守卫必失败）；② 缓存值精确断言 + `runtime-config.js`/`sponner`/`favicon.ico` 三行；③ 方法/前缀矩阵与 Content-Type 契约；④ 条件请求 304 语义（保留 mtime 场景写成特性化用例）；⑤ `frontendRoot` 失败矩阵；⑥ 静态根暴露边界（断言现行为 + 注释默认安全来自 Dockerfile）；⑦ 压缩：E2E 断言「带 `Accept-Encoding` 仍无 `Content-Encoding`、`content-length` = raw」，并在 AUDIT 登记「预算 = 磁盘 gzip、线上无传输压缩」。
+
+**更正（EVID-8）**：`backend/AUDIT.md:849` 引用 `isHiddenArtifact` 为 `frontend.go:94-99` → 现文件实际为 **`:99-101`**（行号漂移 3 行，由本轮前端改动引入，结论不变）。
+
+**未执行**：真实 Docker/Linux 镜像内探测（本机无 Docker）、反代/CDN 场景、浏览器对 `immutable` 的真实复用行为。
