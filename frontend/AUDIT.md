@@ -947,11 +947,11 @@ M4a 的解释（避免误读）：当前接线里 `writeBundle` 只在成功构�
 
 **修正前事实**（`git log --oneline --graph --all`、`git ls-remote --heads origin`，2026-10-11）：多批不同目的的工作堆在少数分支上，且交付分支未进入远端。
 
-| 分支 | tip | 内容 | 远端状态 |
-| --- | --- | --- | --- |
-| `main` | `13626e6c` | 规范重写与门禁（11 个提交） | **未推送**（`origin/main` 停在 `1a510f5d`，落后 11） |
-| `maint/acceptance-audit-20261011-closeout` | `8a1bd20d` | 本轮验收审计 8 个提交 | **未推送**（缺工作流作用域，§19.12） |
-| `ci-probe/acceptance-audit-20261011` | `b59e5ff6` | 探针：维护线代码 + `origin/main` 的工作流定义 | 已推送（PR #1） |
+| 分支                                       | tip        | 内容                                          | 远端状态                                             |
+| ------------------------------------------ | ---------- | --------------------------------------------- | ---------------------------------------------------- |
+| `main`                                     | `13626e6c` | 规范重写与门禁（11 个提交）                   | **未推送**（`origin/main` 停在 `1a510f5d`，落后 11） |
+| `maint/acceptance-audit-20261011-closeout` | `8a1bd20d` | 本轮验收审计 8 个提交                         | **未推送**（缺工作流作用域，§19.12）            |
+| `ci-probe/acceptance-audit-20261011`       | `b59e5ff6` | 探针：维护线代码 + `origin/main` 的工作流定义 | 已推送（PR #1）                                      |
 
 **本轮修正**：本批工作落在**新分支** `maint/acceptance-audit-20261011-residual`，并按单一目的拆分提交（CHG-1）。`main` 与 `closeout` 的既有提交**未改写、未合并、未推送**——合并 `main` 属 §8 需逐次单独授权的不可逆操作，本轮未授权即不执行（EVID-9：CI 已绿不等于已交付；未交付原因与解除条件见 §20.5）。
 
@@ -965,29 +965,29 @@ M4a 的解释（避免误读）：当前接线里 `writeBundle` 只在成功构�
 - `GET /repos/JasmineTony/grok2api/actions/runs?per_page=20`
 - `GET /repos/JasmineTony/grok2api/actions/runs/38147560751/jobs?per_page=50`
 
-| 证据 | 值 | 覆盖的本轮阻塞项 |
-| --- | --- | --- |
-| RUN `38147560751`「GHCR Image」，`event=pull_request`，`head_sha=b59e5ff6` | `conclusion=success` | X-03（真实 run id / step / conclusion） |
-| JOB `Verify` | `success` | — |
-| step `Test backend` | `success` | BE-B2 前半 |
-| step `Assert required integration tests ran` | `success` | **BE-B2：隔离 PostgreSQL/Redis「集成用例 0 跳过」断言真实执行且通过** |
-| step `Race backend` | `success` | **BE-B1：Linux `go test -race ./... -count=1`** |
-| step `Vet backend` | `success` | BE-B3 |
-| step `Verify Swagger document` | `success` | X-08 的 CI 侧 |
-| step `Verify frontend` | `success` | 前端 13 步门禁的 CI 侧 |
-| step `Run full-stack E2E` | `success` | **X-09：真实全栈 E2E 的 CI 侧** |
-| step `Upload Playwright artifacts` | `skipped` | 由 workflow 的 `if` 条件决定，非失败（§20.5） |
-| JOB `Build image (amd64)` / `Build image (arm64)` | `success` / `success` | **X-07：Dockerfile 与 `.dockerignore` 的真实纳入判定** |
-| JOB `Publish image` / `Merge image` | `skipped` / `skipped` | 符合预期（`push: false` 且非 main/tag 触发） |
-| RUN `38147560768`「CodeQL Advanced」 | `success`（3 个 Analyze job 全 `success`） | 待解释项：同一 commit 的聚合 check「CodeQL」为 `failure`（§20.5） |
+| 证据                                                                       | 值                                         | 覆盖的本轮阻塞项                                                      |
+| -------------------------------------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------------- |
+| RUN `38147560751`「GHCR Image」，`event=pull_request`，`head_sha=b59e5ff6` | `conclusion=success`                       | X-03（真实 run id / step / conclusion）                               |
+| JOB `Verify`                                                               | `success`                                  | —                                                                     |
+| step `Test backend`                                                        | `success`                                  | BE-B2 前半                                                            |
+| step `Assert required integration tests ran`                               | `success`                                  | **BE-B2：隔离 PostgreSQL/Redis「集成用例 0 跳过」断言真实执行且通过** |
+| step `Race backend`                                                        | `success`                                  | **BE-B1：Linux `go test -race ./... -count=1`**                       |
+| step `Vet backend`                                                         | `success`                                  | BE-B3                                                                 |
+| step `Verify Swagger document`                                             | `success`                                  | X-08 的 CI 侧                                                         |
+| step `Verify frontend`                                                     | `success`                                  | 前端 13 步门禁的 CI 侧                                                |
+| step `Run full-stack E2E`                                                  | `success`                                  | **X-09：真实全栈 E2E 的 CI 侧**                                       |
+| step `Upload Playwright artifacts`                                         | `skipped`                                  | 由 workflow 的 `if` 条件决定，非失败（§20.5）                         |
+| JOB `Build image (amd64)` / `Build image (arm64)`                          | `success` / `success`                      | **X-07：Dockerfile 与 `.dockerignore` 的真实纳入判定**                |
+| JOB `Publish image` / `Merge image`                                        | `skipped` / `skipped`                      | 符合预期（`push: false` 且非 main/tag 触发）                          |
+| RUN `38147560768`「CodeQL Advanced」                                       | `success`（3 个 Analyze job 全 `success`） | 待解释项：同一 commit 的聚合 check「CodeQL」为 `failure`（§20.5）     |
 
 ### 20.3 main 线成果合并（门禁工具版本与规则）
 
 本分支此前基于 `12e03be9`，缺少 main 线在门禁工具上的两处漏报修复，导致「结构门禁 0 越限」的结论基于**有漏报缺陷的工具版本**。本轮以「搬运」方式合入（CHG-2，未改语义）：
 
-| 提交 | 来源 | 内容 |
-| --- | --- | --- |
-| `83ff5ae7` | `57510159` | `backend/tools/structurecheck`（包级函数字面量漏报、闭包基线键碰撞两处修复）与 `backend/tools/apicheck` 及自证夹具 |
+| 提交       | 来源       | 内容                                                                                                                                 |
+| ---------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `83ff5ae7` | `57510159` | `backend/tools/structurecheck`（包级函数字面量漏报、闭包基线键碰撞两处修复）与 `backend/tools/apicheck` 及自证夹具                   |
 | `339c53ca` | `13626e6c` | `AGENTS.md` 4 处：新增 DEV-4「改动落地即验」与 EVID-9「CI 通过 ≠ 已交付」；修正 EXEC-6 中断原因表述；CHG-10 补 `-w` 类批量改写器约束 |
 
 **合并后用修复后工具复测（本机实测）**：
@@ -1008,43 +1008,43 @@ main 线的 AUDIT 章节（`backend/AUDIT.md` §20/§21（BE-18/BE-19）、`fron
 
 ### 20.4 剩余阻塞状态（本轮执行后）
 
-| 编号 | 上一轮状态 | 本轮状态 | 证据 |
-| --- | --- | --- | --- |
-| X-03 GitHub Actions 真实 run | 需授权 | **已关闭** | RUN `38147560751` / `38147560768`（§20.2） |
-| BE-B1 `go test -race` | 仅 CI | **已关闭** | step `Race backend` = `success` |
-| BE-B2 集成用例 0 跳过 | 仅 CI | **已关闭** | step `Assert required integration tests ran` = `success` |
-| BE-B3 Linux CI 行为 | 仅 CI | **已关闭** | JOB `Verify` = `success`（含 `Vet backend`） |
-| X-07 镜像与 `.dockerignore` 纳入判定 | 仅 CI | **已关闭** | `Build image (amd64)` 与 `(arm64)` = `success` |
-| X-09 前端报告门禁 CI 侧 | 仅 CI | **已关闭** | step `Run full-stack E2E` 与 `Verify frontend` = `success` |
-| X-08 Swagger 精确 diff | P1 发布前置 | **本机与 CI 双侧闭环** | §19.11 本机字节一致 + step `Verify Swagger document` = `success` |
-| FE-19-6 父检出 AGENTS 旧 12 步 | 需主人同步 | **已不成立（EVID-8 更正）** | 主检出 `AGENTS.md` 的 DEV-4 已是 13 步；原登记基于更早快照 |
-| X-04 提交纪律 | 待授权 | **部分关闭** | `closeout` 的 8 个提交 + 本轮单一目的提交 `83ff5ae7`、`339c53ca`；`main` 的 11 个提交仍待处理 |
-| X-02 冻结预算基线 | 需授权（CHG-5） | 仍开放（P3） | 需工作区静止 + 授权 |
-| FE-19-8 i18n 单例失败缓存 | 需单独授权 | 仍开放（P2） | 重试语义变更，本轮未改 |
-| BE-G3 `ports/security` 迁移 | 需单独批准 | 仍开放（P2） | 架构迁移，本轮未改 |
-| X-05 重打 tag | 逐次授权 | 未执行 | 不可逆，默认不做 |
-| FE-19-5-C 生产压缩配置 | 需外部事实 | 仍开放 | 本机无生产访问 |
-| 交付分支推送与合并 `main` | — | **Blocked（需授权 + 凭据能力）** | 见 §20.5 |
+| 编号                                 | 上一轮状态      | 本轮状态                           | 证据                                                                                          |
+| ------------------------------------ | --------------- | ---------------------------------- | --------------------------------------------------------------------------------------------- |
+| X-03 GitHub Actions 真实 run         | 需授权          | **已关闭**                         | RUN `38147560751` / `38147560768`（§20.2）                                                    |
+| BE-B1 `go test -race`                | 仅 CI           | **已关闭**                         | step `Race backend` = `success`                                                               |
+| BE-B2 集成用例 0 跳过                | 仅 CI           | **已关闭**                         | step `Assert required integration tests ran` = `success`                                      |
+| BE-B3 Linux CI 行为                  | 仅 CI           | **已关闭**                         | JOB `Verify` = `success`（含 `Vet backend`）                                                  |
+| X-07 镜像与 `.dockerignore` 纳入判定 | 仅 CI           | **已关闭**                         | `Build image (amd64)` 与 `(arm64)` = `success`                                                |
+| X-09 前端报告门禁 CI 侧              | 仅 CI           | **已关闭**                         | step `Run full-stack E2E` 与 `Verify frontend` = `success`                                    |
+| X-08 Swagger 精确 diff               | P1 发布前置     | **本机与 CI 双侧闭环**             | §19.11 本机字节一致 + step `Verify Swagger document` = `success`                              |
+| FE-19-6 父检出 AGENTS 旧 12 步       | 需主人同步      | **已不成立（EVID-8 更正）**        | 主检出 `AGENTS.md` 的 DEV-4 已是 13 步；原登记基于更早快照                                    |
+| X-04 提交纪律                        | 待授权          | **部分关闭**                       | `closeout` 的 8 个提交 + 本轮单一目的提交 `83ff5ae7`、`339c53ca`；`main` 的 11 个提交仍待处理 |
+| X-02 冻结预算基线                    | 需授权（CHG-5） | 仍开放（P3）                       | 需工作区静止 + 授权                                                                           |
+| FE-19-8 i18n 单例失败缓存            | 需单独授权      | 仍开放（P2）                       | 重试语义变更，本轮未改                                                                        |
+| BE-G3 `ports/security` 迁移          | 需单独批准      | 仍开放（P2）                       | 架构迁移，本轮未改                                                                            |
+| X-05 重打 tag                        | 逐次授权        | 未执行                             | 不可逆，默认不做                                                                              |
+| FE-19-5-C 生产压缩配置               | 需外部事实      | 仍开放                             | 本机无生产访问                                                                                |
+| 交付分支推送与合并 `main`            | —               | **Blocked（需授权 + 凭据能力）** | 见 §20.5                                                                                      |
 
 ### 20.5 仍未闭环项（如实登记）
 
-| 项 | 状态 | 说明 / 解除条件 |
-| --- | --- | --- |
-| 交付分支推送与合并 `main` | **Blocked（需授权 + 凭据能力）** | `closeout`/`residual` 含 `.github/workflows/**` 改动，缓存凭据缺工作流作用域；解除条件：具备工作流作用域的推送凭据，或授权按「剔除工作流改动」分线推送。合并 `main` 另需 §8 单独授权 |
-| 「CodeQL」聚合 check 为 `failure` | 待解释（P3） | CodeQL Advanced workflow 三个 Analyze job 全 `success`；聚合 check 失败原因核对中；不影响 Verify job 与镜像构建结论 |
-| `main` 含 11 个未推送提交 | 待决策 | 属另一条线；本轮未改写其引用、未推送 |
-| 冻结预算基线陈旧（`bundle-budget.json`） | 登记（P3，需授权） | 更新须满足 CHG-5（工作区静止 + 记录 `git rev-parse HEAD`） |
-| 认证后首屏 282.30 KiB 不入门禁 | 登记（P2 口径） | 改阈值或口径需维护线授权 |
-| Linux `-race` 与隔离 PG/Redis 的**本机**证据 | 不适用 | 本机无 C 编译器与隔离服务；CI 侧已闭环（§20.2），本机不再声称 |
+| 项                                           | 状态                               | 说明 / 解除条件                                                                                                                                                                                |
+| -------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 交付分支推送与合并 `main`                    | **Blocked（需授权 + 凭据能力）** | `closeout`/`residual` 含 `.github/workflows/**` 改动，缓存凭据缺工作流作用域；解除条件：具备工作流作用域的推送凭据，或授权按「剔除工作流改动」分线推送。合并 `main` 另需 §8 单独授权 |
+| 「CodeQL」聚合 check 为 `failure`            | 待解释（P3）                       | CodeQL Advanced workflow 三个 Analyze job 全 `success`；聚合 check 失败原因核对中；不影响 Verify job 与镜像构建结论                                                                            |
+| `main` 含 11 个未推送提交                    | 待决策                             | 属另一条线；本轮未改写其引用、未推送                                                                                                                                                           |
+| 冻结预算基线陈旧（`bundle-budget.json`）     | 登记（P3，需授权）                 | 更新须满足 CHG-5（工作区静止 + 记录 `git rev-parse HEAD`）                                                                                                                                     |
+| 认证后首屏 282.30 KiB 不入门禁               | 登记（P2 口径）                    | 改阈值或口径需维护线授权                                                                                                                                                                       |
+| Linux `-race` 与隔离 PG/Redis 的**本机**证据 | 不适用                             | 本机无 C 编译器与隔离服务；CI 侧已闭环（§20.2），本机不再声称                                                                                                                                  |
 
 ### 20.6 EVID-8 更正：§20.2 的 CI 覆盖范围与 CodeQL 结论
 
 **原值 → 新值（第 1 条）**：§20.2 未区分该 run 执行的是哪一版工作流定义，读者会误以为维护线新增的门禁步骤也在 CI 覆盖内。**新值**：该 run 执行的是 **`origin/main` 版工作流**（`ci-probe/acceptance-audit-20261011:.github/workflows/ghcr-image.yml` 的 blob `d89c5d51`，与 `origin/main` **逐字节相同**），因此以下两步**不在该 run 中**，其 CI 侧未闭环：
 
-| 仅存在于维护线工作流的步骤 | 受影响登记 | 更正后结论 |
-| --- | --- | --- |
-| `Assert required frontend tests ran`（`pnpm test:results:e2e`） | §20.4 表中「X-09」行 | **E2E 报告门禁的 CI 侧未闭环**；`Verify frontend`（其 13 步含 `pnpm test:results`）的 `success` 只覆盖 Vitest 报告门禁 |
-| `Verify backend structure and API contract`（`go run ./tools/structurecheck` + `apicheck`） | §20.2 表格的隐含覆盖 | **未在该 run 中执行**；本机侧已闭环（§20.3 与 `backend/AUDIT.md` §21.1） |
+| 仅存在于维护线工作流的步骤                                                                  | 受影响登记           | 更正后结论                                                                                                             |
+| ------------------------------------------------------------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `Assert required frontend tests ran`（`pnpm test:results:e2e`）                             | §20.4 表中「X-09」行 | **E2E 报告门禁的 CI 侧未闭环**；`Verify frontend`（其 13 步含 `pnpm test:results`）的 `success` 只覆盖 Vitest 报告门禁 |
+| `Verify backend structure and API contract`（`go run ./tools/structurecheck` + `apicheck`） | §20.2 表格的隐含覆盖 | **未在该 run 中执行**；本机侧已闭环（§20.3 与 `backend/AUDIT.md` §21.1）                                               |
 
 **根因**：本机凭据缺工作流作用域，探针分支必须保留 `origin/main` 的工作流定义（否则推送被拒，见 §20.1 的实测 `git push` exit 1）。
 
