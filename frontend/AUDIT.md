@@ -913,3 +913,22 @@ M4a 的解释（避免误读）：当前接线里 `writeBundle` 只在成功构�
 - 命令：`pnpm verify:full`（cwd=`frontend/`，`HUSKY=0`）；**退出码 0**；21:55:32.87 → 22:08:17.11（765s）。日志：会话 scratch `verifyfull4.out.log` / `verifyfull4.exit.txt`。
 - 关键输出（去除 ANSI 后的原文）：`All matched files use Prettier code style!`；`Found 0 warnings and 0 errors.`；`Test Files 123 passed (123)`；`All files | 98.01 | 94.32 | 98.29 | 98.69`；`必需前端场景执行门禁通过：清单内用例均已运行、通过、未跳过且无 flaky。`；`✔ no dependency violations found (430 modules, 2037 dependencies cruised)`；`扫描源码文件：404 个`；`参与判定的作用域（REV-3）：2525 个`；`门禁自测通过：33 个用例（含 22 个必须失败的用例）。`；`体积预算门禁通过。`；`Running 21 tests using 4 workers` → `21 passed (41.3s)`；报告门禁 `Vitest 报告：参与判定的文件 123 个、用例 1488 个（通过 1488、失败 0、跳过 0、flaky 0）…`、`E2E 报告：参与判定的文件 5 个、用例 21 个（通过 21、失败 0、跳过 0、flaky 0）…`。
 - 覆盖边界（如实登记）：该次运行覆盖的代码、配置、测试文件与文档格式即最终快照；此后仅在本文件追加本段登记文本，其格式由随后的 `pnpm exec prettier --check .`（**exit 0**）覆盖，未再改动任何代码或配置。
+
+### 19.11 收口轮：分支隔离、分阶段提交与 Swagger 复现（2026-10-11 22:15–22:50）
+
+- **分支**：`maint/acceptance-audit-20261011-closeout`（从基点 `12e03be9` 切出）。上一轮把三批改动全部堆在 `maint/acceptance-audit-20261011` 且始终未提交（无法按阶段回滚、无法用分支名区分范围），本轮按新增的 `AGENTS.md` **CHG-12** 纠正为「每轮新分支 + 分阶段提交」。
+- **提交（7 个，单目的、可独立回滚；合计 187 文件 +3620/−516）**：
+
+| #   | commit     | 说明                                                            | 文件 | ±         |
+| --- | ---------- | --------------------------------------------------------------- | ---- | --------- |
+| 1   | `22605c8b` | `test(backend)` 边界测试扩展 + 内部产物静态托管收口             | 4    | +415/−40  |
+| 2   | `2469ec92` | `chore(frontend)` ESLint/tsconfig/Oxlint 收紧 + 报告门禁接线    | 7    | +695/−18  |
+| 3   | `f97217d3` | `test(frontend)` 登录/懒加载集成测试 + E2E 导航用例 + JSON 报告 | 6    | +744/−38  |
+| 4   | `94704336` | `chore(build)` 内容指纹替代 mtime + 容器构建输入补齐            | 7    | +665/−57  |
+| 5   | `1f864ab0` | `feat(frontend)` 登录页内联错误提示 + 懒加载并发                | 2    | +61/−35   |
+| 6   | `70d63e7f` | `style(frontend)` 补齐导出边界返回类型（DEV-2）                 | 157  | +618/−291 |
+| 7   | `0f973931` | `docs` AGENTS/README 同步 + 本轮 AUDIT 登记                     | 4    | +422/−37  |
+
+- **更正（EVID-8）**：§19.8 验证表、§19.10 覆盖边界说明与 scratch 的 `plan-section6-completion-mapping.md` 曾记「全部改动未提交」→ **现已提交**；根因是上一轮未切新分支、也未分阶段提交；复现：`git log --oneline 12e03be9..maint/acceptance-audit-20261011-closeout` 与 `git status --porcelain`（应为空）。
+- **Swagger 阻塞关闭（真实复现，非静态推断）**：用 Makefile 的等价调用 `go run github.com/swaggo/swag/cmd/swag@v1.16.6 init -g main.go -d cmd/grok2api,internal/transport/http --parseInternal --output <scratch>/docs --outputTypes go,json,yaml`（cwd `backend/`，`GOCACHE=<repo>/.gocache`）→ **exit 0**；生成结果与 `backend/docs/**` **字节一致**（`docs.go` 30,474 B SHA256 `D70FD3F2…3080`、`swagger.json` 29,791 B `0BA68021…FB90`、`swagger.yaml` 13,959 B `9B269170…4B58`），`git diff --no-index --exit-code` = 0，且 `git hash-object` 等于 `HEAD:backend/docs/*` 的 blob ⇒ CI 的 `make swagger` + `git diff --exit-code -- backend/docs/{docs.go,swagger.json,swagger.yaml}` 会 **exit 0**。运行前后 `backend/docs/**` 的 SHA256 与 mtime 均未变（未写入仓库）。
+- **复现要点（子发现）**：swag 用 `--output` 目录的**最后一段**作为生成 Go 文件的 package 名（输出到 `swagger-out` 会得到 `package swagger_out`，与仓库的 `package docs` 差 4 行）；复现 CI 断言时输出目录必须命名为 `docs`。

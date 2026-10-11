@@ -927,3 +927,10 @@ go test <pkg> -run '^$' -bench '<正则>' -benchmem -count=5
 ### 20.11 回滚
 
 按类别独立回滚：边界测试与夹具回退 `import_boundary_test.go` 并删除 `import_boundary_fixtures_test.go`；静态托管收口回退 `frontend.go` +6/−1 与 `server_test.go` +4/−0（回退后 `/.build-manifest.json` 会重新 200 公开返回，不建议）；`.dockerignore` 三行白名单回退不影响本机验证（真实容器判定仍以 CI `check_ghcr_image` 为准）。本轮无数据、协议、配置（除 `.dockerignore`）或依赖迁移。
+
+### 20.12 收口轮登记：分支、提交与 Swagger 复现（2026-10-11 22:15–22:50）
+
+- **分支与提交**：本轮在 `maint/acceptance-audit-20261011-closeout`（基点 `12e03be9`）上分 7 个单目的提交完成；后端文件分别落在 `22605c8b`（边界测试 + 静态托管，4 文件）与 `0f973931`（本文档同步，4 文件）。详见 `frontend/AUDIT.md` §19.11（含完整提交表与分支纪律 CHG-12）。
+- **更正（EVID-8）**：§20.9/§20.11 与 scratch 的 `plan-section6-completion-mapping.md` 曾记「全部改动未提交」→ **现已提交**；复现：`git log --oneline 12e03be9..HEAD` 与 `git status --porcelain`（应为空）。
+- **Swagger 阻塞关闭（真实复现）**：`swag@v1.16.6` 按 Makefile 等价参数再生成到 scratch 的输出目录 `docs`，三份产物与 `backend/docs/**` **字节一致**（SHA256 见 `frontend/AUDIT.md` §19.11），`git diff --no-index --exit-code` = 0 且 `git hash-object` == `HEAD:backend/docs/*` ⇒ CI 的 `make swagger` 精确 diff 断言会 exit 0；`backend/docs/**` 未被写入（前后 SHA256 与 mtime 不变）。
+- **仍未关闭（本机不可完成）**：`go test -race`（需 Linux/cgo 工具链）、隔离 PostgreSQL/Redis「0 跳过」（需服务）、镜像构建（本机无 docker 且 WSL 无发行版）——三者均由 CI 的 Verify job 覆盖，恢复命令见 §20.9。
