@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
-import type { EgressNodeDTO, EgressNodeInput } from "@/features/settings/settings-api";
+import type { EgressNodeDTO, EgressNodeInput } from "@/entities/egress/egress-dto";
 
 // 守护节点新增/编辑弹窗：从 quality-guard-page.tsx 拆出。字段、校验与提交行为保持不变，
 // 仅按「通用字段 / 代理字段」拆成两个子组件，避免单组件过长。

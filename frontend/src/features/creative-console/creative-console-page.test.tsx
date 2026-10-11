@@ -32,8 +32,8 @@ vi.mock("@/features/creative-console/creative-console-api", async (importOrigina
   ...consoleApiMock,
 }));
 
-vi.mock("@/features/client-keys/client-keys-api", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/features/client-keys/client-keys-api")>()),
+vi.mock("@/entities/client-keys/client-keys-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/entities/client-keys/client-keys-api")>()),
   ...keysApiMock,
 }));
 

@@ -1,4 +1,4 @@
-import type { AccountProvider } from "@/features/accounts/accounts-dto";
+import type { AccountProvider } from "@/entities/accounts/types";
 
 /** react-i18next 的 t 的最小结构契约，便于纯函数复用文案而不引入 hook。 */
 export type Translate = (key: string, options?: Record<string, unknown>) => string;

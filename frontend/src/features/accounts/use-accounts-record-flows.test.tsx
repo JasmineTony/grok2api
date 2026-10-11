@@ -5,7 +5,7 @@ import { I18nextProvider } from "react-i18next";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
 import type { AccountsFlowContext } from "@/features/accounts/accounts-flow-context";
-import type { AccountDTO, AccountProvider } from "@/features/accounts/accounts-dto";
+import type { AccountDTO, AccountProvider } from "@/entities/accounts/types";
 import { useAccountCleanupFlow } from "@/features/accounts/use-account-cleanup-flow";
 import { useAccountDeleteFlow } from "@/features/accounts/use-account-delete-flow";
 import { useAccountEditFlow } from "@/features/accounts/use-account-edit-flow";

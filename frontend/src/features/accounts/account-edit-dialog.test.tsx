@@ -12,7 +12,7 @@ import {
   createAccountFormSchema,
   type AccountForm,
 } from "@/features/accounts/account-edit-form";
-import type { AccountDTO, BuildRouteMode } from "@/features/accounts/accounts-dto";
+import type { AccountDTO, BuildRouteMode } from "@/entities/accounts/types";
 import { i18n } from "@/shared/i18n";
 
 // 账号编辑弹窗测试（AGENTS.md TEST-1/TEST-3）：用真实 react-hook-form + zod 校验驱动，

@@ -18,8 +18,8 @@ import {
   deleteEgressNodes,
   updateEgressNode,
   updateEgressNodesEnabled,
-  type EgressNodeDTO,
-} from "@/features/settings/settings-api";
+} from "@/entities/egress/egress-api";
+import type { EgressNodeDTO } from "@/entities/egress/egress-dto";
 
 // 守护节点的人工操作（探测 / 新增编辑 / 启停 / 批量启停 / 删除）。
 // 每个 mutation 独立成小 hook：共用同一个 toast id 与失效语义，避免复制第二套成功/失败处理。

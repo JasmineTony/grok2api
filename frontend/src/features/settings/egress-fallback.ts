@@ -1,4 +1,4 @@
-import type { EgressNodeDTO, EgressScope } from "@/features/settings/settings-api";
+import type { EgressNodeDTO, EgressScope } from "@/entities/egress/egress-dto";
 
 /** 可作为兜底出口的节点：启用、已配置代理、非代理池、未被账号绑定且未冷却。 */
 export function fallbackNodeCandidates(nodes: EgressNodeDTO[], scope: EgressScope): EgressNodeDTO[] {

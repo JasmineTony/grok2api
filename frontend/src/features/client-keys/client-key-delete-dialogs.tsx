@@ -10,7 +10,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import type { ClientKeyDTO } from "@/features/client-keys/client-keys-api";
+import type { ClientKeyDTO } from "@/entities/client-keys/types";
 
 type DeleteConfirmDialogProps = {
   open: boolean;

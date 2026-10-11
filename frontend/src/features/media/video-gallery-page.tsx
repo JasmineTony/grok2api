@@ -14,9 +14,21 @@ import { useVideoListFilters } from "@/features/media/use-video-list-filters";
 import { VideoGalleryTable, type VideoGalleryTableProps } from "@/features/media/video-gallery-table";
 import { VideoPreviewDialog } from "@/features/media/video-preview-dialog";
 
+type VideoGalleryContentProps = {
+  list: VideoGalleryTableProps["list"];
+  filters: VideoGalleryTableProps["filters"];
+  jobs: VideoGalleryTableProps["jobs"];
+  selection: VideoGalleryTableProps["selection"];
+  result: VideoGalleryTableProps["result"];
+  selectionMeta: VideoGalleryTableProps["selectionMeta"];
+  deletion: ReturnType<typeof useMediaDeletion>;
+  previewing: MediaJobDTO | null;
+  onPreview: (job: MediaJobDTO) => void;
+  onClosePreview: () => void;
+};
+
 /** 视频任务页：持有分页/筛选/选中/预览状态与查询、删除变更；表格与弹窗均为独立组件。 */
 export function VideoGalleryPage() {
-  const { t, i18n } = useTranslation();
   const list = useMediaListState();
   const filters = useVideoListFilters(list);
   const [previewing, setPreviewing] = useState<MediaJobDTO | null>(null);
@@ -44,16 +56,47 @@ export function VideoGalleryPage() {
       selection.clear();
     },
   });
+
+  return (
+    <VideoGalleryContent
+      list={list}
+      filters={filters}
+      jobs={jobs}
+      selection={selection}
+      result={result}
+      selectionMeta={{ pageIDs, selectedCount: selectedOnPageCount }}
+      deletion={deletion}
+      previewing={previewing}
+      onPreview={setPreviewing}
+      onClosePreview={() => setPreviewing(null)}
+    />
+  );
+}
+
+/** 视频任务区：页头、表格、删除确认与预览弹窗。 */
+function VideoGalleryContent({
+  list,
+  filters,
+  jobs,
+  selection,
+  result,
+  selectionMeta,
+  deletion,
+  previewing,
+  onPreview,
+  onClosePreview,
+}: VideoGalleryContentProps) {
+  const { t, i18n } = useTranslation();
   const table: VideoGalleryTableProps = {
     list,
     filters,
     jobs,
     selection,
     result,
-    selectionMeta: { pageIDs, selectedCount: selectedOnPageCount },
+    selectionMeta,
     locale: i18n.language,
     onRequestDelete: deletion.requestConfirm,
-    onPreview: setPreviewing,
+    onPreview,
   };
 
   return (
@@ -74,7 +117,7 @@ export function VideoGalleryPage() {
         onOpenChange={deletion.closeConfirm}
         onConfirm={deletion.confirm}
       />
-      <VideoPreviewDialog job={previewing} onClose={() => setPreviewing(null)} />
+      <VideoPreviewDialog job={previewing} onClose={onClosePreview} />
     </div>
   );
 }

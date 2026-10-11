@@ -6,11 +6,10 @@ import {
   deleteAccount,
   deleteAccounts,
   previewAccountDeletion,
-  type AccountDTO,
   type AccountDeleteResultDTO,
 } from "@/features/accounts/accounts-api";
+import type { AccountDTO, AccountProvider } from "@/entities/accounts/types";
 import type { AccountsFlowContext } from "@/features/accounts/accounts-flow-context";
-import type { AccountProvider } from "@/features/accounts/accounts-dto";
 import { linkedTargetOptions, type Translate } from "@/features/accounts/accounts-view-model";
 
 type LinkedCounts = Partial<Record<AccountProvider, number>>;

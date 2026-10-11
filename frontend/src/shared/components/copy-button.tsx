@@ -8,21 +8,16 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { copyToClipboard } from "@/shared/clipboard";
 import { cn } from "@/shared/lib/cn";
 
-export function CopyButton({
-  value,
-  className,
-  disabled,
-  copyLabel,
-  onCopied,
-  onError,
-}: {
+type CopyButtonProps = {
   value: string;
   className?: string;
   disabled?: boolean;
   copyLabel?: string;
   onCopied?: () => void;
   onError?: (error: unknown) => void;
-}) {
+};
+
+export function CopyButton({ value, className, disabled, copyLabel, onCopied, onError }: CopyButtonProps) {
   const { t } = useTranslation();
   const [copiedValue, setCopiedValue] = useState<string | null>(null);
   const resetTimerRef = useRef<number | null>(null);
@@ -54,6 +49,20 @@ export function CopyButton({
   const copied = copiedValue === value;
   const label = copied ? t("common.copied") : (copyLabel ?? t("common.copy"));
   return (
+    <CopyButtonTrigger label={label} copied={copied} disabled={disabled} className={className} onClick={handleClick} />
+  );
+}
+
+type CopyButtonTriggerProps = {
+  label: string;
+  copied: boolean;
+  disabled?: boolean;
+  className?: string;
+  onClick: () => void;
+};
+
+function CopyButtonTrigger({ label, copied, disabled, className, onClick }: CopyButtonTriggerProps) {
+  return (
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
@@ -63,7 +72,7 @@ export function CopyButton({
           className={cn("size-7 shrink-0 text-muted-foreground", className)}
           aria-label={label}
           disabled={disabled}
-          onClick={handleClick}
+          onClick={onClick}
         >
           {copied ? <Check /> : <Copy />}
         </Button>

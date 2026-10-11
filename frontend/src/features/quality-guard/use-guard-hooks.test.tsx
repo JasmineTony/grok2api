@@ -17,7 +17,7 @@ import { useGuardNodeActions } from "@/features/quality-guard/use-guard-node-act
 import type { GuardNodeDialogs } from "@/features/quality-guard/use-guard-node-dialogs";
 import { useGuardNodes } from "@/features/quality-guard/use-guard-nodes";
 import { useProbeProfiles, type ProbeProfileDraft } from "@/features/quality-guard/use-probe-profiles";
-import type { EgressNodeDTO, EgressNodeInput } from "@/features/settings/settings-api";
+import type { EgressNodeDTO, EgressNodeInput } from "@/entities/egress/egress-dto";
 import { i18n } from "@/shared/i18n";
 
 // 四个质量守护 hook 的控制器级测试（AGENTS.md TEST-2）。

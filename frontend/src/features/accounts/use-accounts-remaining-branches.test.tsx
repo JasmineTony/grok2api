@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/shared/api/client";
 import type { AccountsFlowContext } from "@/features/accounts/accounts-flow-context";
-import type { AccountDTO } from "@/features/accounts/accounts-dto";
+import type { AccountDTO } from "@/entities/accounts/types";
 import { useAccountCleanupFlow } from "@/features/accounts/use-account-cleanup-flow";
 import { useAccountDeleteFlow } from "@/features/accounts/use-account-delete-flow";
 import { useAccountsDeviceFlow } from "@/features/accounts/use-account-device-flow";
@@ -57,8 +57,13 @@ vi.mock("@/features/accounts/accounts-api", async (importOriginal) => {
   return { ...actual, ...mocks };
 });
 
-vi.mock("@/features/settings/settings-api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/features/settings/settings-api")>();
+vi.mock("@/entities/accounts/accounts-api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/entities/accounts/accounts-api")>();
+  return { ...actual, listAccounts: mocks.listAccounts };
+});
+
+vi.mock("@/entities/egress/egress-api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/entities/egress/egress-api")>();
   return { ...actual, listEgressNodes: mocks.listEgressNodes, listEgressSources: mocks.listEgressSources };
 });
 

@@ -1,37 +1,49 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, type UseFormReturn } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
-import {
-  createClientKey,
-  deleteClientKey,
-  deleteClientKeys,
-  getClientKeySecret,
-  listClientKeys,
-  updateClientKey,
-  updateClientKeysEnabled,
-  type ClientKeyDTO,
-  type CreateKeyResponseDTO,
-} from "@/features/client-keys/client-keys-api";
 import { ClientKeyDeleteDialog, ClientKeysBatchDeleteDialog } from "@/features/client-keys/client-key-delete-dialogs";
 import { ClientKeyFormDialog } from "@/features/client-keys/client-key-form-dialog";
 import {
-  clientKeyFormToInput,
   clientKeyToFormValues,
   createClientKeyDefaults,
   createClientKeySchema,
   type ClientKeyFormValues,
 } from "@/features/client-keys/client-key-form-schema";
-import { ClientKeySecretDialog, type SecretDialogState } from "@/features/client-keys/client-key-secret-dialog";
+import { ClientKeySecretDialog } from "@/features/client-keys/client-key-secret-dialog";
 import { ClientKeysTable } from "@/features/client-keys/client-keys-table";
 import { ClientKeysToolbar } from "@/features/client-keys/client-keys-toolbar";
+import {
+  useClientKeyBatchMutations,
+  type ClientKeyBatchMutations,
+} from "@/features/client-keys/use-client-keys-batch-mutations";
+import {
+  useClientKeyDialogs,
+  useClientKeysListModel,
+  useClientKeysSelection,
+  type ClientKeyDialogs,
+  type ClientKeysListModel,
+  type ClientKeysSelection,
+  type ClientKeysTranslate,
+} from "@/features/client-keys/use-client-keys-page-model";
+import {
+  useClientKeyRowMutations,
+  type ClientKeyRowMutations,
+} from "@/features/client-keys/use-client-keys-row-mutations";
 import { DataTableShell } from "@/shared/components/data-table-shell";
 import { Pagination } from "@/shared/components/pagination";
-import { useDebouncedValue } from "@/shared/hooks/use-debounced-value";
-import { nextTableSort, type SortOrder, type TableSort } from "@/shared/lib/table-sort";
+
+/** 页面模型：列表查询、选中集合、弹窗状态、表单实例与全部变更。 */
+type ClientKeysPageModel = {
+  t: ClientKeysTranslate;
+  list: ClientKeysListModel;
+  selection: ClientKeysSelection;
+  dialogs: ClientKeyDialogs;
+  form: UseFormReturn<ClientKeyFormValues>;
+  rows: ClientKeyRowMutations;
+  batch: ClientKeyBatchMutations;
+};
 
 /**
  * 客户端密钥页：持有筛选/分页/选中状态与全部查询、变更，
@@ -39,20 +51,9 @@ import { nextTableSort, type SortOrder, type TableSort } from "@/shared/lib/tabl
  */
 export function ClientKeysPage() {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [modelScopeFilter, setModelScopeFilter] = useState("");
-  const [sort, setSort] = useState<TableSort>({ field: "", order: "asc" });
-  const [selected, setSelected] = useState<Set<string>>(() => new Set());
-  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
-  const [editing, setEditing] = useState<ClientKeyDTO | "new" | null>(null);
-  const [deleting, setDeleting] = useState<ClientKeyDTO | null>(null);
-  const [secretDialog, setSecretDialog] = useState<SecretDialogState | null>(null);
-  const [statusReferenceTime] = useState(() => Date.now());
-  const debouncedSearch = useDebouncedValue(search);
+  const list = useClientKeysListModel();
+  const selection = useClientKeysSelection(list.pageIds);
+  const dialogs = useClientKeyDialogs();
   const form = useForm<ClientKeyFormValues>({
     resolver: zodResolver(createClientKeySchema(t)),
     defaultValues: createClientKeyDefaults(),
@@ -62,198 +63,160 @@ export function ClientKeysPage() {
     toast.error(error instanceof Error ? error.message : t("errors.generic"));
   }
 
-  const keysQuery = useQuery({
-    queryKey: ["client-keys", page, pageSize, debouncedSearch, statusFilter, modelScopeFilter, sort.field, sort.order],
-    queryFn: () =>
-      listClientKeys({
-        page,
-        pageSize,
-        search: debouncedSearch,
-        status: statusFilter,
-        modelScope: modelScopeFilter,
-        sortBy: sort.field || undefined,
-        sortOrder: sort.field ? sort.order : undefined,
-      }),
+  const rows = useClientKeyRowMutations({
+    editing: dialogs.editing,
+    t,
+    notifyError: showError,
+    closeEditor: () => dialogs.setEditing(null),
+    closeDelete: () => dialogs.setDeleting(null),
+    showSecret: (secret, source) => dialogs.setSecretDialog({ secret, source }),
   });
-
-  const saveMutation = useMutation<CreateKeyResponseDTO | ClientKeyDTO, Error, ClientKeyFormValues>({
-    mutationFn: (values: ClientKeyFormValues) => {
-      if (editing === "new") return createClientKey(clientKeyFormToInput(values));
-      if (!editing) throw new Error(t("errors.generic"));
-      return updateClientKey(editing.id, clientKeyFormToInput(values));
-    },
-    onSuccess: (result) => {
-      void queryClient.invalidateQueries({ queryKey: ["client-keys"] });
-      if ("secret" in result) {
-        setSecretDialog({ secret: result.secret, source: "created" });
-        toast.success(t("keys.created"));
-      } else {
-        toast.success(t("keys.updated"));
-      }
-      setEditing(null);
-    },
-    onError: showError,
+  const batch = useClientKeyBatchMutations({
+    ids: [...selection.selected],
+    t,
+    notifyError: showError,
+    clearSelection: selection.clear,
+    closeBatchDelete: () => dialogs.setBatchDeleteOpen(false),
   });
+  const model: ClientKeysPageModel = { t, list, selection, dialogs, form, rows, batch };
 
-  const deleteMutation = useMutation({
-    mutationFn: deleteClientKey,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["client-keys"] });
-      setDeleting(null);
-      toast.success(t("keys.deleted"));
-    },
-    onError: showError,
-  });
-
-  const copyMutation = useMutation({
-    mutationFn: getClientKeySecret,
-    onSuccess: (result) => setSecretDialog({ secret: result.secret, source: "retrieved" }),
-    onError: showError,
-  });
-
-  const batchUpdateMutation = useMutation({
-    mutationFn: (enabled: boolean) => updateClientKeysEnabled([...selected], enabled),
-    onSuccess: () => {
-      setSelected(new Set());
-      void queryClient.invalidateQueries({ queryKey: ["client-keys"] });
-      toast.success(t("keys.batchUpdated"));
-    },
-    onError: showError,
-  });
-
-  const batchDeleteMutation = useMutation({
-    mutationFn: () => deleteClientKeys([...selected]),
-    onSuccess: () => {
-      setSelected(new Set());
-      setBatchDeleteOpen(false);
-      void queryClient.invalidateQueries({ queryKey: ["client-keys"] });
-      toast.success(t("keys.deleted"));
-    },
-    onError: showError,
-  });
-
-  function beginCreate(): void {
-    setEditing("new");
-    form.reset(createClientKeyDefaults());
-  }
-
-  function beginEdit(key: ClientKeyDTO): void {
-    setEditing(key);
-    form.reset(clientKeyToFormValues(key));
-  }
-
-  function togglePage(checked: boolean): void {
-    setSelected((current) => {
-      const next = new Set(current);
-      for (const key of keysQuery.data?.items ?? []) {
-        if (checked) next.add(key.id);
-        else next.delete(key.id);
-      }
-      return next;
-    });
-  }
-
-  function toggleKey(id: string, checked: boolean): void {
-    setSelected((current) => {
-      const next = new Set(current);
-      if (checked) next.add(id);
-      else next.delete(id);
-      return next;
-    });
-  }
-
-  function changeSort(field: string, initialOrder: SortOrder): void {
-    setSort((current) => nextTableSort(current, field, initialOrder));
-    setPage(1);
-  }
-
-  const result = keysQuery.data;
   return (
     <div className="space-y-5">
-      <header className="flex min-h-8 items-center">
-        <h1 className="text-xl font-medium">{t("keys.title")}</h1>
-        <p className="sr-only">{t("keys.description")}</p>
-      </header>
+      <ClientKeysPageHeader />
+      <ClientKeysListPanel model={model} />
+      <ClientKeysDialogPanel model={model} />
+    </div>
+  );
+}
 
-      <DataTableShell
-        toolbar={
-          <ClientKeysToolbar
-            search={search}
-            onSearchChange={(value) => {
-              setSearch(value);
-              setPage(1);
-            }}
-            statusFilter={statusFilter}
-            onStatusFilterChange={(value) => {
-              setStatusFilter(value);
-              setPage(1);
-            }}
-            modelScopeFilter={modelScopeFilter}
-            onModelScopeFilterChange={(value) => {
-              setModelScopeFilter(value);
-              setPage(1);
-            }}
-            selectedCount={selected.size}
-            onBatchEnable={() => batchUpdateMutation.mutate(true)}
-            onBatchDisable={() => batchUpdateMutation.mutate(false)}
-            onBatchDelete={() => setBatchDeleteOpen(true)}
-            onCreate={beginCreate}
-          />
-        }
-        footer={
-          result && result.total > 0 ? (
-            <Pagination
-              page={result.page}
-              pageSize={result.pageSize}
-              total={result.total}
-              onPageChange={setPage}
-              onPageSizeChange={(value) => {
-                setPageSize(value);
-                setPage(1);
-              }}
-            />
-          ) : undefined
-        }
-      >
-        <ClientKeysTable
-          result={result}
-          isPending={keysQuery.isPending}
-          isError={keysQuery.isError}
-          errorMessage={keysQuery.error?.message ?? ""}
-          onRetry={() => void keysQuery.refetch()}
-          selected={selected}
-          onTogglePage={togglePage}
-          onToggleKey={toggleKey}
-          sort={sort}
-          onSort={changeSort}
-          referenceTime={statusReferenceTime}
-          copyPending={copyMutation.isPending}
-          copyPendingId={copyMutation.variables}
-          onCopySecret={(id) => copyMutation.mutate(id)}
-          onEdit={beginEdit}
-          onDelete={setDeleting}
-        />
-      </DataTableShell>
+/** 页头：标题与仅供读屏的描述。 */
+function ClientKeysPageHeader() {
+  const { t } = useTranslation();
+  return (
+    <header className="flex min-h-8 items-center">
+      <h1 className="text-xl font-medium">{t("keys.title")}</h1>
+      <p className="sr-only">{t("keys.description")}</p>
+    </header>
+  );
+}
 
+/** 列表区：工具条 + 表格 + 分页脚注；无数据时不渲染脚注。 */
+function ClientKeysListPanel({ model }: { model: ClientKeysPageModel }) {
+  const result = model.list.keysQuery.data;
+  const showFooter = Boolean(result && result.total > 0);
+  return (
+    <DataTableShell
+      toolbar={<ClientKeysToolbarPanel model={model} />}
+      footer={showFooter ? <ClientKeysFooterPanel model={model} /> : undefined}
+    >
+      <ClientKeysTablePanel model={model} />
+    </DataTableShell>
+  );
+}
+
+/** 列表工具条：搜索、筛选、批量操作与创建入口。 */
+function ClientKeysToolbarPanel({ model }: { model: ClientKeysPageModel }) {
+  const { list, selection, dialogs, batch, form } = model;
+  return (
+    <ClientKeysToolbar
+      search={list.search}
+      onSearchChange={(value) => {
+        list.setSearch(value);
+        list.setPage(1);
+      }}
+      statusFilter={list.statusFilter}
+      onStatusFilterChange={(value) => {
+        list.setStatusFilter(value);
+        list.setPage(1);
+      }}
+      modelScopeFilter={list.modelScopeFilter}
+      onModelScopeFilterChange={(value) => {
+        list.setModelScopeFilter(value);
+        list.setPage(1);
+      }}
+      selectedCount={selection.selected.size}
+      onBatchEnable={() => batch.updateEnabled.mutate(true)}
+      onBatchDisable={() => batch.updateEnabled.mutate(false)}
+      onBatchDelete={() => dialogs.setBatchDeleteOpen(true)}
+      onCreate={() => {
+        dialogs.setEditing("new");
+        form.reset(createClientKeyDefaults());
+      }}
+    />
+  );
+}
+
+/** 分页脚注：换页或换页长时回到第 1 页。 */
+function ClientKeysFooterPanel({ model }: { model: ClientKeysPageModel }) {
+  const result = model.list.keysQuery.data;
+  if (!result) return null;
+  return (
+    <Pagination
+      page={result.page}
+      pageSize={result.pageSize}
+      total={result.total}
+      onPageChange={model.list.setPage}
+      onPageSizeChange={(value) => {
+        model.list.setPageSize(value);
+        model.list.setPage(1);
+      }}
+    />
+  );
+}
+
+/** 密钥表格：数据、选中、排序、明文与行操作全部来自页面模型。 */
+function ClientKeysTablePanel({ model }: { model: ClientKeysPageModel }) {
+  const { list, selection, dialogs, rows, form } = model;
+  const keysQuery = list.keysQuery;
+  return (
+    <ClientKeysTable
+      result={keysQuery.data}
+      isPending={keysQuery.isPending}
+      isError={keysQuery.isError}
+      errorMessage={keysQuery.error?.message ?? ""}
+      onRetry={() => void keysQuery.refetch()}
+      selected={selection.selected}
+      onTogglePage={selection.togglePage}
+      onToggleKey={selection.toggleKey}
+      sort={list.sort}
+      onSort={list.changeSort}
+      referenceTime={dialogs.statusReferenceTime}
+      copyPending={rows.copy.isPending}
+      copyPendingId={rows.copy.variables}
+      onCopySecret={(id) => rows.copy.mutate(id)}
+      onEdit={(key) => {
+        dialogs.setEditing(key);
+        form.reset(clientKeyToFormValues(key));
+      }}
+      onDelete={dialogs.setDeleting}
+    />
+  );
+}
+
+/** 弹窗区：创建/编辑、明文、单条删除与批量删除确认。 */
+function ClientKeysDialogPanel({ model }: { model: ClientKeysPageModel }) {
+  const { dialogs, selection, form, rows, batch } = model;
+  return (
+    <>
       <ClientKeyFormDialog
-        editing={editing}
+        editing={dialogs.editing}
         form={form}
-        isPending={saveMutation.isPending}
-        onClose={() => setEditing(null)}
-        onSubmit={(values) => saveMutation.mutate(values)}
+        isPending={rows.save.isPending}
+        onClose={() => dialogs.setEditing(null)}
+        onSubmit={(values) => rows.save.mutate(values)}
       />
-      <ClientKeySecretDialog state={secretDialog} onClose={() => setSecretDialog(null)} />
+      <ClientKeySecretDialog state={dialogs.secretDialog} onClose={() => dialogs.setSecretDialog(null)} />
       <ClientKeyDeleteDialog
-        target={deleting}
-        onClose={() => setDeleting(null)}
-        onConfirm={(id) => deleteMutation.mutate(id)}
+        target={dialogs.deleting}
+        onClose={() => dialogs.setDeleting(null)}
+        onConfirm={(id) => rows.remove.mutate(id)}
       />
       <ClientKeysBatchDeleteDialog
-        open={batchDeleteOpen}
-        count={selected.size}
-        onOpenChange={setBatchDeleteOpen}
-        onConfirm={() => batchDeleteMutation.mutate()}
+        open={dialogs.batchDeleteOpen}
+        count={selection.selected.size}
+        onOpenChange={dialogs.setBatchDeleteOpen}
+        onConfirm={() => batch.remove.mutate()}
       />
-    </div>
+    </>
   );
 }

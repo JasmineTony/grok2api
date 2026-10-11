@@ -1,4 +1,4 @@
-import type { EgressSourceInput } from "@/features/settings/settings-api";
+import type { EgressSourceInput } from "@/entities/egress/egress-dto";
 
 /** 订阅源表单的本地形态：代理开关独立于后端 clearProxyURL 语义。 */
 export type EgressSourceForm = Omit<EgressSourceInput, "url" | "proxyURL" | "clearProxyURL"> & {

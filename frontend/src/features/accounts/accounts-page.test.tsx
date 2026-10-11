@@ -7,8 +7,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AccountsPage } from "@/features/accounts/accounts-page";
+import type { AccountDTO } from "@/entities/accounts/types";
 import type {
-  AccountDTO,
   AccountSummaryDTO,
   BuildDetectHandlers,
   BuildDetectItemDTO,
@@ -45,6 +45,15 @@ vi.mock("@/features/accounts/accounts-api", async (importOriginal) => {
     previewAccountDeletion: mocks.previewAccountDeletion,
     deleteAccount: mocks.deleteAccount,
     refreshAllAccountBilling: mocks.refreshAllAccountBilling,
+  };
+});
+
+vi.mock("@/entities/accounts/accounts-api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/entities/accounts/accounts-api")>();
+  return {
+    ...actual,
+    listAccounts: mocks.listAccounts,
+    updateAccountsEnabled: mocks.updateAccountsEnabled,
   };
 });
 

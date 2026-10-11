@@ -1,16 +1,13 @@
 import type { ReactNode } from "react";
 import { I18nextProvider } from "react-i18next";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { AccountQuota, ConsoleQuota, ModelQuotaBlockTooltip, WebQuota } from "@/features/accounts/account-quota";
-import {
-  listAccounts,
-  type AccountDTO,
-  type ModelQuotaBlockDTO,
-  type QuotaDTO,
-} from "@/features/accounts/accounts-api";
+import { AccountQuota, ModelQuotaBlockTooltip } from "@/features/accounts/account-quota";
+import { listAccounts } from "@/entities/accounts/accounts-api";
+import type { AccountDTO, ModelQuotaBlockDTO, QuotaDTO } from "@/entities/accounts/types";
+import { ConsoleQuota, WebQuota } from "@/features/accounts/web-quota";
 import { ApiError } from "@/shared/api/client";
 import { i18n } from "@/shared/i18n";
 import { formatDateTime } from "@/shared/lib/format";
@@ -280,6 +277,23 @@ describe("ConsoleQuota", () => {
     expect(container).toHaveTextContent("5/10");
     expect(screen.getByText("Image").parentElement).toHaveTextContent("-");
     expect(screen.getByText("Video").parentElement).toHaveTextContent("-");
+  });
+
+  // 拆分后 console 窗口的“恢复探测”分支独立成路径，用耗尽窗口 + 重置时间覆盖它。
+  it("console 窗口耗尽时按恢复探测时间提示", async () => {
+    renderWithProviders(
+      <ConsoleQuota
+        windows={[quotaWindow({ mode: "console", remaining: 0, total: 10, resetAt: "2026-04-05T06:07:00Z" })]}
+        locale={locale}
+      />,
+    );
+
+    expect(screen.getByText("Chat").parentElement).toHaveTextContent("10/10");
+    fireEvent.focus(screen.getByRole("button", { name: /Chat/ }));
+    const tooltip = await screen.findByRole("tooltip");
+    expect(tooltip).toHaveTextContent(
+      i18n.t("console.recoveryProbeAt", { time: formatDateTime("2026-04-05T06:07:00Z", locale) }),
+    );
   });
 });
 

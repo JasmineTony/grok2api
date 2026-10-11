@@ -1,7 +1,8 @@
 import type { TFunction } from "i18next";
 import { z } from "zod";
 
-import type { ClientKeyDTO, ClientKeyInput } from "@/features/client-keys/client-keys-api";
+import type { ClientKeyDTO } from "@/entities/client-keys/types";
+import type { ClientKeyInput } from "@/features/client-keys/client-keys-api";
 import { toDateTimeLocal } from "@/shared/lib/format";
 import { USD_TICKS_PER_DOLLAR } from "@/shared/lib/usd";
 

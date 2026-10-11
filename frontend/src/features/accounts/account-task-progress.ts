@@ -31,6 +31,23 @@ const browserScheduler: AccountTaskProgressScheduler = {
   clearTimeout: (handle) => window.clearTimeout(handle as number),
 };
 
+/** 控制器的全部可变状态；独立成对象后，节流与相位推进可按职责分开实现。 */
+type AccountTaskProgressState = {
+  onProgress: ((value: AccountTaskProgressDTO) => void) | undefined;
+  intervalMs: number;
+  scheduler: AccountTaskProgressScheduler;
+  phases: readonly AccountTaskProgressPhase[];
+  phaseIndexes: Map<AccountTaskProgressPhase, number>;
+  latestByPhase: Map<AccountTaskProgressPhase, AccountTaskProgressDTO>;
+  latestUnordered: Map<AccountTaskProgressPhase | undefined, AccountTaskProgressDTO>;
+  activePhaseIndex: number;
+  pending: AccountTaskProgressDTO | undefined;
+  lastEmitted: AccountTaskProgressDTO | undefined;
+  lastEmittedAt: number | undefined;
+  timer: unknown;
+  disposed: boolean;
+};
+
 function isComplete(value: AccountTaskProgressDTO | undefined): boolean {
   return value !== undefined && value.completed >= value.total;
 }
@@ -51,113 +68,125 @@ function monotonicProgress(
   };
 }
 
-// Progress phases are produced concurrently by the backend sync pipeline. This
-// controller buffers future phases, advances the visible phase only forwards,
-// and applies one global render throttle across the whole task.
+function createTaskProgressState(options: AccountTaskProgressControllerOptions): AccountTaskProgressState {
+  const phases = options.phases ?? [];
+  return {
+    onProgress: options.onProgress,
+    intervalMs: options.intervalMs ?? 100,
+    scheduler: options.scheduler ?? browserScheduler,
+    phases,
+    phaseIndexes: new Map(phases.map((phase, index) => [phase, index])),
+    latestByPhase: new Map(),
+    latestUnordered: new Map(),
+    activePhaseIndex: 0,
+    pending: undefined,
+    lastEmitted: undefined,
+    lastEmittedAt: undefined,
+    timer: undefined,
+    disposed: false,
+  };
+}
+
+function clearTaskProgressTimer(state: AccountTaskProgressState): void {
+  if (state.timer === undefined) return;
+  state.scheduler.clearTimeout(state.timer);
+  state.timer = undefined;
+}
+
+function emitPendingTaskProgress(state: AccountTaskProgressState): void {
+  if (!state.pending || !state.onProgress || state.disposed) return;
+  const value = state.pending;
+  state.pending = undefined;
+  if (sameProgress(state.lastEmitted, value)) return;
+  state.lastEmitted = value;
+  state.lastEmittedAt = state.scheduler.now();
+  state.onProgress(value);
+}
+
+function scheduleTaskProgress(state: AccountTaskProgressState, value: AccountTaskProgressDTO): void {
+  if (!state.onProgress || state.disposed || sameProgress(state.pending ?? state.lastEmitted, value)) return;
+  state.pending = value;
+  if (state.lastEmittedAt === undefined) {
+    clearTaskProgressTimer(state);
+    emitPendingTaskProgress(state);
+    return;
+  }
+  const delay = Math.max(0, state.intervalMs - (state.scheduler.now() - state.lastEmittedAt));
+  if (delay === 0) {
+    clearTaskProgressTimer(state);
+    emitPendingTaskProgress(state);
+  } else if (state.timer === undefined) {
+    state.timer = state.scheduler.setTimeout(() => {
+      state.timer = undefined;
+      emitPendingTaskProgress(state);
+    }, delay);
+  }
+}
+
+// 未来相位可能先于当前相位完成到达：先缓冲，等当前相位结束后单向推进，绝不回退。
+function advanceActivePhase(state: AccountTaskProgressState): void {
+  while (state.activePhaseIndex < state.phases.length - 1) {
+    const active = state.latestByPhase.get(state.phases[state.activePhaseIndex]);
+    const next = state.latestByPhase.get(state.phases[state.activePhaseIndex + 1]);
+    if (!isComplete(active) || !next) break;
+    state.activePhaseIndex += 1;
+  }
+}
+
+function reportOrderedTaskProgress(state: AccountTaskProgressState, value: AccountTaskProgressDTO): void {
+  const phase = value.phase ?? state.phases[0];
+  const phaseIndex = phase === undefined ? undefined : state.phaseIndexes.get(phase);
+  if (phase === undefined || phaseIndex === undefined || phaseIndex < state.activePhaseIndex) return;
+
+  const normalized = monotonicProgress(state.latestByPhase.get(phase), { ...value, phase });
+  state.latestByPhase.set(phase, normalized);
+  const previousActivePhaseIndex = state.activePhaseIndex;
+  advanceActivePhase(state);
+
+  const active = state.latestByPhase.get(state.phases[state.activePhaseIndex]);
+  if (!active) return;
+  if (state.activePhaseIndex !== previousActivePhaseIndex && state.onProgress) {
+    // 相位切换是低频语义事件：立即发布，普通计数仍走全局节流。
+    state.pending = active;
+    clearTaskProgressTimer(state);
+    emitPendingTaskProgress(state);
+    return;
+  }
+  scheduleTaskProgress(state, active);
+}
+
+function reportTaskProgress(state: AccountTaskProgressState, value: AccountTaskProgressDTO): void {
+  if (state.disposed) return;
+  if (state.phases.length > 0) {
+    reportOrderedTaskProgress(state, value);
+    return;
+  }
+  const normalized = monotonicProgress(state.latestUnordered.get(value.phase), value);
+  state.latestUnordered.set(value.phase, normalized);
+  scheduleTaskProgress(state, normalized);
+}
+
+function flushTaskProgress(state: AccountTaskProgressState): void {
+  if (state.disposed) return;
+  clearTaskProgressTimer(state);
+  emitPendingTaskProgress(state);
+}
+
+function disposeTaskProgress(state: AccountTaskProgressState): void {
+  clearTaskProgressTimer(state);
+  state.pending = undefined;
+  state.disposed = true;
+}
+
+// 进度相位由后端同步管线并发产生。该控制器缓冲未来相位、只向前推进可见相位，
+// 并在整个任务上应用一次全局渲染节流。
 export function createAccountTaskProgressController(
   options: AccountTaskProgressControllerOptions,
 ): AccountTaskProgressController {
-  const onProgress = options.onProgress;
-  const phases = options.phases ?? [];
-  const intervalMs = options.intervalMs ?? 100;
-  const scheduler = options.scheduler ?? browserScheduler;
-  const phaseIndexes = new Map(phases.map((phase, index) => [phase, index]));
-  const latestByPhase = new Map<AccountTaskProgressPhase, AccountTaskProgressDTO>();
-  const latestUnordered = new Map<AccountTaskProgressPhase | undefined, AccountTaskProgressDTO>();
-  let activePhaseIndex = 0;
-  let pending: AccountTaskProgressDTO | undefined;
-  let lastEmitted: AccountTaskProgressDTO | undefined;
-  let lastEmittedAt: number | undefined;
-  let timer: unknown;
-  let disposed = false;
-
-  const clearTimer = () => {
-    if (timer === undefined) return;
-    scheduler.clearTimeout(timer);
-    timer = undefined;
-  };
-
-  const emitPending = () => {
-    if (!pending || !onProgress || disposed) return;
-    const value = pending;
-    pending = undefined;
-    if (sameProgress(lastEmitted, value)) return;
-    lastEmitted = value;
-    lastEmittedAt = scheduler.now();
-    onProgress(value);
-  };
-
-  const schedule = (value: AccountTaskProgressDTO) => {
-    if (!onProgress || disposed || sameProgress(pending ?? lastEmitted, value)) return;
-    pending = value;
-    if (lastEmittedAt === undefined) {
-      clearTimer();
-      emitPending();
-      return;
-    }
-    const delay = Math.max(0, intervalMs - (scheduler.now() - lastEmittedAt));
-    if (delay === 0) {
-      clearTimer();
-      emitPending();
-    } else if (timer === undefined) {
-      timer = scheduler.setTimeout(() => {
-        timer = undefined;
-        emitPending();
-      }, delay);
-    }
-  };
-
-  const reportOrdered = (value: AccountTaskProgressDTO) => {
-    const phase = value.phase ?? phases[0];
-    const phaseIndex = phase === undefined ? undefined : phaseIndexes.get(phase);
-    if (phase === undefined || phaseIndex === undefined || phaseIndex < activePhaseIndex) return;
-
-    const normalized = monotonicProgress(latestByPhase.get(phase), { ...value, phase });
-    latestByPhase.set(phase, normalized);
-    const previousActivePhaseIndex = activePhaseIndex;
-
-    // A future phase may arrive before the current phase finishes. Keep it
-    // buffered until completion, then advance without ever regressing.
-    while (activePhaseIndex < phases.length - 1) {
-      const active = latestByPhase.get(phases[activePhaseIndex]);
-      const next = latestByPhase.get(phases[activePhaseIndex + 1]);
-      if (!isComplete(active) || !next) break;
-      activePhaseIndex += 1;
-    }
-
-    const active = latestByPhase.get(phases[activePhaseIndex]);
-    if (!active) return;
-    if (activePhaseIndex !== previousActivePhaseIndex && onProgress) {
-      // A phase transition is a low-frequency semantic event. Publish it
-      // immediately while ordinary counters remain globally throttled.
-      pending = active;
-      clearTimer();
-      emitPending();
-      return;
-    }
-    schedule(active);
-  };
-
+  const state = createTaskProgressState(options);
   return {
-    report(value) {
-      if (disposed) return;
-      if (phases.length > 0) {
-        reportOrdered(value);
-        return;
-      }
-      const normalized = monotonicProgress(latestUnordered.get(value.phase), value);
-      latestUnordered.set(value.phase, normalized);
-      schedule(normalized);
-    },
-    flush() {
-      if (disposed) return;
-      clearTimer();
-      emitPending();
-    },
-    dispose() {
-      clearTimer();
-      pending = undefined;
-      disposed = true;
-    },
+    report: (value) => reportTaskProgress(state, value),
+    flush: () => flushTaskProgress(state),
+    dispose: () => disposeTaskProgress(state),
   };
 }

@@ -1,26 +1,14 @@
+import type { AccountProvider } from "@/entities/accounts/types";
 import { apiRequest } from "@/shared/api/client";
 import { createObjectDecoder, decodeCountResult, isNumber, isOptional, isRecordOf } from "@/shared/api/decoder";
 import type {
   AccountCleanupStatus,
   AccountDeleteResultDTO,
-  AccountProvider,
   AccountTokenRefreshResultDTO,
   CleanupPreviewDTO,
   CleanupResultDTO,
   LinkedDeleteTarget,
 } from "@/features/accounts/accounts-dto";
-
-export function updateAccountsEnabled(
-  ids: string[],
-  enabled: boolean,
-  provider: AccountProvider,
-): Promise<{ updated: number }> {
-  return apiRequest(
-    "/api/admin/v1/accounts/batch",
-    { method: "PATCH", body: { ids, enabled, provider } },
-    decodeCountResult<{ updated: number }>("updated"),
-  );
-}
 
 export function updateAccountsMaxConcurrent(
   ids: string[],

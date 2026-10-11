@@ -4,7 +4,7 @@ import { type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { VersionInfoDTO } from "@/entities/system/system-api";
-import { useCheckForUpdates, useVersionInfo } from "@/features/system/use-version-update";
+import { useCheckForUpdates, useVersionInfo } from "@/entities/system/use-version-update";
 
 // 只替换网络边界（entities/system 的 API 函数），被测 hook 保持真实实现。
 const mocks = vi.hoisted(() => ({ getVersionInfo: vi.fn(), checkForUpdates: vi.fn() }));

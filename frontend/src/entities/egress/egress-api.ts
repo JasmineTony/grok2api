@@ -1,3 +1,6 @@
+// 出口节点 / 订阅源 / 代理档案 / 运维的共享 API 契约（entity 层）：
+// accounts、quality-guard 与 settings 共用的查询与节点操作只在这里定义，实现单一来源。
+// 本模块只允许依赖 @/shared，不得 import @/features 或 @/app。
 import { apiRequest } from "@/shared/api/client";
 import { createObjectDecoder, decodeBooleanResult, isNumber, isString } from "@/shared/api/decoder";
 import type { SortOrder } from "@/shared/lib/table-sort";
@@ -19,7 +22,7 @@ import type {
   EgressSourceInput,
   EgressSourceListDTO,
   EgressUnhealthyCleanupPreviewDTO,
-} from "@/features/settings/egress-dto";
+} from "@/entities/egress/egress-dto";
 import {
   decodeEgressImportResult,
   decodeEgressNode,
@@ -32,7 +35,7 @@ import {
   decodeEgressRebalanceResult,
   decodeEgressSource,
   decodeEgressSourceList,
-} from "@/features/settings/egress-decoders";
+} from "@/entities/egress/egress-decoders";
 
 type ListEgressNodesInput = {
   page?: number;

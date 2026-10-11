@@ -1,9 +1,9 @@
 import type { FormEvent } from "react";
 
+import { importVideoInputFromURL } from "@/entities/media/media-api";
 import { createVideo, editVideo, extendVideo } from "@/features/creative-console/creative-console-api";
 import { validDuration } from "@/features/creative-console/chat-session-model";
 import type { VideoAction } from "@/features/creative-console/creative-panel-contract";
-import { importVideoInputFromURL } from "@/features/media/media-api";
 
 export type VideoAttachmentKind = "image" | "reference";
 

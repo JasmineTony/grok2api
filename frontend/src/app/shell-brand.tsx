@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
-import { CurrentVersionLabel } from "@/features/system/version-update";
+import { CurrentVersionLabel } from "@/entities/system/version-update";
 import { GitHubMark } from "@/shared/components/github-mark";
 
 /** 侧栏品牌入口：应用名 + 当前版本，点击回到仪表盘。 */

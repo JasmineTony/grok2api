@@ -17,7 +17,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { listModels } from "@/entities/model/model-api";
-import type { ProviderScopeValue, TierScopeValue } from "@/features/client-keys/client-keys-api";
+import type { ProviderScopeValue, TierScopeValue } from "@/entities/client-keys/types";
 import type { ClientKeyFormValues } from "@/features/client-keys/client-key-form-schema";
 import { ModelOptionsPanel } from "@/features/client-keys/client-key-model-options";
 import { ScopeDropdown } from "@/features/client-keys/client-key-scope-select";

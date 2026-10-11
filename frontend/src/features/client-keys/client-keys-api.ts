@@ -1,35 +1,11 @@
-import { apiRequest, type PaginatedDTO } from "@/shared/api/client";
-import {
-  createObjectDecoder,
-  createPaginatedDecoder,
-  decodeBooleanResult,
-  decodeCountResult,
-  hasShape,
-  isArrayOf,
-  isBoolean,
-  isNumber,
-  isOneOf,
-  isOptional,
-  isString,
-} from "@/shared/api/decoder";
-import type { SortOrder } from "@/shared/lib/table-sort";
+import { clientKeyValidator, decodeClientKey } from "@/entities/client-keys/client-keys-api";
+import type { ClientKeyDTO, ProviderScopeValue, TierScopeValue } from "@/entities/client-keys/types";
+import { apiRequest } from "@/shared/api/client";
+import { createObjectDecoder, decodeBooleanResult, decodeCountResult, isString } from "@/shared/api/decoder";
 
-export type ClientKeyDTO = {
-  id: string;
-  name: string;
-  prefix: string;
-  enabled: boolean;
-  expiresAt?: string;
-  rpmLimit: number;
-  maxConcurrent: number;
-  billingLimitUsdTicks: number;
-  billedUsageUsdTicks: number;
-  allowModelAliases: boolean;
-  allowedModelIds: string[];
-  providerScope?: ProviderScopeValue[];
-  tierScope?: TierScopeValue[];
-  lastUsedAt?: string;
-};
+// 客户端密钥 feature 专属的写操作/表单契约：创建、更新、删除与批量启停。
+// 跨 feature 共用的读取契约（ClientKeyDTO / ProviderScopeValue / TierScopeValue、clientKeyValidator、
+// decodeClientKey、listClientKeys、getClientKeySecret）已下沉到 @/entities/client-keys（SSOT），此处不再重复定义。
 
 export type ClientKeyInput = {
   name: string;
@@ -44,78 +20,15 @@ export type ClientKeyInput = {
   tierScope: TierScopeValue[];
 };
 
-export type ProviderScopeValue = "all" | "grok_build" | "grok_web" | "grok_console";
-export type TierScopeValue = "all" | "free" | "super";
-
 export type CreateKeyResponseDTO = { key: ClientKeyDTO; secret: string };
 
-const clientKeyValidator = hasShape({
-  id: isString,
-  name: isString,
-  prefix: isString,
-  enabled: isBoolean,
-  expiresAt: isOptional(isString),
-  rpmLimit: isNumber,
-  maxConcurrent: isNumber,
-  billingLimitUsdTicks: isNumber,
-  billedUsageUsdTicks: isNumber,
-  allowModelAliases: isBoolean,
-  allowedModelIds: isArrayOf(isString),
-  providerScope: isOptional(isArrayOf(isOneOf("all", "grok_build", "grok_web", "grok_console"))),
-  tierScope: isOptional(isArrayOf(isOneOf("all", "free", "super"))),
-  lastUsedAt: isOptional(isString),
-});
-const decodeClientKey = createObjectDecoder<ClientKeyDTO>("client key", {
-  id: isString,
-  name: isString,
-  prefix: isString,
-  enabled: isBoolean,
-  expiresAt: isOptional(isString),
-  rpmLimit: isNumber,
-  maxConcurrent: isNumber,
-  billingLimitUsdTicks: isNumber,
-  billedUsageUsdTicks: isNumber,
-  allowModelAliases: isBoolean,
-  allowedModelIds: isArrayOf(isString),
-  providerScope: isOptional(isArrayOf(isOneOf("all", "grok_build", "grok_web", "grok_console"))),
-  tierScope: isOptional(isArrayOf(isOneOf("all", "free", "super"))),
-  lastUsedAt: isOptional(isString),
-});
-const decodeClientKeyPage = createPaginatedDecoder<ClientKeyDTO>(clientKeyValidator);
 const decodeCreatedClientKey = createObjectDecoder<CreateKeyResponseDTO>("created client key", {
   key: clientKeyValidator,
   secret: isString,
 });
-const decodeSecret = createObjectDecoder<{ secret: string }>("client key secret", { secret: isString });
-
-type ListClientKeysInput = {
-  page: number;
-  pageSize: number;
-  search?: string;
-  status?: string;
-  modelScope?: string;
-  sortBy?: string;
-  sortOrder?: SortOrder;
-};
-
-export function listClientKeys(input: ListClientKeysInput): Promise<PaginatedDTO<ClientKeyDTO>> {
-  const query = new URLSearchParams({ page: String(input.page), pageSize: String(input.pageSize) });
-  if (input.search) query.set("search", input.search);
-  if (input.status) query.set("status", input.status);
-  if (input.modelScope) query.set("modelScope", input.modelScope);
-  if (input.sortBy && input.sortOrder) {
-    query.set("sortBy", input.sortBy);
-    query.set("sortOrder", input.sortOrder);
-  }
-  return apiRequest(`/api/admin/v1/client-keys?${query}`, {}, decodeClientKeyPage);
-}
 
 export function createClientKey(input: ClientKeyInput): Promise<CreateKeyResponseDTO> {
   return apiRequest("/api/admin/v1/client-keys", { method: "POST", body: input }, decodeCreatedClientKey);
-}
-
-export function getClientKeySecret(id: string): Promise<{ secret: string }> {
-  return apiRequest(`/api/admin/v1/client-keys/${id}/secret`, {}, decodeSecret);
 }
 
 export function updateClientKey(id: string, input: ClientKeyInput): Promise<ClientKeyDTO> {

@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 
 import { emptyNodeInput } from "@/features/quality-guard/guard-node-form";
-import type { EgressNodeDTO, EgressNodeInput } from "@/features/settings/settings-api";
+import type { EgressNodeDTO, EgressNodeInput } from "@/entities/egress/egress-dto";
 
 // 守护页的弹窗状态：策略编辑、节点新增/编辑、节点删除确认。
 // editingNode 用 undefined 表示关闭、null 表示新增、DTO 表示编辑，与拆分前语义一致。

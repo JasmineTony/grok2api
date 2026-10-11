@@ -15,7 +15,7 @@ import type {
   EgressNodeDTO,
   EgressOperationsConfigDTO,
   EgressScope,
-} from "@/features/settings/settings-api";
+} from "@/entities/egress/egress-dto";
 
 export type EgressOperationsForm = Omit<EgressOperationsConfigDTO, "updatedAt">;
 

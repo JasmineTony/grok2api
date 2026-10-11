@@ -2,6 +2,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
+import { uploadMediaInput } from "@/entities/media/media-api";
 import type { ModelRouteDTO } from "@/entities/model/types";
 import { readErrorMessage } from "@/features/creative-console/creative-api-core";
 import {
@@ -28,7 +29,6 @@ import {
   type VideoFormSetters,
   type VideoSelectionVersions,
 } from "@/features/creative-console/video-request";
-import { uploadMediaInput } from "@/features/media/media-api";
 
 export type CreativeVideoJob = { requestId: string; apiKey: string };
 

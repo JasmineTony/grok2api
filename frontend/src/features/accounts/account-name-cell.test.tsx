@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AccountNameCell } from "@/features/accounts/account-name-cell";
-import type { AccountDTO } from "@/features/accounts/accounts-dto";
+import type { AccountDTO } from "@/entities/accounts/types";
 import {
   buildAbnormalBreakdown,
   buildAbnormalDetailItems,
@@ -16,6 +16,7 @@ import {
   linkedTargetOptions,
 } from "@/features/accounts/accounts-view-model";
 import { i18n } from "@/shared/i18n";
+import { formatDateTime } from "@/shared/lib/format";
 
 // 账号名称单元格与账号视图模型测试（AGENTS.md TEST-1）：
 // 名称单元格的分支集中在“多账号关联 / 协议标记 / 机器人风险”组合，视图模型是纯函数。
@@ -305,5 +306,17 @@ describe("AccountNameCell", () => {
     fireEvent.focus(screen.getByLabelText(t("accounts.botRisk")));
     tooltip = await screen.findByRole("tooltip");
     expect(tooltip).toHaveTextContent(t("accounts.botRiskTooltip"));
+  });
+
+  // 拆分后 NSFW 标记独立成组件：只有 NSFW 时间（无协议时间）时仍要渲染，且不渲染协议标记。
+  it("只开启 NSFW 时只渲染 NSFW 标记", async () => {
+    renderCell(<AccountNameCell account={account({ nsfwEnabledAt: "2026-02-02T00:00:00Z" })} />);
+
+    expect(screen.queryByLabelText(t("webAccountSettings.acceptTerms"))).not.toBeInTheDocument();
+    fireEvent.focus(screen.getByLabelText(t("accounts.nsfwEnabledMark")));
+    const tooltip = await screen.findByRole("tooltip");
+    expect(tooltip).toHaveTextContent(
+      t("accounts.nsfwEnabledTooltip", { time: formatDateTime("2026-02-02T00:00:00Z", i18n.language) }),
+    );
   });
 });

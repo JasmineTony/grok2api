@@ -2,14 +2,14 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { listAccounts } from "@/features/accounts/accounts-api";
+import { listAccounts } from "@/entities/accounts/accounts-api";
+import { listClientKeys } from "@/entities/client-keys/client-keys-api";
 import {
   buildAuditFilterOptionGroup,
   type AuditFilterOptionGroupState,
   type AuditFilterOptionItem,
 } from "@/features/audits/audit-filter-definitions";
 import { auditFilterOptionSearch, providerShortLabel } from "@/features/audits/audit-format";
-import { listClientKeys } from "@/features/client-keys/client-keys-api";
 import { useDebouncedValue } from "@/shared/hooks/use-debounced-value";
 
 // 筛选名单始终限制在服务器搜索后的前 50 条，避免大账号池把大量选项累积到浏览器。

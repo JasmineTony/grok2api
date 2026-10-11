@@ -7,7 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { EgressErrorTooltip } from "@/features/settings/egress-error-tooltip";
 import { ClearanceBadge, HealthMeter, ProbeSummary } from "@/features/settings/egress-node-indicators";
 import { egressNodeWire } from "@/features/settings/egress-test-support";
-import type { EgressNodeDTO } from "@/features/settings/settings-api";
+import type { EgressNodeDTO } from "@/entities/egress/egress-dto";
 import { i18n } from "@/shared/i18n";
 
 // 出口状态指示器与悬浮错误说明的渲染测试：只断言真实 DOM 输出，

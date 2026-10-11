@@ -2,7 +2,7 @@ import { RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
-import { VersionUpdateBanner } from "@/features/system/version-update";
+import { VersionUpdateBanner } from "@/entities/system/version-update";
 import { PeriodSelector } from "@/shared/components/period-selector";
 import type { PeriodDays } from "@/shared/lib/period";
 

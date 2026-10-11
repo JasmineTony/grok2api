@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { EgressNodes } from "@/features/settings/egress-nodes";
 import { i18n } from "@/shared/i18n";
-import type { EgressOperationsConfigDTO } from "@/features/settings/settings-api";
+import type { EgressOperationsConfigDTO } from "@/entities/egress/egress-dto";
 
 /**
  * 出口组件集成测试的假 API 与 wire DTO 构造器（仅被 *.test.tsx 使用）。

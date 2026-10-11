@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { ModelRouteDTO } from "@/entities/model/types";
-import type { AccountDTO } from "@/features/accounts/accounts-dto";
+import type { AccountDTO } from "@/entities/accounts/types";
 import { RequestAuditsPage } from "@/features/audits/request-audits-page";
 import {
   auditAttemptDTO,
@@ -20,7 +20,7 @@ import {
   ResizeObserverStub,
   type FakeApiCall,
 } from "@/features/audits/audit-test-support";
-import type { ClientKeyDTO } from "@/features/client-keys/client-keys-api";
+import type { ClientKeyDTO } from "@/entities/client-keys/types";
 import { ApiError } from "@/shared/api/client";
 import { i18n } from "@/shared/i18n";
 import { USD_TICKS_PER_DOLLAR } from "@/shared/lib/usd";

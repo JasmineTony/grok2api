@@ -14,22 +14,22 @@
 状态取值：`Passed` / `Failed` / `Skipped`（缺环境跳过）/ `Blocked`（环境不支持）/ `Pending`（尚未执行）。
 不允许用 `Skipped`、`Blocked` 或"配置已写好"代替 `Passed`。
 
-| 编号   | 验收项             | 判定命令                             | 状态                                                                                                                                                                          |
-| ------ | ------------------ | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| FE-A1  | 格式一致           | `pnpm format:check`                  | Passed（阶段 7 复跑：All matched files use Prettier code style）                                                                                                              |
-| FE-A2  | 类型契约           | `pnpm typecheck`（`tsc -b --force`） | Passed（无输出）                                                                                                                                                              |
-| FE-A3  | Oxlint correctness | `pnpm oxlint`                        | Passed（0 warnings / 0 errors，500 文件 / 96 规则）                                                                                                                           |
-| FE-A4  | ESLint 语义        | `pnpm lint`                          | Passed（0 problem）                                                                                                                                                           |
-| FE-A5  | 纯逻辑单测         | `pnpm test`（node:test）             | Passed（68 tests / 37 suites / 0 fail / 0 skip）                                                                                                                              |
-| FE-A6  | 组件单测 + 覆盖率  | `pnpm test:ui:coverage`              | Passed（113 文件 / 1394 tests；全局 97.66 / 93.77 / 97.95 / 98.36；已开启 `thresholds.perFile`，321 个纳入文件逐文件四项均 ≥76%，最低 stmts/lines/funcs 77.77、branch 76.36） |
-| FE-A7  | 生产构建           | `pnpm build`                         | Passed（阶段 7 热构建 1.32s）                                                                                                                                                 |
-| FE-A8  | 依赖边界与循环     | `pnpm check:architecture`            | Passed（406 模块 / 1825 依赖 / 0 违规）                                                                                                                                       |
-| FE-A9  | 结构约束           | `pnpm check:structure`               | Passed（380 源码文件；0 超限文件 / 29 超限函数 = 冻结基线）                                                                                                                   |
-| FE-A10 | 门禁自测           | `pnpm test:gates`                    | Passed（9 用例，含 4 个必须失败）                                                                                                                                             |
-| FE-A11 | 产物体积预算       | `pnpm check:budget`                  | Passed（首屏 193.31 / 260；全部 JS 621.23 / 650；CSS 16.65 / 20；最大 chunk 457.17 / 500 原始；路由增量 ≤129.12 / 180）                                                       |
-| FE-A12 | 构建可复现性       | 同工具链三次构建产物哈希一致         | Passed（阶段 1 实测 86 文件逐文件 SHA256 零差异；阶段 7 未重跑）                                                                                                              |
-| FE-A13 | 真实全栈 E2E       | `pnpm test:e2e`                      | Passed（4 spec / 16 用例，实测 16 passed / 0 failed / 36.8s / 4 workers / `retries: 0`，见 §12.1）                                                                            |
-| FE-A14 | 聚合全量门禁       | `pnpm verify:full`                   | Passed（`pnpm verify` exit 0 + E2E 16/16）                                                                                                                                    |
+| 编号   | 验收项             | 判定命令                             | 状态                                                                                                                                                                                                          |
+| ------ | ------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FE-A1  | 格式一致           | `pnpm format:check`                  | Passed（阶段 7 复跑：All matched files use Prettier code style）                                                                                                                                              |
+| FE-A2  | 类型契约           | `pnpm typecheck`（`tsc -b --force`） | Passed（无输出）                                                                                                                                                                                              |
+| FE-A3  | Oxlint correctness | `pnpm oxlint`                        | Passed（0 warnings / 0 errors，535 文件 / 96 规则）                                                                                                                                                           |
+| FE-A4  | ESLint 语义        | `pnpm lint`                          | Passed（0 problem）                                                                                                                                                                                           |
+| FE-A5  | 纯逻辑单测         | `pnpm test`（node:test）             | Passed（68 tests / 37 suites / 0 fail / 0 skip）                                                                                                                                                              |
+| FE-A6  | 组件单测 + 覆盖率  | `pnpm test:ui:coverage`              | Passed（121 文件 / 1471 tests；全局 98.00 / 94.31 / 98.28 / 98.68；已开启 `thresholds.perFile`，348 个纳入文件逐文件四项均 ≥76%，最低 stmts/funcs/lines 77.77、branch 76.36；31 条 hook 阈值全 100%，见 §17） |
+| FE-A7  | 生产构建           | `pnpm build`                         | Passed（阶段 7 热构建 1.32s）                                                                                                                                                                                 |
+| FE-A8  | 依赖边界与循环     | `pnpm check:architecture`            | Passed（430 模块 / 1935 依赖 / 0 违规；跨 feature 豁免清单已清零，见 §17.2）                                                                                                                                  |
+| FE-A9  | 结构约束           | `pnpm check:structure`               | Passed（404 源码文件；0 超限文件 / 0 超限函数，冻结基线已收缩为空，见 §17.1）                                                                                                                                 |
+| FE-A10 | 门禁自测           | `pnpm test:gates`                    | Passed（9 用例，含 4 个必须失败）                                                                                                                                                                             |
+| FE-A11 | 产物体积预算       | `pnpm check:budget`                  | Passed（首屏 193.43 / 260；全部 JS 624.18 / 650；CSS 16.65 / 20；最大 chunk 457.31 / 500 原始；路由增量 ≤129.23 / 180）                                                                                       |
+| FE-A12 | 构建可复现性       | 同工具链三次构建产物哈希一致         | Passed（阶段 1 实测 86 文件逐文件 SHA256 零差异；阶段 7 未重跑）                                                                                                                                              |
+| FE-A13 | 真实全栈 E2E       | `pnpm test:e2e`                      | Passed（4 spec / 16 用例，实测 16 passed / 0 failed / 36.8s / 4 workers / `retries: 0`，见 §12.1）                                                                                                            |
+| FE-A14 | 聚合全量门禁       | `pnpm verify:full`                   | Passed（`pnpm verify` exit 0 + E2E 16/16）                                                                                                                                                                    |
 
 `pnpm verify` 实测 exit 0，链路为：
 `format:check → oxlint → lint → typecheck → typecheck:e2e → test → test:ui:coverage → check:architecture → check:structure → test:gates → build → check:budget`（E2E 由 `verify:full` 追加，见 `frontend/README.md`）。
@@ -40,20 +40,20 @@
 - **类型**：`tsconfig.app.json`（`src`，排除测试）、`tsconfig.node.json`（`vite.config.ts`、`vitest.config.ts`）、`tsconfig.test.json`（测试与 `src/types/*.d.ts`）。E2E 独立 tsconfig 属阶段 2。
 - **Lint**：ESLint 10.6.0 + `typescript-eslint` 8.63.0（`@typescript-eslint/no-explicit-any: error`）；Oxlint 1.87.0 仅 `correctness`。排除范围一致：`dist`、`coverage`、`src/components/ui`。
 - **测试**：`*.test.ts` 由 `node --experimental-strip-types --test` 运行；`*.test.tsx` 由 Vitest（jsdom）运行。
-- **覆盖率**：`@vitest/coverage-v8`；`coverage.include` 为 17 条「已重构模块整目录 + `virtual-table-body.tsx`」，`exclude` 14 条（测试分层、纯 re-export barrel、测试支撑）；全局门槛 **76** 并已开启 `thresholds.perFile`（Vitest 5 默认只做聚合检查，见 §15），另有 **20 个自定义 hook** 单独声明四项 100（TEST-2，条目见 `vitest.config.ts` 的 `thresholds`）。
+- **覆盖率**：`@vitest/coverage-v8`；`coverage.include` 为 18 条「已重构模块整目录（含 `src/entities/**`）+ `virtual-table-body.tsx`」，`exclude` 14 条（测试分层、纯 re-export barrel、测试支撑）；全局门槛 **76** 并已开启 `thresholds.perFile`（Vitest 5 默认只做聚合检查，见 §15），另有 **31 个自定义 hook** 单独声明四项 100（TEST-2，条目见 `vitest.config.ts` 的 `thresholds`）。
 - **依赖边界**：dependency-cruiser 18.5.0，`.dependency-cruiser.cjs`：循环、不可解析导入、下层反向依赖、跨 feature（存量例外显式冻结）。
 - **结构与预算**：`scripts/check-structure.mjs`、`scripts/check-bundle-budget.mjs`，基线分别是 `structure-baseline.json`、`bundle-budget.json`。
 - **门禁自测**：`scripts/self-test-gates.mjs` 用临时装置验证门禁在违规输入下确实非零退出。
 
 ### 覆盖率实测（`pnpm test:ui:coverage`，阶段 7 复跑）
 
-`pnpm verify` 内实测：**113 文件 / 1394 用例全过**（492s 为阶段 7 值，`maxWorkers: 2`、`testTimeout: 20000`；最终复测见 §15）。
+`pnpm verify` 内实测：**121 文件 / 1471 用例全过**（471.6s，`maxWorkers: 2`、`testTimeout: 20000`；历史阶段值与逐文件收敛过程见 §13、§15、§17）。
 
 | 范围                        | Stmts | Branch | Funcs | Lines |
 | --------------------------- | ----: | -----: | ----: | ----: |
-| All files（321 个纳入文件） | 97.66 |  93.77 | 97.95 | 98.36 |
+| All files（348 个纳入文件） | 98.00 |  94.31 | 98.28 | 98.68 |
 
-逐文件口径：**四项全部 ≥76%**（阶段 6 登记的「约 32 个文件 <76%」已归零，见 §13.2）；另有 **39 个**含可执行语句却报 0/0/0/0 的模块（5 个类型/DTO + 34 个 i18n 纯数据模块），属 V8 转换管线统计假象，根因与证据见 §15。仍不可驱动的是若干死分支/工具语义不可达分支，逐项见 §13.3。
+逐文件口径：**四项全部 ≥76%**（阶段 6 登记的「约 32 个文件 <76%」已归零，见 §13.2）；另有 **42 个**含可执行语句却报 0/0/0/0 的模块（9 个类型/DTO/context + 33 个 i18n 纯数据模块），属 V8 转换管线统计假象，根因与证据见 §15。仍不可驱动的是若干死分支/工具语义不可达分支，逐项见 §13.3。
 
 ### 真实全栈 E2E（阶段 2）
 
@@ -600,3 +600,51 @@ CI run `38047249123`（sha `5bd6b34d`）Verify job 其余步骤全 success，「
 | 过程缺陷        | 工作流文件被 PowerShell 文本往返改写导致编码损坏（UTF-8 BOM + 中文注释乱码 + 换行丢失），GitHub 无法解析并产生 4 个失败 run；已在 `34476cd3` 修复（该提交与 `d070144b` 的差异仅 +2 行注释）。完整根因、修复与 push 触发异常的判定见 `backend/AUDIT.md` §15.2                                                                                                                                                                                                                                                                                                                                                                        |
 | 未达成项        | 无                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | 已知局限        | tag `v0.1.2` 指向发布准备提交 `34476cd3`，其 `AUDIT.md` 内容不含发布**之后**的登记（`d2d3a78c`）——tag 无法包含自身证据，与 §14 未达成项 ② 同类；如需 tag 自带登记只能重打 tag 并重发镜像（不可逆，未执行）。另：`main` 上的 `main`/`latest` 镜像随后续 push 重建（`d2d3a78c` 的 run `38109851940`），`v0.1.2` 标签镜像不再变动                                                                                                                                                                                                                                                                                                      |
+
+## 17. 2026-10-11 存量债务清零（REV-1/REV-2 / FE-06 / TEST-2）
+
+v0.1.2 发布后继续清空已登记存量：**REV-1 超限文件 0（基线 0）、REV-2 超限函数由 29 降至 0（`structure-baseline.json` 收缩为空）**；**FE-06 的 9 处跨 feature 冻结依赖全部下沉 `src/entities/**` 并清零**；TEST-2 的逐文件 100% hook 阈值由 20 条扩到 **31 条**。
+
+### 17.1 REV-2：29 个超限函数拆到 ≤50 行
+
+| 目录                | 超限函数数 | 处置（拆分前 → 拆分后）                                                                                                                                                                                                                                                          |
+| ------------------- | ---------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `features/accounts` |          9 | `AccountNameCell` 146→22、`AccountQuota` 66→16、`BuildQuota` 92→45、`ImagineQuotaRow` 70→15、`WebQuota` 51→26、`WeeklyWebQuota` 63→38、`createAccountTaskProgressController` 107→10、`WebAccountScriptsDialog` 112→44、`WebAccountSettingsDialogs` 56→38（新增 `web-quota.tsx`） |
+| `features/settings` |          6 | `EgressNodes` **437→23**（拆出 7 个 hook + 2 个展示组件 + 2 个纯规则模块）、`EgressAutomation` 115→47、`EgressSources` 148→35、`EgressProxyProfiles` 154→27、`toSettingsForm` 71→15、`toSettingsDTO` 69→15                                                                       |
+| `shared`            |          8 | `apiEventStream` 101→17、`legacyCopy` 54→28、`CopyButton` 64→35、`DataTableFilters` 190→32、`DateTimePicker` 95→43、`Pagination` 75→22、`CursorPagination` 69→47、`VirtualTableBody` 76→42                                                                                       |
+| 其余 feature        |          6 | `RequestAuditsPage` 85→35、`LoginPage` 96→21、`ClientKeysPage` 220→39、`DashboardPage` 54→47、`VideoGalleryPage` 63→44、`VersionUpdateSection` 94→32                                                                                                                             |
+
+- 全部为行为等价拆分（DOM/`data-testid`/可访问名称/hook 顺序与依赖数组/错误文案不变），既有断言无删除或弱化，并补齐拆出分支的断言。
+- `frontend/structure-baseline.json` 现为 `files: {}` / `functions: {}`（`node scripts/check-structure.mjs --update` 收缩；404 个源码文件、超限 0/0）。
+- 拆分过程中修复 1 个由拆分引入的 ESLint 违规：`shared/components/date-time-picker.tsx` 的 `TimePartInput` 直接改写 prop `timeInputRefs`（`react-hooks/immutability`）→ 改为由持有 `useRef` 的父组件提供 `setTimeInputRef(index, element)` 写入口；并新增 `date-time-picker.test.tsx`（10 用例）直接覆盖 ref 收集与提交路径。
+
+### 17.2 FE-06：9 处跨 feature 依赖清零（下沉 `src/entities/**`）
+
+| 新增/扩展 entity                                              | 内容                                                                                      |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `src/entities/accounts/{accounts-api,types}`                  | `listAccounts`、`updateAccountsEnabled`、账号/计费 DTO 与解码器                           |
+| `src/entities/client-keys/{client-keys-api,types}`            | `listClientKeys`、`getClientKeySecret`、`ClientKeyDTO`、scope 类型                        |
+| `src/entities/media/{media-api,types}`                        | `importVideoInputFromURL`、`uploadMediaInput`、`MediaInputDTO`                            |
+| `src/entities/egress/{egress-api,egress-dto,egress-decoders}` | 出口节点/订阅源/代理配置契约（自 `features/settings` 迁出，`settings-api.ts` 转发桥已删） |
+| `src/entities/system/{version-update,use-version-update}`     | 版本更新控件与 hook（自 `features/system` 整体迁入，该目录已删除）                        |
+
+消费方（audits / quality-guard / creative-console / accounts / settings / dashboard / app shell）统一改从 entity 导入；feature 侧的重复定义（`features/accounts/accounts-api.ts`、`accounts-dto.ts`、`account-batch-api.ts`、`features/client-keys/client-keys-api.ts`、`features/media/media-api.ts` 中的同名函数/类型/解码器）已删除，无 `export * from "@/entities/..."` 兼容转发层。
+
+`.dependency-cruiser.cjs` 的 `frozenCrossFeatureDebt` **清零为空对象**（原 9 处：accounts→settings、audits→accounts/client-keys、creative-console→client-keys/media、dashboard→system、quality-guard→accounts/settings、settings→system）；`pnpm check:architecture` 在空豁免下 **0 违规**（430 模块 / 1935 依赖），此后任何新增跨 feature 直接依赖都会被门禁判为违规。
+
+### 17.3 TEST-1 / TEST-2 口径收紧
+
+- `coverage.include` 新增 `src/entities/**`、移除已不存在的 `src/features/system/**`（现 18 条），使 entity 层同样受逐文件 76% 约束；为此新增直测 `entities/media/media-api.test.tsx`、`entities/model/model-api.test.tsx`、`entities/system/system-api.test.tsx`（三个模块实测四项均 **100%**）。
+- TEST-2 逐文件 100% 阈值由 20 条扩到 **31 条**：新增 `features/settings/use-egress-node-{actions,form,import,list,overlays,selection}.ts`、`use-egress-nodes-page-model.ts`、`use-egress-sources-filters.ts`、`features/client-keys/use-client-keys-{page-model,row-mutations,batch-mutations}.ts`；原 `features/system/use-version-update.ts` 条目路径改为 `entities/system/use-version-update.ts`。本次实测 31/31 全部 100%。
+- `features/client-keys/client-keys-page.tsx` 的 5 个文件内 hook 抽为 3 个独立 hook 文件，并新增探针用例驱动此前不可达的 `if (!editing) throw` 守卫分支（此前只能靠推理，现由真实用例覆盖）。
+
+### 17.4 验证（`pnpm verify` 一次跑通，exit 0）
+
+`format:check` / `oxlint`（0 warnings 0 errors，535 文件）/ `lint` / `typecheck` / `typecheck:e2e` / `test`（12 文件 / 37 套件 / 68 用例）/ `test:ui:coverage`（**121 文件 / 1471 用例**；全局 98.00 / 94.31 / 98.28 / 98.68；348 个纳入文件**逐文件四项全部 ≥76%**，0 个低于门槛；31 条 hook 阈值全 100%）/ `check:architecture`（430 模块 / 1935 依赖 / 0 违规）/ `check:structure`（404 文件，0 超限文件 / 0 超限函数）/ `test:gates`（9 用例）/ `build`（4024 模块）/ `check:budget`（首屏 193.43、全部 JS 624.18、CSS 16.65、最大 chunk 457.31 KiB 原始、13 条路由）**全部通过**；`pnpm test:e2e` **16 passed / 0 failed / 4 workers / `retries: 0`**。
+
+### 17.5 未覆盖与风险
+
+- 全部生产 JS 由 621.23 KiB / 77 文件变为 **624.18 KiB / 76 文件（+2.95 KiB，+0.47%）**：文件级拆分与 entity 化改变了 chunk 归属，总量在新冻结基线的 5% 容差内（`check:budget` exit 0）；硬阈值 260/180/650/20/500 KiB 未改。
+- 本次只动函数边界与 import 来源，未新增业务逻辑；`pnpm test:e2e` 的 4 个 spec / 16 用例未变（未新增 E2E 场景），E2E 覆盖缺口与 §2 登记一致。
+- 42 个含可执行语句却报 0/0/0/0 的模块仍属 V8 转换统计假象（§15），其内容由真实断言覆盖。
+- 未做真实浏览器性能测量（LCP/FCP），不声称性能变化；仅按 REV-5 口径报告体积。

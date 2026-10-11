@@ -14,7 +14,7 @@ import {
   type BuildDetectItemDTO,
 } from "@/features/accounts/accounts-api";
 import type { AccountsFlowContext } from "@/features/accounts/accounts-flow-context";
-import type { AccountProvider } from "@/features/accounts/accounts-dto";
+import type { AccountProvider } from "@/entities/accounts/types";
 import { isAbortError } from "@/features/accounts/accounts-view-model";
 
 /** 任务流共用的控制器引用契约（AbortController 只在请求期间存活）。 */

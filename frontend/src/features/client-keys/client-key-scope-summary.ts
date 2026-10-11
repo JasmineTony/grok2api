@@ -1,6 +1,6 @@
 import type { TFunction } from "i18next";
 
-import type { ProviderScopeValue, TierScopeValue } from "@/features/client-keys/client-keys-api";
+import type { ProviderScopeValue, TierScopeValue } from "@/entities/client-keys/types";
 
 /** 账号范围展示标签的唯一来源：表格摘要与表单摘要共用，避免两套文案。 */
 export function providerScopeLabels(t: TFunction): Record<ProviderScopeValue, string> {

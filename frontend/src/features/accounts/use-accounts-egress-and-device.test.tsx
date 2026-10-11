@@ -36,8 +36,13 @@ vi.mock("@/features/accounts/accounts-api", async (importOriginal) => {
   return { ...actual, ...mocks };
 });
 
-vi.mock("@/features/settings/settings-api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/features/settings/settings-api")>();
+vi.mock("@/entities/accounts/accounts-api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/entities/accounts/accounts-api")>();
+  return { ...actual, updateAccountsEnabled: mocks.updateAccountsEnabled };
+});
+
+vi.mock("@/entities/egress/egress-api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/entities/egress/egress-api")>();
   return {
     ...actual,
     assignEgressAccounts: mocks.assignEgressAccounts,

@@ -11,13 +11,8 @@ import { EgressImportDialog, EgressNodeDialog } from "@/features/settings/egress
 import { ResizeObserverStub } from "@/features/settings/egress-test-support";
 import { EgressSourceDialog } from "@/features/settings/egress-source-dialog";
 import { emptyEgressSource, type EgressSourceForm } from "@/features/settings/egress-source-form";
-import type {
-  ClearanceMode,
-  EgressNodeDTO,
-  EgressNodeInput,
-  EgressScope,
-  EgressSourceDTO,
-} from "@/features/settings/settings-api";
+import type { ClearanceMode } from "@/features/settings/settings-dto";
+import type { EgressNodeDTO, EgressNodeInput, EgressScope, EgressSourceDTO } from "@/entities/egress/egress-dto";
 import { i18n } from "@/shared/i18n";
 
 // 出口节点/订阅源/文本导入弹窗的字段级组件测试：直接驱动导出的弹窗组件，用受控 props

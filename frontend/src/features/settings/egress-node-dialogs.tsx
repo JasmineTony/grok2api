@@ -21,7 +21,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { EgressScopeSelect } from "@/features/settings/egress-scope-select";
 import { ProxyProfilePicker } from "@/features/settings/egress-proxy-profile-picker";
-import type { ClearanceMode, EgressNodeDTO, EgressNodeInput, EgressScope } from "@/features/settings/settings-api";
+import type { EgressNodeDTO, EgressNodeInput, EgressScope } from "@/entities/egress/egress-dto";
+import type { ClearanceMode } from "@/features/settings/settings-dto";
 import type { EgressImportForm } from "@/features/settings/egress-import-form";
 
 type EgressNodeDialogProps = {

@@ -37,6 +37,7 @@ export default mergeConfig(
         // 与 frontend/AUDIT.md 的「未达标登记」一一对应，不静默排除。
         include: [
           "src/app/**",
+          "src/entities/**",
           "src/features/accounts/**",
           "src/features/audits/**",
           "src/features/client-keys/**",
@@ -47,7 +48,6 @@ export default mergeConfig(
           "src/features/models/**",
           "src/features/quality-guard/**",
           "src/features/settings/**",
-          "src/features/system/**",
           "src/shared/api/**",
           "src/shared/auth/**",
           "src/shared/hooks/**",
@@ -88,7 +88,7 @@ export default mergeConfig(
           perFile: true,
           "src/shared/hooks/use-chart.ts": { lines: 100, functions: 100, branches: 100, statements: 100 },
           "src/features/settings/use-settings.ts": { lines: 100, functions: 100, branches: 100, statements: 100 },
-          "src/features/system/use-version-update.ts": { lines: 100, functions: 100, branches: 100, statements: 100 },
+          "src/entities/system/use-version-update.ts": { lines: 100, functions: 100, branches: 100, statements: 100 },
           "src/shared/auth/use-auth.ts": { lines: 100, functions: 100, branches: 100, statements: 100 },
           "src/shared/hooks/use-debounced-value.ts": { lines: 100, functions: 100, branches: 100, statements: 100 },
           "src/features/models/use-model-bulk-mutations.ts": {
@@ -158,6 +158,73 @@ export default mergeConfig(
             statements: 100,
           },
           "src/features/accounts/use-accounts-page-model.ts": {
+            lines: 100,
+            functions: 100,
+            branches: 100,
+            statements: 100,
+          },
+          // 2026-10-11 REV-2/TEST-2 拆分新增的 hook：实测四项 100%，加入逐文件门槛锁定。
+          "src/features/settings/use-egress-node-actions.ts": {
+            lines: 100,
+            functions: 100,
+            branches: 100,
+            statements: 100,
+          },
+          "src/features/settings/use-egress-node-form.ts": {
+            lines: 100,
+            functions: 100,
+            branches: 100,
+            statements: 100,
+          },
+          "src/features/settings/use-egress-node-import.ts": {
+            lines: 100,
+            functions: 100,
+            branches: 100,
+            statements: 100,
+          },
+          "src/features/settings/use-egress-node-list.ts": {
+            lines: 100,
+            functions: 100,
+            branches: 100,
+            statements: 100,
+          },
+          "src/features/settings/use-egress-node-overlays.ts": {
+            lines: 100,
+            functions: 100,
+            branches: 100,
+            statements: 100,
+          },
+          "src/features/settings/use-egress-node-selection.ts": {
+            lines: 100,
+            functions: 100,
+            branches: 100,
+            statements: 100,
+          },
+          "src/features/settings/use-egress-nodes-page-model.ts": {
+            lines: 100,
+            functions: 100,
+            branches: 100,
+            statements: 100,
+          },
+          "src/features/settings/use-egress-sources-filters.ts": {
+            lines: 100,
+            functions: 100,
+            branches: 100,
+            statements: 100,
+          },
+          "src/features/client-keys/use-client-keys-page-model.ts": {
+            lines: 100,
+            functions: 100,
+            branches: 100,
+            statements: 100,
+          },
+          "src/features/client-keys/use-client-keys-row-mutations.ts": {
+            lines: 100,
+            functions: 100,
+            branches: 100,
+            statements: 100,
+          },
+          "src/features/client-keys/use-client-keys-batch-mutations.ts": {
             lines: 100,
             functions: 100,
             branches: 100,

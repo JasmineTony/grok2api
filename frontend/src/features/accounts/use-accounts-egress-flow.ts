@@ -4,13 +4,9 @@ import { toast } from "sonner";
 
 import { scopeSupportsAccountProvider } from "@/features/accounts/accounts-egress-filter";
 import type { AccountsFlowContext } from "@/features/accounts/accounts-flow-context";
-import type { AccountProvider } from "@/features/accounts/accounts-dto";
-import {
-  assignEgressAccounts,
-  listAllEgressNodes,
-  unassignEgressAccounts,
-  type EgressScope,
-} from "@/features/settings/settings-api";
+import type { AccountProvider } from "@/entities/accounts/types";
+import { assignEgressAccounts, listAllEgressNodes, unassignEgressAccounts } from "@/entities/egress/egress-api";
+import type { EgressScope } from "@/entities/egress/egress-dto";
 import type { BindableEgressNode } from "@/features/accounts/account-batch-dialogs";
 
 type EgressTask = "bind" | "unbind";

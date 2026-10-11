@@ -1,8 +1,8 @@
 import type { DataTableFilterOptionGroup } from "@/shared/components/data-table-filters";
 
-import type { AccountProvider } from "@/features/accounts/accounts-dto";
+import type { AccountProvider } from "@/entities/accounts/types";
 import type { Translate } from "@/features/accounts/accounts-view-model";
-import type { EgressScope } from "@/features/settings/settings-api";
+import type { EgressScope } from "@/entities/egress/egress-dto";
 
 /** 出口筛选选项的单页大小：节点与订阅源都以有界分页加载，避免大出口池灌满页面。 */
 export const EGRESS_FILTER_NODE_PAGE_SIZE = 100;

@@ -12,7 +12,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
-import type { AccountCleanupStatus, AccountProvider, CleanupPreviewDTO } from "@/features/accounts/accounts-dto";
+import type { AccountProvider } from "@/entities/accounts/types";
+import type { AccountCleanupStatus, CleanupPreviewDTO } from "@/features/accounts/accounts-dto";
 import { LinkedTargetIcon } from "@/features/accounts/account-provider-icon";
 import { linkedTargetLabel, linkedTargetOptions } from "@/features/accounts/accounts-view-model";
 import { cn } from "@/shared/lib/cn";

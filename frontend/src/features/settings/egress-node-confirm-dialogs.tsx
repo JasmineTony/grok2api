@@ -12,7 +12,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Spinner } from "@/components/ui/spinner";
-import type { EgressUnhealthyCleanupPreviewDTO } from "@/features/settings/settings-api";
+import type { EgressUnhealthyCleanupPreviewDTO } from "@/entities/egress/egress-dto";
 
 /** 批量删除节点确认：展示选中数量、受影响账号与订阅源托管数量。 */
 export function EgressNodesBatchDeleteDialog({

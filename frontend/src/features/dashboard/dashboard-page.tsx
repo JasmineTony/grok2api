@@ -1,8 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { getDashboard, type DashboardPeriod } from "@/features/dashboard/dashboard-api";
+import { getDashboard, type DashboardDTO, type DashboardPeriod } from "@/features/dashboard/dashboard-api";
 import { DashboardHeader } from "@/features/dashboard/dashboard-header";
 import { DashboardOverview } from "@/features/dashboard/dashboard-overview";
 import { DashboardPanels } from "@/features/dashboard/dashboard-panels";
@@ -10,6 +10,15 @@ import { ErrorState } from "@/shared/components/data-state";
 import { PERIOD_DAYS, toPeriodValue, type PeriodDays } from "@/shared/lib/period";
 
 type DashboardPreferences = { periodDays: PeriodDays };
+
+type DashboardContentProps = {
+  query: UseQueryResult<DashboardDTO, Error>;
+  spinning: boolean;
+  locale: string;
+  periodDays: PeriodDays;
+  onPeriodChange: (value: PeriodDays) => void;
+  onRefresh: () => void;
+};
 
 const DASHBOARD_PREFERENCES_KEY = "grok2api:dashboard-preferences";
 const DEFAULT_DASHBOARD_PREFERENCES: DashboardPreferences = { periodDays: 30 };
@@ -51,21 +60,32 @@ export function DashboardPage() {
     return <ErrorState message={dashboardQuery.error.message} onRetry={refreshAll} />;
   }
 
-  const dashboard = dashboardQuery.data;
-  const loading = dashboardQuery.isPending || dashboardQuery.isPlaceholderData;
-  const refreshing = dashboardQuery.isFetching || manualRefreshing;
+  return (
+    <DashboardContent
+      query={dashboardQuery}
+      spinning={manualRefreshing}
+      locale={i18n.language}
+      periodDays={periodDays}
+      onPeriodChange={(value) => setPreferences((current) => ({ ...current, periodDays: value }))}
+      onRefresh={refreshAll}
+    />
+  );
+}
 
+/** 仪表盘内容区：页头、总览与各面板共用同一份查询结果。 */
+function DashboardContent({ query, spinning, locale, periodDays, onPeriodChange, onRefresh }: DashboardContentProps) {
+  const loading = query.isPending || query.isPlaceholderData;
   return (
     <div className="space-y-5">
       <DashboardHeader
         periodDays={periodDays}
-        onPeriodChange={(value) => setPreferences((current) => ({ ...current, periodDays: value }))}
-        refreshing={refreshing}
-        spinning={manualRefreshing}
-        onRefresh={refreshAll}
+        onPeriodChange={onPeriodChange}
+        refreshing={query.isFetching || spinning}
+        spinning={spinning}
+        onRefresh={onRefresh}
       />
-      <DashboardOverview dashboard={dashboard} locale={i18n.language} loading={loading} />
-      <DashboardPanels dashboard={dashboard} locale={i18n.language} loading={loading} />
+      <DashboardOverview dashboard={query.data} locale={locale} loading={loading} />
+      <DashboardPanels dashboard={query.data} locale={locale} loading={loading} />
     </div>
   );
 }

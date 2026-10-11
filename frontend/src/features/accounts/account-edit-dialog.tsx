@@ -21,7 +21,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import type { AccountDTO, BuildRouteMode } from "@/features/accounts/accounts-dto";
+import type { AccountDTO, BuildRouteMode } from "@/entities/accounts/types";
 
 type AccountEditDialogProps = {
   editing: AccountDTO | null;

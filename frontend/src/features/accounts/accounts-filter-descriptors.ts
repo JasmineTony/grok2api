@@ -1,6 +1,6 @@
 import type { DataTableFilter, DataTableFilterOptionGroup } from "@/shared/components/data-table-filters";
 
-import type { AccountProvider } from "@/features/accounts/accounts-dto";
+import type { AccountProvider } from "@/entities/accounts/types";
 import { resolveEgressFilterLabel } from "@/features/accounts/accounts-egress-filter";
 import type { Translate } from "@/features/accounts/accounts-view-model";
 

@@ -2,6 +2,8 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useTranslation } from "react-i18next";
 
+import { getClientKeySecret, listClientKeys } from "@/entities/client-keys/client-keys-api";
+import type { ClientKeyDTO } from "@/entities/client-keys/types";
 import { listModels } from "@/entities/model/model-api";
 import type { ModelRouteDTO } from "@/entities/model/types";
 import { isUsableKey } from "@/features/creative-console/chat-session-model";
@@ -12,7 +14,6 @@ import {
   uniqueModelsByPublicID,
 } from "@/features/creative-console/creative-model-scope";
 import type { CreativeMode, CreativePanelProps } from "@/features/creative-console/creative-panel-contract";
-import { getClientKeySecret, listClientKeys, type ClientKeyDTO } from "@/features/client-keys/client-keys-api";
 
 type SecretState = {
   keyId: string;

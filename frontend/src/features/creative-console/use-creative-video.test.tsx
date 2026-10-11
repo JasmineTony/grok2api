@@ -25,8 +25,8 @@ vi.mock("@/features/creative-console/creative-console-api", async (importOrigina
 
 const mediaMock = vi.hoisted(() => ({ uploadMediaInput: vi.fn() }));
 
-vi.mock("@/features/media/media-api", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/features/media/media-api")>()),
+vi.mock("@/entities/media/media-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/entities/media/media-api")>()),
   ...mediaMock,
 }));
 

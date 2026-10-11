@@ -18,7 +18,7 @@ import {
   DropdownMenuSubTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
-import type { AccountDTO } from "@/features/accounts/accounts-api";
+import type { AccountDTO } from "@/entities/accounts/types";
 
 export type WebAccountConfirmationAction = "acceptTerms" | "setBirthDate" | "enableNSFW";
 
@@ -66,6 +66,26 @@ type DialogsProps = {
   onConfirm: (target: WebAccountConfirmationTarget) => void;
 };
 
+/** 三个协议动作各自的确认文案键：标题、说明与确认按钮。 */
+const confirmationCopies: Record<WebAccountConfirmationAction, { title: string; description: string; action: string }> =
+  {
+    acceptTerms: {
+      title: "webAccountSettings.acceptTermsTitle",
+      description: "webAccountSettings.acceptTermsDescription",
+      action: "webAccountSettings.acceptTerms",
+    },
+    setBirthDate: {
+      title: "webAccountSettings.setBirthDateTitle",
+      description: "webAccountSettings.setBirthDateDescription",
+      action: "webAccountSettings.setBirthDate",
+    },
+    enableNSFW: {
+      title: "webAccountSettings.enableNSFWTitle",
+      description: "webAccountSettings.enableNSFWDescription",
+      action: "webAccountSettings.enableNSFW",
+    },
+  };
+
 export function WebAccountSettingsDialogs({
   confirmationTarget,
   confirmationPending,
@@ -73,25 +93,7 @@ export function WebAccountSettingsDialogs({
   onConfirm,
 }: DialogsProps) {
   const { t } = useTranslation();
-  const action = confirmationTarget?.action ?? "acceptTerms";
-  const titleKey =
-    action === "enableNSFW"
-      ? "webAccountSettings.enableNSFWTitle"
-      : action === "setBirthDate"
-        ? "webAccountSettings.setBirthDateTitle"
-        : "webAccountSettings.acceptTermsTitle";
-  const descriptionKey =
-    action === "enableNSFW"
-      ? "webAccountSettings.enableNSFWDescription"
-      : action === "setBirthDate"
-        ? "webAccountSettings.setBirthDateDescription"
-        : "webAccountSettings.acceptTermsDescription";
-  const actionKey =
-    action === "enableNSFW"
-      ? "webAccountSettings.enableNSFW"
-      : action === "setBirthDate"
-        ? "webAccountSettings.setBirthDate"
-        : "webAccountSettings.acceptTerms";
+  const copy = confirmationCopies[confirmationTarget?.action ?? "acceptTerms"];
 
   return (
     <AlertDialog
@@ -102,8 +104,8 @@ export function WebAccountSettingsDialogs({
     >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>{t(titleKey)}</AlertDialogTitle>
-          <AlertDialogDescription>{t(descriptionKey)}</AlertDialogDescription>
+          <AlertDialogTitle>{t(copy.title)}</AlertDialogTitle>
+          <AlertDialogDescription>{t(copy.description)}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={confirmationPending}>{t("common.cancel")}</AlertDialogCancel>
@@ -115,7 +117,7 @@ export function WebAccountSettingsDialogs({
             }}
           >
             {confirmationPending ? <Spinner /> : null}
-            {t(actionKey)}
+            {t(copy.action)}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

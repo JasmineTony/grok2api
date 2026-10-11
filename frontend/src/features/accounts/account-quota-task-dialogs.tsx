@@ -14,7 +14,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { AccountTaskProgressDTO } from "@/features/accounts/account-task-progress";
-import type { AccountProvider } from "@/features/accounts/accounts-dto";
+import type { AccountProvider } from "@/entities/accounts/types";
 
 type BuildQuotaTask = "sync" | "reset";
 

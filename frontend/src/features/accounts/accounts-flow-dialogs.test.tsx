@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AccountsDialogHost } from "@/features/accounts/accounts-flow-dialogs";
-import type { AccountDTO } from "@/features/accounts/accounts-api";
+import type { AccountDTO } from "@/entities/accounts/types";
 import type { AccountsPageModel } from "@/features/accounts/use-accounts-page-model";
 import { useAccountsPageModel } from "@/features/accounts/use-accounts-page-model";
 import { i18n } from "@/shared/i18n";
@@ -36,8 +36,13 @@ vi.mock("@/features/accounts/accounts-api", async (importOriginal) => {
   };
 });
 
-vi.mock("@/features/settings/settings-api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/features/settings/settings-api")>();
+vi.mock("@/entities/accounts/accounts-api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/entities/accounts/accounts-api")>();
+  return { ...actual, listAccounts: mocks.listAccounts };
+});
+
+vi.mock("@/entities/egress/egress-api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/entities/egress/egress-api")>();
   return {
     ...actual,
     listAllEgressNodes: mocks.listAllEgressNodes,

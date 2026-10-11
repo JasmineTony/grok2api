@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { TableBody, TableCell, TableRow } from "@/components/ui/table";
 
@@ -41,45 +41,11 @@ export function VirtualTableBody<T>({
       );
       return;
     }
-    const rect = bodyRef.current.getBoundingClientRect();
-    const scrollContainer = bodyRef.current.closest<HTMLElement>("[data-slot=table-scroll-container]");
-    const containerRect = scrollContainer?.getBoundingClientRect();
-    const viewportTop = Math.max(0, containerRect?.top ?? 0);
-    const viewportBottom = Math.min(window.innerHeight, containerRect?.bottom ?? window.innerHeight);
-    const relativeTop = Math.max(0, viewportTop - rect.top);
-    const relativeBottom = Math.min(rect.height, viewportBottom - rect.top);
-    const start = Math.max(0, Math.floor(relativeTop / rowHeight) - overscan);
-    const end = Math.min(items.length, Math.ceil(Math.max(relativeTop, relativeBottom) / rowHeight) + overscan);
-    setRange((current) => (current.start === start && current.end === end ? current : { start, end }));
+    const next = resolveVisibleRange(bodyRef.current, items.length, rowHeight, overscan);
+    setRange((current) => (current.start === next.start && current.end === next.end ? current : next));
   }, [enabled, items.length, overscan, rowHeight]);
 
-  useLayoutEffect(() => {
-    const scrollContainer = bodyRef.current?.closest<HTMLElement>("[data-slot=table-scroll-container]") ?? null;
-    const scheduleUpdate = () => {
-      if (frameRef.current !== null) return;
-      frameRef.current = window.requestAnimationFrame(() => {
-        frameRef.current = null;
-        updateRange();
-      });
-    };
-    scheduleUpdate();
-    window.addEventListener("scroll", scheduleUpdate, { passive: true });
-    window.addEventListener("resize", scheduleUpdate);
-    scrollContainer?.addEventListener("scroll", scheduleUpdate, { passive: true });
-    let observer: ResizeObserver | null = null;
-    if (typeof ResizeObserver !== "undefined" && scrollContainer !== null) {
-      observer = new ResizeObserver(scheduleUpdate);
-      observer.observe(scrollContainer);
-    }
-    return () => {
-      window.removeEventListener("scroll", scheduleUpdate);
-      window.removeEventListener("resize", scheduleUpdate);
-      scrollContainer?.removeEventListener("scroll", scheduleUpdate);
-      observer?.disconnect();
-      if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
-      frameRef.current = null;
-    };
-  }, [updateRange]);
+  useLayoutEffect(() => observeTableViewport(bodyRef.current, frameRef, updateRange), [updateRange]);
 
   const safeStart = enabled && items.length > 0 ? Math.min(range.start, items.length - 1) : 0;
   const safeEnd = enabled && items.length > 0 ? Math.max(safeStart + 1, Math.min(items.length, range.end)) : 0;
@@ -94,6 +60,57 @@ export function VirtualTableBody<T>({
       {bottomHeight > 0 ? <VirtualSpacer colSpan={colSpan} height={bottomHeight} /> : null}
     </TableBody>
   );
+}
+
+/** 按表格主体与滚动容器的实际位置换算需要渲染的行区间（含 overscan）。 */
+function resolveVisibleRange(body: HTMLElement, itemCount: number, rowHeight: number, overscan: number): VisibleRange {
+  const rect = body.getBoundingClientRect();
+  const scrollContainer = body.closest<HTMLElement>("[data-slot=table-scroll-container]");
+  const containerRect = scrollContainer?.getBoundingClientRect();
+  const viewportTop = Math.max(0, containerRect?.top ?? 0);
+  const viewportBottom = Math.min(window.innerHeight, containerRect?.bottom ?? window.innerHeight);
+  const relativeTop = Math.max(0, viewportTop - rect.top);
+  const relativeBottom = Math.min(rect.height, viewportBottom - rect.top);
+  const start = Math.max(0, Math.floor(relativeTop / rowHeight) - overscan);
+  const end = Math.min(itemCount, Math.ceil(Math.max(relativeTop, relativeBottom) / rowHeight) + overscan);
+  return { start, end };
+}
+
+/**
+ * Subscribes to window/container scroll and resize, collapsing a burst of events
+ * into at most one animation frame. The returned cleanup removes every listener,
+ * disconnects the observer and cancels the pending frame.
+ */
+function observeTableViewport(
+  body: HTMLElement | null,
+  frameRef: RefObject<number | null>,
+  updateRange: () => void,
+): () => void {
+  const scrollContainer = body?.closest<HTMLElement>("[data-slot=table-scroll-container]") ?? null;
+  const scheduleUpdate = () => {
+    if (frameRef.current !== null) return;
+    frameRef.current = window.requestAnimationFrame(() => {
+      frameRef.current = null;
+      updateRange();
+    });
+  };
+  scheduleUpdate();
+  window.addEventListener("scroll", scheduleUpdate, { passive: true });
+  window.addEventListener("resize", scheduleUpdate);
+  scrollContainer?.addEventListener("scroll", scheduleUpdate, { passive: true });
+  let observer: ResizeObserver | null = null;
+  if (typeof ResizeObserver !== "undefined" && scrollContainer !== null) {
+    observer = new ResizeObserver(scheduleUpdate);
+    observer.observe(scrollContainer);
+  }
+  return () => {
+    window.removeEventListener("scroll", scheduleUpdate);
+    window.removeEventListener("resize", scheduleUpdate);
+    scrollContainer?.removeEventListener("scroll", scheduleUpdate);
+    observer?.disconnect();
+    if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
+    frameRef.current = null;
+  };
 }
 
 function VirtualSpacer({ colSpan, height }: { colSpan: number; height: number }) {

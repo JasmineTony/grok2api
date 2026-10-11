@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AccountStatus, AccountType, AccountTypeText, WebAccountType } from "@/features/accounts/account-cells";
-import type { AccountDTO, QuotaDTO } from "@/features/accounts/accounts-dto";
+import type { AccountDTO, QuotaDTO } from "@/entities/accounts/types";
 import { i18n } from "@/shared/i18n";
 import { formatDateTime } from "@/shared/lib/format";
 

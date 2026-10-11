@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
-import type { ClientKeyDTO } from "@/features/client-keys/client-keys-api";
+import type { ClientKeyDTO } from "@/entities/client-keys/types";
 import {
   KeyBillingLimitField,
   KeyEnabledSection,

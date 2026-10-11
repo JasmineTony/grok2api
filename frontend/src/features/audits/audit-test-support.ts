@@ -1,12 +1,12 @@
+import type { AccountDTO } from "@/entities/accounts/types";
+import type { ClientKeyDTO } from "@/entities/client-keys/types";
 import type { ModelRouteDTO } from "@/entities/model/types";
-import type { AccountDTO } from "@/features/accounts/accounts-dto";
 import type {
   AuditAttemptDTO,
   AuditCursorPageDTO,
   AuditDTO,
   AuditSummaryDTO,
 } from "@/features/audits/request-audits-api";
-import type { ClientKeyDTO } from "@/features/client-keys/client-keys-api";
 
 /**
  * 审计组件集成测试的 API 桩与 DTO 构造器（仅被 *.test.tsx 使用）。

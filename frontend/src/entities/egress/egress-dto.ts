@@ -1,4 +1,4 @@
-/** 出口节点/订阅/运维接口的只读 DTO 契约：纯类型模块，供 decoder 与 API 层复用。 */
+/** 出口节点/订阅/运维接口的 DTO 契约：纯类型模块，供 decoder、API 层与各 feature 复用（entity 层，只依赖 @/shared）。 */
 export type EgressNodeDTO = {
   id: string;
   name: string;

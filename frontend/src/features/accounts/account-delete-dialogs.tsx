@@ -14,7 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Spinner } from "@/components/ui/spinner";
-import type { AccountDTO, AccountProvider } from "@/features/accounts/accounts-dto";
+import type { AccountDTO, AccountProvider } from "@/entities/accounts/types";
 import { LinkedTargetIcon } from "@/features/accounts/account-provider-icon";
 import { linkedTargetLabel, linkedTargetOptions } from "@/features/accounts/accounts-view-model";
 import { cn } from "@/shared/lib/cn";

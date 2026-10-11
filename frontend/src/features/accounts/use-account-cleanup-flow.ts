@@ -9,7 +9,7 @@ import {
   type CleanupPreviewDTO,
 } from "@/features/accounts/accounts-api";
 import type { AccountsFlowContext } from "@/features/accounts/accounts-flow-context";
-import type { AccountProvider } from "@/features/accounts/accounts-dto";
+import type { AccountProvider } from "@/entities/accounts/types";
 import { linkedTargetOptions, type Translate } from "@/features/accounts/accounts-view-model";
 
 type CleanupKeyedPreview = { key: string; data: CleanupPreviewDTO };

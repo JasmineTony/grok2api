@@ -11,7 +11,7 @@ import { QuickImportDialog } from "@/features/accounts/account-import-dialog";
 import { LinkedTargetIcon } from "@/features/accounts/account-provider-icon";
 import { BatchQuotaTaskDialog, QuotaSyncAllDialog } from "@/features/accounts/account-quota-task-dialogs";
 import { RenewAllTokensDialog, WebConversionDialog } from "@/features/accounts/account-conversion-dialogs";
-import type { AccountDTO, AccountProvider } from "@/features/accounts/accounts-dto";
+import type { AccountDTO, AccountProvider } from "@/entities/accounts/types";
 import { i18n } from "@/shared/i18n";
 
 // 账号流程弹窗测试（AGENTS.md TEST-1/TEST-3）：直接渲染弹窗并按真实事件驱动，

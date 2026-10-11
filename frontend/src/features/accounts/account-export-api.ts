@@ -1,6 +1,7 @@
 import { ApiError, apiDownload, apiDownloadResponse } from "@/shared/api/client";
 import { i18n } from "@/shared/i18n";
-import type { AccountExportBatch, AccountProvider } from "@/features/accounts/accounts-dto";
+import type { AccountProvider } from "@/entities/accounts/types";
+import type { AccountExportBatch } from "@/features/accounts/accounts-dto";
 
 function requiredExportHeader(headers: Headers, name: string): string {
   const value = headers.get(name);

@@ -3,7 +3,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
-import { updateAccountsEnabled } from "@/features/accounts/accounts-api";
+import { updateAccountsEnabled } from "@/entities/accounts/accounts-api";
 import {
   getDegradeAccounts,
   type DegradeAccountDTO,

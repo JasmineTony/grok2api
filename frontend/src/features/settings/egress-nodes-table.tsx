@@ -26,7 +26,8 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { EgressErrorTooltip } from "@/features/settings/egress-error-tooltip";
 import { ClearanceBadge, HealthMeter, ProbeSummary } from "@/features/settings/egress-node-indicators";
-import type { ClearanceMode, EgressNodeDTO, EgressNodeListDTO, EgressScope } from "@/features/settings/settings-api";
+import type { EgressNodeDTO, EgressNodeListDTO, EgressScope } from "@/entities/egress/egress-dto";
+import type { ClearanceMode } from "@/features/settings/settings-dto";
 import { ErrorState, TableLoadingRow } from "@/shared/components/data-state";
 import { SortableTableHead } from "@/shared/components/sortable-table-head";
 import { VirtualTableBody } from "@/shared/components/virtual-table-body";

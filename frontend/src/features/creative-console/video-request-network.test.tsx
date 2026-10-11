@@ -1,3 +1,4 @@
+import { importVideoInputFromURL } from "@/entities/media/media-api";
 import {
   createVideoAttachmentOperations,
   createVideoSubmitOperations,
@@ -8,7 +9,6 @@ import {
   type VideoAttachmentFields,
   type VideoFormFields,
 } from "@/features/creative-console/video-request";
-import { importVideoInputFromURL } from "@/features/media/media-api";
 import type { FormEvent } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -25,8 +25,8 @@ vi.mock("@/features/creative-console/creative-console-api", async (importOrigina
 
 const mediaMock = vi.hoisted(() => ({ importVideoInputFromURL: vi.fn() }));
 
-vi.mock("@/features/media/media-api", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/features/media/media-api")>()),
+vi.mock("@/entities/media/media-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/entities/media/media-api")>()),
   ...mediaMock,
 }));
 

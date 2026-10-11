@@ -6,7 +6,8 @@ import { Toaster } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
-import type { ClientKeyDTO, ClientKeyInput } from "@/features/client-keys/client-keys-api";
+import type { ClientKeyDTO } from "@/entities/client-keys/types";
+import type { ClientKeyInput } from "@/features/client-keys/client-keys-api";
 import { ClientKeysPage } from "@/features/client-keys/client-keys-page";
 import {
   clientKeyDTO,

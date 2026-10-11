@@ -3,7 +3,8 @@ import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { EgressErrorTooltip } from "@/features/settings/egress-error-tooltip";
-import type { ClearanceMode, EgressIPProbeDTO, EgressNodeDTO } from "@/features/settings/settings-api";
+import type { EgressIPProbeDTO, EgressNodeDTO } from "@/entities/egress/egress-dto";
+import type { ClearanceMode } from "@/features/settings/settings-dto";
 import { cn } from "@/shared/lib/cn";
 
 /** 节点行内的出口状态指示器：清关方式、健康度、IPv4/IPv6 探测结果。 */

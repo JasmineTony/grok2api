@@ -9,12 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
-import {
-  getEgressProxyProfile,
-  listEgressProxyProfiles,
-  type EgressProxyProfileDTO,
-  type EgressProxyProfileListDTO,
-} from "@/features/settings/settings-api";
+import { getEgressProxyProfile, listEgressProxyProfiles } from "@/entities/egress/egress-api";
+import type { EgressProxyProfileDTO, EgressProxyProfileListDTO } from "@/entities/egress/egress-dto";
 import { useDebouncedValue } from "@/shared/hooks/use-debounced-value";
 import { cn } from "@/shared/lib/cn";
 

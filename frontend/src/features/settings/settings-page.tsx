@@ -10,7 +10,7 @@ import { SettingsPageHeader, SettingsTabsList } from "@/features/settings/settin
 import { SettingsPoliciesPane } from "@/features/settings/settings-policies-pane";
 import { SettingsWebPane } from "@/features/settings/settings-web-pane";
 import { useSettings } from "@/features/settings/use-settings";
-import { VersionUpdateSection } from "@/features/system/version-update";
+import { VersionUpdateSection } from "@/entities/system/version-update";
 import { ErrorState } from "@/shared/components/data-state";
 
 export function SettingsPage() {

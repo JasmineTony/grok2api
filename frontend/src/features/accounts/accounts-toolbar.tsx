@@ -24,7 +24,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { buildAccountFilterDescriptors } from "@/features/accounts/accounts-filter-descriptors";
-import type { AccountProvider } from "@/features/accounts/accounts-dto";
+import type { AccountProvider } from "@/entities/accounts/types";
 import type { Translate } from "@/features/accounts/accounts-view-model";
 import type { AccountsPageModel } from "@/features/accounts/use-accounts-page-model";
 import { DataTableFilters } from "@/shared/components/data-table-filters";

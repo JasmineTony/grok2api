@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import type { EgressNodeDTO, EgressScope } from "@/features/settings/settings-api";
+import type { EgressNodeDTO, EgressScope } from "@/entities/egress/egress-dto";
 import { DataTableFilters, type DataTableFilter } from "@/shared/components/data-table-filters";
 import { cn } from "@/shared/lib/cn";
 

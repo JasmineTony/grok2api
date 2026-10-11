@@ -24,13 +24,14 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AccountStatus, AccountType, AccountTypeText, WebAccountType } from "@/features/accounts/account-cells";
 import { AccountNameCell } from "@/features/accounts/account-name-cell";
-import { AccountQuota, ConsoleQuota, WebQuota } from "@/features/accounts/account-quota";
+import { AccountQuota } from "@/features/accounts/account-quota";
 import { AccountsPagination, AccountsToolbar } from "@/features/accounts/accounts-toolbar";
 import type { SortOrder } from "@/shared/lib/table-sort";
-import type { AccountDTO } from "@/features/accounts/accounts-api";
-import type { AccountProvider } from "@/features/accounts/accounts-dto";
+import type { AccountDTO } from "@/entities/accounts/types";
+import type { AccountProvider } from "@/entities/accounts/types";
 import type { AccountsPageModel } from "@/features/accounts/use-accounts-page-model";
 import { WebAccountSettingsMenu } from "@/features/accounts/web-account-settings";
+import { ConsoleQuota, WebQuota } from "@/features/accounts/web-quota";
 import { EmptyState, ErrorState, TableLoadingRow } from "@/shared/components/data-state";
 import { DataTableShell } from "@/shared/components/data-table-shell";
 import { SortableTableHead } from "@/shared/components/sortable-table-head";

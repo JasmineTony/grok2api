@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { EgressScopeSelect } from "@/features/settings/egress-scope-select";
-import type { EgressScope, EgressSourceDTO } from "@/features/settings/settings-api";
+import type { EgressScope, EgressSourceDTO } from "@/entities/egress/egress-dto";
 import type { EgressSourceForm } from "@/features/settings/egress-source-form";
 
 export type EgressSourceDialogProps = {

@@ -4,7 +4,7 @@ import { I18nextProvider } from "react-i18next";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import type { AccountDTO } from "@/features/accounts/accounts-api";
+import type { AccountDTO } from "@/entities/accounts/types";
 import {
   WebAccountSettingsMenu,
   type WebAccountConfirmationAction,

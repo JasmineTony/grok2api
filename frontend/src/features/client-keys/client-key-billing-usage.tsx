@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 
-import type { ClientKeyDTO } from "@/features/client-keys/client-keys-api";
+import type { ClientKeyDTO } from "@/entities/client-keys/types";
 import { USD_TICKS_PER_DOLLAR } from "@/shared/lib/usd";
 
 function formatUSD(value: number, locale: string): string {

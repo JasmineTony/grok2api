@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { ArrowLeft, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -54,9 +54,8 @@ import {
   getEgressProxyProfileURL,
   listEgressProxyProfiles,
   updateEgressProxyProfile,
-  type EgressProxyProfileDTO,
-  type EgressProxyProfileListDTO,
-} from "@/features/settings/settings-api";
+} from "@/entities/egress/egress-api";
+import type { EgressProxyProfileDTO, EgressProxyProfileListDTO } from "@/entities/egress/egress-dto";
 import { ErrorState, TableLoadingRow } from "@/shared/components/data-state";
 import { Pagination } from "@/shared/components/pagination";
 import { useDebouncedValue } from "@/shared/hooks/use-debounced-value";
@@ -78,152 +77,154 @@ export function EgressProxyProfiles({
   startCreating = false,
   onCreated,
 }: EgressProxyProfilesProps) {
-  const { t } = useTranslation();
-  const queryClient = useQueryClient();
   const [editing, setEditing] = useState<EgressProxyProfileDTO | null | undefined>(startCreating ? null : undefined);
+  const libraryOpen = editing === undefined;
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className={cn(
+          "max-h-[calc(100svh-2rem)]",
+          libraryOpen ? "flex min-h-0 flex-col overflow-hidden sm:max-w-[720px]" : "overflow-y-auto sm:max-w-[520px]",
+        )}
+        data-testid="egress-proxy-profiles-dialog"
+      >
+        <EgressProxyProfileDialogHeader editing={editing} />
+        {libraryOpen ? (
+          <EgressProxyProfileLibraryPane onCreate={() => setEditing(null)} onEdit={setEditing} />
+        ) : (
+          <EgressProxyProfileFormPane editing={editing} onCreated={onCreated} onBack={() => setEditing(undefined)} />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** 弹窗标题与说明：列表视图与表单视图各自使用对应文案。 */
+function EgressProxyProfileDialogHeader({ editing }: { editing: EgressProxyProfileDTO | null | undefined }) {
+  const { t } = useTranslation();
+  return (
+    <DialogHeader className="shrink-0 pr-8">
+      <DialogTitle>
+        {editing === undefined
+          ? t("egressProxyProfiles.libraryTitle")
+          : editing
+            ? t("egressProxyProfiles.editTitle")
+            : t("egressProxyProfiles.addTitle")}
+      </DialogTitle>
+      <DialogDescription>
+        {editing === undefined
+          ? t("egressProxyProfiles.libraryDescription")
+          : t("egressProxyProfiles.dialogDescription")}
+      </DialogDescription>
+    </DialogHeader>
+  );
+}
+
+/** 表单初值：编辑态沿用名称，地址留空等待按需揭示。 */
+function profileFormValues(editing: EgressProxyProfileDTO | null): EgressProxyProfileFormValues {
+  return editing ? { name: editing.name, proxyURL: "" } : emptyForm;
+}
+
+/** 表单 → 写入请求：地址未改动（等于已揭示明文）时不重复提交，新增必须带地址。 */
+function profileSaveRequest(
+  form: EgressProxyProfileFormValues,
+  revealedProxyURL: string,
+  editing: EgressProxyProfileDTO | null,
+) {
+  const proxyURL = form.proxyURL.trim();
+  const input = { name: form.name.trim(), proxyURL: proxyURL && proxyURL !== revealedProxyURL ? proxyURL : undefined };
+  return editing ? updateEgressProxyProfile(editing.id, input) : createEgressProxyProfile({ ...input, proxyURL });
+}
+
+/** 按需读取明文代理地址：无编辑目标时按调用方文案抛错。 */
+function revealProxyProfileURL(editing: EgressProxyProfileDTO | null, unavailableMessage: string) {
+  if (!editing) throw new Error(unavailableMessage);
+  return getEgressProxyProfileURL(editing.id);
+}
+
+/** 配置库写入会同时影响节点绑定，统一失效这两个查询键。 */
+function invalidateProxyProfileQueries(queryClient: QueryClient) {
+  void queryClient.invalidateQueries({ queryKey: ["egress-proxy-profiles"] });
+  void queryClient.invalidateQueries({ queryKey: ["egress-nodes"] });
+}
+
+type EgressProxyProfileLibraryPaneProps = {
+  onCreate: () => void;
+  onEdit: (profile: EgressProxyProfileDTO) => void;
+};
+
+/** 配置库列表：分页查询、搜索与删除确认入口。 */
+function EgressProxyProfileLibraryPane({ onCreate, onEdit }: EgressProxyProfileLibraryPaneProps) {
   const [deleting, setDeleting] = useState<EgressProxyProfileDTO | undefined>();
-  const [form, setForm] = useState<EgressProxyProfileFormValues>(emptyForm);
-  const [proxyVisible, setProxyVisible] = useState(false);
-  const [revealedProxyURL, setRevealedProxyURL] = useState("");
+  const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search);
   const query = useQuery({
     queryKey: ["egress-proxy-profiles", "page", page, pageSize, debouncedSearch],
     queryFn: () => listEgressProxyProfiles({ page, pageSize, search: debouncedSearch }),
-    enabled: open && editing === undefined,
   });
+  return (
+    <>
+      <EgressProxyProfileLibrary
+        query={query}
+        search={search}
+        onSearchChange={(value) => {
+          setSearch(value);
+          setPage(1);
+        }}
+        onPageChange={setPage}
+        onPageSizeChange={(value) => {
+          setPageSize(value);
+          setPage(1);
+        }}
+        onCreate={onCreate}
+        onEdit={onEdit}
+        onDelete={setDeleting}
+      />
+      <EgressProxyProfileDeleteHost
+        deleting={deleting}
+        onDeleted={() => {
+          if (page > 1 && query.data?.items.length === 1) setPage(page - 1);
+        }}
+        onClose={() => setDeleting(undefined)}
+      />
+    </>
+  );
+}
 
-  const save = useMutation({
-    mutationFn: () => {
-      const proxyURL = form.proxyURL.trim();
-      const input = {
-        name: form.name.trim(),
-        proxyURL: proxyURL && proxyURL !== revealedProxyURL ? proxyURL : undefined,
-      };
-      return editing ? updateEgressProxyProfile(editing.id, input) : createEgressProxyProfile({ ...input, proxyURL });
-    },
-    onSuccess: (profile) => {
-      const created = editing === null;
-      void queryClient.invalidateQueries({ queryKey: ["egress-proxy-profiles"] });
-      void queryClient.invalidateQueries({ queryKey: ["egress-nodes"] });
-      setEditing(undefined);
-      toast.success(t("egressProxyProfiles.saved"));
-      if (created) onCreated?.(profile);
-    },
-    onError: (error) => showEgressError(error, t("settings.egress.operationFailed")),
-  });
-  const reveal = useMutation({
-    mutationFn: () => {
-      if (!editing) throw new Error(t("egressProxyProfiles.revealUnavailable"));
-      return getEgressProxyProfileURL(editing.id);
-    },
-    onSuccess: ({ proxyURL }) => {
-      setRevealedProxyURL(proxyURL);
-      setProxyVisible(true);
-      setForm((current) => ({ ...current, proxyURL }));
-    },
-    onError: (error) => showEgressError(error, t("settings.egress.operationFailed")),
-  });
+type EgressProxyProfileDeleteHostProps = {
+  deleting: EgressProxyProfileDTO | undefined;
+  /** 删除成功后的分页回落：当前页已空时回到上一页。 */
+  onDeleted: () => void;
+  onClose: () => void;
+};
+
+/** 删除确认：确认后删除配置并失效配置库与节点查询。 */
+function EgressProxyProfileDeleteHost({ deleting, onDeleted, onClose }: EgressProxyProfileDeleteHostProps) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const remove = useMutation({
     mutationFn: (id: string) => deleteEgressProxyProfile(id),
     onSuccess: () => {
-      if (page > 1 && query.data?.items.length === 1) setPage(page - 1);
-      void queryClient.invalidateQueries({ queryKey: ["egress-proxy-profiles"] });
-      setDeleting(undefined);
+      onDeleted();
+      invalidateProxyProfileQueries(queryClient);
+      onClose();
       toast.success(t("egressProxyProfiles.deleted"));
     },
     onError: (error) => showEgressError(error, t("settings.egress.operationFailed")),
   });
-
-  function openCreate() {
-    setForm(emptyForm);
-    setProxyVisible(false);
-    setRevealedProxyURL("");
-    setEditing(null);
-  }
-
-  function openEdit(value: EgressProxyProfileDTO) {
-    setForm({ name: value.name, proxyURL: "" });
-    setProxyVisible(false);
-    setRevealedProxyURL("");
-    setEditing(value);
-  }
-
-  const title =
-    editing === undefined
-      ? t("egressProxyProfiles.libraryTitle")
-      : editing
-        ? t("egressProxyProfiles.editTitle")
-        : t("egressProxyProfiles.addTitle");
-  const description =
-    editing === undefined ? t("egressProxyProfiles.libraryDescription") : t("egressProxyProfiles.dialogDescription");
-
   return (
-    <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent
-          className={cn(
-            "max-h-[calc(100svh-2rem)]",
-            editing === undefined
-              ? "flex min-h-0 flex-col overflow-hidden sm:max-w-[720px]"
-              : "overflow-y-auto sm:max-w-[520px]",
-          )}
-          data-testid="egress-proxy-profiles-dialog"
-        >
-          <DialogHeader className="shrink-0 pr-8">
-            <DialogTitle>{title}</DialogTitle>
-            <DialogDescription>{description}</DialogDescription>
-          </DialogHeader>
-
-          {editing === undefined ? (
-            <EgressProxyProfileLibrary
-              query={query}
-              search={search}
-              onSearchChange={(value) => {
-                setSearch(value);
-                setPage(1);
-              }}
-              onPageChange={setPage}
-              onPageSizeChange={(value) => {
-                setPageSize(value);
-                setPage(1);
-              }}
-              onCreate={openCreate}
-              onEdit={openEdit}
-              onDelete={setDeleting}
-            />
-          ) : (
-            <EgressProxyProfileForm
-              editing={editing}
-              form={form}
-              proxyVisible={proxyVisible}
-              revealPending={reveal.isPending}
-              savePending={save.isPending}
-              onFormChange={(changes) => setForm((current) => ({ ...current, ...changes }))}
-              onToggleProxyVisible={() => {
-                if (revealedProxyURL) setProxyVisible((visible) => !visible);
-                else reveal.mutate();
-              }}
-              onBack={() => setEditing(undefined)}
-              onSave={() => save.mutate()}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
-
-      <EgressProxyProfileDeleteDialog
-        deleting={deleting}
-        pending={remove.isPending}
-        onOpenChange={(next) => {
-          if (!next) setDeleting(undefined);
-        }}
-        onConfirm={() => {
-          if (deleting) remove.mutate(deleting.id);
-        }}
-      />
-    </>
+    <EgressProxyProfileDeleteDialog
+      deleting={deleting}
+      pending={remove.isPending}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+      onConfirm={() => {
+        if (deleting) remove.mutate(deleting.id);
+      }}
+    />
   );
 }
 
@@ -492,6 +493,56 @@ function EgressProxyProfileForm(props: EgressProxyProfileFormProps) {
         </DialogFooter>
       </form>
     </div>
+  );
+}
+
+type EgressProxyProfileFormPaneProps = {
+  editing: EgressProxyProfileDTO | null;
+  onCreated: ((profile: EgressProxyProfileDTO) => void) | undefined;
+  onBack: () => void;
+};
+
+/** 配置表单：新增与编辑共用，保存成功后回到列表并失效配置库与节点查询。 */
+function EgressProxyProfileFormPane({ editing, onCreated, onBack }: EgressProxyProfileFormPaneProps) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const [form, setForm] = useState<EgressProxyProfileFormValues>(() => profileFormValues(editing));
+  const [proxyVisible, setProxyVisible] = useState(false);
+  const [revealedProxyURL, setRevealedProxyURL] = useState("");
+  const save = useMutation({
+    mutationFn: () => profileSaveRequest(form, revealedProxyURL, editing),
+    onSuccess: (profile) => {
+      invalidateProxyProfileQueries(queryClient);
+      onBack();
+      toast.success(t("egressProxyProfiles.saved"));
+      if (editing === null) onCreated?.(profile);
+    },
+    onError: (error) => showEgressError(error, t("settings.egress.operationFailed")),
+  });
+  const reveal = useMutation({
+    mutationFn: () => revealProxyProfileURL(editing, t("egressProxyProfiles.revealUnavailable")),
+    onSuccess: ({ proxyURL }) => {
+      setRevealedProxyURL(proxyURL);
+      setProxyVisible(true);
+      setForm((current) => ({ ...current, proxyURL }));
+    },
+    onError: (error) => showEgressError(error, t("settings.egress.operationFailed")),
+  });
+  return (
+    <EgressProxyProfileForm
+      editing={editing}
+      form={form}
+      proxyVisible={proxyVisible}
+      revealPending={reveal.isPending}
+      savePending={save.isPending}
+      onFormChange={(changes) => setForm((current) => ({ ...current, ...changes }))}
+      onToggleProxyVisible={() => {
+        if (revealedProxyURL) setProxyVisible((visible) => !visible);
+        else reveal.mutate();
+      }}
+      onBack={onBack}
+      onSave={() => save.mutate()}
+    />
   );
 }
 

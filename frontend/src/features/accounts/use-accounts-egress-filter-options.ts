@@ -15,9 +15,10 @@ import {
   type EgressFilterGroupInput,
   type EgressFilterPageSource,
 } from "@/features/accounts/accounts-egress-filter";
-import type { AccountProvider } from "@/features/accounts/accounts-dto";
+import type { AccountProvider } from "@/entities/accounts/types";
 import type { Translate } from "@/features/accounts/accounts-view-model";
-import { listEgressNodes, listEgressSources, type EgressScope } from "@/features/settings/settings-api";
+import { listEgressNodes, listEgressSources } from "@/entities/egress/egress-api";
+import type { EgressScope } from "@/entities/egress/egress-dto";
 
 export type EgressFilterOptionsInput = { open: boolean; provider: AccountProvider; search: string };
 

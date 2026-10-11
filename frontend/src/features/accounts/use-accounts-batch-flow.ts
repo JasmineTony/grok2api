@@ -2,11 +2,11 @@ import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { updateAccountsEnabled } from "@/entities/accounts/accounts-api";
 import {
   refreshAccountsQuota,
   refreshAccountsTokens,
   resetAccountsQuota,
-  updateAccountsEnabled,
   updateAccountsMaxConcurrent,
 } from "@/features/accounts/accounts-api";
 import type { AccountsFlowContext } from "@/features/accounts/accounts-flow-context";

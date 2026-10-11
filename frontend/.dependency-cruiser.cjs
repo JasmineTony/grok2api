@@ -2,8 +2,8 @@
  * 依赖边界与循环检查（AGENTS.md DEV-3 / DEV-4）。
  *
  * 目标：把「分层方向」和「跨 feature 直接依赖」变成可执行门禁，而不是人工约定。
- * 已冻结的跨 feature 依赖属于阶段 3 的整改范围，列在 frozenCrossFeatureDebt 中：
- * 该清单只能收缩，不能扩张；修完一处就从清单里删掉。
+ * 跨 feature 直接依赖的冻结清单（frozenCrossFeatureDebt）已于 2026-10-11 清零：9 处存量依赖全部下沉到
+ * `src/entities/**`；该清单只允许保持为空，任何新增的跨 feature 直接依赖都会被门禁判为违规。
  */
 const fs = require("node:fs");
 const path = require("node:path");
@@ -14,15 +14,10 @@ const features = fs
   .filter((entry) => entry.isDirectory())
   .map((entry) => entry.name);
 
-// 阶段 3 待整改：source feature -> 允许的 target feature（存量债务，只允许删除条目）
-const frozenCrossFeatureDebt = {
-  accounts: ["settings"],
-  audits: ["accounts", "client-keys"],
-  "creative-console": ["client-keys", "media"],
-  dashboard: ["system"],
-  "quality-guard": ["accounts", "settings"],
-  settings: ["system"],
-};
+// 2026-10-11：原 9 处存量跨 feature 依赖（accounts→settings、audits→accounts/client-keys、
+// creative-console→client-keys/media、dashboard→system、quality-guard→accounts/settings、settings→system）
+// 已全部下沉到 src/entities/**，此处清零。只允许保持为空，不得静默扩张。
+const frozenCrossFeatureDebt = {};
 
 const crossFeatureRules = features.map((name) => {
   const allowedTargets = frozenCrossFeatureDebt[name] ?? [];

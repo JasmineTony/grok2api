@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ModelQuotaBlockTooltip } from "@/features/accounts/account-quota";
-import type { AccountDTO, ModelQuotaBlockDTO, QuotaDTO } from "@/features/accounts/accounts-dto";
+import type { AccountDTO, ModelQuotaBlockDTO, QuotaDTO } from "@/entities/accounts/types";
 import type { Translate } from "@/features/accounts/accounts-view-model";
 import { cn } from "@/shared/lib/cn";
 import { formatDateTime } from "@/shared/lib/format";

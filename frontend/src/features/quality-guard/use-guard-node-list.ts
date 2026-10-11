@@ -2,7 +2,8 @@ import { keepPreviousData, useQuery, type UseQueryResult } from "@tanstack/react
 import { useEffect, useRef, useState, type RefObject } from "react";
 
 import { getQualityGuardStatus, type QualityGuardStatus } from "@/features/quality-guard/quality-guard-api";
-import { listEgressNodes, type EgressNodeListDTO } from "@/features/settings/settings-api";
+import { listEgressNodes } from "@/entities/egress/egress-api";
+import type { EgressNodeListDTO } from "@/entities/egress/egress-dto";
 import { useDebouncedValue } from "@/shared/hooks/use-debounced-value";
 
 // 守护节点列表的筛选/分页状态与三个查询（列表、计数、守护状态）。

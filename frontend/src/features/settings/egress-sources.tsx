@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/table";
 import { EgressErrorTooltip } from "@/features/settings/egress-error-tooltip";
 import { EgressActionTooltip } from "@/features/settings/egress-section-header";
-import type { EgressScope, EgressSourceDTO, EgressSourceListDTO } from "@/features/settings/settings-api";
+import type { EgressScope, EgressSourceDTO, EgressSourceListDTO } from "@/entities/egress/egress-dto";
 import { ErrorState, TableLoadingRow } from "@/shared/components/data-state";
 import { DataTableFilters, type DataTableFilter } from "@/shared/components/data-table-filters";
 import { VirtualTableBody } from "@/shared/components/virtual-table-body";

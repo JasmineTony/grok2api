@@ -9,7 +9,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/compon
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { WebAccountSettingsDialogs, WebAccountSettingsMenu } from "@/features/accounts/web-account-settings";
 import { AccountsPage } from "@/features/accounts/accounts-page";
-import type { AccountDTO, AccountSummaryDTO } from "@/features/accounts/accounts-api";
+import type { AccountDTO } from "@/entities/accounts/types";
+import type { AccountSummaryDTO } from "@/features/accounts/accounts-api";
 import { ApiError, type PaginatedDTO } from "@/shared/api/client";
 import { i18n } from "@/shared/i18n";
 
@@ -63,8 +64,17 @@ vi.mock("@/features/accounts/accounts-api", async (importOriginal) => {
   return { ...actual, ...mocks };
 });
 
-vi.mock("@/features/settings/settings-api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/features/settings/settings-api")>();
+vi.mock("@/entities/accounts/accounts-api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/entities/accounts/accounts-api")>();
+  return {
+    ...actual,
+    listAccounts: mocks.listAccounts,
+    updateAccountsEnabled: mocks.updateAccountsEnabled,
+  };
+});
+
+vi.mock("@/entities/egress/egress-api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/entities/egress/egress-api")>();
   return {
     ...actual,
     listAllEgressNodes: mocks.listAllEgressNodes,

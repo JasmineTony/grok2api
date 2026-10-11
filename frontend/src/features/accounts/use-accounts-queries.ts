@@ -1,7 +1,9 @@
 import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { useCallback } from "react";
 
-import { getAccountSummary, listAccounts, type AccountDTO } from "@/features/accounts/accounts-api";
+import { listAccounts } from "@/entities/accounts/accounts-api";
+import type { AccountDTO } from "@/entities/accounts/types";
+import { getAccountSummary } from "@/features/accounts/accounts-api";
 import type { AccountsFiltersModel } from "@/features/accounts/use-accounts-filters";
 import type { PaginatedDTO } from "@/shared/api/client";
 

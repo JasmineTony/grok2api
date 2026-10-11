@@ -20,11 +20,15 @@ type DateTimePickerProps = {
 };
 
 export function DateTimePicker({ value, onChange, placeholder, disabled = false }: DateTimePickerProps) {
-  const { t, i18n } = useTranslation();
+  const { i18n } = useTranslation();
   const selected = parseLocalDateTime(value);
   const isChinese = i18n.language.toLowerCase().startsWith("zh");
   const timeParts = getTimeParts(selected);
   const timeInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+
+  function setTimeInputRef(index: number, element: HTMLInputElement | null): void {
+    timeInputRefs.current[index] = element;
+  }
 
   function enteredTimeParts(): TimeParts {
     return timeParts.map((part, index) => timeInputRefs.current[index]?.value ?? part) as TimeParts;
@@ -49,69 +53,137 @@ export function DateTimePicker({ value, onChange, placeholder, disabled = false 
 
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="secondary"
-          disabled={disabled}
-          className={cn(
-            "h-8 w-full min-w-0 justify-start rounded-md bg-secondary/55 px-3 text-left font-normal",
-            !selected && "text-muted-foreground",
-          )}
-        >
-          <CalendarIcon />
-          <span className="truncate">
-            {selected
-              ? format(selected, isChinese ? "yyyy年M月d日 HH:mm:ss" : "MMM d, yyyy HH:mm:ss", {
-                  locale: isChinese ? zhCN : enUS,
-                })
-              : (placeholder ?? t("keys.neverExpires"))}
-          </span>
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-auto overflow-hidden p-0" align="start">
-        <Calendar
-          mode="single"
-          selected={selected}
-          defaultMonth={selected}
-          onSelect={selectDate}
-          locale={isChinese ? zhCNDayPicker : enUSDayPicker}
-        />
-        <div className="flex items-center gap-2 border-t px-3 py-2">
-          <span className="text-xs text-muted-foreground">{t("keys.expiryTime")}</span>
-          <div className="ml-auto flex items-center gap-1 text-xs">
-            {timeParts.map((part, index) => (
-              <div className="contents" key={index}>
-                {index > 0 ? <span className="text-muted-foreground">:</span> : null}
-                <Input
-                  aria-label={`${t("keys.expiryTime")} ${index === 0 ? "HH" : index === 1 ? "MM" : "SS"}`}
-                  className="h-7 w-9 bg-background px-1 text-center text-xs tabular-nums"
-                  inputMode="numeric"
-                  maxLength={2}
-                  pattern="[0-9]*"
-                  defaultValue={part}
-                  key={`${value}-${index}`}
-                  ref={(element) => {
-                    timeInputRefs.current[index] = element;
-                  }}
-                  onChange={(event) => {
-                    event.currentTarget.value = event.currentTarget.value.replace(/\D/g, "").slice(0, 2);
-                  }}
-                  onBlur={commitTime}
-                  onFocus={(event) => event.currentTarget.select()}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      commitTime();
-                      event.currentTarget.blur();
-                    }
-                  }}
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-      </PopoverContent>
+      <DateTimePickerTrigger selected={selected} isChinese={isChinese} placeholder={placeholder} disabled={disabled} />
+      <DateTimePickerContent
+        selected={selected}
+        isChinese={isChinese}
+        value={value}
+        timeParts={timeParts}
+        setTimeInputRef={setTimeInputRef}
+        onSelectDate={selectDate}
+        onCommitTime={commitTime}
+      />
     </Popover>
+  );
+}
+
+type DateTimePickerTriggerProps = {
+  selected: Date | undefined;
+  isChinese: boolean;
+  placeholder?: string;
+  disabled: boolean;
+};
+
+function DateTimePickerTrigger({ selected, isChinese, placeholder, disabled }: DateTimePickerTriggerProps) {
+  const { t } = useTranslation();
+  return (
+    <PopoverTrigger asChild>
+      <Button
+        type="button"
+        variant="secondary"
+        disabled={disabled}
+        className={cn(
+          "h-8 w-full min-w-0 justify-start rounded-md bg-secondary/55 px-3 text-left font-normal",
+          !selected && "text-muted-foreground",
+        )}
+      >
+        <CalendarIcon />
+        <span className="truncate">
+          {selected
+            ? format(selected, isChinese ? "yyyy年M月d日 HH:mm:ss" : "MMM d, yyyy HH:mm:ss", {
+                locale: isChinese ? zhCN : enUS,
+              })
+            : (placeholder ?? t("keys.neverExpires"))}
+        </span>
+      </Button>
+    </PopoverTrigger>
+  );
+}
+
+type DateTimePickerContentProps = {
+  selected: Date | undefined;
+  isChinese: boolean;
+  value: string;
+  timeParts: TimeParts;
+  setTimeInputRef: (index: number, element: HTMLInputElement | null) => void;
+  onSelectDate: (date: Date | undefined) => void;
+  onCommitTime: () => void;
+};
+
+function DateTimePickerContent({
+  selected,
+  isChinese,
+  value,
+  timeParts,
+  setTimeInputRef,
+  onSelectDate,
+  onCommitTime,
+}: DateTimePickerContentProps) {
+  const { t } = useTranslation();
+  return (
+    <PopoverContent className="w-auto overflow-hidden p-0" align="start">
+      <Calendar
+        mode="single"
+        selected={selected}
+        defaultMonth={selected}
+        onSelect={onSelectDate}
+        locale={isChinese ? zhCNDayPicker : enUSDayPicker}
+      />
+      <div className="flex items-center gap-2 border-t px-3 py-2">
+        <span className="text-xs text-muted-foreground">{t("keys.expiryTime")}</span>
+        <div className="ml-auto flex items-center gap-1 text-xs">
+          {timeParts.map((part, index) => (
+            <TimePartInput
+              key={`${value}-${index}`}
+              index={index}
+              part={part}
+              label={t("keys.expiryTime")}
+              setTimeInputRef={setTimeInputRef}
+              onCommit={onCommitTime}
+            />
+          ))}
+        </div>
+      </div>
+    </PopoverContent>
+  );
+}
+
+type TimePartInputProps = {
+  index: number;
+  part: string;
+  label: string;
+  setTimeInputRef: (index: number, element: HTMLInputElement | null) => void;
+  onCommit: () => void;
+};
+
+/** 单个时间片段输入框：只保留数字，失焦或回车即提交。 */
+function TimePartInput({ index, part, label, setTimeInputRef, onCommit }: TimePartInputProps) {
+  return (
+    <div className="contents">
+      {index > 0 ? <span className="text-muted-foreground">:</span> : null}
+      <Input
+        aria-label={`${label} ${index === 0 ? "HH" : index === 1 ? "MM" : "SS"}`}
+        className="h-7 w-9 bg-background px-1 text-center text-xs tabular-nums"
+        inputMode="numeric"
+        maxLength={2}
+        pattern="[0-9]*"
+        defaultValue={part}
+        ref={(element) => {
+          setTimeInputRef(index, element);
+        }}
+        onChange={(event) => {
+          event.currentTarget.value = event.currentTarget.value.replace(/\D/g, "").slice(0, 2);
+        }}
+        onBlur={onCommit}
+        onFocus={(event) => event.currentTarget.select()}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            onCommit();
+            event.currentTarget.blur();
+          }
+        }}
+      />
+    </div>
   );
 }
 

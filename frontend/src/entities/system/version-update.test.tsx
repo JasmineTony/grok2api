@@ -6,7 +6,7 @@ import { I18nextProvider } from "react-i18next";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { VersionInfoDTO } from "@/entities/system/system-api";
-import { CurrentVersionLabel, VersionUpdateBanner, VersionUpdateSection } from "@/features/system/version-update";
+import { CurrentVersionLabel, VersionUpdateBanner, VersionUpdateSection } from "@/entities/system/version-update";
 import { i18n } from "@/shared/i18n";
 import { formatDateTime } from "@/shared/lib/format";
 

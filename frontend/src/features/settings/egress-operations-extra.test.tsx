@@ -317,6 +317,21 @@ describe("出口节点筛选覆盖", () => {
     await selectNodeFilter(new RegExp(`^${i18n.t("settings.egress.accounts")}`), i18n.t("settings.egress.unassigned"));
     await waitFor(() => expect(lastNodeListQuery().get("assignment")).toBe("unbound"));
   });
+  it("启用状态筛选写入查询参数并回到第 1 页", async () => {
+    const u = await user();
+    installRoutes(baseRoutes({ nodes: () => egressNodeListWire([egressNodeWire({ id: "node-1" })], { total: 40 }) }));
+    renderEgressNodes();
+    await screen.findByTestId("egress-node-row-node-1");
+
+    await u.click(screen.getByRole("button", { name: i18n.t("common.nextPage") }));
+    await waitFor(() => expect(lastNodeListQuery().get("page")).toBe("2"));
+
+    await selectNodeFilter(new RegExp(`^${i18n.t("settings.egress.enabled")}`), i18n.t("common.disable"));
+    await waitFor(() => {
+      expect(lastNodeListQuery().get("enabled")).toBe("disabled");
+      expect(lastNodeListQuery().get("page")).toBe("1");
+    });
+  });
 });
 
 describe("代理配置库入口", () => {
@@ -408,6 +423,45 @@ describe("出口节点作用域切换", () => {
     );
 
     expect(await within(dialog).findByTestId("egress-node-user-agent")).toHaveValue("grok-web-ua");
+  });
+  it("自定义 User-Agent 与 Cookie 在切换作用域时保留，切回 Build 后重新注入默认 UA", async () => {
+    const u = await user();
+    installRoutes(
+      baseRoutes({
+        nodes: () => egressNodeListWire([egressNodeWire({ id: "node-1", scope: "grok_web", proxyConfigured: false })]),
+      }),
+    );
+    renderEgressNodes();
+    await screen.findByTestId("egress-node-row-node-1");
+
+    await u.click(screen.getByTestId("egress-node-actions-node-1"));
+    fireEvent.click(await screen.findByTestId("egress-node-edit-node-1"));
+    const dialog = await screen.findByTestId("egress-node-dialog");
+
+    await u.type(within(dialog).getByTestId("egress-node-user-agent"), "-custom");
+    await u.type(within(dialog).getByTestId("egress-node-cookie"), "cf_clearance=abc");
+
+    await chooseRadixOption(
+      within(dialog).getByLabelText(i18n.t("settings.egress.scope")),
+      i18n.t("settings.egress.scopeWebAsset"),
+    );
+    // 自定义 UA 不是上一作用域的默认值，切换作用域时保留
+    expect(within(dialog).getByTestId("egress-node-user-agent")).toHaveValue("-custom");
+    expect(within(dialog).getByTestId("egress-node-cookie")).toHaveValue("cf_clearance=abc");
+
+    await chooseRadixOption(
+      within(dialog).getByLabelText(i18n.t("settings.egress.scope")),
+      i18n.t("settings.egress.scopeBuild"),
+    );
+    expect(within(dialog).queryByTestId("egress-node-user-agent")).toBeNull();
+
+    // Build 作用域清空 UA 与 Cookie，切回后重新注入该作用域默认 UA
+    await chooseRadixOption(
+      within(dialog).getByLabelText(i18n.t("settings.egress.scope")),
+      i18n.t("settings.egress.scopeWebAsset"),
+    );
+    expect(await within(dialog).findByTestId("egress-node-user-agent")).toHaveValue("grok-web-asset-ua");
+    expect(within(dialog).getByTestId("egress-node-cookie")).toHaveValue("");
   });
 });
 

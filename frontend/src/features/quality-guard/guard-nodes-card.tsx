@@ -8,7 +8,7 @@ import { formatTime } from "@/features/quality-guard/guard-format";
 import { GuardNodesTable } from "@/features/quality-guard/guard-nodes-table";
 import type { GuardNodeFilters } from "@/features/quality-guard/use-guard-node-list";
 import type { GuardNodesController } from "@/features/quality-guard/use-guard-nodes";
-import type { EgressNodeDTO } from "@/features/settings/settings-api";
+import type { EgressNodeDTO } from "@/entities/egress/egress-dto";
 import { DataTableFilters, type DataTableFilter } from "@/shared/components/data-table-filters";
 import { Pagination } from "@/shared/components/pagination";
 import { cn } from "@/shared/lib/cn";

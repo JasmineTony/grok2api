@@ -31,7 +31,7 @@ import {
   updateEgressOperationsConfig,
   updateEgressProxyProfile,
   updateEgressSource,
-} from "@/features/settings/egress-api";
+} from "@/entities/egress/egress-api";
 import {
   createEgressFakeApi,
   egressNodeListWire,

@@ -9,9 +9,9 @@ import {
   createAccountFormSchema,
   type AccountForm,
 } from "@/features/accounts/account-edit-form";
-import { updateAccount, type AccountDTO, type AccountUpdateInput } from "@/features/accounts/accounts-api";
+import { updateAccount, type AccountUpdateInput } from "@/features/accounts/accounts-api";
 import type { AccountsFlowContext } from "@/features/accounts/accounts-flow-context";
-import type { BuildRouteMode } from "@/features/accounts/accounts-dto";
+import type { AccountDTO, BuildRouteMode } from "@/entities/accounts/types";
 
 export type AccountsEditFlow = {
   editing: AccountDTO | null;

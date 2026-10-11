@@ -22,7 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import type { ClientKeyDTO, ProviderScopeValue, TierScopeValue } from "@/features/client-keys/client-keys-api";
+import type { ClientKeyDTO, ProviderScopeValue, TierScopeValue } from "@/entities/client-keys/types";
 import { BillingUsage } from "@/features/client-keys/client-key-billing-usage";
 import { ClientKeyStatus } from "@/features/client-keys/client-key-status";
 import { providerScopeLabels, tierScopeLabels } from "@/features/client-keys/client-key-scope-summary";

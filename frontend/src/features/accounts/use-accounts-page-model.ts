@@ -3,8 +3,8 @@ import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
-import type { AccountDTO, AccountSummaryDTO } from "@/features/accounts/accounts-api";
-import type { AccountProvider } from "@/features/accounts/accounts-dto";
+import type { AccountDTO, AccountProvider } from "@/entities/accounts/types";
+import type { AccountSummaryDTO } from "@/features/accounts/accounts-api";
 import type { AccountsFlowContext } from "@/features/accounts/accounts-flow-context";
 import { useAccountCleanupFlow } from "@/features/accounts/use-account-cleanup-flow";
 import { useAccountDeleteFlow } from "@/features/accounts/use-account-delete-flow";

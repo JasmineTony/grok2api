@@ -24,7 +24,7 @@ import type {
   EgressScope,
   EgressSourceDTO,
   EgressSourceListDTO,
-} from "@/features/settings/egress-dto";
+} from "@/entities/egress/egress-dto";
 
 const egressIPProbeValidator = hasShape({
   status: isOneOf("unknown", "healthy", "unhealthy"),

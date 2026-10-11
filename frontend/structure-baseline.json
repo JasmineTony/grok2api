@@ -5,35 +5,5 @@
     "functionLines": 50
   },
   "files": {},
-  "functions": {
-    "src/features/accounts/account-name-cell.tsx#AccountNameCell": 146,
-    "src/features/accounts/account-quota.tsx#AccountQuota": 66,
-    "src/features/accounts/account-quota.tsx#BuildQuota": 92,
-    "src/features/accounts/account-quota.tsx#ImagineQuotaRow": 70,
-    "src/features/accounts/account-quota.tsx#WebQuota": 51,
-    "src/features/accounts/account-quota.tsx#WeeklyWebQuota": 63,
-    "src/features/accounts/account-task-progress.ts#createAccountTaskProgressController": 107,
-    "src/features/accounts/web-account-scripts.tsx#WebAccountScriptsDialog": 112,
-    "src/features/accounts/web-account-settings.tsx#WebAccountSettingsDialogs": 56,
-    "src/features/audits/request-audits-page.tsx#RequestAuditsPage": 85,
-    "src/features/auth/login-page.tsx#LoginPage": 96,
-    "src/features/client-keys/client-keys-page.tsx#ClientKeysPage": 220,
-    "src/features/dashboard/dashboard-page.tsx#DashboardPage": 54,
-    "src/features/media/video-gallery-page.tsx#VideoGalleryPage": 63,
-    "src/features/settings/egress-nodes.tsx#EgressNodes": 437,
-    "src/features/settings/egress-operations.tsx#EgressAutomation": 115,
-    "src/features/settings/egress-operations.tsx#EgressSources": 148,
-    "src/features/settings/egress-proxy-profiles.tsx#EgressProxyProfiles": 154,
-    "src/features/settings/settings-model.ts#toSettingsDTO": 69,
-    "src/features/settings/settings-model.ts#toSettingsForm": 71,
-    "src/features/system/version-update.tsx#VersionUpdateSection": 94,
-    "src/shared/api/client.ts#apiEventStream": 101,
-    "src/shared/clipboard.ts#legacyCopy": 54,
-    "src/shared/components/copy-button.tsx#CopyButton": 64,
-    "src/shared/components/data-table-filters.tsx#DataTableFilters": 190,
-    "src/shared/components/date-time-picker.tsx#DateTimePicker": 95,
-    "src/shared/components/pagination.tsx#CursorPagination": 69,
-    "src/shared/components/pagination.tsx#Pagination": 75,
-    "src/shared/components/virtual-table-body.tsx#VirtualTableBody": 76
-  }
+  "functions": {}
 }

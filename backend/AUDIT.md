@@ -107,11 +107,11 @@ go test ./internal/infra/egress ./internal/infra/runtime/memory ./internal/pkg/p
 
 目标方向：Transport → Application → Domain；Repository/Ports 定义契约，Infra 实现；`internal/app` 为装配入口。
 
-静态扫描（334 个非测试 Go 文件）结果：
+静态扫描（425 个非测试 Go 文件）结果：
 
 - `internal/domain/**` → 无越界依赖。**方向正确。**
 - `internal/repository/**` → 无越界依赖（仅依赖 domain）。**方向正确。**
-- `internal/application/**` → 存在 **23 处**（分布在 15 个文件）对 infra 的依赖，需登记并逐步收敛：
+- `internal/application/**` → 存在 **26 处**（分布在 20 个文件）对 infra 的依赖，需登记并逐步收敛（按 import 行计；文件级拆分后同一逻辑依赖可能分布在更多文件）：
 
 | 目标 infra 包    | 引用位置（示例）                                                                          | 判定                                                                                                                                                     |
 | ---------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -124,23 +124,25 @@ go test ./internal/infra/egress ./internal/infra/runtime/memory ./internal/pkg/p
 
 ### 4.2 结构与体量基线
 
-- 源码文件：334 个（不含 `_test.go`）。
-- 最大的文件：下列为阶段 3–6 拆分后的现状（`git log` 与逐文件计数实测）；阶段 0 基线为 16 个 >1000 行文件、最大 4717 行（`application/account/service.go`），该基线值见本文件 §10 与 `AGENTS.md` §5。
+- 源码文件：425 个（不含 `_test.go`；阶段 3–6 为 334 个，2026-10-11 文件级拆分后增加）。
+- 最大的文件：下列为 2026-10-11 文件级拆分后的现状（`[IO.File]::ReadAllLines()` 逐文件实测）。阶段 0 基线为 16 个 >1000 行文件、最大 4717 行（`application/account/service.go`，§10）；阶段 3–6 后为 10 个 >1000 行、最大 1931 行；2026-10-11 起 **>1000 行文件 0 个**，剩余 >600 行生产文件 12 个（后端不在 REV-1 前端 600 行门禁范围内，此处仅作登记）。
 
-| 文件                                                          | 行数 |
-| ------------------------------------------------------------- | ---: |
-| `internal/application/gateway/service.go`                     | 1931 |
-| `internal/transport/http/account/handler.go`                  | 1634 |
-| `internal/infra/persistence/relational/model_repository.go`   | 1327 |
-| `internal/application/gateway/video.go`                       | 1326 |
-| `internal/infra/provider/cli/adapter.go`                      | 1306 |
-| `internal/infra/persistence/relational/audit_repository.go`   | 1133 |
-| `internal/infra/provider/conversation/stream.go`              | 1055 |
-| `internal/application/audit/service.go`                       | 1047 |
-| `internal/application/gateway/selector.go`                    | 1044 |
-| `internal/infra/config/config.go`                             | 1003 |
+| 文件                                              | 行数 | 说明                                                       |
+| ------------------------------------------------- | ---: | ---------------------------------------------------------- |
+| `internal/infra/runtime/redis/store.go`           |  995 | 既有，未拆分                                               |
+| `internal/application/gateway/service_request.go` |  966 | 新文件，含存量 `createResponseAt`（908 行，已登记不强行拆） |
+| `internal/infra/provider/console/media.go`        |  950 | 既有，未拆分                                               |
+| `internal/pkg/tunnelproxy/tunnelproxy.go`         |  876 | 既有，未拆分                                               |
+| `internal/infra/provider/web/quota.go`            |  815 | 既有，未拆分                                               |
+| `internal/infra/provider/web/gateway.go`          |  785 | 既有，未拆分（本轮仅注释归位）                             |
+| `internal/application/model/service.go`           |  669 | 既有，未拆分                                               |
+| `internal/application/media/service.go`           |  652 | 既有，未拆分                                               |
+| `internal/application/clientkey/service.go`       |  627 | 既有，未拆分                                               |
+| `internal/domain/audit/pricing.go`                |  627 | 既有，未拆分                                               |
+| `internal/domain/account/account.go`              |  618 | 既有，未拆分                                               |
+| `internal/infra/provider/web/sso_build.go`        |  618 | 既有，未拆分                                               |
 
-- 装配入口 `internal/app/application.go`（861 行）：单个 `New()` 内完成数据库、运行态存储、三个 Provider 适配器、全部应用服务与 HTTP 路由装配（实测 `New()` 354 行，`application.go:91` 起）；`Run()`（实测 182 行，`application.go:525` 起）串行启动 20+ 个后台任务。属于"职责正确但函数过长"，需按数据库/运行态、Provider、应用服务、HTTP、后台生命周期拆分。
+- 装配入口 `internal/app/application.go`（**2026-10-11 拆分后 309 行**）：装配逻辑拆入同包 `assemble.go`(586) 与 `lifecycle.go`(234)，`New()` 由 354 行降至 **27 行**、`Run()` 由 182 行降至 **19 行**，helper 全部 ≤50 行；装配顺序、错误包装与关闭顺序逐条比对未变（见 §16.1）。
 - `internal/app/startup.go` 的 `readinessSnapshot` 实测 138 行（`startup.go:119-256`），混合了就绪判定与组件状态拼装。
 
 ### 4.3 已具备且不应重复建设的能力
@@ -160,14 +162,14 @@ go test ./internal/infra/egress ./internal/infra/runtime/memory ./internal/pkg/p
 
 | 编号  | 证据                                                                                                                                                                      | 现有/新增                           | 影响                                        | 优先级 | 阶段   | 验证方法                                   | 状态                                                                                                                                                  |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ------------------------------------------- | ------ | ------ | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| BE-01 | 阶段 0 基线 16 个 >1000 行文件（最大 `application/account/service.go` 4717 行）→ 阶段 3–6 拆分后实测 **10 个**（最大 `application/gateway/service.go` 1931 行，§4.2）     | 现有                                | 可维护性、审查成本                          | P2     | 4–6    | 按用例/读写/调度拆分                       | Pending（P2 计划内债务，不阻塞发布）                                                                                                                  |
-| BE-02 | 23 处 / 15 个文件 application → infra 依赖（§4.1，阶段 0 基线为 28 处）                                                                                                   | 现有                                | 分层模糊，契约与实现同包                    | P2     | 3      | 契约迁 ports + 边界测试                    | Pending（P2 计划内债务，不阻塞发布）                                                                                                                  |
+| BE-01 | 阶段 0 基线 16 个 >1000 行文件（最大 4717 行）→ 阶段 3–6 后 10 个（最大 1931 行）→ **2026-10-11 文件级拆分后 >1000 行文件 0 个**；8 组目标目录内文件全部 ≤600 行（唯一例外 `gateway/service_request.go` 966 行，含存量 `createResponseAt`），另有 11 个 600–995 行的既有文件尚未拆分（§4.2） | 现有                                | 可维护性、审查成本                          | P2     | 4–6    | 按用例/读写/调度拆分                       | **Passed**（2026-10-11：8 组纯文件级搬运，见 §16.1；>1000 行类清零，剩余 600–995 行文件按 P3 登记）                                                  |
+| BE-02 | 26 处 / 20 个文件 application → infra 依赖（§4.1；阶段 0 基线为 28 处，文件级拆分后同一逻辑依赖分布在更多文件）                                                          | 现有                                | 分层模糊，契约与实现同包                    | P2     | 3      | 契约迁 ports + 边界测试                    | Pending（P2 计划内债务，不阻塞发布）                                                                                                                  |
 | BE-03 | 账号列表已按页批量（6 次查询），非 N+1                                                                                                                                    | 现有                                | 不应虚构缺陷                                | P2     | 4      | 补查询次数断言与基准                       | **Passed**（阶段 4：`TestListPageAggregationQueryCountIsPageSizeIndependent` 断言 pageSize 1–300 恒为固定 6 次批量调用；§10）                         |
 | QA-01 | 20 个 PostgreSQL/Redis 集成用例在本机跳过，含并发/锁/账本不变量                                                                                                           | 现有                                | 关键一致性无本地证据                        | P1     | 1、7   | CI 隔离 service 真实执行                   | **Passed**（CI 0 跳过 / 2842 通过，并暴露并修复 1 个用例缺陷）                                                                                        |
 | QA-02 | `go test -race` 本机 Blocked（无 cgo）                                                                                                                                    | 现有                                | 竞态检测缺失                                | P1     | 7      | Linux CI 执行                              | **Passed**（CI `go test -race ./... -count=1` success）                                                                                               |
 | QA-03 | `internal/application/account` 无 benchmark                                                                                                                               | 现有                                | 最重读路径无可比基线                        | P2     | 4      | 新增分页聚合基准                           | **Passed**（阶段 4 新增 `BenchmarkServiceListPageAggregation`：8.60 / 9.81 / 9.61 ms/op；§10）                                                        |
-| BE-04 | `app.New()`/`Run()` 单函数过长，装配与生命周期混合（`New()` 354 行 / `Run()` 182 行 / `readinessSnapshot` 138 行，§4.2）                                                  | 现有                                | 变更风险集中                                | P2     | 3      | 拆分后回归装配与关闭顺序                   | Pending（P2 计划内债务，不阻塞发布）                                                                                                                  |
-| BE-05 | `infra/provider/provider.go` 由 1468 行降至 **465** 行；能力契约已迁 `internal/ports/provider`（35 个接口，阶段 3，§9）                                                   | 现有                                | 契约与实现同包                              | P2     | 3      | 迁至 ports 并同步调用方                    | Pending（P2 计划内债务，不阻塞发布）                                                                                                                  |
+| BE-04 | `app.New()`/`Run()` 单函数过长，装配与生命周期混合（原 `New()` 354 行 / `Run()` 182 行 / `readinessSnapshot` 138 行）                                                     | 现有                                | 变更风险集中                                | P2     | 3      | 拆分后回归装配与关闭顺序                   | **Passed**（2026-10-11：`New()` 27 行 / `Run()` 19 行，拆为 `assemble.go`(586) + `lifecycle.go`(234)，helper 全部 ≤50 行；`go build`/`vet`/`go test ./...` exit 0，见 §16.1） |
+| BE-05 | `infra/provider/provider.go` 由 1468 行降至 **465** 行；能力契约已迁 `internal/ports/provider`（35 个接口，阶段 3，§9）                                                   | 现有                                | 契约与实现同包                              | P2     | 3      | 迁至 ports 并同步调用方                    | **Passed**（契约已迁 ports 且 `provider.go` 465 行，2026-10-11 复核；剩余 application→infra 依赖归 BE-02）                                            |
 | BE-06 | 媒体尝试循环跨轮携带 `err`，判定换号/重试后下一轮跳过 `Acquire`，健康账号仍在池中却返回 503 `ErrNoAvailableAccount`（`gateway/voice_execution.go`、`image_execution.go`） | 现有（基线即有，阶段 6 收尾前未修） | 单账号凭据失效/传输抖动被放大为下游可见 503 | P1     | 6 收尾 | 两账号夹具回归测试断言第二个账号被真正租用 | **Passed**（§13.1：改为每轮独立 `acquireErr`；`media_attempt_loop_test.go` 3 条断言；`go build`/`vet`/`go test ./... -count=1` exit 0，64 包 0 FAIL） |
 | BE-07 | `.github/workflows/ghcr-image.yml` 两个 `Docker metadata` 步骤未设 `flavor`；run `38054220100` job `114229640946` 日志 `ERROR: ghcr.io/jasminetony/grok2api:latest-arm64: not found` | 新增（2026-10-10 发布时暴露） | tag 推送时 `Merge image` 必然失败；per-arch 另推单架构裸 `latest` | P1 | 发布 | 加 `flavor: latest=false` 并用临时 tag 实测 tag 推送路径 | **Passed**（`b4068303`；tag 推送 run `38060494037`、main 推送 run `38060467337` 全部 job success，§11/§14） |
 | BE-08 | `merge` 的 `Create manifest list` 循环缺 `set -euo pipefail`，管道退出码只反映 `while` 最后一次迭代 | 新增（只读代码审查发现） | 前面的 `imagetools create` 失败可被后续成功掩盖，留下陈旧标签却报绿 | P3 | 发布 | 在 `run:` 首行加 `set -euo pipefail` | **Passed**（`a4f58384`；两条路径 CI 全绿，§11/§14） |
@@ -539,3 +541,48 @@ ERROR: failed to push ghcr.io/jasminetony/grok2api:main-arm64: denied: permissio
 | 未达成项         | 无                                                                                                                                                                                                                                                                                                                                                            |
 | 回滚点           | 源码/配置/文档随提交回退到 `57f384c9`（本轮改动前的 `main`）；tag `v0.1.2`、Release 与 GHCR `v0.1.2*` 标签需一并删除。本次不涉及生产数据迁移                                                                                                                                                                                                                     |
 | 已知局限         | tag `v0.1.2` 指向 `34476cd3`（发布准备提交），不含发布之后的登记提交 `d2d3a78c`——tag 无法包含自身证据（与 §14 未达成项 ② 同类）；如需 tag 自带登记只能重打 tag 并重发镜像（不可逆，未执行）。`main` 的 `main`/`latest` 镜像随后续 push 重建，`v0.1.2` 标签镜像不再变动 |
+
+## 16. 2026-10-11 后端结构债务清零（BE-01 / BE-04 / BE-05 + P3）
+
+v0.1.2 发布后继续清空已登记存量：**BE-01 的 >1000 行文件类清零**、**BE-04 装配入口拆分完成**、**BE-05 契约收敛确认**，并修复 1 个 P3 注释错位与 1 个 flaky 用例。
+
+### 16.1 文件级拆分（纯代码搬运，零语义改动）
+
+| 目标文件（拆分前）                                                                                                        |               行数 | 拆分后                                                                                                              |
+| ------------------------------------------------------------------------------------------------------------------------- | -----------------: | ------------------------------------------------------------------------------------------------------------------- |
+| `internal/app/application.go`                                                                                             |                861 | `application.go` 309 + `assemble.go` 586 + `lifecycle.go` 234（`New()` 354→27、`Run()` 182→19，helper 全部 ≤50 行） |
+| `application/gateway/{service,video,selector}.go`                                                                         |      1931/1326/1044 | 21 个同包文件（`service.go` 保留 29 行头部；`video.go`/`selector.go` 内容搬出后删除空壳）                            |
+| `infra/persistence/relational/{model_repository,audit_repository}.go`                                                     |          1327/1133 | 9 个同包文件                                                                                                        |
+| `transport/http/account/handler.go`                                                                                       |               1634 | 8 个同包文件                                                                                                        |
+| `infra/provider/cli/adapter.go`                                                                                           |               1306 | 9 个同包文件                                                                                                        |
+| `infra/provider/conversation/stream.go`                                                                                   |               1055 | 7 个同包文件                                                                                                        |
+| `application/audit/service.go`                                                                                            |               1047 | 8 个同包文件                                                                                                        |
+| `infra/config/config.go`                                                                                                  |               1003 | 5 个同包文件（配置结构体字段与 `yaml` tag 逐字未变）                                                                |
+| `relational/{egress_repository,schema,account_links}.go`                                                                  |           960/882/776 | 16 个同包文件                                                                                                       |
+| `provider/cli/{responses_tool_declarations,responses_codex_tools,video}.go`                                               |           943/638/609 | 12 个同包文件                                                                                                       |
+| `gateway/{selector_cache,selector_health_cache,quality_retry_scan}.go` + `conversation/messages_request.go`                |           678/664/636/876 | 13 个同包文件                                                                                                       |
+
+- 全部为同包文件级搬运：标识符/签名/接收者/语句顺序/注释逐字不变，未新建包；每批均以「`git show HEAD:<path>` 原文与新文件正文的非空行多重集或区间逐行比对」+ `go build`/`go vet`/包级与全量 `go test` 验证。
+- 每轮 `go build ./...`、`go vet ./...` 均 exit 0；最终全量 `go test ./... -count=1`：**64 包 ok / 0 FAIL / 11 无测试文件 / 2935 用例通过 / 20 跳过**。
+- 附带修复 P3：`infra/provider/web/gateway.go` 的 `collectGatewayToolResult` 注释从 `gatewayActionSource` 上方移回其函数上方（diff 1/2 行，无行为变化）。
+
+### 16.2 flaky 用例修复（`internal/infra/provider/streamidle`）
+
+全量测试首轮出现 1 次失败：`TestReadCloserResetsDeadlineOnProgress`（`streamidle_test.go:44`，`upstream stream idle timeout`）。根因：用例用 `gap=10ms` 的 `pacedReader` 对 `idle=30ms` 断言「有进度就不超时」，余量仅 3 倍，机器负载下一次 `time.Sleep` 被调度延迟超过剩余阈值即触发（该包不在本轮任何拆分范围内）。
+
+修复（**仅测试文件**，未改生产代码、未弱化断言）：`gap=10ms / chunks=30 / idle=150ms`（单次间隔余量 15 倍，且整段流 ≈300ms > 150ms，保证「缺少 `timer.Reset`」时用例仍会失败）；`TestReadCloserReportsProgressBeforeIdleTimeout` 的 `idle` 由 30ms 提到 200ms（同样只为扩大余量）。
+
+验证：`-count=20` 全过（12.4s）；用 `go test -overlay` 注入「删除 `timer.Reset`」的生产变体后该用例**仍然失败**（`upstream stream idle timeout`），证明判别力未削弱。
+
+### 16.3 验证
+
+- `go build ./...` exit 0（5.35s）；`go vet ./...` exit 0（4.52s）；`go test ./... -count=1` exit 0（重跑：`pass=2935 / fail=0 / skip=20`，64 包 ok）。
+- `go test -race ./...` 本机 **Blocked**（`go: -race requires cgo`，`CGO_ENABLED=0` 且无 C 编译器），须由 Linux CI 覆盖。
+- 20 个 PostgreSQL·Redis 集成用例本机 **Skipped**（缺 `TEST_POSTGRES_DSN`/`TEST_REDIS_ADDRESS`），由 CI 隔离服务覆盖。
+
+### 16.4 未覆盖与剩余债务
+
+- **>600 行的剩余生产文件 12 个**（§4.2）：除 `gateway/service_request.go`（含存量 `createResponseAt` 908 行，已登记不强行拆）外，其余 11 个为既有文件，本轮未拆分，按 P3 登记（后端不在 REV-1 门禁范围）。
+- **函数级 REV-2 存量 7 个未变**（纯文件级搬运不重构函数体）：`createResponseAt` 908、`runVideoJob` 288、`OpenVoiceWebSocket` 247、`acquire` 246、`executeImage` 57、`executeVoice` 54、`CreateVideo` 52（stdlib `go/ast` 复核，仅统计生产代码；`inference` 与 `provider-web` 生产代码为 0）。
+- 测试文件 >600 行 38 个（最大 `gateway/service_test.go` 4928）属既有约定，不在门禁范围。
+- 语义等价性由「逐行搬运 + 多重集比对 + 编译 + 全量测试」保证；PostgreSQL/Redis 专属路径本机未执行（`Skipped`）。

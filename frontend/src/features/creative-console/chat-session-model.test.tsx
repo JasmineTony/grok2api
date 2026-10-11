@@ -1,3 +1,4 @@
+import type { ClientKeyDTO } from "@/entities/client-keys/types";
 import type { ModelRouteDTO } from "@/entities/model/types";
 import type { ChatStreamSnapshot } from "@/features/creative-console/creative-api-core";
 import {
@@ -22,7 +23,6 @@ import {
   type ChatSession,
   type ConversationMessage,
 } from "@/features/creative-console/chat-session-model";
-import type { ClientKeyDTO } from "@/features/client-keys/client-keys-api";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 function message(overrides: Partial<ConversationMessage> = {}): ConversationMessage {

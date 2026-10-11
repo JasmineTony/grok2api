@@ -5,7 +5,7 @@ import type {
   AccountFilterChanges,
   AccountFilterValues,
 } from "@/features/accounts/accounts-filter-descriptors";
-import type { AccountProvider } from "@/features/accounts/accounts-dto";
+import type { AccountProvider } from "@/entities/accounts/types";
 import { useDebouncedValue } from "@/shared/hooks/use-debounced-value";
 import { nextTableSort, type SortOrder, type TableSort } from "@/shared/lib/table-sort";
 

@@ -11,7 +11,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Spinner } from "@/components/ui/spinner";
-import type { EgressNodeDTO } from "@/features/settings/settings-api";
+import type { EgressNodeDTO } from "@/entities/egress/egress-dto";
 
 // 节点删除确认：从 quality-guard-page.tsx 拆出。单个/批量文案与拆分前一致。
 

@@ -18,7 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { formatTPS, formatTime } from "@/features/quality-guard/guard-format";
 import type { QualityGuardNodeState } from "@/features/quality-guard/quality-guard-api";
 import type { GuardNodesController } from "@/features/quality-guard/use-guard-nodes";
-import type { EgressNodeDTO } from "@/features/settings/settings-api";
+import type { EgressNodeDTO } from "@/entities/egress/egress-dto";
 import { TableLoadingRow } from "@/shared/components/data-state";
 import { cn } from "@/shared/lib/cn";
 

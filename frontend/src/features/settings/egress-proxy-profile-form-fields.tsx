@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
-import type { EgressProxyProfileDTO } from "@/features/settings/settings-api";
+import type { EgressProxyProfileDTO } from "@/entities/egress/egress-dto";
 
 export type EgressProxyProfileFormValues = { name: string; proxyURL: string };
 

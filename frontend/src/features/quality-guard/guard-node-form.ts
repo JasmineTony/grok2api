@@ -1,4 +1,4 @@
-import type { EgressNodeInput } from "@/features/settings/settings-api";
+import type { EgressNodeInput } from "@/entities/egress/egress-dto";
 
 // 出口节点表单的初始值与提交映射：从 quality-guard-page.tsx 拆出，供弹窗状态与保存 mutation 共用。
 

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 
-import type { AccountProvider } from "@/features/accounts/accounts-dto";
+import type { AccountProvider } from "@/entities/accounts/types";
 
 type AccountSelection = { provider: AccountProvider; ids: Set<string> };
 

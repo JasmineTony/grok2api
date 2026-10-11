@@ -10,8 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const keysApiMock = vi.hoisted(() => ({ listClientKeys: vi.fn(), getClientKeySecret: vi.fn() }));
 const modelsApiMock = vi.hoisted(() => ({ listModels: vi.fn() }));
 
-vi.mock("@/features/client-keys/client-keys-api", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/features/client-keys/client-keys-api")>()),
+vi.mock("@/entities/client-keys/client-keys-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/entities/client-keys/client-keys-api")>()),
   ...keysApiMock,
 }));
 

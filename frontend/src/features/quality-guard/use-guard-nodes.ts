@@ -13,7 +13,7 @@ import {
   type GuardNodeFilters,
 } from "@/features/quality-guard/use-guard-node-list";
 import type { QualityGuardNodeState, QualityGuardStatus } from "@/features/quality-guard/quality-guard-api";
-import type { EgressNodeDTO, EgressNodeListDTO } from "@/features/settings/settings-api";
+import type { EgressNodeDTO, EgressNodeListDTO } from "@/entities/egress/egress-dto";
 
 // 节点 tab 的控制器：筛选/分页状态、三个查询、派生视图、行选择、弹窗状态与人工操作。
 // 页面只负责 tab 组装与错误态，具体职责下沉到各自 hook，保持零行为变更。

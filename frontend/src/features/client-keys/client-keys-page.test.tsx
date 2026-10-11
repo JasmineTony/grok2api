@@ -6,7 +6,7 @@ import { Toaster } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
-import type { ClientKeyDTO } from "@/features/client-keys/client-keys-api";
+import type { ClientKeyDTO } from "@/entities/client-keys/types";
 import { ClientKeysPage } from "@/features/client-keys/client-keys-page";
 import {
   clientKeyDTO,
@@ -242,6 +242,31 @@ describe("ClientKeysPage 批量操作与删除", () => {
     });
   });
 
+  it("取消整页勾选与单行勾选后批量操作条消失", async () => {
+    const keys = [clientKeyDTO({ id: "key-1" }), clientKeyDTO({ id: "key-2" })];
+    installRoutes({ list: () => clientKeyPage(keys) });
+    renderPage();
+    await screen.findByTestId("client-keys-row-key-1");
+
+    await user().click(screen.getByTestId("client-keys-select-page"));
+    expect(await screen.findByTestId("client-keys-batch-actions")).toHaveTextContent(
+      i18n.t("common.selectedCount", { count: 2 }),
+    );
+
+    // 再次点击表头复选框取消整页勾选：选择集合清空，批量操作条消失
+    await user().click(screen.getByTestId("client-keys-select-page"));
+    await waitFor(() => expect(screen.queryByTestId("client-keys-batch-actions")).not.toBeInTheDocument());
+
+    // 单行勾选后再取消：计数归零并隐藏批量操作
+    await user().click(screen.getByTestId("client-keys-select-key-1"));
+    expect(await screen.findByTestId("client-keys-batch-actions")).toHaveTextContent(
+      i18n.t("common.selectedCount", { count: 1 }),
+    );
+
+    await user().click(screen.getByTestId("client-keys-select-key-1"));
+    await waitFor(() => expect(screen.queryByTestId("client-keys-batch-actions")).not.toBeInTheDocument());
+  });
+
   it("删除确认框取消时不发起请求", async () => {
     installRoutes({ list: () => clientKeyPage([clientKeyDTO({ id: "key-1" })]) });
     renderPage();
@@ -446,5 +471,78 @@ describe("ClientKeysPage 创建与编辑", () => {
 
     expect(await screen.findByText("密钥名称已存在")).toBeInTheDocument();
     expect(screen.getByTestId("client-keys-form-dialog")).toBeInTheDocument();
+  });
+});
+
+// 补充断言（阶段整改）：页面变更失败与模型范围筛选此前没有用例覆盖，
+// 这些路径的失败提示与查询参数由页面持有的变更钩子产生，必须断言用户可见结果。
+describe("ClientKeysPage 变更失败与模型范围筛选", () => {
+  it("批量更新失败时展示接口错误信息且保留选中", async () => {
+    installRoutes({
+      list: () => clientKeyPage([clientKeyDTO({ id: "key-1" })]),
+      batchUpdate: () => {
+        throw new ApiError(503, "unavailable", "批量更新失败");
+      },
+    });
+    renderPage();
+    await screen.findByTestId("client-keys-row-key-1");
+
+    await user().click(screen.getByTestId("client-keys-select-key-1"));
+    await user().click(await screen.findByTestId("client-keys-batch-enable"));
+
+    expect(await screen.findByText("批量更新失败")).toBeInTheDocument();
+    expect(await screen.findByTestId("client-keys-batch-actions")).toHaveTextContent(
+      i18n.t("common.selectedCount", { count: 1 }),
+    );
+  });
+
+  it("删除失败时展示接口错误信息且行保留", async () => {
+    installRoutes({
+      list: () => clientKeyPage([clientKeyDTO({ id: "key-1" })]),
+      remove: () => {
+        throw new ApiError(500, "deleteFailed", "删除失败");
+      },
+    });
+    renderPage();
+    await screen.findByTestId("client-keys-row-key-1");
+
+    await user().click(screen.getByTestId("client-keys-actions-key-1"));
+    fireEvent.click(await screen.findByTestId("client-keys-delete-key-1"));
+    await user().click(await screen.findByTestId("client-keys-delete-dialog-confirm"));
+
+    expect(await screen.findByText("删除失败")).toBeInTheDocument();
+    expect(screen.getByTestId("client-keys-row-key-1")).toBeInTheDocument();
+  });
+
+  it("读取明文失败时展示接口错误信息且不打开明文弹窗", async () => {
+    installRoutes({
+      list: () => clientKeyPage([clientKeyDTO({ id: "key-1" })]),
+      secret: () => {
+        throw new ApiError(403, "secretForbidden", "无权限读取明文");
+      },
+    });
+    renderPage();
+    await screen.findByTestId("client-keys-row-key-1");
+
+    await user().click(screen.getByTestId("client-keys-copy-key-1"));
+
+    expect(await screen.findByText("无权限读取明文")).toBeInTheDocument();
+    expect(screen.queryByTestId("client-keys-secret-dialog")).not.toBeInTheDocument();
+  });
+
+  it("模型范围筛选写入 modelScope 参数并回到第 1 页", async () => {
+    installRoutes({
+      list: (call) => clientKeyPage(call.query.get("modelScope") ? [] : [clientKeyDTO({ id: "key-1" })]),
+    });
+    renderPage();
+    await screen.findByTestId("client-keys-row-key-1");
+
+    await user().click(screen.getByRole("button", { name: new RegExp(i18n.t("common.filter")) }));
+    await user().click(await screen.findByRole("menuitem", { name: i18n.t("keys.modelScope") }));
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: i18n.t("keys.restrictedModels") }));
+
+    await waitFor(() => expect(lastListQuery().get("modelScope")).toBe("restricted"));
+    expect(lastListQuery().get("page")).toBe("1");
+    expect(await screen.findByTestId("client-keys-empty")).toBeInTheDocument();
   });
 });

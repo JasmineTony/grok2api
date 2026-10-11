@@ -1,12 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  decodeAccount,
+  decodeAccountPage,
+  decodeBilling,
+  listAccounts,
+  updateAccountsEnabled,
+} from "@/entities/accounts/accounts-api";
+import {
   acceptWebAccountTerms,
   clearAccountCooldown,
   deleteAccount,
   enableWebAccountNSFW,
   getAccountSummary,
-  listAccounts,
   pollDeviceAuthorization,
   previewAccountDeletion,
   refreshAccountBilling,
@@ -25,20 +31,12 @@ import {
   refreshAccountsTokens,
   resetAccountsQuota,
   resetAllAccountQuota,
-  updateAccountsEnabled,
   updateAccountsMaxConcurrent,
 } from "@/features/accounts/account-batch-api";
 import { exportAccountBatch, exportSelectedAccounts } from "@/features/accounts/account-export-api";
 import { createAccountTaskProgressController } from "@/features/accounts/account-task-progress";
 import { detectBuildAccounts, refreshAllAccountBilling } from "@/features/accounts/account-task-stream";
-import {
-  decodeAccount,
-  decodeAccountPage,
-  decodeAccountSummary,
-  decodeBilling,
-  decodeDevicePoll,
-  decodeDeviceSession,
-} from "@/features/accounts/accounts-dto";
+import { decodeAccountSummary, decodeDevicePoll, decodeDeviceSession } from "@/features/accounts/accounts-dto";
 import { ApiError } from "@/shared/api/client";
 
 // 账号 API 层请求契约测试（AGENTS.md TEST-3）：只替换网络边界，解码器与请求参数保持真实。

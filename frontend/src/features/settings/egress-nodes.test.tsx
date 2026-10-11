@@ -419,3 +419,58 @@ describe("EgressNodes 自动化配置", () => {
     expect(await screen.findByText(i18n.t("settings.egress.automationSaved"))).toBeInTheDocument();
   });
 });
+
+describe("EgressNodes 列表刷新", () => {
+  it("点击刷新按钮重新请求当前页节点", async () => {
+    installRoutes(baseRoutes({ nodes: () => egressNodeListWire([egressNodeWire({ id: "node-1" })]) }));
+    renderNodes();
+    await screen.findByTestId("egress-node-row-node-1");
+    const before = nodeListQueries().length;
+
+    await user().click(screen.getByTestId("egress-nodes-refresh"));
+
+    await waitFor(() => expect(nodeListQueries().length).toBeGreaterThan(before));
+  });
+});
+
+describe("EgressNodes 代理地址提交与揭示", () => {
+  it("编辑节点填写新的代理地址时提交该地址，未填写的 Cookie 不提交", async () => {
+    installRoutes(
+      baseRoutes({
+        nodes: () => egressNodeListWire([egressNodeWire({ id: "node-1", scope: "grok_web", proxyConfigured: false })]),
+        nodeUpdate: () => egressNodeWire({ id: "node-1", scope: "grok_web" }),
+      }),
+    );
+    renderNodes();
+    await screen.findByTestId("egress-node-row-node-1");
+
+    await user().click(screen.getByTestId("egress-node-actions-node-1"));
+    fireEvent.click(await screen.findByTestId("egress-node-edit-node-1"));
+    const dialog = await screen.findByTestId("egress-node-dialog");
+    await user().type(within(dialog).getByTestId("egress-node-proxy-url"), "socks5h://user:pass@host:1080");
+    await user().click(within(dialog).getByTestId("egress-node-dialog-save"));
+
+    await waitFor(() => {
+      const updated = callsOf("PUT", "/api/admin/v1/egress-nodes/node-1");
+      expect(updated).toHaveLength(1);
+      expect(updated[0][1].body).toMatchObject({ scope: "grok_web", proxyURL: "socks5h://user:pass@host:1080" });
+      // 未填写 Cookie 时不提交该字段，服务端保留既有凭据
+      expect((updated[0][1].body as { cloudflareCookies?: string }).cloudflareCookies).toBeUndefined();
+    });
+  });
+
+  it("新增节点时揭示代理地址提示不可用且不请求服务端", async () => {
+    installRoutes(baseRoutes({ nodes: () => egressNodeListWire([]) }));
+    renderNodes();
+    await screen.findByTestId("egress-nodes-empty");
+
+    await user().click(screen.getByTestId("egress-nodes-add"));
+    fireEvent.click(await screen.findByTestId("egress-nodes-add-manual"));
+    const dialog = await screen.findByTestId("egress-node-dialog");
+
+    await user().click(within(dialog).getByTestId("egress-node-reveal-proxy"));
+
+    expect(await screen.findByText(i18n.t("egressProxyProfiles.revealUnavailable"))).toBeInTheDocument();
+    expect(recordedCalls().filter(([path]) => path.includes("/proxy-url/reveal"))).toHaveLength(0);
+  });
+});

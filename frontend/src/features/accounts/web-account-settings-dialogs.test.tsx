@@ -4,7 +4,7 @@ import { I18nextProvider } from "react-i18next";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { WebAccountSettingsDialogs } from "@/features/accounts/web-account-settings";
-import type { AccountDTO } from "@/features/accounts/accounts-api";
+import type { AccountDTO } from "@/entities/accounts/types";
 import { i18n } from "@/shared/i18n";
 
 // Web 账号协议动作确认弹窗的剩余分支（AGENTS.md TEST-1/TEST-3）：

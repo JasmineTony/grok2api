@@ -1,5 +1,5 @@
 import type { ModelRouteDTO } from "@/entities/model/types";
-import type { ClientKeyDTO } from "@/features/client-keys/client-keys-api";
+import type { ClientKeyDTO } from "@/entities/client-keys/types";
 import type { PaginatedDTO } from "@/shared/api/client";
 
 /**
