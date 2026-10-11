@@ -15,7 +15,11 @@ export default defineConfig({
   retries: 0,
   timeout: 90_000,
   expect: { timeout: 15_000 },
-  reporter: [["list"], ["html", { outputFolder: ".artifacts/playwright/html", open: "never" }]],
+  reporter: [
+    ["list"],
+    ["html", { outputFolder: ".artifacts/playwright/html", open: "never" }],
+    ["json", { outputFile: ".artifacts/playwright/results.json" }],
+  ],
   outputDir: ".artifacts/playwright/results",
   use: {
     trace: "retain-on-failure",
