@@ -14,22 +14,22 @@
 状态取值：`Passed` / `Failed` / `Skipped`（缺环境跳过）/ `Blocked`（环境不支持）/ `Pending`（尚未执行）。
 不允许用 `Skipped`、`Blocked` 或"配置已写好"代替 `Passed`。
 
-| 编号   | 验收项             | 判定命令                             | 状态                                                                                                                    |
-| ------ | ------------------ | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| FE-A1  | 格式一致           | `pnpm format:check`                  | Passed（阶段 7 复跑：All matched files use Prettier code style）                                                        |
-| FE-A2  | 类型契约           | `pnpm typecheck`（`tsc -b --force`） | Passed（无输出）                                                                                                        |
-| FE-A3  | Oxlint correctness | `pnpm oxlint`                        | Passed（0 warnings / 0 errors，500 文件 / 96 规则）                                                                     |
-| FE-A4  | ESLint 语义        | `pnpm lint`                          | Passed（0 problem）                                                                                                     |
-| FE-A5  | 纯逻辑单测         | `pnpm test`（node:test）             | Passed（68 tests / 37 suites / 0 fail / 0 skip）                                                                        |
-| FE-A6  | 组件单测 + 覆盖率  | `pnpm test:ui:coverage`              | Passed（113 文件 / 1391 tests；全局 97.65 / 93.76 / 97.94 / 98.36）                                                     |
-| FE-A7  | 生产构建           | `pnpm build`                         | Passed（阶段 7 热构建 1.32s）                                                                                           |
-| FE-A8  | 依赖边界与循环     | `pnpm check:architecture`            | Passed（406 模块 / 1825 依赖 / 0 违规）                                                                                 |
-| FE-A9  | 结构约束           | `pnpm check:structure`               | Passed（380 源码文件；0 超限文件 / 29 超限函数 = 冻结基线）                                                             |
-| FE-A10 | 门禁自测           | `pnpm test:gates`                    | Passed（9 用例，含 4 个必须失败）                                                                                       |
-| FE-A11 | 产物体积预算       | `pnpm check:budget`                  | Passed（首屏 193.31 / 260；全部 JS 621.23 / 650；CSS 16.65 / 20；最大 chunk 457.17 / 500 原始；路由增量 ≤129.12 / 180） |
-| FE-A12 | 构建可复现性       | 同工具链三次构建产物哈希一致         | Passed（阶段 1 实测 86 文件逐文件 SHA256 零差异；阶段 7 未重跑）                                                        |
-| FE-A13 | 真实全栈 E2E       | `pnpm test:e2e`                      | Passed（4 spec / 16 用例，实测 16 passed / 0 failed / 36.8s / 4 workers / `retries: 0`，见 §12.1）                      |
-| FE-A14 | 聚合全量门禁       | `pnpm verify:full`                   | Passed（`pnpm verify` exit 0 + E2E 16/16）                                                                              |
+| 编号   | 验收项             | 判定命令                             | 状态                                                                                                                                                                          |
+| ------ | ------------------ | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FE-A1  | 格式一致           | `pnpm format:check`                  | Passed（阶段 7 复跑：All matched files use Prettier code style）                                                                                                              |
+| FE-A2  | 类型契约           | `pnpm typecheck`（`tsc -b --force`） | Passed（无输出）                                                                                                                                                              |
+| FE-A3  | Oxlint correctness | `pnpm oxlint`                        | Passed（0 warnings / 0 errors，500 文件 / 96 规则）                                                                                                                           |
+| FE-A4  | ESLint 语义        | `pnpm lint`                          | Passed（0 problem）                                                                                                                                                           |
+| FE-A5  | 纯逻辑单测         | `pnpm test`（node:test）             | Passed（68 tests / 37 suites / 0 fail / 0 skip）                                                                                                                              |
+| FE-A6  | 组件单测 + 覆盖率  | `pnpm test:ui:coverage`              | Passed（113 文件 / 1394 tests；全局 97.66 / 93.77 / 97.95 / 98.36；已开启 `thresholds.perFile`，321 个纳入文件逐文件四项均 ≥76%，最低 stmts/lines/funcs 77.77、branch 76.36） |
+| FE-A7  | 生产构建           | `pnpm build`                         | Passed（阶段 7 热构建 1.32s）                                                                                                                                                 |
+| FE-A8  | 依赖边界与循环     | `pnpm check:architecture`            | Passed（406 模块 / 1825 依赖 / 0 违规）                                                                                                                                       |
+| FE-A9  | 结构约束           | `pnpm check:structure`               | Passed（380 源码文件；0 超限文件 / 29 超限函数 = 冻结基线）                                                                                                                   |
+| FE-A10 | 门禁自测           | `pnpm test:gates`                    | Passed（9 用例，含 4 个必须失败）                                                                                                                                             |
+| FE-A11 | 产物体积预算       | `pnpm check:budget`                  | Passed（首屏 193.31 / 260；全部 JS 621.23 / 650；CSS 16.65 / 20；最大 chunk 457.17 / 500 原始；路由增量 ≤129.12 / 180）                                                       |
+| FE-A12 | 构建可复现性       | 同工具链三次构建产物哈希一致         | Passed（阶段 1 实测 86 文件逐文件 SHA256 零差异；阶段 7 未重跑）                                                                                                              |
+| FE-A13 | 真实全栈 E2E       | `pnpm test:e2e`                      | Passed（4 spec / 16 用例，实测 16 passed / 0 failed / 36.8s / 4 workers / `retries: 0`，见 §12.1）                                                                            |
+| FE-A14 | 聚合全量门禁       | `pnpm verify:full`                   | Passed（`pnpm verify` exit 0 + E2E 16/16）                                                                                                                                    |
 
 `pnpm verify` 实测 exit 0，链路为：
 `format:check → oxlint → lint → typecheck → typecheck:e2e → test → test:ui:coverage → check:architecture → check:structure → test:gates → build → check:budget`（E2E 由 `verify:full` 追加，见 `frontend/README.md`）。
@@ -40,7 +40,7 @@
 - **类型**：`tsconfig.app.json`（`src`，排除测试）、`tsconfig.node.json`（`vite.config.ts`、`vitest.config.ts`）、`tsconfig.test.json`（测试与 `src/types/*.d.ts`）。E2E 独立 tsconfig 属阶段 2。
 - **Lint**：ESLint 10.6.0 + `typescript-eslint` 8.63.0（`@typescript-eslint/no-explicit-any: error`）；Oxlint 1.87.0 仅 `correctness`。排除范围一致：`dist`、`coverage`、`src/components/ui`。
 - **测试**：`*.test.ts` 由 `node --experimental-strip-types --test` 运行；`*.test.tsx` 由 Vitest（jsdom）运行。
-- **覆盖率**：`@vitest/coverage-v8`；`coverage.include` 为 16 条「已重构模块整目录 + `virtual-table-body.tsx`」，`exclude` 14 条（测试分层、纯 re-export barrel、测试支撑）；全局门槛 **76**，另有 **20 个自定义 hook** 单独声明四项 100（TEST-2，条目见 `vitest.config.ts:85-161`）。
+- **覆盖率**：`@vitest/coverage-v8`；`coverage.include` 为 17 条「已重构模块整目录 + `virtual-table-body.tsx`」，`exclude` 14 条（测试分层、纯 re-export barrel、测试支撑）；全局门槛 **76** 并已开启 `thresholds.perFile`（Vitest 5 默认只做聚合检查，见 §15），另有 **20 个自定义 hook** 单独声明四项 100（TEST-2，条目见 `vitest.config.ts` 的 `thresholds`）。
 - **依赖边界**：dependency-cruiser 18.5.0，`.dependency-cruiser.cjs`：循环、不可解析导入、下层反向依赖、跨 feature（存量例外显式冻结）。
 - **结构与预算**：`scripts/check-structure.mjs`、`scripts/check-bundle-budget.mjs`，基线分别是 `structure-baseline.json`、`bundle-budget.json`。
 - **门禁自测**：`scripts/self-test-gates.mjs` 用临时装置验证门禁在违规输入下确实非零退出。
@@ -545,6 +545,7 @@ CI run `38047249123`（sha `5bd6b34d`）Verify job 其余步骤全 success，「
 ### 未处理项与风险（如实登记）
 
 1. **`全部生产 JS` 相对冻结基线的容差余量仅 1.68 KiB**（+4.72% / 5%）。该增长来自 2026-10-09 基线之后的其他改动，不是本次拆分引入（本次净影响 +0.08 KiB）。硬阈值 650 KiB 仍有 28.77 KiB 余量，但基线容差几乎用尽：后续任何 >1.7 KiB gzip 的 JS 新增都会让 `check:budget` 失败。本轮**未修改** `bundle-budget.json`（既不放宽阈值、也不以 `--update` 顺带吸收该漂移），登记为待决策项：或解释并登记该漂移后重定基线，或先降低 `allJs`。
-2. **`src/shared/i18n/**` 不在覆盖率口径内（本轮未改动）**：`vitest.config.ts` 的 `coverage.include` 只含 `src/app/**`、`src/features/*/**`、`src/shared/{api,auth,hooks}/**` 与 `shared/components/virtual-table-body.tsx`，不含 `src/shared/i18n/**`；而 `AGENTS.md` §5 的口径是「已重构模块整目录纳入 + 例外逐项登记原因」，该目录在阶段 3 被重构过，属未登记的缺口。本轮**未擅自加入**：加入后 `shared/i18n/index.ts` 的 SSR 守卫（`typeof window === "undefined"`、`typeof document === "undefined"`）与 `localStorage` 异常分支会拉低该文件的分支覆盖率，而 TEST-1 要求按文件约束、且禁止用 `/* v8 ignore */` 之类手段掩盖；补齐需要在**同一改动内**加断言真实行为的测试（`vi.stubGlobal` 驱动守卫、mock `localStorage` 抛错驱动 catch）并复跑 `pnpm test:ui:coverage` 验证。已登记为独立的下一步（本轮只交付 `FE-10` 修复）。
+2. **`src/shared/i18n/**` 已纳入覆盖率口径（本轮修复）**：`vitest.config.ts` 的 `coverage.include` 新增该目录，并**同时**开启 `thresholds.perFile: true`——Vitest 5 的全局阈值默认只做聚合检查（`perFile` 默认 `false`，只有 glob 键条目逐文件校验），因此此前「逐文件四项 ≥76%」并非门禁强制项，只是人工核对口径。补齐所需测试已加入 `language-memory.test.tsx`（3 个用例：`localStorage.getItem`/`setItem` 抛异常、`vi.stubGlobal` 把 `window`/`document` 置为 `undefined` 的 SSR 守卫），使 `shared/i18n/index.ts` 从 branches 60%（6/10）提升到**四项全 100%**（23/23、10/10、5/5、19/19）。实测：`pnpm verify` exit 0（113 文件 / 1394 用例；321 个纳入文件逐文件四项全部 ≥76%，最低 branch 76.36）、`pnpm test:e2e` 16/16 全绿。
 3. 未评估：首屏减少 58.76 KiB 后，登录成功后首个懒加载页面需多一次 chunk 请求（与 shell chunk 并行）；未做真实浏览器资源瀑布与首屏指标（LCP/FCP）测量，故**不声称**「首屏更快」——本次只声称「首屏关键 JS 闭包减少 56.68 KiB」，与 REV-5 的度量口径一致。
 4. 回滚：删除 `initial.ts`/`deferred.ts` 与 `loadDeferredResources` 调用，恢复两个被删 `index.ts` 与 `resources/index.ts` 原内容、还原 `deferred-pages.tsx` 与测试改动即可；无数据、配置或接口契约变更。
+5. **0/0/0/0 的统计假象与 `perFile` 语义（本轮登记）**：`src/shared/i18n/resources/**` 的 34 个纯数据模块（`initial.ts`/`deferred.ts`/`index.ts` + 两语言各 15 个领域文件）在覆盖率报告中显示 0/0/0/0。根因**不是未覆盖**：V8 转换管线对「纯 `export default <字面量>`」模块只产出 `__vite_ssr_export_default__` 与无 source map 位置的 `__vite_ssr_exportName__(...)` 脚手架，前者被 `@vitest/coverage-v8` 的 `ignoreNode` 忽略、后者在 `ast-v8-to-istanbul` 中因无原始位置被丢弃，故 statementMap 为空；istanbul 对 `total === 0` 记 100%，不影响门槛。其**内容**由 `resources.test.tsx` 的 10 个断言真实验证（key 总数、keySet 与资源 SHA-256 摘要、抽样 key、占位符对齐、懒加载顺序）。此类假象与 `AGENTS.md` §5 已登记的 5 个类型/DTO 模块同类。另需注意：开启 `perFile: true` 后 Vitest 5 **不再单独校验全局聚合组**，只做逐文件校验（逐文件 ≥76% 数学上蕴含聚合 ≥76%，约束强度未降低）。

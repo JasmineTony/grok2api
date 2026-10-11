@@ -72,3 +72,46 @@ describe("i18n 语言记忆与回退", () => {
     expect(instance.t("qualityGuard.eventTypes.lease_quarantined", { lng: "en" })).toBe(zhCNText);
   });
 });
+
+describe("i18n 在浏览器能力缺失时的回退", () => {
+  it("localStorage 读取抛异常时回退到 zh-CN，不向上抛错", async () => {
+    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("storage denied");
+    });
+    try {
+      const instance = await importI18n();
+      expect(instance.language).toBe("zh-CN");
+    } finally {
+      getItem.mockRestore();
+    }
+  });
+
+  it("localStorage 写入抛异常时语言切换仍然生效并更新 document.documentElement.lang", async () => {
+    const instance = await importI18n();
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("storage denied");
+    });
+    try {
+      await instance.changeLanguage("en");
+      expect(instance.language).toBe("en");
+      expect(document.documentElement.lang).toBe("en");
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
+  it("没有 window / document（SSR 守卫）时仍能初始化并切换语言", async () => {
+    vi.stubGlobal("window", undefined);
+    vi.stubGlobal("document", undefined);
+    try {
+      const instance = await importI18n();
+      expect(instance.language).toBe("zh-CN");
+
+      await instance.changeLanguage("en");
+      expect(instance.language).toBe("en");
+      expect(instance.t("appName")).toBe("Grok2API");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});

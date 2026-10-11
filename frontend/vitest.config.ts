@@ -51,6 +51,7 @@ export default mergeConfig(
           "src/shared/api/**",
           "src/shared/auth/**",
           "src/shared/hooks/**",
+          "src/shared/i18n/**",
           "src/shared/components/virtual-table-body.tsx",
         ],
         exclude: [
@@ -82,6 +83,9 @@ export default mergeConfig(
           functions: 76,
           branches: 76,
           statements: 76,
+          // TEST-1「按文件约束」：Vitest 5 的全局阈值默认只做聚合检查（perFile 默认 false），
+          // 必须显式开启才会对每个纳入文件单独校验；否则「逐文件 ≥76%」无法被门禁验证。
+          perFile: true,
           "src/shared/hooks/use-chart.ts": { lines: 100, functions: 100, branches: 100, statements: 100 },
           "src/features/settings/use-settings.ts": { lines: 100, functions: 100, branches: 100, statements: 100 },
           "src/features/system/use-version-update.ts": { lines: 100, functions: 100, branches: 100, statements: 100 },
