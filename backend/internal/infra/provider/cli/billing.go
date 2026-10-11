@@ -92,7 +92,22 @@ func parseBilling(data []byte) (account.Billing, error) {
 	if onDemandEnabled == nil {
 		onDemandEnabled = optionalBool(firstValue(original, "onDemandEnabled", "on_demand_enabled"))
 	}
-	result := account.Billing{
+	result := billingFromPlanFields(root, planCode, planName, onDemandEnabled)
+	if currentPeriod, ok := root["currentPeriod"].(map[string]any); ok {
+		result.UsagePeriodType = stringValue(currentPeriod["type"])
+		result.UsagePeriodStart = stringValue(currentPeriod["start"])
+		result.UsagePeriodEnd = stringValue(currentPeriod["end"])
+	}
+	result.History = parseBillingHistory(root["history"])
+	if result.CreditUsagePercent == 0 {
+		result.CreditUsagePercent = derivedCreditUsagePercent(result)
+	}
+	return result, nil
+}
+
+// billingFromPlanFields 读取 Billing 顶层额度字段，保持与上游 JSON key 的一一映射。
+func billingFromPlanFields(root map[string]any, planCode, planName string, onDemandEnabled *bool) account.Billing {
+	return account.Billing{
 		PlanCode:             planCode,
 		PlanName:             planName,
 		MonthlyLimit:         numberValue(firstValue(root, "monthlyLimit", "monthly_limit")),
@@ -107,41 +122,45 @@ func parseBilling(data []byte) (account.Billing, error) {
 		BillingPeriodStart:   stringValue(firstValue(root, "billingPeriodStart", "billing_period_start")),
 		BillingPeriodEnd:     stringValue(firstValue(root, "billingPeriodEnd", "billing_period_end")),
 	}
-	if currentPeriod, ok := root["currentPeriod"].(map[string]any); ok {
-		result.UsagePeriodType = stringValue(currentPeriod["type"])
-		result.UsagePeriodStart = stringValue(currentPeriod["start"])
-		result.UsagePeriodEnd = stringValue(currentPeriod["end"])
+}
+
+// parseBillingHistory 解析 history 数组；非数组值与非对象条目按缺失处理。
+func parseBillingHistory(value any) []account.BillingHistoryEntry {
+	history, ok := value.([]any)
+	if !ok {
+		return nil
 	}
-	if history, ok := root["history"].([]any); ok {
-		result.History = make([]account.BillingHistoryEntry, 0, len(history))
-		for _, raw := range history {
-			entry, ok := raw.(map[string]any)
-			if !ok {
-				continue
-			}
-			cycle, _ := entry["billingCycle"].(map[string]any)
-			period, _ := entry["period"].(map[string]any)
-			result.History = append(result.History, account.BillingHistoryEntry{
-				Year:         int(numberValue(cycle["year"])),
-				Month:        int(numberValue(cycle["month"])),
-				PeriodType:   stringValue(period["type"]),
-				PeriodStart:  stringValue(period["start"]),
-				PeriodEnd:    stringValue(period["end"]),
-				IncludedUsed: numberValue(entry["includedUsed"]),
-				OnDemandUsed: numberValue(entry["onDemandUsed"]),
-				TotalUsed:    numberValue(entry["totalUsed"]),
-			})
+	result := make([]account.BillingHistoryEntry, 0, len(history))
+	for _, raw := range history {
+		entry, ok := raw.(map[string]any)
+		if !ok {
+			continue
 		}
+		cycle, _ := entry["billingCycle"].(map[string]any)
+		period, _ := entry["period"].(map[string]any)
+		result = append(result, account.BillingHistoryEntry{
+			Year:         int(numberValue(cycle["year"])),
+			Month:        int(numberValue(cycle["month"])),
+			PeriodType:   stringValue(period["type"]),
+			PeriodStart:  stringValue(period["start"]),
+			PeriodEnd:    stringValue(period["end"]),
+			IncludedUsed: numberValue(entry["includedUsed"]),
+			OnDemandUsed: numberValue(entry["onDemandUsed"]),
+			TotalUsed:    numberValue(entry["totalUsed"]),
+		})
 	}
-	if result.CreditUsagePercent == 0 {
-		switch {
-		case result.OnDemandCap > 0:
-			result.CreditUsagePercent = result.OnDemandUsed / result.OnDemandCap * 100
-		case result.MonthlyLimit > 0:
-			result.CreditUsagePercent = result.Used / result.MonthlyLimit * 100
-		}
+	return result
+}
+
+// derivedCreditUsagePercent 在上游未给出 creditUsagePercent 时按已用额度推导百分比。
+func derivedCreditUsagePercent(billing account.Billing) float64 {
+	switch {
+	case billing.OnDemandCap > 0:
+		return billing.OnDemandUsed / billing.OnDemandCap * 100
+	case billing.MonthlyLimit > 0:
+		return billing.Used / billing.MonthlyLimit * 100
 	}
-	return result, nil
+	return 0
 }
 
 func boolValue(value any) bool {

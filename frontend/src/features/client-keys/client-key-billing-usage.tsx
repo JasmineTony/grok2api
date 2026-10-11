@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { ClientKeyDTO } from "@/entities/client-keys/types";
@@ -13,7 +14,7 @@ function formatUSD(value: number, locale: string): string {
 }
 
 /** 计费用量单元格：额度为 0 表示不限，只展示已用量。 */
-export function BillingUsage({ value }: { value: ClientKeyDTO }) {
+export function BillingUsage({ value }: { value: ClientKeyDTO }): ReactElement {
   const { t, i18n } = useTranslation();
   const used = value.billedUsageUsdTicks / USD_TICKS_PER_DOLLAR;
   if (value.billingLimitUsdTicks <= 0) {

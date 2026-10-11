@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import type { TFunction } from "i18next";
 import { Search } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -28,7 +29,7 @@ export type VideoGalleryToolbarProps = {
 };
 
 /** 视频列表工具栏：搜索、状态筛选与统计；有选中项时切换为批量操作入口。 */
-export function VideoGalleryToolbar(props: VideoGalleryToolbarProps) {
+export function VideoGalleryToolbar(props: VideoGalleryToolbarProps): ReactElement {
   return (
     <>
       <VideoFilterBar {...props} />

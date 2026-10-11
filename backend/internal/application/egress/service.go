@@ -138,53 +138,16 @@ func (s *Service) ProbeQuality(ctx context.Context, nodeID uint64, input Quality
 	if nodeID == 0 || input.ClientKeyID == 0 {
 		return QualityProbeResult{}, fmt.Errorf("%w: nodeId 和 clientKeyId 必填", ErrInvalidInput)
 	}
-	input.Model = strings.TrimSpace(input.Model)
-	input.Prompt = strings.TrimSpace(input.Prompt)
-	input.Expected = strings.TrimSpace(input.Expected)
-	rawMatchMode := strings.TrimSpace(input.MatchMode)
-	input.MatchMode = NormalizeMatchMode(input.MatchMode)
-	if input.Model == "" {
-		return QualityProbeResult{}, fmt.Errorf("%w: model 必填", ErrInvalidInput)
-	}
-	if input.Prompt == "" {
-		input.Prompt = DefaultQualityProbePrompt
-	}
-	if input.Expected == "" && rawMatchMode == "" {
-		input.Expected = DefaultQualityProbeExpected
-	}
-	if len(input.Prompt) > MaxQualityProbePromptBytes || len(input.Expected) > MaxQualityProbeExpectedBytes {
-		return QualityProbeResult{}, fmt.Errorf("%w: 探测文本过长", ErrInvalidInput)
-	}
-	if input.MaxOutputTokens == 0 {
-		input.MaxOutputTokens = DefaultQualityProbeMaxOutputTokens
-	}
-	if input.MaxOutputTokens < 1 || input.MaxOutputTokens > MaxQualityProbeOutputTokens {
-		return QualityProbeResult{}, fmt.Errorf("%w: maxOutputTokens 必须在 1 到 %d 之间", ErrInvalidInput, MaxQualityProbeOutputTokens)
-	}
-	node, err := s.repository.GetEgressNode(ctx, nodeID)
-	if errors.Is(err, repository.ErrNotFound) {
-		return QualityProbeResult{}, ErrNotFound
-	}
+	input, err := normalizeQualityProbeInput(input)
 	if err != nil {
 		return QualityProbeResult{}, err
 	}
-	if node.Scope != domain.ScopeBuild || strings.TrimSpace(node.EncryptedProxyURL) == "" {
-		return QualityProbeResult{}, fmt.Errorf("%w: 质量探测仅支持已配置代理的 grok_build 节点", ErrInvalidInput)
+	if err := s.validateQualityProbeNode(ctx, nodeID, input); err != nil {
+		return QualityProbeResult{}, err
 	}
-	if input.AccountID != 0 {
-		if !s.accountBoundProxy(node) || s.qualityLeases == nil {
-			return QualityProbeResult{}, fmt.Errorf("%w: 账号定向探测仅支持按账号派生代理的节点", ErrInvalidInput)
-		}
-		credential, loadErr := s.qualityLeases.Get(ctx, input.AccountID)
-		if loadErr != nil || credential.Provider != accountdomain.ProviderBuild || !credential.Enabled || credential.AuthStatus != accountdomain.AuthStatusActive || !qualityLeaseCredentialMayUseNode(credential, nodeID) {
-			return QualityProbeResult{}, ErrQualityProbeNoAccount
-		}
-	}
-	s.mu.RLock()
-	prober := s.qualityProber
-	s.mu.RUnlock()
-	if prober == nil {
-		return QualityProbeResult{}, ErrQualityProbeUnavailable
+	prober, err := s.qualityProbeRunner()
+	if err != nil {
+		return QualityProbeResult{}, err
 	}
 	// A profile may request the thinking guard, but only a known reasoning-capable
 	// Build model can make zero reasoning tokens meaningful. Unknown/custom and
@@ -196,6 +159,67 @@ func (s *Service) ProbeQuality(ctx context.Context, nodeID uint64, input Quality
 	}
 	result.ThinkingRequired = input.RequireThinking
 	return result, nil
+}
+
+func normalizeQualityProbeInput(input QualityProbeInput) (QualityProbeInput, error) {
+	input.Model = strings.TrimSpace(input.Model)
+	input.Prompt = strings.TrimSpace(input.Prompt)
+	input.Expected = strings.TrimSpace(input.Expected)
+	rawMatchMode := strings.TrimSpace(input.MatchMode)
+	input.MatchMode = NormalizeMatchMode(input.MatchMode)
+	if input.Model == "" {
+		return QualityProbeInput{}, fmt.Errorf("%w: model 必填", ErrInvalidInput)
+	}
+	if input.Prompt == "" {
+		input.Prompt = DefaultQualityProbePrompt
+	}
+	if input.Expected == "" && rawMatchMode == "" {
+		input.Expected = DefaultQualityProbeExpected
+	}
+	if len(input.Prompt) > MaxQualityProbePromptBytes || len(input.Expected) > MaxQualityProbeExpectedBytes {
+		return QualityProbeInput{}, fmt.Errorf("%w: 探测文本过长", ErrInvalidInput)
+	}
+	if input.MaxOutputTokens == 0 {
+		input.MaxOutputTokens = DefaultQualityProbeMaxOutputTokens
+	}
+	if input.MaxOutputTokens < 1 || input.MaxOutputTokens > MaxQualityProbeOutputTokens {
+		return QualityProbeInput{}, fmt.Errorf("%w: maxOutputTokens 必须在 1 到 %d 之间", ErrInvalidInput, MaxQualityProbeOutputTokens)
+	}
+	return input, nil
+}
+
+func (s *Service) validateQualityProbeNode(ctx context.Context, nodeID uint64, input QualityProbeInput) error {
+	node, err := s.repository.GetEgressNode(ctx, nodeID)
+	if errors.Is(err, repository.ErrNotFound) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if node.Scope != domain.ScopeBuild || strings.TrimSpace(node.EncryptedProxyURL) == "" {
+		return fmt.Errorf("%w: 质量探测仅支持已配置代理的 grok_build 节点", ErrInvalidInput)
+	}
+	if input.AccountID == 0 {
+		return nil
+	}
+	if !s.accountBoundProxy(node) || s.qualityLeases == nil {
+		return fmt.Errorf("%w: 账号定向探测仅支持按账号派生代理的节点", ErrInvalidInput)
+	}
+	credential, loadErr := s.qualityLeases.Get(ctx, input.AccountID)
+	if loadErr != nil || credential.Provider != accountdomain.ProviderBuild || !credential.Enabled || credential.AuthStatus != accountdomain.AuthStatusActive || !qualityLeaseCredentialMayUseNode(credential, nodeID) {
+		return ErrQualityProbeNoAccount
+	}
+	return nil
+}
+
+func (s *Service) qualityProbeRunner() (QualityProber, error) {
+	s.mu.RLock()
+	prober := s.qualityProber
+	s.mu.RUnlock()
+	if prober == nil {
+		return nil, ErrQualityProbeUnavailable
+	}
+	return prober, nil
 }
 
 // AccountBindingRepository is intentionally narrow so existing account

@@ -1,3 +1,5 @@
+import type { ReactElement } from "react";
+
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PERIOD_DAYS, toPeriodValue, type PeriodDays } from "@/shared/lib/period";
 
@@ -11,7 +13,7 @@ export function PeriodSelector({
   onChange: (value: PeriodDays) => void;
   ariaLabel: string;
   className?: string;
-}) {
+}): ReactElement {
   return (
     <Tabs
       value={String(value)}

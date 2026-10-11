@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { EventList } from "@/features/quality-guard/guard-events-panel";
@@ -20,7 +21,7 @@ export function GuardNodesTab({
 }: {
   controller: GuardNodesController;
   status: QualityGuardStatus;
-}) {
+}): ReactElement {
   const { i18n } = useTranslation();
   const { view, actions, dialogs } = controller;
   return (

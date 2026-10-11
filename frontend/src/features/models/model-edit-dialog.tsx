@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -34,7 +35,7 @@ type ModelEditDialogProps = {
   save: { isPending: boolean; mutate: (values: ModelForm) => void };
 };
 
-export function ModelEditDialog({ dialogs, save }: ModelEditDialogProps) {
+export function ModelEditDialog({ dialogs, save }: ModelEditDialogProps): ReactElement {
   const { t } = useTranslation();
   const { form, editing } = dialogs;
   const selectedProvider = useWatch({ control: form.control, name: "provider" });

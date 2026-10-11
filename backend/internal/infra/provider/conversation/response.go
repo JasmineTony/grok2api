@@ -168,50 +168,56 @@ func parseResponse(value responseEnvelope) parsedResponse {
 	}
 	var annotations []map[string]any
 	for _, item := range value.Output {
-		switch item.Type {
-		case "message":
-			annotations = append(annotations, extractMessageAnnotations(item)...)
-			for _, content := range item.Content {
-				parsed.Annotations = append(parsed.Annotations, content.Annotations...)
-				switch content.Type {
-				case "output_text":
-					parsed.Text += content.Text
-				case "refusal":
-					parsed.Refusal += content.Refusal
-				}
-			}
-		case "reasoning":
-			reasoning := ""
-			for _, content := range item.Content {
-				if content.Type == "reasoning_text" {
-					reasoning += content.Text
-				}
-			}
-			if reasoning == "" {
-				for _, summary := range item.Summary {
-					reasoning += summary.Text
-				}
-			}
-			parsed.Reasoning += reasoning
-			if item.Encrypted != "" {
-				parsed.Signature = item.Encrypted
-			}
-		case "function_call":
-			parsed.Calls = append(parsed.Calls, item)
-		case "web_search_call":
-			// Cap candidates early so pathological upstream envelopes cannot
-			// retain unbounded intermediate search state before dedupe.
-			if len(parsed.WebSearch) >= maxWebSearchCalls {
-				continue
-			}
-			if call, ok := parseWebSearchCallItem(item); ok {
-				parsed.WebSearch = append(parsed.WebSearch, call)
-			}
-		}
+		annotations = append(annotations, appendOutputItem(&parsed, item)...)
 	}
 	if len(parsed.WebSearch) > 0 {
 		parsed.WebSearch = dedupeWebSearchCalls(parsed.WebSearch)
 		parsed.WebSearch = mergeAnnotationTitles(parsed.WebSearch, annotations)
 	}
 	return parsed
+}
+
+// appendOutputItem 把单个 output item 累积到解析结果，并返回该 item 携带的消息注释。
+func appendOutputItem(parsed *parsedResponse, item responseItem) []map[string]any {
+	switch item.Type {
+	case "message":
+		for _, content := range item.Content {
+			parsed.Annotations = append(parsed.Annotations, content.Annotations...)
+			switch content.Type {
+			case "output_text":
+				parsed.Text += content.Text
+			case "refusal":
+				parsed.Refusal += content.Refusal
+			}
+		}
+		return extractMessageAnnotations(item)
+	case "reasoning":
+		reasoning := ""
+		for _, content := range item.Content {
+			if content.Type == "reasoning_text" {
+				reasoning += content.Text
+			}
+		}
+		if reasoning == "" {
+			for _, summary := range item.Summary {
+				reasoning += summary.Text
+			}
+		}
+		parsed.Reasoning += reasoning
+		if item.Encrypted != "" {
+			parsed.Signature = item.Encrypted
+		}
+	case "function_call":
+		parsed.Calls = append(parsed.Calls, item)
+	case "web_search_call":
+		// Cap candidates early so pathological upstream envelopes cannot
+		// retain unbounded intermediate search state before dedupe.
+		if len(parsed.WebSearch) >= maxWebSearchCalls {
+			return nil
+		}
+		if call, ok := parseWebSearchCallItem(item); ok {
+			parsed.WebSearch = append(parsed.WebSearch, call)
+		}
+	}
+	return nil
 }

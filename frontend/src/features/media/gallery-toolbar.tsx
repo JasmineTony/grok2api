@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { Search } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -24,7 +25,7 @@ export type GalleryToolbarProps = {
 };
 
 /** 图库工具栏：整页选择、搜索与统计；有选中项时切换为批量操作入口。 */
-export function GalleryToolbar(props: GalleryToolbarProps) {
+export function GalleryToolbar(props: GalleryToolbarProps): ReactElement {
   return (
     <>
       <GalleryFilterBar {...props} />

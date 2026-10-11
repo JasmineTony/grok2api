@@ -89,13 +89,7 @@ func consumeJSONObjects(source io.Reader, maxObjectBytes int, consume func([]byt
 	for {
 		value, err := reader.ReadByte()
 		if err != nil {
-			if errors.Is(err, io.EOF) {
-				if scanner.depth != 0 {
-					return io.ErrUnexpectedEOF
-				}
-				return nil
-			}
-			return err
+			return jsonStreamEndError(err, scanner.depth)
 		}
 		frame, complete := scanner.scan(value)
 		if len(scanner.frame) > maxObjectBytes {
@@ -108,6 +102,17 @@ func consumeJSONObjects(source io.Reader, maxObjectBytes int, consume func([]byt
 			return err
 		}
 	}
+}
+
+// jsonStreamEndError 把字节流读取错误归一化为流结束语义：干净 EOF 返回 nil，JSON 帧未闭合视为截断。
+func jsonStreamEndError(err error, depth int) error {
+	if !errors.Is(err, io.EOF) {
+		return err
+	}
+	if depth != 0 {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
 }
 
 // collectCardAttachmentImage 处理 cardAttachment/cardAttachments 图片事件。

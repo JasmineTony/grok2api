@@ -125,44 +125,75 @@ func (s *Service) SyncStreamObserved(ctx context.Context, accountIDs <-chan uint
 	return s.syncStream(ctx, accountIDs, observer)
 }
 
+// syncProgress 汇总一次流式同步的账号计数与进度回调。
+type syncProgress struct {
+	succeeded atomic.Int64
+	failed    atomic.Int64
+	total     atomic.Int64
+	mu        sync.Mutex
+	completed int
+}
+
+// report 在账号完成后推进进度；未注册观察者时不计数。
+func (p *syncProgress) report(observer func(completed, total int)) {
+	if observer == nil {
+		return
+	}
+	p.mu.Lock()
+	p.completed++
+	observer(p.completed, int(p.total.Load()))
+	p.mu.Unlock()
+}
+
 func (s *Service) syncStream(ctx context.Context, accountIDs <-chan uint64, observer func(completed, total int)) Result {
 	jobs := make(chan uint64)
+	progress := &syncProgress{}
 	var workers sync.WaitGroup
-	var succeeded atomic.Int64
-	var failed atomic.Int64
-	var total atomic.Int64
-	var progressMu sync.Mutex
-	completed := 0
 	count := max(1, int(s.workers.Load()))
 	workers.Add(count)
 	for range count {
 		go func() {
 			defer workers.Done()
-			for accountID := range jobs {
-				err := s.bulkPool.Do(ctx, func(workCtx context.Context) error {
-					_, syncErr, _ := s.syncs.Do(strconv.FormatUint(accountID, 10), func() (any, error) {
-						return nil, s.syncAccount(workCtx, accountID)
-					})
-					return syncErr
-				})
-				if err != nil {
-					var panicErr *batch.PanicError
-					if errors.As(err, &panicErr) {
-						s.logger.Error("account_initial_sync_panicked", "account_id", accountID, "error", panicErr, "stack", string(panicErr.Stack))
-					}
-					failed.Add(1)
-				} else {
-					succeeded.Add(1)
-				}
-				if observer != nil {
-					progressMu.Lock()
-					completed++
-					observer(completed, int(total.Load()))
-					progressMu.Unlock()
-				}
-			}
+			s.syncWorker(ctx, jobs, progress, observer)
 		}()
 	}
+	s.dispatchSyncJobs(ctx, accountIDs, jobs, progress)
+	close(jobs)
+	workers.Wait()
+	return Result{Succeeded: int(progress.succeeded.Load()), Failed: int(progress.failed.Load())}
+}
+
+func (s *Service) syncWorker(ctx context.Context, jobs <-chan uint64, progress *syncProgress, observer func(completed, total int)) {
+	for accountID := range jobs {
+		if s.syncAccountInPool(ctx, accountID) {
+			progress.succeeded.Add(1)
+		} else {
+			progress.failed.Add(1)
+		}
+		progress.report(observer)
+	}
+}
+
+// syncAccountInPool 在受限并发池内同步单个账号，池内 panic 已转为错误返回。
+func (s *Service) syncAccountInPool(ctx context.Context, accountID uint64) bool {
+	err := s.bulkPool.Do(ctx, func(workCtx context.Context) error {
+		_, syncErr, _ := s.syncs.Do(strconv.FormatUint(accountID, 10), func() (any, error) {
+			return nil, s.syncAccount(workCtx, accountID)
+		})
+		return syncErr
+	})
+	if err == nil {
+		return true
+	}
+	var panicErr *batch.PanicError
+	if errors.As(err, &panicErr) {
+		s.logger.Error("account_initial_sync_panicked", "account_id", accountID, "error", panicErr, "stack", string(panicErr.Stack))
+	}
+	return false
+}
+
+// dispatchSyncJobs 去重后把账号送入作业通道；ctx 取消或输入关闭时停止投递。
+func (s *Service) dispatchSyncJobs(ctx context.Context, accountIDs <-chan uint64, jobs chan<- uint64, progress *syncProgress) {
 	seen := make(map[uint64]struct{})
 sendLoop:
 	for {
@@ -180,7 +211,7 @@ sendLoop:
 				continue
 			}
 			seen[accountID] = struct{}{}
-			total.Add(1)
+			progress.total.Add(1)
 			select {
 			case jobs <- accountID:
 			case <-ctx.Done():
@@ -188,14 +219,9 @@ sendLoop:
 			}
 		}
 	}
-	close(jobs)
-	workers.Wait()
-	return Result{Succeeded: int(succeeded.Load()), Failed: int(failed.Load())}
 }
 
 func (s *Service) syncAccount(ctx context.Context, accountID uint64) error {
-	var syncErr error
-	billingSnapshotCreated := false
 	view, err := s.accounts.Get(ctx, accountID)
 	if err != nil {
 		return fmt.Errorf("读取账号: %w", err)
@@ -208,19 +234,53 @@ func (s *Service) syncAccount(ctx context.Context, accountID uint64) error {
 	if !ok {
 		return fmt.Errorf("Provider %s 未注册生命周期策略", view.Credential.Provider)
 	}
-	if view.Credential.Provider == accountdomain.ProviderWeb || view.Credential.Provider == accountdomain.ProviderConsole {
-		if identity, ok := s.accounts.(identitySynchronizer); ok {
-			operationCtx, cancel := context.WithTimeout(ctx, operationTimeout)
-			identityErr := identity.SyncAccountIdentity(operationCtx, accountID)
-			if identityErr != nil {
-				s.logger.Warn("account_initial_identity_sync_failed", "account_id", accountID, "error", identityErr)
-			}
-			cancel()
-			if errors.Is(identityErr, provider.ErrUnauthorized) {
-				return fmt.Errorf("同步账号身份: %w", identityErr)
-			}
-		}
+	if err := s.syncAccountIdentity(ctx, accountID, view.Credential.Provider); err != nil {
+		return err
 	}
+	billingSnapshotCreated, syncErr := s.syncAccountUsage(ctx, accountID, definition)
+	hasModels, err := s.models.HasSuccessfulAccountSync(ctx, accountID)
+	if err != nil {
+		s.logger.Warn("account_initial_model_check_failed", "account_id", accountID, "error", err)
+		return errors.Join(syncErr, fmt.Errorf("检查模型快照: %w", err))
+	}
+	if hasModels && !billingSnapshotCreated {
+		return syncErr
+	}
+	operationCtx, cancel := context.WithTimeout(ctx, operationTimeout)
+	_, err = s.models.SyncAccount(operationCtx, accountID)
+	cancel()
+	if err != nil {
+		s.logger.Warn("account_initial_model_sync_failed", "account_id", accountID, "error", err)
+		syncErr = errors.Join(syncErr, fmt.Errorf("同步模型: %w", err))
+	}
+	return syncErr
+}
+
+// syncAccountIdentity 尽力同步 Web/Console 账号身份；未授权错误需要中断后续同步。
+func (s *Service) syncAccountIdentity(ctx context.Context, accountID uint64, providerID accountdomain.Provider) error {
+	if providerID != accountdomain.ProviderWeb && providerID != accountdomain.ProviderConsole {
+		return nil
+	}
+	identity, ok := s.accounts.(identitySynchronizer)
+	if !ok {
+		return nil
+	}
+	operationCtx, cancel := context.WithTimeout(ctx, operationTimeout)
+	identityErr := identity.SyncAccountIdentity(operationCtx, accountID)
+	if identityErr != nil {
+		s.logger.Warn("account_initial_identity_sync_failed", "account_id", accountID, "error", identityErr)
+	}
+	cancel()
+	if errors.Is(identityErr, provider.ErrUnauthorized) {
+		return fmt.Errorf("同步账号身份: %w", identityErr)
+	}
+	return nil
+}
+
+// syncAccountUsage 按 Provider 声明的额度类型补齐额度快照，返回是否新建了计费快照。
+func (s *Service) syncAccountUsage(ctx context.Context, accountID uint64, definition provider.Definition) (bool, error) {
+	var syncErr error
+	billingSnapshotCreated := false
 	if definition.Quota == provider.QuotaRemoteWindow || definition.Quota == provider.QuotaLocalWindow {
 		hasQuota, quotaErr := s.quota.HasQuotaWindows(ctx, accountID)
 		if quotaErr != nil {
@@ -250,21 +310,5 @@ func (s *Service) syncAccount(ctx context.Context, accountID uint64) error {
 			}
 		}
 	}
-
-	hasModels, err := s.models.HasSuccessfulAccountSync(ctx, accountID)
-	if err != nil {
-		s.logger.Warn("account_initial_model_check_failed", "account_id", accountID, "error", err)
-		return errors.Join(syncErr, fmt.Errorf("检查模型快照: %w", err))
-	}
-	if hasModels && !billingSnapshotCreated {
-		return syncErr
-	}
-	operationCtx, cancel := context.WithTimeout(ctx, operationTimeout)
-	_, err = s.models.SyncAccount(operationCtx, accountID)
-	cancel()
-	if err != nil {
-		s.logger.Warn("account_initial_model_sync_failed", "account_id", accountID, "error", err)
-		syncErr = errors.Join(syncErr, fmt.Errorf("同步模型: %w", err))
-	}
-	return syncErr
+	return billingSnapshotCreated, syncErr
 }

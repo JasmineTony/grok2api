@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -25,7 +26,7 @@ export function NodeDeleteDialog({
   pending: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: (nodes: EgressNodeDTO[]) => void;
-}) {
+}): ReactElement {
   const { t } = useTranslation();
   const multiple = nodes.length > 1;
   return (

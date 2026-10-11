@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { providerLabel, type ProviderUsage } from "@/features/dashboard/dashboard-provider-format";
@@ -11,7 +12,7 @@ type ProviderRowsProps = {
 };
 
 /** 三类 Provider 明细行：调用量占比、成功率与 tokens。 */
-export function ProviderRows({ providers, totalRequests, locale }: ProviderRowsProps) {
+export function ProviderRows({ providers, totalRequests, locale }: ProviderRowsProps): ReactElement {
   return (
     <div className="mt-3 grid flex-1 grid-rows-3 divide-y">
       {providers.map((provider) => (

@@ -1,4 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import type { ReactElement } from "react";
 import { useForm, type UseFormReturn } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -49,7 +50,7 @@ type ClientKeysPageModel = {
  * 客户端密钥页：持有筛选/分页/选中状态与全部查询、变更，
  * 表格、工具栏、创建/编辑弹窗、明文弹窗与删除确认均为独立组件。
  */
-export function ClientKeysPage() {
+export function ClientKeysPage(): ReactElement {
   const { t } = useTranslation();
   const list = useClientKeysListModel();
   const selection = useClientKeysSelection(list.pageIds);

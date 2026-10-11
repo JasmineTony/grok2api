@@ -97,28 +97,37 @@ func newBrowserClient(proxyURL, userAgent string) (*browserClient, error) {
 
 func browserProfile(userAgent string) profiles.ClientProfile {
 	match := chromeMajorPattern.FindStringSubmatch(strings.TrimSpace(userAgent))
-	if len(match) == 2 {
-		if profile, ok := profiles.MappedTLSClients["chrome_"+match[1]]; ok {
-			return profile
-		}
-		major, err := strconv.Atoi(match[1])
-		if err == nil {
-			bestMajor, bestDistance := 0, int(^uint(0)>>1)
-			for _, candidate := range []int{146, 144, 133, 131, 124, 120, 117} {
-				distance := candidate - major
-				if distance < 0 {
-					distance = -distance
-				}
-				if distance < bestDistance {
-					bestMajor, bestDistance = candidate, distance
-				}
-			}
-			if profile, ok := profiles.MappedTLSClients[fmt.Sprintf("chrome_%d", bestMajor)]; ok {
-				return profile
-			}
-		}
+	if len(match) != 2 {
+		return profiles.Chrome_146
+	}
+	if profile, ok := profiles.MappedTLSClients["chrome_"+match[1]]; ok {
+		return profile
+	}
+	major, err := strconv.Atoi(match[1])
+	if err != nil {
+		return profiles.Chrome_146
+	}
+	if profile, ok := nearestChromeProfile(major); ok {
+		return profile
 	}
 	return profiles.Chrome_146
+}
+
+// nearestChromeProfile picks the mapped TLS client profile whose Chrome major
+// version is closest to the requested one.
+func nearestChromeProfile(major int) (profiles.ClientProfile, bool) {
+	bestMajor, bestDistance := 0, int(^uint(0)>>1)
+	for _, candidate := range []int{146, 144, 133, 131, 124, 120, 117} {
+		distance := candidate - major
+		if distance < 0 {
+			distance = -distance
+		}
+		if distance < bestDistance {
+			bestMajor, bestDistance = candidate, distance
+		}
+	}
+	profile, ok := profiles.MappedTLSClients[fmt.Sprintf("chrome_%d", bestMajor)]
+	return profile, ok
 }
 
 func (c *browserClient) Do(request *http.Request) (*http.Response, error) {

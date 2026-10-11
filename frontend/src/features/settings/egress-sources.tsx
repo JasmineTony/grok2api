@@ -1,6 +1,7 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
 import { MoreHorizontal, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Badge } from "@/components/ui/badge";
@@ -69,7 +70,7 @@ export function EgressSourcesToolbar({
   onScopeFilterChange,
   scopeLabel,
   onAdd,
-}: EgressSourcesToolbarProps) {
+}: EgressSourcesToolbarProps): ReactElement {
   const { t } = useTranslation();
   return (
     <>
@@ -110,7 +111,7 @@ export type EgressSourcesTableProps = {
 };
 
 /** 订阅源表格：加载态、空态与失败重试。 */
-export function EgressSourcesTable(props: EgressSourcesTableProps) {
+export function EgressSourcesTable(props: EgressSourcesTableProps): ReactElement {
   const { query, sources, hasActiveFilters } = props;
   if (query.isError) {
     return <ErrorState message={query.error.message} onRetry={() => void query.refetch()} />;

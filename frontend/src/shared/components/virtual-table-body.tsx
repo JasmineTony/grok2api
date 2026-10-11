@@ -1,4 +1,12 @@
-import { useCallback, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+  type RefObject,
+} from "react";
 
 import { TableBody, TableCell, TableRow } from "@/components/ui/table";
 
@@ -25,7 +33,7 @@ export function VirtualTableBody<T>({
   rowHeight,
   renderRow,
   overscan = DEFAULT_OVERSCAN,
-}: VirtualTableBodyProps<T>) {
+}: VirtualTableBodyProps<T>): ReactElement {
   const bodyRef = useRef<HTMLTableSectionElement>(null);
   const frameRef = useRef<number | null>(null);
   const enabled = items.length > MIN_VIRTUALIZED_ROWS;

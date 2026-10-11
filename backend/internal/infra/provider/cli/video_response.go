@@ -92,23 +92,11 @@ func extractBuildVideoURL(root map[string]any) string {
 			firstNestedString(data, "output", "url"),
 		)
 		if items, ok := data["data"].([]any); ok {
-			for _, item := range items {
-				if m, ok := item.(map[string]any); ok {
-					if u := firstString(m, "url", "video_url"); u != "" {
-						candidates = append(candidates, u)
-					}
-				}
-			}
+			candidates = append(candidates, collectItemVideoURLs(items)...)
 		}
 	}
 	if items, ok := root["data"].([]any); ok {
-		for _, item := range items {
-			if m, ok := item.(map[string]any); ok {
-				if u := firstString(m, "url", "video_url"); u != "" {
-					candidates = append(candidates, u)
-				}
-			}
-		}
+		candidates = append(candidates, collectItemVideoURLs(items)...)
 	}
 	for _, value := range candidates {
 		if strings.TrimSpace(value) != "" {
@@ -116,6 +104,21 @@ func extractBuildVideoURL(root map[string]any) string {
 		}
 	}
 	return ""
+}
+
+// collectItemVideoURLs 按顺序收集列表项中可直接使用的视频 URL，跳过非对象项与空值。
+func collectItemVideoURLs(items []any) []string {
+	urls := make([]string, 0, len(items))
+	for _, item := range items {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if u := firstString(m, "url", "video_url"); u != "" {
+			urls = append(urls, u)
+		}
+	}
+	return urls
 }
 
 func trustedBuildVideoAssetHost(host string) bool {

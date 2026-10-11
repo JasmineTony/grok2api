@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -12,7 +13,7 @@ type MediaPageHeaderProps = {
 };
 
 /** 媒体页头部：标题、描述与刷新按钮（刷新中含旋转图标与禁用态）。 */
-export function MediaPageHeader({ title, description, refreshing, onRefresh }: MediaPageHeaderProps) {
+export function MediaPageHeader({ title, description, refreshing, onRefresh }: MediaPageHeaderProps): ReactElement {
   const { t } = useTranslation();
   return (
     <PageHeader

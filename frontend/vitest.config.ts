@@ -27,6 +27,8 @@ export default mergeConfig(
       setupFiles: ["./src/test/setup.ts"],
       // 只接管 *.test.tsx（React 组件测试）；既有 *.test.ts 仍由 `pnpm test` 的 node:test 运行。
       include: ["src/**/*.test.tsx"],
+      reporters: ["default", "json"],
+      outputFile: { json: ".artifacts/vitest/results.json" },
       coverage: {
         provider: "v8",
         reporter: ["text", "lcov"],
@@ -41,6 +43,7 @@ export default mergeConfig(
           "src/features/accounts/**",
           "src/features/audits/**",
           "src/features/client-keys/**",
+          "src/features/auth/**",
           "src/features/creative-console/**",
           "src/features/dashboard/**",
           "src/features/docs/**",

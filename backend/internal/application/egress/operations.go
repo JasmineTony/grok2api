@@ -323,17 +323,9 @@ func (s *Service) TestNode(ctx context.Context, id uint64) (domain.ProbeResult, 
 }
 
 func (s *Service) TestNodes(ctx context.Context, ids []uint64) (ProbeBatchResult, error) {
-	if len(ids) == 0 {
-		nodes, err := s.repository.ListEgressNodes(ctx, "", repository.SortQuery{})
-		if err != nil {
-			return ProbeBatchResult{}, err
-		}
-		ids = make([]uint64, 0, len(nodes))
-		for _, node := range nodes {
-			if node.Enabled && node.EncryptedProxyURL != "" {
-				ids = append(ids, node.ID)
-			}
-		}
+	ids, err := s.probeTargetNodeIDs(ctx, ids)
+	if err != nil {
+		return ProbeBatchResult{}, err
 	}
 	ids = uniqueIDs(ids)
 	if len(ids) > maxManualProbeNodes {
@@ -374,6 +366,23 @@ func (s *Service) TestNodes(ctx context.Context, ids []uint64) (ProbeBatchResult
 	close(jobs)
 	workers.Wait()
 	return result, nil
+}
+
+func (s *Service) probeTargetNodeIDs(ctx context.Context, ids []uint64) ([]uint64, error) {
+	if len(ids) > 0 {
+		return ids, nil
+	}
+	nodes, err := s.repository.ListEgressNodes(ctx, "", repository.SortQuery{})
+	if err != nil {
+		return nil, err
+	}
+	targets := make([]uint64, 0, len(nodes))
+	for _, node := range nodes {
+		if node.Enabled && node.EncryptedProxyURL != "" {
+			targets = append(targets, node.ID)
+		}
+	}
+	return targets, nil
 }
 
 func (s *Service) OperationsConfig(ctx context.Context) (domain.OperationsConfig, error) {
@@ -513,38 +522,47 @@ func (s *Service) applySourceInput(value domain.SubscriptionSource, input Subscr
 		}
 		value.DefaultAccountCapacity = *input.DefaultAccountCapacity
 	}
+	if err := s.applySourceEndpointInput(&value, input, create); err != nil {
+		return domain.SubscriptionSource{}, err
+	}
+	return value, nil
+}
+
+// applySourceEndpointInput stores the encrypted subscription endpoint and fetch
+// proxy, then clears the stale sync schedule of the changed endpoints.
+func (s *Service) applySourceEndpointInput(value *domain.SubscriptionSource, input SubscriptionSourceInput, create bool) error {
 	if input.ClearURL {
 		value.EncryptedURL = ""
 	} else if input.URL != nil {
 		urlValue, err := normalizeSubscriptionURL(*input.URL)
 		if err != nil {
-			return domain.SubscriptionSource{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+			return fmt.Errorf("%w: %v", ErrInvalidInput, err)
 		}
 		encryptedURL, err := s.cipher.Encrypt(urlValue)
 		if err != nil {
-			return domain.SubscriptionSource{}, err
+			return err
 		}
 		value.EncryptedURL = encryptedURL
 	}
 	if create && value.EncryptedURL == "" {
-		return domain.SubscriptionSource{}, fmt.Errorf("%w: 必须提供订阅地址", ErrInvalidInput)
+		return fmt.Errorf("%w: 必须提供订阅地址", ErrInvalidInput)
 	}
 	if input.ClearProxyURL {
 		value.EncryptedProxyURL = ""
 	} else if input.ProxyURL != nil {
 		proxyURL, err := NormalizeProxyURL(*input.ProxyURL)
 		if err != nil {
-			return domain.SubscriptionSource{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+			return fmt.Errorf("%w: %v", ErrInvalidInput, err)
 		}
 		if proxyURL == "" {
-			return domain.SubscriptionSource{}, fmt.Errorf("%w: 订阅代理地址不能为空", ErrInvalidInput)
+			return fmt.Errorf("%w: 订阅代理地址不能为空", ErrInvalidInput)
 		}
 		if strings.Contains(proxyURL, ProxyAccountPlaceholder) {
-			return domain.SubscriptionSource{}, fmt.Errorf("%w: 订阅代理地址不能包含账号占位符", ErrInvalidInput)
+			return fmt.Errorf("%w: 订阅代理地址不能包含账号占位符", ErrInvalidInput)
 		}
 		encryptedProxyURL, err := s.cipher.Encrypt(proxyURL)
 		if err != nil {
-			return domain.SubscriptionSource{}, err
+			return err
 		}
 		value.EncryptedProxyURL = encryptedProxyURL
 	}
@@ -552,7 +570,7 @@ func (s *Service) applySourceInput(value domain.SubscriptionSource, input Subscr
 		value.NextSyncAt = nil
 		value.LastSyncError = ""
 	}
-	return value, nil
+	return nil
 }
 
 func publicSource(value domain.SubscriptionSource) domain.PublicSubscriptionSource {

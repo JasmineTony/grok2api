@@ -1,5 +1,5 @@
 import { FileText } from "lucide-react";
-import { useMemo, type ReactNode } from "react";
+import { useMemo, type ReactElement, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Badge } from "@/components/ui/badge";
@@ -7,7 +7,7 @@ import { auditStatusBadgeClass } from "@/features/audits/audit-status-tone";
 import { CopyButton } from "@/shared/components/copy-button";
 import { cn } from "@/shared/lib/cn";
 
-export function StatusBadge({ statusCode, failed = false }: { statusCode: number; failed?: boolean }) {
+export function StatusBadge({ statusCode, failed = false }: { statusCode: number; failed?: boolean }): ReactElement {
   return (
     <Badge
       variant="outline"
@@ -28,7 +28,7 @@ export function OverviewField({
   label: string;
   value: string;
   copy?: boolean;
-}) {
+}): ReactElement {
   return (
     <div className={cn("flex min-w-0 items-start gap-3 rounded-lg bg-muted/25 p-3", className)}>
       <div className="min-w-0 flex-1">
@@ -46,7 +46,7 @@ export function OverviewField({
   );
 }
 
-export function EmptyPanel({ icon, message }: { icon: ReactNode; message: string }) {
+export function EmptyPanel({ icon, message }: { icon: ReactNode; message: string }): ReactElement {
   return (
     <div className="flex h-full min-h-40 flex-col items-center justify-center gap-2 rounded-lg bg-muted/15 px-6 text-center text-muted-foreground [&_svg]:size-6 [&_svg]:stroke-1">
       <span>{icon}</span>
@@ -102,7 +102,7 @@ export function HeadersPanel({
   title?: string;
   headers: Record<string, string[]>;
   emptyMessage?: string;
-}) {
+}): ReactElement {
   const { t } = useTranslation();
   const entries = useMemo(
     () => Object.entries(headers).sort(([left], [right]) => left.localeCompare(right)),
@@ -135,7 +135,7 @@ export function CodePanel({
   emptyMessage: string;
   encoding: string;
   truncated: boolean;
-}) {
+}): ReactElement {
   const { t } = useTranslation();
   if (!value) return <EmptyPanel icon={<FileText />} message={emptyMessage} />;
   return (

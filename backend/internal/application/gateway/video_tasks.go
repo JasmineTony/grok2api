@@ -36,17 +36,22 @@ func (s *Service) RunVideoWorkers(ctx context.Context) {
 					delete(s.mediaQueued, id)
 					s.mediaMu.Unlock()
 					if err != nil && ctx.Err() == nil {
-						if panicErr, ok := err.(*batch.PanicError); ok {
-							s.logger.Error("video_worker_panicked", "job_id", id, "error", panicErr, "stack", string(panicErr.Stack))
-						} else {
-							s.logger.Error("video_worker_failed", "job_id", id, "error", err)
-						}
+						s.logVideoWorkerFailure(id, err)
 					}
 				}
 			}
 		}()
 	}
 	workers.Wait()
+}
+
+// logVideoWorkerFailure 记录视频 Worker 的失败；panic 失败额外带出堆栈。
+func (s *Service) logVideoWorkerFailure(id string, err error) {
+	if panicErr, ok := err.(*batch.PanicError); ok {
+		s.logger.Error("video_worker_panicked", "job_id", id, "error", panicErr, "stack", string(panicErr.Stack))
+		return
+	}
+	s.logger.Error("video_worker_failed", "job_id", id, "error", err)
 }
 
 func (s *Service) enqueueVideoJob(id string) bool {

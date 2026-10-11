@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -207,7 +207,7 @@ export function NodeEditor({
   onOpenChange: (open: boolean) => void;
   onSave: () => void;
   saving: boolean;
-}) {
+}): ReactElement {
   const { t } = useTranslation();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

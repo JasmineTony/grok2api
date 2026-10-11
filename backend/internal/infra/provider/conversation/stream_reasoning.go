@@ -37,20 +37,8 @@ func (c *streamConverter) ensureReasoningState(itemID string) (string, *reasonin
 		// Some compatible upstreams omit item_id on the first delta. Once the
 		// real item arrives, attach that anonymous state instead of creating a
 		// second source that could later replay the first-wins choice.
-		if anonymous := c.activeReasoningID; anonymous != "" {
-			if state := c.reasoningItems[anonymous]; state != nil && state.anonymous && !state.done {
-				delete(c.reasoningItems, anonymous)
-				state.anonymous = false
-				c.reasoningItems[key] = state
-				for index, existing := range c.reasoningOrder {
-					if existing == anonymous {
-						c.reasoningOrder[index] = key
-						break
-					}
-				}
-				c.activeReasoningID = key
-				return key, state
-			}
+		if state, adopted := c.adoptAnonymousReasoningState(key); adopted {
+			return key, state
 		}
 	}
 	if key == "" {
@@ -69,6 +57,34 @@ func (c *streamConverter) ensureReasoningState(itemID string) (string, *reasonin
 	}
 	c.activeReasoningID = key
 	return key, state
+}
+
+// adoptAnonymousReasoningState 把尚未完成的匿名 reasoning 状态迁移到真实 item id 上。
+func (c *streamConverter) adoptAnonymousReasoningState(key string) (*reasoningStreamState, bool) {
+	anonymous := c.activeReasoningID
+	if anonymous == "" {
+		return nil, false
+	}
+	state := c.reasoningItems[anonymous]
+	if state == nil || !state.anonymous || state.done {
+		return nil, false
+	}
+	delete(c.reasoningItems, anonymous)
+	state.anonymous = false
+	c.reasoningItems[key] = state
+	c.renameReasoningOrder(anonymous, key)
+	c.activeReasoningID = key
+	return state, true
+}
+
+// renameReasoningOrder 把 reasoning 顺序表中的匿名 key 替换为真实 item id。
+func (c *streamConverter) renameReasoningOrder(from, to string) {
+	for index, existing := range c.reasoningOrder {
+		if existing == from {
+			c.reasoningOrder[index] = to
+			return
+		}
+	}
 }
 
 func (c *streamConverter) reasoningSummaryDelta(itemID, delta string) error {

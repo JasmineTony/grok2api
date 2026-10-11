@@ -1,3 +1,5 @@
+import type { ReactElement } from "react";
+
 import type { DegradeSummaryDTO } from "@/features/quality-guard/quality-guard-api";
 import { cn } from "@/shared/lib/cn";
 
@@ -16,7 +18,7 @@ export function SeriesChart({
   series: DegradeSummaryDTO["series"];
   empty: string;
   title: string;
-}) {
+}): ReactElement {
   const max = Math.max(1, ...series.map((item) => item.count));
   const labelStep = series.length > 12 ? Math.ceil(series.length / 8) : 1;
   return (

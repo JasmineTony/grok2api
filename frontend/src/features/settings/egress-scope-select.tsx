@@ -1,3 +1,5 @@
+import type { ReactElement } from "react";
+
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { EgressScope } from "@/entities/egress/egress-dto";
 import { egressScopes } from "@/features/settings/egress-scopes";
@@ -13,7 +15,7 @@ export function EgressScopeSelect({
   value: EgressScope;
   scopeLabel: (scope: EgressScope) => string;
   onChange: (scope: EgressScope) => void;
-}) {
+}): ReactElement {
   return (
     <Select value={value} onValueChange={(next) => onChange(next as EgressScope)}>
       <SelectTrigger id={id}>

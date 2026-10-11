@@ -1,4 +1,5 @@
 import { AlertCircle, Inbox } from "lucide-react";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -6,7 +7,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { cn } from "@/shared/lib/cn";
 
-export function LoadingState({ className }: { className?: string }) {
+export function LoadingState({ className }: { className?: string }): ReactElement {
   return (
     <div className={cn("flex min-h-44 items-center justify-center", className)}>
       <Spinner className="size-5" />
@@ -14,7 +15,7 @@ export function LoadingState({ className }: { className?: string }) {
   );
 }
 
-export function TableLoadingRow({ colSpan }: { colSpan: number }) {
+export function TableLoadingRow({ colSpan }: { colSpan: number }): ReactElement {
   return (
     <TableRow className="hover:bg-transparent">
       <TableCell colSpan={colSpan} className="p-0">
@@ -24,7 +25,7 @@ export function TableLoadingRow({ colSpan }: { colSpan: number }) {
   );
 }
 
-export function EmptyState({ message }: { message?: string }) {
+export function EmptyState({ message }: { message?: string }): ReactElement {
   const { t } = useTranslation();
   return (
     <div className="flex min-h-44 flex-col items-center justify-center gap-2 text-center text-muted-foreground">
@@ -34,7 +35,7 @@ export function EmptyState({ message }: { message?: string }) {
   );
 }
 
-export function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+export function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }): ReactElement {
   const { t } = useTranslation();
   return (
     <div className="flex min-h-44 flex-col items-center justify-center gap-3 text-center">

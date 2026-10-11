@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -22,7 +23,13 @@ export type SecretDialogState = {
  * 密钥明文弹窗：创建成功与手动复制共用同一结构，标题/描述按来源区分。
  * 关闭后明文不再保留在页面上，因此创建场景只显示一次。
  */
-export function ClientKeySecretDialog({ state, onClose }: { state: SecretDialogState | null; onClose: () => void }) {
+export function ClientKeySecretDialog({
+  state,
+  onClose,
+}: {
+  state: SecretDialogState | null;
+  onClose: () => void;
+}): ReactElement {
   const { t } = useTranslation();
   return (
     <Dialog open={state !== null} onOpenChange={(open) => !open && onClose()}>

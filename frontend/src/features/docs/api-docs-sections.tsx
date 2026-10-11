@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { Braces, Info, Link2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -5,7 +6,7 @@ import { ConnectionItem, DocsSection, EndpointSignature, ParameterTable } from "
 import type { EndpointDefinition } from "@/features/docs/endpoint-definitions";
 
 /** 端点标题、描述与签名。 */
-export function ApiDocsHeader({ definition }: { definition: EndpointDefinition }) {
+export function ApiDocsHeader({ definition }: { definition: EndpointDefinition }): ReactElement {
   const { t } = useTranslation();
   return (
     <header className="space-y-4">
@@ -19,7 +20,13 @@ export function ApiDocsHeader({ definition }: { definition: EndpointDefinition }
 }
 
 /** 连接信息：服务地址与鉴权头（Anthropic Messages 额外展示版本头）。 */
-export function ApiDocsConnectionSection({ definition, baseUrl }: { definition: EndpointDefinition; baseUrl: string }) {
+export function ApiDocsConnectionSection({
+  definition,
+  baseUrl,
+}: {
+  definition: EndpointDefinition;
+  baseUrl: string;
+}): ReactElement {
   const { t } = useTranslation();
   const isMessagesEndpoint = definition.key === "chat/messages";
   return (
@@ -37,7 +44,7 @@ export function ApiDocsConnectionSection({ definition, baseUrl }: { definition: 
 }
 
 /** 请求参数或路径参数表。 */
-export function ApiDocsParametersSection({ definition }: { definition: EndpointDefinition }) {
+export function ApiDocsParametersSection({ definition }: { definition: EndpointDefinition }): ReactElement {
   const { t } = useTranslation();
   return (
     <DocsSection
@@ -50,7 +57,7 @@ export function ApiDocsParametersSection({ definition }: { definition: EndpointD
 }
 
 /** 端点备注；无备注时不渲染该分区。 */
-export function ApiDocsNotesSection({ definition }: { definition: EndpointDefinition }) {
+export function ApiDocsNotesSection({ definition }: { definition: EndpointDefinition }): ReactElement | null {
   const { t } = useTranslation();
   if (definition.noteKeys.length === 0) return null;
   return (

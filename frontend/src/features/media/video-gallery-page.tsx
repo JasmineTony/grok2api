@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { deleteVideos } from "@/features/media/media-api";
@@ -28,7 +28,7 @@ type VideoGalleryContentProps = {
 };
 
 /** 视频任务页：持有分页/筛选/选中/预览状态与查询、删除变更；表格与弹窗均为独立组件。 */
-export function VideoGalleryPage() {
+export function VideoGalleryPage(): ReactElement {
   const list = useMediaListState();
   const filters = useVideoListFilters(list);
   const [previewing, setPreviewing] = useState<MediaJobDTO | null>(null);

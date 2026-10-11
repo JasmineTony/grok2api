@@ -1,10 +1,18 @@
 import { CircleHelp } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 /** 出口分区标题：标题 + 帮助图标，右侧可放置分区级操作。 */
-export function EgressSectionHeader({ title, help, children }: { title: string; help: string; children?: ReactNode }) {
+export function EgressSectionHeader({
+  title,
+  help,
+  children,
+}: {
+  title: string;
+  help: string;
+  children?: ReactNode;
+}): ReactElement {
   return (
     <div className="flex min-h-8 flex-wrap items-center justify-between gap-3 px-1">
       <div className="flex items-center gap-1.5">
@@ -28,7 +36,7 @@ export function EgressSectionHeader({ title, help, children }: { title: string; 
 }
 
 /** 为分区操作按钮补充悬浮说明，不改变按钮本身的语义。 */
-export function EgressActionTooltip({ label, children }: { label: string; children: ReactNode }) {
+export function EgressActionTooltip({ label, children }: { label: string; children: ReactNode }): ReactElement {
   return (
     <Tooltip>
       <TooltipTrigger asChild>{children}</TooltipTrigger>

@@ -39,6 +39,30 @@ func (a *Adapter) SynthesizeSpeech(ctx context.Context, request provider.TTSRequ
 	if language == "" {
 		return provider.TTSResult{}, invalidConsoleVoiceError("language 不能为空")
 	}
+	response, err := a.forwardConsoleVoice(ctx, request.Credential, http.MethodPost, "/tts", consoleTTSPayload(request, text, language), "application/json", "*/*")
+	if err != nil {
+		return provider.TTSResult{}, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return provider.TTSResult{}, consoleVoiceResponseError(response)
+	}
+	contentType := strings.ToLower(strings.TrimSpace(response.Header.Get("Content-Type")))
+	data, err := io.ReadAll(io.LimitReader(response.Body, consoleVoiceAudioLimit+1))
+	if err != nil {
+		return provider.TTSResult{}, err
+	}
+	if len(data) > consoleVoiceAudioLimit {
+		return provider.TTSResult{}, errors.New("Console TTS 响应超过安全上限")
+	}
+	if strings.Contains(contentType, "application/json") || request.WithTimestamps {
+		return parseConsoleTTSJSONResponse(data, contentType)
+	}
+	return provider.TTSResult{Audio: data, ContentType: firstNonEmpty(contentType, "audio/mpeg")}, nil
+}
+
+// consoleTTSPayload builds the Console TTS request body from client options.
+func consoleTTSPayload(request provider.TTSRequest, text, language string) map[string]any {
 	payload := map[string]any{"text": text, "language": language}
 	if voiceID := strings.TrimSpace(request.VoiceID); voiceID != "" {
 		payload["voice_id"] = voiceID
@@ -58,62 +82,49 @@ func (a *Adapter) SynthesizeSpeech(ctx context.Context, request provider.TTSRequ
 	if request.WithTimestamps {
 		payload["with_timestamps"] = true
 	}
-	response, err := a.forwardConsoleVoice(ctx, request.Credential, http.MethodPost, "/tts", payload, "application/json", "*/*")
+	return payload
+}
+
+// parseConsoleTTSJSONResponse decodes the Console TTS JSON envelope, falling
+// back to raw audio when the upstream ignored the JSON content type.
+func parseConsoleTTSJSONResponse(data []byte, contentType string) (provider.TTSResult, error) {
+	var envelope struct {
+		Audio           string  `json:"audio"`
+		ContentType     string  `json:"content_type"`
+		Duration        float64 `json:"duration"`
+		AudioTimestamps *struct {
+			GraphChars []string `json:"graph_chars"`
+			GraphTimes []struct {
+				Start float64 `json:"start"`
+				End   float64 `json:"end"`
+			} `json:"graph_times"`
+		} `json:"audio_timestamps"`
+	}
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		if !strings.Contains(contentType, "application/json") {
+			return provider.TTSResult{Audio: data, ContentType: firstNonEmpty(contentType, "audio/mpeg")}, nil
+		}
+		return provider.TTSResult{}, fmt.Errorf("解析 Console TTS JSON 响应失败: %w", err)
+	}
+	audio, err := base64.StdEncoding.DecodeString(strings.TrimSpace(envelope.Audio))
 	if err != nil {
-		return provider.TTSResult{}, err
+		return provider.TTSResult{}, fmt.Errorf("解码 Console TTS audio 失败: %w", err)
 	}
-	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return provider.TTSResult{}, consoleVoiceResponseError(response)
+	result := provider.TTSResult{
+		Audio: audio, ContentType: firstNonEmpty(envelope.ContentType, contentType, "audio/mpeg"),
+		Duration: envelope.Duration, Base64Audio: envelope.Audio, JSONEnvelope: true,
 	}
-	contentType := strings.ToLower(strings.TrimSpace(response.Header.Get("Content-Type")))
-	data, err := io.ReadAll(io.LimitReader(response.Body, consoleVoiceAudioLimit+1))
-	if err != nil {
-		return provider.TTSResult{}, err
+	if envelope.AudioTimestamps != nil {
+		times := make([]provider.TTSTimestampSpan, 0, len(envelope.AudioTimestamps.GraphTimes))
+		for _, item := range envelope.AudioTimestamps.GraphTimes {
+			times = append(times, provider.TTSTimestampSpan{Start: item.Start, End: item.End})
+		}
+		result.Timestamps = &provider.TTSTimestamps{
+			GraphChars: append([]string(nil), envelope.AudioTimestamps.GraphChars...),
+			GraphTimes: times,
+		}
 	}
-	if len(data) > consoleVoiceAudioLimit {
-		return provider.TTSResult{}, errors.New("Console TTS 响应超过安全上限")
-	}
-	if strings.Contains(contentType, "application/json") || request.WithTimestamps {
-		var envelope struct {
-			Audio           string  `json:"audio"`
-			ContentType     string  `json:"content_type"`
-			Duration        float64 `json:"duration"`
-			AudioTimestamps *struct {
-				GraphChars []string `json:"graph_chars"`
-				GraphTimes []struct {
-					Start float64 `json:"start"`
-					End   float64 `json:"end"`
-				} `json:"graph_times"`
-			} `json:"audio_timestamps"`
-		}
-		if err := json.Unmarshal(data, &envelope); err != nil {
-			if !strings.Contains(contentType, "application/json") {
-				return provider.TTSResult{Audio: data, ContentType: firstNonEmpty(contentType, "audio/mpeg")}, nil
-			}
-			return provider.TTSResult{}, fmt.Errorf("解析 Console TTS JSON 响应失败: %w", err)
-		}
-		audio, err := base64.StdEncoding.DecodeString(strings.TrimSpace(envelope.Audio))
-		if err != nil {
-			return provider.TTSResult{}, fmt.Errorf("解码 Console TTS audio 失败: %w", err)
-		}
-		result := provider.TTSResult{
-			Audio: audio, ContentType: firstNonEmpty(envelope.ContentType, contentType, "audio/mpeg"),
-			Duration: envelope.Duration, Base64Audio: envelope.Audio, JSONEnvelope: true,
-		}
-		if envelope.AudioTimestamps != nil {
-			times := make([]provider.TTSTimestampSpan, 0, len(envelope.AudioTimestamps.GraphTimes))
-			for _, item := range envelope.AudioTimestamps.GraphTimes {
-				times = append(times, provider.TTSTimestampSpan{Start: item.Start, End: item.End})
-			}
-			result.Timestamps = &provider.TTSTimestamps{
-				GraphChars: append([]string(nil), envelope.AudioTimestamps.GraphChars...),
-				GraphTimes: times,
-			}
-		}
-		return result, nil
-	}
-	return provider.TTSResult{Audio: data, ContentType: firstNonEmpty(contentType, "audio/mpeg")}, nil
+	return result, nil
 }
 
 func (a *Adapter) ListTTSVoices(ctx context.Context, credential account.Credential) ([]provider.VoiceInfo, error) {
@@ -188,62 +199,11 @@ func (a *Adapter) TranscribeSpeech(ctx context.Context, request provider.STTRequ
 	if hasFile == hasURL {
 		return provider.STTResult{}, invalidConsoleVoiceError("STT 必须提供 file 或 url 其中之一")
 	}
-	var body bytes.Buffer
-	writer := multipart.NewWriter(&body)
-	writeField := func(name, value string) error {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			return nil
-		}
-		return writer.WriteField(name, value)
-	}
-	_ = writeField("audio_format", request.AudioFormat)
-	_ = writeField("sample_rate", request.SampleRate)
-	_ = writeField("language", request.Language)
-	if request.Format {
-		_ = writer.WriteField("format", "true")
-	}
-	if request.Multichannel {
-		_ = writer.WriteField("multichannel", "true")
-	}
-	if request.Channels > 0 {
-		_ = writer.WriteField("channels", strconv.Itoa(request.Channels))
-	}
-	if request.Diarize {
-		_ = writer.WriteField("diarize", "true")
-	}
-	for _, term := range request.KeyTerms {
-		_ = writeField("keyterm", term)
-	}
-	if request.FillerWords {
-		_ = writer.WriteField("filler_words", "true")
-	}
-	if request.VADThreshold != nil {
-		_ = writer.WriteField("vad_threshold", strconv.FormatFloat(*request.VADThreshold, 'f', -1, 64))
-	}
-	if modelName := strings.TrimSpace(request.Model); modelName != "" {
-		_ = writer.WriteField("model", modelName)
-	}
-	if hasURL {
-		_ = writer.WriteField("url", strings.TrimSpace(request.URL))
-	}
-	if hasFile {
-		fileName := strings.TrimSpace(request.FileName)
-		if fileName == "" {
-			fileName = "audio.bin"
-		}
-		part, err := writer.CreateFormFile("file", path.Base(fileName))
-		if err != nil {
-			return provider.STTResult{}, err
-		}
-		if _, err := part.Write(request.FileData); err != nil {
-			return provider.STTResult{}, err
-		}
-	}
-	if err := writer.Close(); err != nil {
+	body, contentType, err := buildConsoleSTTMultipart(request, hasURL, hasFile)
+	if err != nil {
 		return provider.STTResult{}, err
 	}
-	response, err := a.forwardConsoleVoiceBytes(ctx, request.Credential, http.MethodPost, "/stt", body.Bytes(), writer.FormDataContentType(), "application/json")
+	response, err := a.forwardConsoleVoiceBytes(ctx, request.Credential, http.MethodPost, "/stt", body, contentType, "application/json")
 	if err != nil {
 		return provider.STTResult{}, err
 	}
@@ -261,6 +221,79 @@ func (a *Adapter) TranscribeSpeech(ctx context.Context, request provider.STTRequ
 	}
 	result.RawJSON = append([]byte(nil), data...)
 	return result, nil
+}
+
+// buildConsoleSTTMultipart renders the Console STT multipart body from the
+// request options, including the optional audio file part.
+func buildConsoleSTTMultipart(request provider.STTRequest, hasURL, hasFile bool) ([]byte, string, error) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	writeField := func(name, value string) error {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return nil
+		}
+		return writer.WriteField(name, value)
+	}
+	_ = writeField("audio_format", request.AudioFormat)
+	_ = writeField("sample_rate", request.SampleRate)
+	_ = writeField("language", request.Language)
+	writeConsoleSTTFlagFields(writer, request)
+	for _, term := range request.KeyTerms {
+		_ = writeField("keyterm", term)
+	}
+	if request.FillerWords {
+		_ = writer.WriteField("filler_words", "true")
+	}
+	if request.VADThreshold != nil {
+		_ = writer.WriteField("vad_threshold", strconv.FormatFloat(*request.VADThreshold, 'f', -1, 64))
+	}
+	if modelName := strings.TrimSpace(request.Model); modelName != "" {
+		_ = writer.WriteField("model", modelName)
+	}
+	if hasURL {
+		_ = writer.WriteField("url", strings.TrimSpace(request.URL))
+	}
+	if hasFile {
+		if err := writeConsoleSTTFilePart(writer, request); err != nil {
+			return nil, "", err
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return nil, "", err
+	}
+	return body.Bytes(), writer.FormDataContentType(), nil
+}
+
+// writeConsoleSTTFlagFields writes the boolean and numeric STT options that map
+// one-to-one onto Console multipart fields.
+func writeConsoleSTTFlagFields(writer *multipart.Writer, request provider.STTRequest) {
+	if request.Format {
+		_ = writer.WriteField("format", "true")
+	}
+	if request.Multichannel {
+		_ = writer.WriteField("multichannel", "true")
+	}
+	if request.Channels > 0 {
+		_ = writer.WriteField("channels", strconv.Itoa(request.Channels))
+	}
+	if request.Diarize {
+		_ = writer.WriteField("diarize", "true")
+	}
+}
+
+// writeConsoleSTTFilePart attaches the uploaded audio as the multipart file part.
+func writeConsoleSTTFilePart(writer *multipart.Writer, request provider.STTRequest) error {
+	fileName := strings.TrimSpace(request.FileName)
+	if fileName == "" {
+		fileName = "audio.bin"
+	}
+	part, err := writer.CreateFormFile("file", path.Base(fileName))
+	if err != nil {
+		return err
+	}
+	_, err = part.Write(request.FileData)
+	return err
 }
 
 func (a *Adapter) forwardConsoleVoice(ctx context.Context, credential account.Credential, method, pathValue string, payload any, contentType, accept string) (*http.Response, error) {

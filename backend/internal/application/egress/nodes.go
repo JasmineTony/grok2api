@@ -147,58 +147,77 @@ func (s *Service) UpdateManyEnabled(ctx context.Context, nodeIDs []uint64, enabl
 	// Disabling a fixed fallback would make the persisted routing policy
 	// invalid. At most five fallback nodes need point lookups, regardless of
 	// the batch size.
-	if !enabled && s.operations != nil {
-		config, err := s.operations.GetEgressOperationsConfig(ctx)
-		if err != nil {
+	if !enabled {
+		if err := s.validateDisabledFallbackNodes(ctx, ids); err != nil {
 			return 0, err
-		}
-		selected := make(map[uint64]struct{}, len(ids))
-		for _, id := range ids {
-			selected[id] = struct{}{}
-		}
-		fallbackNodeIDs := make(map[uint64]struct{}, len(allServiceScopes()))
-		for _, scope := range allServiceScopes() {
-			fallback := config.FallbackFor(scope)
-			if fallback.Mode == domain.FallbackModeFixed {
-				if _, exists := selected[fallback.NodeID]; exists {
-					fallbackNodeIDs[fallback.NodeID] = struct{}{}
-				}
-			}
-		}
-		for id := range fallbackNodeIDs {
-			node, err := s.repository.GetEgressNode(ctx, id)
-			if errors.Is(err, repository.ErrNotFound) {
-				continue
-			}
-			if err != nil {
-				return 0, err
-			}
-			node.Enabled = false
-			if err := s.validateFallbackNodeUpdateWithConfig(node, config); err != nil {
-				return 0, err
-			}
 		}
 	}
 
 	if batch, ok := s.repository.(BatchNodeEnabledUpdater); ok {
-		updated, err := batch.UpdateEgressNodesEnabled(ctx, ids, enabled)
-		if errors.Is(err, repository.ErrEgressFallbackInUse) {
-			return 0, fmt.Errorf("%w: 固定回退节点不能被批量禁用", ErrInvalidInput)
-		}
-		if err != nil {
-			return 0, err
-		}
-		if updated > 0 {
-			s.forgetClearances(ids)
-			if !enabled {
-				if clearErr := s.clearQualityLeasesForNodes(ctx, ids); clearErr != nil {
-					return updated, clearErr
-				}
+		return s.applyBatchNodeEnabled(ctx, batch, ids, enabled)
+	}
+	return s.updateNodesEnabledIndividually(ctx, ids, enabled)
+}
+
+// validateDisabledFallbackNodes rejects a batch that would disable a node the
+// persisted routing policy still uses as a fixed fallback.
+func (s *Service) validateDisabledFallbackNodes(ctx context.Context, ids []uint64) error {
+	if s.operations == nil {
+		return nil
+	}
+	config, err := s.operations.GetEgressOperationsConfig(ctx)
+	if err != nil {
+		return err
+	}
+	selected := make(map[uint64]struct{}, len(ids))
+	for _, id := range ids {
+		selected[id] = struct{}{}
+	}
+	fallbackNodeIDs := make(map[uint64]struct{}, len(allServiceScopes()))
+	for _, scope := range allServiceScopes() {
+		fallback := config.FallbackFor(scope)
+		if fallback.Mode == domain.FallbackModeFixed {
+			if _, exists := selected[fallback.NodeID]; exists {
+				fallbackNodeIDs[fallback.NodeID] = struct{}{}
 			}
 		}
-		return updated, nil
 	}
+	for id := range fallbackNodeIDs {
+		node, err := s.repository.GetEgressNode(ctx, id)
+		if errors.Is(err, repository.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		node.Enabled = false
+		if err := s.validateFallbackNodeUpdateWithConfig(node, config); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
+func (s *Service) applyBatchNodeEnabled(ctx context.Context, batch BatchNodeEnabledUpdater, ids []uint64, enabled bool) (int, error) {
+	updated, err := batch.UpdateEgressNodesEnabled(ctx, ids, enabled)
+	if errors.Is(err, repository.ErrEgressFallbackInUse) {
+		return 0, fmt.Errorf("%w: 固定回退节点不能被批量禁用", ErrInvalidInput)
+	}
+	if err != nil {
+		return 0, err
+	}
+	if updated > 0 {
+		s.forgetClearances(ids)
+		if !enabled {
+			if clearErr := s.clearQualityLeasesForNodes(ctx, ids); clearErr != nil {
+				return updated, clearErr
+			}
+		}
+	}
+	return updated, nil
+}
+
+func (s *Service) updateNodesEnabledIndividually(ctx context.Context, ids []uint64, enabled bool) (int, error) {
 	updated := 0
 	for _, id := range ids {
 		node, err := s.repository.GetEgressNode(ctx, id)
@@ -356,12 +375,41 @@ func (s *Service) applyInput(value domain.Node, input Input, create bool) (domai
 		return domain.Node{}, fmt.Errorf("%w: scope 必须是 grok_build、grok_web、grok_console、grok_web_asset 或 grok_console_asset", ErrInvalidInput)
 	}
 	value.Name, value.Scope, value.Enabled, value.ProxyPool = name, input.Scope, input.Enabled, proxyPool
-	if input.AccountCapacity != nil {
-		if *input.AccountCapacity < 0 || *input.AccountCapacity > 100000 {
-			return domain.Node{}, fmt.Errorf("%w: 每个代理的账号容量必须在 0 到 100000 之间", ErrInvalidInput)
-		}
-		value.AccountCapacity = *input.AccountCapacity
+	if err := applyAccountCapacityInput(&value, input); err != nil {
+		return domain.Node{}, err
 	}
+	if err := s.applyUserAgentInput(&value, input); err != nil {
+		return domain.Node{}, err
+	}
+	if err := s.applyProxyInput(&value, input); err != nil {
+		return domain.Node{}, err
+	}
+	if err := s.applyCloudflareCookieInput(&value, input, create); err != nil {
+		return domain.Node{}, err
+	}
+	if configurationChanged {
+		resetNodeProbeState(&value)
+	}
+	// Any administrator edit invalidates freshness. Keep the binding fingerprint:
+	// managed mode may use the existing cookie as last-known-good only when the
+	// target and actual proxy still match the binding that produced it.
+	value.ClearanceRefreshedAt = nil
+	value.ClearanceFingerprint = ""
+	return value, nil
+}
+
+func applyAccountCapacityInput(value *domain.Node, input Input) error {
+	if input.AccountCapacity == nil {
+		return nil
+	}
+	if *input.AccountCapacity < 0 || *input.AccountCapacity > 100000 {
+		return fmt.Errorf("%w: 每个代理的账号容量必须在 0 到 100000 之间", ErrInvalidInput)
+	}
+	value.AccountCapacity = *input.AccountCapacity
+	return nil
+}
+
+func (s *Service) applyUserAgentInput(value *domain.Node, input Input) error {
 	if input.Scope == domain.ScopeBuild {
 		// Build 请求始终沿用 Provider 生成的 CLI User-Agent，出口节点不得覆盖协议身份。
 		value.UserAgent = ""
@@ -374,11 +422,15 @@ func (s *Service) applyInput(value domain.Node, input Input, create bool) (domai
 		s.mu.RUnlock()
 	}
 	if len(value.UserAgent) > 512 {
-		return domain.Node{}, fmt.Errorf("%w: User-Agent 过长", ErrInvalidInput)
+		return fmt.Errorf("%w: User-Agent 过长", ErrInvalidInput)
 	}
+	return nil
+}
+
+func (s *Service) applyProxyInput(value *domain.Node, input Input) error {
 	if input.ProxyProfileID != nil {
 		if value.SourceID != 0 && *input.ProxyProfileID != 0 {
-			return domain.Node{}, fmt.Errorf("%w: 订阅管理的节点不能绑定共享代理配置", ErrInvalidInput)
+			return fmt.Errorf("%w: 订阅管理的节点不能绑定共享代理配置", ErrInvalidInput)
 		}
 		value.ProxyProfileID = *input.ProxyProfileID
 	} else if input.ClearProxyURL || input.ProxyURL != nil {
@@ -390,53 +442,61 @@ func (s *Service) applyInput(value domain.Node, input Input, create bool) (domai
 	} else if input.ProxyURL != nil {
 		normalized, err := NormalizeProxyURL(*input.ProxyURL)
 		if err != nil {
-			return domain.Node{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+			return fmt.Errorf("%w: %v", ErrInvalidInput, err)
 		}
 		if normalized != "" {
 			value.EncryptedProxyURL, err = s.cipher.Encrypt(normalized)
 			if err != nil {
-				return domain.Node{}, err
+				return err
 			}
 		}
 	}
 	if value.ProxyPool && strings.TrimSpace(value.EncryptedProxyURL) == "" {
-		return domain.Node{}, fmt.Errorf("%w: 代理池模式需要配置代理地址", ErrInvalidInput)
+		return fmt.Errorf("%w: 代理池模式需要配置代理地址", ErrInvalidInput)
 	}
+	return nil
+}
+
+func (s *Service) applyCloudflareCookieInput(value *domain.Node, input Input, create bool) error {
 	if input.Scope == domain.ScopeBuild || input.Scope == domain.ScopeConsoleAsset {
 		value.EncryptedCloudflareCookie = ""
-	} else if input.ClearCookies {
+		return nil
+	}
+	if input.ClearCookies {
 		value.EncryptedCloudflareCookie = ""
-	} else if input.CloudflareCookies != nil {
-		if len(*input.CloudflareCookies) > maxCloudflareCookieBytes {
-			return domain.Node{}, fmt.Errorf("%w: Cloudflare Cookie 不能超过 16 KiB", ErrInvalidInput)
-		}
-		cookies := SanitizeCloudflareCookies(*input.CloudflareCookies)
-		if cookies != "" || create {
-			var err error
-			value.EncryptedCloudflareCookie, err = s.cipher.Encrypt(cookies)
-			if err != nil {
-				return domain.Node{}, err
-			}
-		}
+		return nil
 	}
-	if configurationChanged {
-		value.Health = 1
-		value.FailureCount = 0
-		value.CooldownUntil = nil
-		value.LastError = ""
-		value.ProbeStatus = domain.ProbeStatusUnknown
-		value.LastProbedAt = nil
-		value.ProbeLatencyMS = 0
-		value.ExitIP = ""
-		value.ProbeError = ""
-		value.ProbeProvider = ""
-		value.IPv4Probe = domain.ProbeFamilyResult{Status: domain.ProbeStatusUnknown}
-		value.IPv6Probe = domain.ProbeFamilyResult{Status: domain.ProbeStatusUnknown}
+	if input.CloudflareCookies == nil {
+		return nil
 	}
-	// Any administrator edit invalidates freshness. Keep the binding fingerprint:
-	// managed mode may use the existing cookie as last-known-good only when the
-	// target and actual proxy still match the binding that produced it.
-	value.ClearanceRefreshedAt = nil
-	value.ClearanceFingerprint = ""
-	return value, nil
+	if len(*input.CloudflareCookies) > maxCloudflareCookieBytes {
+		return fmt.Errorf("%w: Cloudflare Cookie 不能超过 16 KiB", ErrInvalidInput)
+	}
+	cookies := SanitizeCloudflareCookies(*input.CloudflareCookies)
+	if cookies == "" && !create {
+		return nil
+	}
+	encrypted, err := s.cipher.Encrypt(cookies)
+	if err != nil {
+		return err
+	}
+	value.EncryptedCloudflareCookie = encrypted
+	return nil
+}
+
+// resetNodeProbeState clears every probe-derived field so a configuration
+// change cannot leave stale health on the node.
+func resetNodeProbeState(value *domain.Node) {
+	value.Health = 1
+	value.FailureCount = 0
+	value.CooldownUntil = nil
+	value.LastError = ""
+	value.ProbeStatus = domain.ProbeStatusUnknown
+	value.LastProbedAt = nil
+	value.ProbeLatencyMS = 0
+	value.ExitIP = ""
+	value.ProbeError = ""
+	value.ProbeProvider = ""
+	value.IPv4Probe = domain.ProbeFamilyResult{Status: domain.ProbeStatusUnknown}
+	value.IPv6Probe = domain.ProbeFamilyResult{Status: domain.ProbeStatusUnknown}
 }

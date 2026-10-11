@@ -1,5 +1,5 @@
 import { Minimize2 } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { reasoningEffortTone } from "@/features/audits/audit-format";
@@ -71,7 +71,7 @@ function UsageMetricGrid({
   );
 }
 
-export function UsageDetails({ audit, locale }: { audit: AuditDTO; locale: string }) {
+export function UsageDetails({ audit, locale }: { audit: AuditDTO; locale: string }): ReactElement {
   const { t } = useTranslation();
   const view = buildAuditUsageView(audit, (value) => formatNumber(value, locale), {
     input: t("audits.input"),

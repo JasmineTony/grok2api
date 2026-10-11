@@ -130,43 +130,8 @@ func convertAnthropicWebSearchTool(tool map[string]json.RawMessage, index int) (
 		case "type", "name", "cache_control":
 			continue
 		case "allowed_domains", "blocked_domains", "excluded_domains":
-			var value any
-			if json.Unmarshal(raw, &value) != nil {
-				return nil, fmt.Errorf("tools[%d].%s 无效", index, key)
-			}
-			domains, ok := value.([]any)
-			if !ok {
-				return nil, fmt.Errorf("tools[%d].%s 必须是字符串数组", index, key)
-			}
-			if len(domains) > MaxWebSearchDomains {
-				return nil, fmt.Errorf("tools[%d].%s 不能超过 %d 个域名", index, key, MaxWebSearchDomains)
-			}
-			for domainIndex, domain := range domains {
-				if text, ok := domain.(string); !ok || strings.TrimSpace(text) == "" {
-					return nil, fmt.Errorf("tools[%d].%s[%d] 必须是非空字符串", index, key, domainIndex)
-				}
-			}
-			field := key
-			if field == "blocked_domains" {
-				field = "excluded_domains"
-			}
-			filters, _ := converted["filters"].(map[string]any)
-			if filters == nil {
-				filters = make(map[string]any, 2)
-			}
-			if len(domains) > 0 {
-				if _, exists := filters[field]; exists {
-					return nil, fmt.Errorf("tools[%d].%s 与同义域名过滤字段重复", index, key)
-				}
-				other := "allowed_domains"
-				if field == other {
-					other = "excluded_domains"
-				}
-				if existing, ok := filters[other].([]any); ok && len(existing) > 0 {
-					return nil, fmt.Errorf("tools[%d] 不能同时设置 allowed_domains 和 blocked_domains/excluded_domains", index)
-				}
-				filters[field] = value
-				converted["filters"] = filters
+			if err := applyAnthropicWebSearchDomains(converted, key, raw, index); err != nil {
+				return nil, err
 			}
 		case "max_uses", "user_location", "search_context_size":
 			// These Anthropic controls have no equivalent in the Build web-search wire contract,
@@ -178,6 +143,49 @@ func convertAnthropicWebSearchTool(tool map[string]json.RawMessage, index int) (
 		}
 	}
 	return converted, nil
+}
+
+// applyAnthropicWebSearchDomains 校验域名过滤字段并写入 filters。
+func applyAnthropicWebSearchDomains(converted map[string]any, key string, raw json.RawMessage, index int) error {
+	var value any
+	if json.Unmarshal(raw, &value) != nil {
+		return fmt.Errorf("tools[%d].%s 无效", index, key)
+	}
+	domains, ok := value.([]any)
+	if !ok {
+		return fmt.Errorf("tools[%d].%s 必须是字符串数组", index, key)
+	}
+	if len(domains) > MaxWebSearchDomains {
+		return fmt.Errorf("tools[%d].%s 不能超过 %d 个域名", index, key, MaxWebSearchDomains)
+	}
+	for domainIndex, domain := range domains {
+		if text, ok := domain.(string); !ok || strings.TrimSpace(text) == "" {
+			return fmt.Errorf("tools[%d].%s[%d] 必须是非空字符串", index, key, domainIndex)
+		}
+	}
+	field := key
+	if field == "blocked_domains" {
+		field = "excluded_domains"
+	}
+	filters, _ := converted["filters"].(map[string]any)
+	if filters == nil {
+		filters = make(map[string]any, 2)
+	}
+	if len(domains) > 0 {
+		if _, exists := filters[field]; exists {
+			return fmt.Errorf("tools[%d].%s 与同义域名过滤字段重复", index, key)
+		}
+		other := "allowed_domains"
+		if field == other {
+			other = "excluded_domains"
+		}
+		if existing, ok := filters[other].([]any); ok && len(existing) > 0 {
+			return fmt.Errorf("tools[%d] 不能同时设置 allowed_domains 和 blocked_domains/excluded_domains", index)
+		}
+		filters[field] = value
+		converted["filters"] = filters
+	}
+	return nil
 }
 
 type anthropicMCPServer struct {

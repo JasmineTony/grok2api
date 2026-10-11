@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { Plus, RefreshCw, Search } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -21,7 +22,14 @@ type ModelsToolbarProps = {
   onBatchDelete: () => void;
 };
 
-export function ModelsToolbar({ list, selection, bulk, selectedGroups, onCreate, onBatchDelete }: ModelsToolbarProps) {
+export function ModelsToolbar({
+  list,
+  selection,
+  bulk,
+  selectedGroups,
+  onCreate,
+  onBatchDelete,
+}: ModelsToolbarProps): ReactElement {
   const { t } = useTranslation();
   return (
     <>

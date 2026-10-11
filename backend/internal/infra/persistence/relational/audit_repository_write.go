@@ -34,7 +34,20 @@ func prepareAudits(values []audit.Record) ([]preparedAudit, error) {
 }
 
 func validatePreparedAudit(value preparedAudit) error {
-	row := value.row
+	if err := validateAuditRow(value.row); err != nil {
+		return err
+	}
+	return validateAuditAttempts(value.attempts)
+}
+
+func validateAuditRow(row requestAuditModel) error {
+	if err := validateAuditRowIdentity(row); err != nil {
+		return err
+	}
+	return validateAuditRowStorage(row)
+}
+
+func validateAuditRowIdentity(row requestAuditModel) error {
 	if length := utf8.RuneCountInString(row.EventID); length < 16 || length > 64 {
 		return errors.New("event_id length must be between 16 and 64")
 	}
@@ -71,6 +84,10 @@ func validatePreparedAudit(value preparedAudit) error {
 	if !auditStringAllowed(row.EgressMode, "", "direct", "proxy") {
 		return errors.New("egress_mode is invalid")
 	}
+	return nil
+}
+
+func validateAuditRowStorage(row requestAuditModel) error {
 	if row.StatusCode < 100 || row.StatusCode > 599 {
 		return errors.New("status_code must be between 100 and 599")
 	}
@@ -83,8 +100,12 @@ func validatePreparedAudit(value preparedAudit) error {
 	if utf8.RuneCountInString(row.RequestHeadersJSON) > 65536 {
 		return errors.New("request headers exceed the storage limit")
 	}
-	attemptNumbers := make(map[int]struct{}, len(value.attempts))
-	for index, attempt := range value.attempts {
+	return nil
+}
+
+func validateAuditAttempts(attempts []requestAuditAttemptModel) error {
+	attemptNumbers := make(map[int]struct{}, len(attempts))
+	for index, attempt := range attempts {
 		if err := validatePreparedAuditAttempt(attempt); err != nil {
 			return fmt.Errorf("attempt %d: %w", index+1, err)
 		}
@@ -233,6 +254,22 @@ func settleInsertedAudits(tx *gorm.DB, inserted []preparedAudit) error {
 	if len(inserted) == 0 {
 		return nil
 	}
+	missingKeys, err := lockInsertedAuditKeys(tx, inserted)
+	if err != nil {
+		return err
+	}
+	reservationByEvent, err := findInsertedAuditReservations(tx, inserted, missingKeys)
+	if err != nil {
+		return err
+	}
+	settledEventIDs, err := applyInsertedAuditSettlements(tx, inserted, reservationByEvent)
+	if err != nil {
+		return err
+	}
+	return deleteBillingReservations(tx, settledEventIDs)
+}
+
+func lockInsertedAuditKeys(tx *gorm.DB, inserted []preparedAudit) (map[uint64]struct{}, error) {
 	keySet := make(map[uint64]struct{}, len(inserted))
 	for _, value := range inserted {
 		keySet[value.row.ClientKeyID] = struct{}{}
@@ -247,49 +284,64 @@ func settleInsertedAudits(tx *gorm.DB, inserted []preparedAudit) error {
 	for _, keyID := range keyIDs {
 		if err := lockClientKey(tx, keyID); err != nil {
 			if !errors.Is(err, repository.ErrNotFound) {
-				return err
+				return nil, err
 			}
 			missingKeys[keyID] = struct{}{}
 		}
 	}
+	return missingKeys, nil
+}
 
+func findInsertedAuditReservations(tx *gorm.DB, inserted []preparedAudit, missingKeys map[uint64]struct{}) (map[string]billingReservationModel, error) {
 	eventIDs := make([]string, 0, len(inserted))
 	for _, value := range inserted {
 		eventIDs = append(eventIDs, value.row.EventID)
 	}
 	var reservations []billingReservationModel
 	if err := tx.Where("event_id IN ?", eventIDs).Find(&reservations).Error; err != nil {
-		return err
+		return nil, err
 	}
 	reservationByEvent := make(map[string]billingReservationModel, len(reservations))
 	for _, reservation := range reservations {
 		if _, missing := missingKeys[reservation.ClientKeyID]; missing {
-			return repository.ErrNotFound
+			return nil, repository.ErrNotFound
 		}
 		reservationByEvent[reservation.EventID] = reservation
 	}
+	return reservationByEvent, nil
+}
 
+func applyInsertedAuditSettlements(tx *gorm.DB, inserted []preparedAudit, reservationByEvent map[string]billingReservationModel) ([]string, error) {
 	sort.Slice(inserted, func(i, j int) bool {
 		if inserted[i].row.ClientKeyID == inserted[j].row.ClientKeyID {
 			return inserted[i].row.EventID < inserted[j].row.EventID
 		}
 		return inserted[i].row.ClientKeyID < inserted[j].row.ClientKeyID
 	})
-	settledEventIDs := make([]string, 0, len(reservations))
+	settledEventIDs := make([]string, 0, len(reservationByEvent))
 	for _, value := range inserted {
 		reservation, hasReservation := reservationByEvent[value.row.EventID]
 		settled, err := applyInsertedAuditBilling(tx, value.row, reservation, hasReservation)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if settled {
 			settledEventIDs = append(settledEventIDs, value.row.EventID)
 		}
 	}
-	return deleteBillingReservations(tx, settledEventIDs)
+	return settledEventIDs, nil
 }
 
 func toAuditModels(value audit.Record) (requestAuditModel, []requestAuditAttemptModel, error) {
+	row := toAuditRow(value)
+	attempts, err := toAuditAttemptModels(value.Attempts)
+	if err != nil {
+		return requestAuditModel{}, nil, err
+	}
+	return row, attempts, nil
+}
+
+func toAuditRow(value audit.Record) requestAuditModel {
 	provider := value.Provider
 	if provider == "" {
 		provider = "grok_build"
@@ -302,19 +354,8 @@ func toAuditModels(value audit.Record) (requestAuditModel, []requestAuditAttempt
 	if usageSource == "" {
 		usageSource = audit.UsageSourceUpstream
 	}
-	eventID := strings.TrimSpace(value.EventID)
-	if eventID == "" {
-		digest := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%d\x00%d\x00%d", value.RequestID, value.ClientKeyID, value.ModelRouteID, value.CreatedAt.UnixNano())))
-		eventID = fmt.Sprintf("evt_%x", digest[:18])
-	}
-	requestHeadersJSON := "{}"
-	if len(value.RequestHeaders) > 0 {
-		if raw, err := json.Marshal(value.RequestHeaders); err == nil {
-			requestHeadersJSON = string(raw)
-		}
-	}
-	row := requestAuditModel{
-		EventID: truncate(eventID, 64), RequestID: truncate(value.RequestID, 64), ClientKeyID: value.ClientKeyID, ClientKeyName: truncate(value.ClientKeyName, 160), ClientIP: strings.TrimSpace(value.ClientIP),
+	return requestAuditModel{
+		EventID: truncate(auditEventID(value), 64), RequestID: truncate(value.RequestID, 64), ClientKeyID: value.ClientKeyID, ClientKeyName: truncate(value.ClientKeyName, 160), ClientIP: strings.TrimSpace(value.ClientIP),
 		ModelRouteID: value.ModelRouteID, ModelPublicID: truncate(value.ModelPublicID, 255), ModelUpstreamModel: truncate(value.ModelUpstreamModel, 255),
 		Provider: truncate(provider, 32), Operation: string(operation), UsageSource: string(usageSource),
 		ReasoningEffort: audit.NormalizeReasoningEffort(value.ReasoningEffort),
@@ -330,46 +371,77 @@ func toAuditModels(value audit.Record) (requestAuditModel, []requestAuditAttempt
 		ErrorCode:          truncate(value.ErrorCode, 100),
 		RequestMethod:      truncate(value.RequestMethod, 16),
 		RequestPath:        truncate(value.RequestPath, 2048),
-		RequestHeadersJSON: truncate(requestHeadersJSON, 65536),
+		RequestHeadersJSON: truncate(auditRequestHeadersJSON(value), 65536),
 		AttemptCount:       len(value.Attempts), CreatedAt: value.CreatedAt,
 	}
-	attempts := make([]requestAuditAttemptModel, 0, len(value.Attempts))
-	for _, attempt := range value.Attempts {
-		responseHeaders, err := json.Marshal(attempt.ResponseHeaders)
-		if err != nil {
-			return requestAuditModel{}, nil, fmt.Errorf("序列化审计响应头: %w", err)
-		}
-		if attempt.ResponseHeaders == nil {
-			responseHeaders = []byte("{}")
-		}
-		errorChain, err := json.Marshal(attempt.ErrorChain)
-		if err != nil {
-			return requestAuditModel{}, nil, fmt.Errorf("序列化审计错误链: %w", err)
-		}
-		if attempt.ErrorChain == nil {
-			errorChain = []byte("[]")
-		}
-		attempts = append(attempts, requestAuditAttemptModel{
-			Number:                attempt.Number,
-			Source:                string(attempt.Source),
-			Stage:                 attempt.Stage,
-			AccountID:             attempt.AccountID,
-			AccountName:           truncate(attempt.AccountName, 160),
-			Method:                truncate(attempt.Method, 16),
-			RequestPath:           truncate(attempt.RequestPath, 2048),
-			UpstreamURL:           truncate(attempt.UpstreamURL, 4096),
-			StartedAt:             attempt.StartedAt,
-			DurationMS:            nonNegative(attempt.DurationMS),
-			UpstreamStatusCode:    attempt.UpstreamStatusCode,
-			UpstreamStatus:        truncate(attempt.UpstreamStatus, 128),
-			ResponseHeadersJSON:   string(responseHeaders),
-			ResponseBody:          truncateBytes(attempt.ResponseBody, 65536),
-			ResponseBodyTruncated: attempt.ResponseBodyTruncated || len(attempt.ResponseBody) > 65536,
-			TransportError:        truncate(attempt.TransportError, 2048),
-			ErrorChainJSON:        string(errorChain),
-		})
+}
+
+func auditEventID(value audit.Record) string {
+	eventID := strings.TrimSpace(value.EventID)
+	if eventID != "" {
+		return eventID
 	}
-	return row, attempts, nil
+	digest := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%d\x00%d\x00%d", value.RequestID, value.ClientKeyID, value.ModelRouteID, value.CreatedAt.UnixNano())))
+	return fmt.Sprintf("evt_%x", digest[:18])
+}
+
+func auditRequestHeadersJSON(value audit.Record) string {
+	if len(value.RequestHeaders) == 0 {
+		return "{}"
+	}
+	raw, err := json.Marshal(value.RequestHeaders)
+	if err != nil {
+		return "{}"
+	}
+	return string(raw)
+}
+
+func toAuditAttemptModels(values []audit.Attempt) ([]requestAuditAttemptModel, error) {
+	attempts := make([]requestAuditAttemptModel, 0, len(values))
+	for _, attempt := range values {
+		model, err := toAuditAttemptModel(attempt)
+		if err != nil {
+			return nil, err
+		}
+		attempts = append(attempts, model)
+	}
+	return attempts, nil
+}
+
+func toAuditAttemptModel(attempt audit.Attempt) (requestAuditAttemptModel, error) {
+	responseHeaders, err := json.Marshal(attempt.ResponseHeaders)
+	if err != nil {
+		return requestAuditAttemptModel{}, fmt.Errorf("序列化审计响应头: %w", err)
+	}
+	if attempt.ResponseHeaders == nil {
+		responseHeaders = []byte("{}")
+	}
+	errorChain, err := json.Marshal(attempt.ErrorChain)
+	if err != nil {
+		return requestAuditAttemptModel{}, fmt.Errorf("序列化审计错误链: %w", err)
+	}
+	if attempt.ErrorChain == nil {
+		errorChain = []byte("[]")
+	}
+	return requestAuditAttemptModel{
+		Number:                attempt.Number,
+		Source:                string(attempt.Source),
+		Stage:                 attempt.Stage,
+		AccountID:             attempt.AccountID,
+		AccountName:           truncate(attempt.AccountName, 160),
+		Method:                truncate(attempt.Method, 16),
+		RequestPath:           truncate(attempt.RequestPath, 2048),
+		UpstreamURL:           truncate(attempt.UpstreamURL, 4096),
+		StartedAt:             attempt.StartedAt,
+		DurationMS:            nonNegative(attempt.DurationMS),
+		UpstreamStatusCode:    attempt.UpstreamStatusCode,
+		UpstreamStatus:        truncate(attempt.UpstreamStatus, 128),
+		ResponseHeadersJSON:   string(responseHeaders),
+		ResponseBody:          truncateBytes(attempt.ResponseBody, 65536),
+		ResponseBodyTruncated: attempt.ResponseBodyTruncated || len(attempt.ResponseBody) > 65536,
+		TransportError:        truncate(attempt.TransportError, 2048),
+		ErrorChainJSON:        string(errorChain),
+	}, nil
 }
 
 func truncateBytes(value []byte, limit int) []byte {

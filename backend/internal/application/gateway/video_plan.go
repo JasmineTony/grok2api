@@ -217,12 +217,9 @@ func (s *Service) CreateVideo(ctx context.Context, input VideoInput) (media.Job,
 		Seconds: input.Duration, Size: input.AspectRatio, Quality: input.Resolution,
 		Status: media.StatusQueued, Progress: 0, InputJSON: plan.inputJSON, InputImageCount: len(plan.allRefs), CreatedAt: now, UpdatedAt: now,
 	}
-	reserved := false
-	if plan.priced {
-		reserved, err = s.clientKeys.ReserveBilling(ctx, input.ClientKey, "video_usage_"+job.ID, plan.pricing.CostInUSDTicks, mediaBillingReservationTTL)
-		if err != nil {
-			return media.Job{}, err
-		}
+	reserved, err := s.reserveVideoBilling(ctx, input.ClientKey, "video_usage_"+job.ID, plan.pricing, plan.priced)
+	if err != nil {
+		return media.Job{}, err
 	}
 	if err := s.mediaJobs.CreateMediaJob(ctx, job); err != nil {
 		if reserved {
@@ -234,6 +231,14 @@ func (s *Service) CreateVideo(ctx context.Context, input VideoInput) (media.Job,
 		s.logger.Warn("video_job_queue_full", "job_id", job.ID)
 	}
 	return job, nil
+}
+
+// reserveVideoBilling 预留视频任务的计费额度；未定价时返回 false 且不预留。
+func (s *Service) reserveVideoBilling(ctx context.Context, key clientkey.Key, eventID string, pricing audit.PricingResult, priced bool) (bool, error) {
+	if !priced {
+		return false, nil
+	}
+	return s.clientKeys.ReserveBilling(ctx, key, eventID, pricing.CostInUSDTicks, mediaBillingReservationTTL)
 }
 
 // routesForVideoParameters removes only routes that cannot accept this request.

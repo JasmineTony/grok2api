@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { Controller } from "react-hook-form";
 
@@ -24,7 +24,7 @@ import {
 
 type AutoCleanConfirm = "enabled" | "includeDisabled";
 
-export function SettingsAccountsPane({ form }: { form: SettingsFormApi }) {
+export function SettingsAccountsPane({ form }: { form: SettingsFormApi }): ReactElement {
   return (
     <SettingsPane value="accounts">
       <SettingsInvalidationSection form={form} />

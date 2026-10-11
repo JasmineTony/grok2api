@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Badge } from "@/components/ui/badge";
@@ -8,7 +9,13 @@ import type { ClearanceMode } from "@/features/settings/settings-dto";
 import { cn } from "@/shared/lib/cn";
 
 /** 节点行内的出口状态指示器：清关方式、健康度、IPv4/IPv6 探测结果。 */
-export function ClearanceBadge({ node, clearanceMode }: { node: EgressNodeDTO; clearanceMode: ClearanceMode }) {
+export function ClearanceBadge({
+  node,
+  clearanceMode,
+}: {
+  node: EgressNodeDTO;
+  clearanceMode: ClearanceMode;
+}): ReactElement {
   const { t } = useTranslation();
   const testId = `egress-node-clearance-${node.id}`;
   if (node.scope === "grok_build")
@@ -46,7 +53,7 @@ export function ClearanceBadge({ node, clearanceMode }: { node: EgressNodeDTO; c
   );
 }
 
-export function HealthMeter({ nodeId, value }: { nodeId: string; value: number }) {
+export function HealthMeter({ nodeId, value }: { nodeId: string; value: number }): ReactElement {
   const percent = Math.max(0, Math.min(100, Math.round(value * 100)));
   return (
     <div className="mx-auto flex w-20 items-center gap-1.5" data-testid={`egress-node-health-${nodeId}`}>
@@ -64,7 +71,7 @@ export function HealthMeter({ nodeId, value }: { nodeId: string; value: number }
   );
 }
 
-export function ProbeSummary({ node }: { node: EgressNodeDTO }) {
+export function ProbeSummary({ node }: { node: EgressNodeDTO }): ReactElement {
   return (
     <div className="flex w-full justify-center" data-testid={`egress-node-probe-${node.id}`}>
       <div className="grid w-fit max-w-full grid-cols-[2rem_auto] grid-rows-2 items-center gap-x-2 gap-y-1 py-1 text-left text-xs">

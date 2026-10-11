@@ -131,17 +131,9 @@ func (d Definition) Validate() error {
 	if len(d.ModelCapabilities) == 0 {
 		return fmt.Errorf("Provider %s 未声明模型能力", d.Provider)
 	}
-	capabilities := make(map[modeldomain.Capability]struct{}, len(d.ModelCapabilities))
-	for _, capability := range d.ModelCapabilities {
-		switch capability {
-		case modeldomain.CapabilityResponses, modeldomain.CapabilityChat, modeldomain.CapabilityImage, modeldomain.CapabilityImageEdit, modeldomain.CapabilityVideo, modeldomain.CapabilityTTS, modeldomain.CapabilitySTT, modeldomain.CapabilityRealtime:
-		default:
-			return fmt.Errorf("Provider %s 声明了无效模型能力 %q", d.Provider, capability)
-		}
-		if _, exists := capabilities[capability]; exists {
-			return fmt.Errorf("Provider %s 重复声明模型能力 %q", d.Provider, capability)
-		}
-		capabilities[capability] = struct{}{}
+	capabilities, err := d.validateModelCapabilities()
+	if err != nil {
+		return err
 	}
 	if d.Quota != QuotaBilling && d.Quota != QuotaRemoteWindow && d.Quota != QuotaLocalWindow {
 		return fmt.Errorf("Provider %s 的额度策略无效", d.Provider)
@@ -158,6 +150,28 @@ func (d Definition) Validate() error {
 	if d.Credential.AuthType != account.AuthTypeOAuth && (d.Credential.Refresh || d.Credential.DeviceOAuth) {
 		return fmt.Errorf("Provider %s 的非 OAuth 凭据不能声明刷新或 Device OAuth", d.Provider)
 	}
+	return d.validateMediaCapabilities(capabilities)
+}
+
+// validateModelCapabilities 校验模型能力声明的合法性与唯一性，返回去重后的能力集合。
+func (d Definition) validateModelCapabilities() (map[modeldomain.Capability]struct{}, error) {
+	capabilities := make(map[modeldomain.Capability]struct{}, len(d.ModelCapabilities))
+	for _, capability := range d.ModelCapabilities {
+		switch capability {
+		case modeldomain.CapabilityResponses, modeldomain.CapabilityChat, modeldomain.CapabilityImage, modeldomain.CapabilityImageEdit, modeldomain.CapabilityVideo, modeldomain.CapabilityTTS, modeldomain.CapabilitySTT, modeldomain.CapabilityRealtime:
+		default:
+			return nil, fmt.Errorf("Provider %s 声明了无效模型能力 %q", d.Provider, capability)
+		}
+		if _, exists := capabilities[capability]; exists {
+			return nil, fmt.Errorf("Provider %s 重复声明模型能力 %q", d.Provider, capability)
+		}
+		capabilities[capability] = struct{}{}
+	}
+	return capabilities, nil
+}
+
+// validateMediaCapabilities 校验媒体接口声明与模型能力声明是否一致。
+func (d Definition) validateMediaCapabilities(capabilities map[modeldomain.Capability]struct{}) error {
 	mediaCapabilities := []struct {
 		enabled    bool
 		capability modeldomain.Capability

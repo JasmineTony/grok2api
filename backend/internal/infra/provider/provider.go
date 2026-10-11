@@ -45,29 +45,34 @@ func NewRegistry(adapters ...ports.Adapter) *Registry {
 			registry.definitions[providerValue] = source.Definition().Clone()
 		}
 		if source, ok := adapter.(ports.ModelAliasAdapter); ok {
-			for _, value := range source.ModelAliases() {
-				if value.Alias == "" || value.PublicModel == "" {
-					continue
-				}
-				if value.Provider != providerValue {
-					registry.issues = append(registry.issues, fmt.Errorf("Provider %s 的模型别名 %q 指向了 %s", providerValue, value.Alias, value.Provider))
-					continue
-				}
-				if !modeldomain.IsCanonicalPublicID(value.Provider, value.PublicModel) {
-					registry.issues = append(registry.issues, fmt.Errorf("Provider %s 的模型别名 %q 目标 %q 不是规范内部路由 ID", providerValue, value.Alias, value.PublicModel))
-					continue
-				}
-				if existing, exists := registry.aliases[value.Alias]; exists {
-					if existing != value {
-						registry.issues = append(registry.issues, fmt.Errorf("模型别名 %q 重复注册", value.Alias))
-					}
-					continue
-				}
-				registry.aliases[value.Alias] = value
-			}
+			registry.registerModelAliases(providerValue, source.ModelAliases())
 		}
 	}
 	return registry
+}
+
+// registerModelAliases 注册适配器声明的隐藏兼容模型别名，违规项按声明顺序累积为注册问题。
+func (r *Registry) registerModelAliases(providerValue account.Provider, values []ports.ModelAlias) {
+	for _, value := range values {
+		if value.Alias == "" || value.PublicModel == "" {
+			continue
+		}
+		if value.Provider != providerValue {
+			r.issues = append(r.issues, fmt.Errorf("Provider %s 的模型别名 %q 指向了 %s", providerValue, value.Alias, value.Provider))
+			continue
+		}
+		if !modeldomain.IsCanonicalPublicID(value.Provider, value.PublicModel) {
+			r.issues = append(r.issues, fmt.Errorf("Provider %s 的模型别名 %q 目标 %q 不是规范内部路由 ID", providerValue, value.Alias, value.PublicModel))
+			continue
+		}
+		if existing, exists := r.aliases[value.Alias]; exists {
+			if existing != value {
+				r.issues = append(r.issues, fmt.Errorf("模型别名 %q 重复注册", value.Alias))
+			}
+			continue
+		}
+		r.aliases[value.Alias] = value
+	}
 }
 
 // Get returns a registered Provider Adapter.
@@ -119,68 +124,101 @@ func (r *Registry) Validate() error {
 		if err := definition.Validate(); err != nil {
 			return err
 		}
-		if definition.Conversation.Responses || definition.Conversation.ChatCompletions || definition.Conversation.Messages {
-			if _, ok := adapter.(ports.ResponseAdapter); !ok {
-				return fmt.Errorf("Provider %s 声明对话能力但未实现适配器", value)
-			}
+		if err := validateAdapterCapabilities(value, adapter, definition); err != nil {
+			return err
 		}
-		if _, ok := adapter.(ports.ModelCatalogAdapter); !ok {
-			return fmt.Errorf("Provider %s 未实现模型目录适配器", value)
+	}
+	return nil
+}
+
+// validateAdapterCapabilities 按 Definition 声明的能力逐组校验适配器接口实现。
+func validateAdapterCapabilities(value account.Provider, adapter ports.Adapter, definition ports.Definition) error {
+	if err := validateConversationCapabilities(value, adapter, definition); err != nil {
+		return err
+	}
+	if err := validateQuotaCapabilities(value, adapter, definition); err != nil {
+		return err
+	}
+	if err := validateCredentialCapabilities(value, adapter, definition); err != nil {
+		return err
+	}
+	return validateMediaCapabilities(value, adapter, definition)
+}
+
+func validateConversationCapabilities(value account.Provider, adapter ports.Adapter, definition ports.Definition) error {
+	if definition.Conversation.Responses || definition.Conversation.ChatCompletions || definition.Conversation.Messages {
+		if _, ok := adapter.(ports.ResponseAdapter); !ok {
+			return fmt.Errorf("Provider %s 声明对话能力但未实现适配器", value)
 		}
-		switch definition.Quota {
-		case ports.QuotaBilling:
-			if _, ok := adapter.(ports.BillingAdapter); !ok {
-				return fmt.Errorf("Provider %s 声明 Billing 额度但未实现适配器", value)
-			}
-		case ports.QuotaRemoteWindow, ports.QuotaLocalWindow:
-			if _, ok := adapter.(ports.QuotaAdapter); !ok {
-				return fmt.Errorf("Provider %s 声明窗口额度但未实现适配器", value)
-			}
+	}
+	if _, ok := adapter.(ports.ModelCatalogAdapter); !ok {
+		return fmt.Errorf("Provider %s 未实现模型目录适配器", value)
+	}
+	return nil
+}
+
+func validateQuotaCapabilities(value account.Provider, adapter ports.Adapter, definition ports.Definition) error {
+	switch definition.Quota {
+	case ports.QuotaBilling:
+		if _, ok := adapter.(ports.BillingAdapter); !ok {
+			return fmt.Errorf("Provider %s 声明 Billing 额度但未实现适配器", value)
 		}
-		if definition.Credential.Import {
-			if _, ok := adapter.(ports.CredentialCodecAdapter); !ok {
-				return fmt.Errorf("Provider %s 声明凭据导入但未实现适配器", value)
-			}
+	case ports.QuotaRemoteWindow, ports.QuotaLocalWindow:
+		if _, ok := adapter.(ports.QuotaAdapter); !ok {
+			return fmt.Errorf("Provider %s 声明窗口额度但未实现适配器", value)
 		}
-		if definition.Credential.Refresh {
-			if _, ok := adapter.(ports.CredentialRefreshAdapter); !ok {
-				return fmt.Errorf("Provider %s 声明凭据刷新但未实现适配器", value)
-			}
+	}
+	return nil
+}
+
+func validateCredentialCapabilities(value account.Provider, adapter ports.Adapter, definition ports.Definition) error {
+	if definition.Credential.Import {
+		if _, ok := adapter.(ports.CredentialCodecAdapter); !ok {
+			return fmt.Errorf("Provider %s 声明凭据导入但未实现适配器", value)
 		}
-		if definition.Credential.DeviceOAuth {
-			if _, ok := adapter.(ports.DeviceOAuthAdapter); !ok {
-				return fmt.Errorf("Provider %s 声明 Device OAuth 但未实现适配器", value)
-			}
+	}
+	if definition.Credential.Refresh {
+		if _, ok := adapter.(ports.CredentialRefreshAdapter); !ok {
+			return fmt.Errorf("Provider %s 声明凭据刷新但未实现适配器", value)
 		}
-		if definition.Media.ImageGeneration {
-			if _, ok := adapter.(ports.ImageGenerationAdapter); !ok {
-				return fmt.Errorf("Provider %s 声明图像生成能力但未实现适配器", value)
-			}
+	}
+	if definition.Credential.DeviceOAuth {
+		if _, ok := adapter.(ports.DeviceOAuthAdapter); !ok {
+			return fmt.Errorf("Provider %s 声明 Device OAuth 但未实现适配器", value)
 		}
-		if definition.Media.ImageEdit {
-			if _, ok := adapter.(ports.ImageEditAdapter); !ok {
-				return fmt.Errorf("Provider %s 声明图像编辑能力但未实现适配器", value)
-			}
+	}
+	return nil
+}
+
+func validateMediaCapabilities(value account.Provider, adapter ports.Adapter, definition ports.Definition) error {
+	if definition.Media.ImageGeneration {
+		if _, ok := adapter.(ports.ImageGenerationAdapter); !ok {
+			return fmt.Errorf("Provider %s 声明图像生成能力但未实现适配器", value)
 		}
-		if definition.Media.VideoGeneration {
-			if _, ok := adapter.(ports.VideoAdapter); !ok {
-				return fmt.Errorf("Provider %s 声明视频能力但未实现适配器", value)
-			}
+	}
+	if definition.Media.ImageEdit {
+		if _, ok := adapter.(ports.ImageEditAdapter); !ok {
+			return fmt.Errorf("Provider %s 声明图像编辑能力但未实现适配器", value)
 		}
-		if definition.Media.TTS {
-			if _, ok := adapter.(ports.TTSAdapter); !ok {
-				return fmt.Errorf("Provider %s 声明语音合成能力但未实现适配器", value)
-			}
+	}
+	if definition.Media.VideoGeneration {
+		if _, ok := adapter.(ports.VideoAdapter); !ok {
+			return fmt.Errorf("Provider %s 声明视频能力但未实现适配器", value)
 		}
-		if definition.Media.STT {
-			if _, ok := adapter.(ports.STTAdapter); !ok {
-				return fmt.Errorf("Provider %s 声明语音识别能力但未实现适配器", value)
-			}
+	}
+	if definition.Media.TTS {
+		if _, ok := adapter.(ports.TTSAdapter); !ok {
+			return fmt.Errorf("Provider %s 声明语音合成能力但未实现适配器", value)
 		}
-		if definition.Media.Realtime {
-			if _, ok := adapter.(ports.VoiceWebSocketAdapter); !ok {
-				return fmt.Errorf("Provider %s 声明实时语音能力但未实现 WebSocket 适配器", value)
-			}
+	}
+	if definition.Media.STT {
+		if _, ok := adapter.(ports.STTAdapter); !ok {
+			return fmt.Errorf("Provider %s 声明语音识别能力但未实现适配器", value)
+		}
+	}
+	if definition.Media.Realtime {
+		if _, ok := adapter.(ports.VoiceWebSocketAdapter); !ok {
+			return fmt.Errorf("Provider %s 声明实时语音能力但未实现 WebSocket 适配器", value)
 		}
 	}
 	return nil

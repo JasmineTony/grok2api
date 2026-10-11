@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -6,7 +7,13 @@ import { cn } from "@/shared/lib/cn";
 import { formatDateTime, formatNumber } from "@/shared/lib/format";
 
 /** 视频任务状态点与文案；存在错误信息时用 tooltip 展示原文。 */
-export function VideoStatus({ status, errorMessage }: { status: MediaJobDTO["status"]; errorMessage?: string }) {
+export function VideoStatus({
+  status,
+  errorMessage,
+}: {
+  status: MediaJobDTO["status"];
+  errorMessage?: string;
+}): ReactElement {
   const { t } = useTranslation();
   const tone = statusTone(status);
   const statusLabel = (
@@ -41,7 +48,7 @@ export function VideoProgress({
   value: number;
   errorMessage?: string;
   locale: string;
-}) {
+}): ReactElement {
   const normalized = Math.max(0, Math.min(100, value));
   return (
     <div className="w-28 space-y-2">
@@ -59,7 +66,7 @@ export function VideoProgress({
 }
 
 /** 创建/完成时间两行展示。 */
-export function VideoTimes({ job, locale }: { job: MediaJobDTO; locale: string }) {
+export function VideoTimes({ job, locale }: { job: MediaJobDTO; locale: string }): ReactElement {
   const { t } = useTranslation();
   return (
     <div className="space-y-1 whitespace-nowrap text-[11px]">

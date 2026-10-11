@@ -1,4 +1,4 @@
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactElement } from "react";
 import { Area, Bar, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts";
 
 import {
@@ -170,7 +170,7 @@ function buildTooltipProps(chartConfig: ChartConfig, locale: string): { content:
 }
 
 /** 使用量趋势组合图：tokens 面积、billing 柱、requests 虚线，配双 Y 轴与可点击图例。 */
-export function DashboardTrendChart(props: DashboardTrendChartProps) {
+export function DashboardTrendChart(props: DashboardTrendChartProps): ReactElement {
   const axis = buildAxisProps(props.period, props.locale, props.xTicks, props.axisSides);
   const marks = buildMarkProps(props.hiddenSeries);
   const tooltip = buildTooltipProps(props.chartConfig, props.locale);

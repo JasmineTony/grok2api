@@ -26,17 +26,9 @@ func (s *Service) DetectBuildAccountsWithProgress(ctx context.Context, ids []uin
 		return 0, 0, fmt.Errorf("Provider 注册表未初始化")
 	}
 	selectedMode := !all
-	var err error
-	if all {
-		ids, err = s.accounts.ListEnabledAccountIDs(ctx, accountdomain.ProviderBuild, false)
-		if err != nil {
-			return 0, 0, err
-		}
-	} else {
-		ids, err = normalizeBatchIDs(ids)
-		if err != nil {
-			return 0, 0, err
-		}
+	ids, err := s.resolveBuildDetectIDs(ctx, ids, all)
+	if err != nil {
+		return 0, 0, err
 	}
 	if len(ids) == 0 {
 		return 0, 0, nil
@@ -56,29 +48,9 @@ func (s *Service) DetectBuildAccountsWithProgress(ctx context.Context, ids []uin
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	summary, err := batch.ForEachObserved(runCtx, ids, batch.Options{Workers: pool.Limit(), Pool: pool}, func(workCtx context.Context, id uint64) (BuildDetectItemResult, error) {
-		item := s.detectBuildAccount(workCtx, id)
-		if itemObserver != nil && (selectedMode || item.Outcome == BuildDetectOutcomeInvalid) {
-			notifyErr := func() error {
-				observerMu.Lock()
-				defer observerMu.Unlock()
-				return itemObserver(item)
-			}()
-			if notifyErr != nil {
-				return item, notifyErr
-			}
-		}
-		if item.Outcome == BuildDetectOutcomeOK {
-			return item, nil
-		}
-		if item.Reason != "" {
-			return item, fmt.Errorf("%s", item.Reason)
-		}
-		return item, fmt.Errorf("账号检测失败")
+		return s.runBuildDetectItem(workCtx, id, selectedMode, itemObserver, &observerMu)
 	}, func(index int, result batch.Result[BuildDetectItemResult]) {
-		var panicErr *batch.PanicError
-		if errors.As(result.Err, &panicErr) {
-			s.logger.Error("account_bulk_task_panicked", "operation", "build_detect", "account_id", ids[index], "error", panicErr, "stack", string(panicErr.Stack))
-		}
+		s.logBuildDetectPanic(ids, index, result)
 		observerMu.Lock()
 		defer observerMu.Unlock()
 		completed++
@@ -91,6 +63,44 @@ func (s *Service) DetectBuildAccountsWithProgress(ctx context.Context, ids []uin
 	})
 	s.logBatchSummary("build_detect", pool, summary, err)
 	return summary.Succeeded, summary.Failed, errors.Join(err, progressErr)
+}
+
+// resolveBuildDetectIDs 按「全部账号」开关解析待检测的 Grok Build 账号 ID。
+func (s *Service) resolveBuildDetectIDs(ctx context.Context, ids []uint64, all bool) ([]uint64, error) {
+	if all {
+		return s.accounts.ListEnabledAccountIDs(ctx, accountdomain.ProviderBuild, false)
+	}
+	return normalizeBatchIDs(ids)
+}
+
+// runBuildDetectItem 执行单个账号探测，并按需串行回调明细观察者。
+func (s *Service) runBuildDetectItem(ctx context.Context, id uint64, selectedMode bool, itemObserver BuildDetectItemObserver, observerMu *sync.Mutex) (BuildDetectItemResult, error) {
+	item := s.detectBuildAccount(ctx, id)
+	if itemObserver != nil && (selectedMode || item.Outcome == BuildDetectOutcomeInvalid) {
+		notifyErr := func() error {
+			observerMu.Lock()
+			defer observerMu.Unlock()
+			return itemObserver(item)
+		}()
+		if notifyErr != nil {
+			return item, notifyErr
+		}
+	}
+	if item.Outcome == BuildDetectOutcomeOK {
+		return item, nil
+	}
+	if item.Reason != "" {
+		return item, fmt.Errorf("%s", item.Reason)
+	}
+	return item, fmt.Errorf("账号检测失败")
+}
+
+// logBuildDetectPanic 记录单个检测任务的 panic 与堆栈，便于定位批量任务异常。
+func (s *Service) logBuildDetectPanic(ids []uint64, index int, result batch.Result[BuildDetectItemResult]) {
+	var panicErr *batch.PanicError
+	if errors.As(result.Err, &panicErr) {
+		s.logger.Error("account_bulk_task_panicked", "operation", "build_detect", "account_id", ids[index], "error", panicErr, "stack", string(panicErr.Stack))
+	}
 }
 
 // detectBuildAccount 使用现有 Build Responses 链路发送固定探测请求。
@@ -262,51 +272,8 @@ func (s *Service) finishBuildDetectResponse(ctx context.Context, response *provi
 	}
 	body := readDetectBodyForClassification(response.Body)
 	rejection := provider.ClassifyCredentialRejection(response.StatusCode, body, nil)
-	if rejection.Rejected {
-		reason := fmt.Sprintf("%s OAuth credential rejected (HTTP %d)", credential.Provider, response.StatusCode)
-		if markErr := s.markBuildDetectReauth(ctx, credential.ID, reason); markErr != nil {
-			item.Reason = markErr.Error()
-			return item
-		}
-		item.Outcome = BuildDetectOutcomeInvalid
-		item.Reason = reason
-		return item
-	}
-	if rejection.SpendingLimitBlocked {
-		reason := fmt.Sprintf("%s spending limit blocked", credential.Provider)
-		if markErr := s.markBuildDetectQuotaExhausted(ctx, credential, billing); markErr != nil {
-			item.Reason = errors.Join(errors.New(reason), markErr).Error()
-			return item
-		}
-		item.Reason = reason
-		return item
-	}
-	if rejection.ModelQuotaExhausted {
-		reason := fmt.Sprintf("%s model quota exhausted for %s", credential.Provider, buildDetectModel)
-		if markErr := s.markBuildDetectModelQuotaExhausted(ctx, credential, reason); markErr != nil {
-			item.Reason = errors.Join(errors.New(reason), markErr).Error()
-			return item
-		}
-		item.Reason = reason
-		return item
-	}
-	if rejection.QuotaExhausted {
-		reason := fmt.Sprintf("%s quota exhausted", credential.Provider)
-		if markErr := s.markBuildDetectQuotaExhausted(ctx, credential, billing); markErr != nil {
-			item.Reason = errors.Join(errors.New(reason), markErr).Error()
-			return item
-		}
-		item.Reason = reason
-		return item
-	}
-	if rejection.PermanentAccountDenial {
-		reason := fmt.Sprintf("%s chat endpoint access denied for %s", credential.Provider, buildDetectModel)
-		if markErr := s.markBuildDetectModelDenied(ctx, credential, reason); markErr != nil {
-			item.Reason = errors.Join(errors.New(reason), markErr).Error()
-			return item
-		}
-		item.Reason = reason
-		return item
+	if result, matched := s.applyBuildDetectRejection(ctx, item, rejection, response, credential, billing); matched {
+		return result
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		item.Reason = fmt.Sprintf("上游检测失败: HTTP %d", response.StatusCode)
@@ -314,6 +281,52 @@ func (s *Service) finishBuildDetectResponse(ctx context.Context, response *provi
 	}
 	item.Outcome = BuildDetectOutcomeOK
 	item.Reason = ""
+	return item
+}
+
+// applyBuildDetectRejection 按凭据拒绝分类标记账号并收敛检测结果；matched=false 表示未命中任何拒绝分类。
+func (s *Service) applyBuildDetectRejection(ctx context.Context, item BuildDetectItemResult, rejection provider.CredentialRejection, response *provider.Response, credential accountdomain.Credential, billing *accountdomain.Billing) (BuildDetectItemResult, bool) {
+	if rejection.Rejected {
+		reason := fmt.Sprintf("%s OAuth credential rejected (HTTP %d)", credential.Provider, response.StatusCode)
+		if markErr := s.markBuildDetectReauth(ctx, credential.ID, reason); markErr != nil {
+			item.Reason = markErr.Error()
+			return item, true
+		}
+		item.Outcome = BuildDetectOutcomeInvalid
+		item.Reason = reason
+		return item, true
+	}
+	if rejection.SpendingLimitBlocked {
+		reason := fmt.Sprintf("%s spending limit blocked", credential.Provider)
+		return recordBuildDetectReason(item, reason, s.markBuildDetectQuotaExhausted(ctx, credential, billing)), true
+	}
+	if rejection.ModelQuotaExhausted {
+		reason := fmt.Sprintf("%s model quota exhausted for %s", credential.Provider, buildDetectModel)
+		return recordBuildDetectReason(item, reason, s.markBuildDetectModelQuotaExhausted(ctx, credential, reason)), true
+	}
+	if rejection.QuotaExhausted {
+		reason := fmt.Sprintf("%s quota exhausted", credential.Provider)
+		return recordBuildDetectReason(item, reason, s.markBuildDetectQuotaExhausted(ctx, credential, billing)), true
+	}
+	if rejection.PermanentAccountDenial {
+		reason := fmt.Sprintf("%s chat endpoint access denied for %s", credential.Provider, buildDetectModel)
+		if markErr := s.markBuildDetectModelDenied(ctx, credential, reason); markErr != nil {
+			item.Reason = errors.Join(errors.New(reason), markErr).Error()
+			return item, true
+		}
+		item.Reason = reason
+		return item, true
+	}
+	return item, false
+}
+
+// recordBuildDetectReason 记录拒绝原因；标记失败时把原因与标记错误一起返回。
+func recordBuildDetectReason(item BuildDetectItemResult, reason string, markErr error) BuildDetectItemResult {
+	if markErr != nil {
+		item.Reason = errors.Join(errors.New(reason), markErr).Error()
+		return item
+	}
+	item.Reason = reason
 	return item
 }
 

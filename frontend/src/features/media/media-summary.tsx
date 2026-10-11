@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { AlertCircle, CheckCircle2, Clock, Database, Image as ImageIcon, ListVideo, Loader2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -17,7 +17,7 @@ type SummaryItemProps = {
 };
 
 /** 摘要条目：图标 + 标签 + 数值。 */
-export function SummaryItem({ icon: Icon, label, value, tone }: SummaryItemProps) {
+export function SummaryItem({ icon: Icon, label, value, tone }: SummaryItemProps): ReactElement {
   return (
     <span className="inline-flex shrink-0 items-center gap-1.5">
       <Icon className={cn("size-3.5", tone)} />
@@ -36,7 +36,13 @@ type GallerySummaryProps = {
 };
 
 /** 图库统计摘要；加载中显示 spinner，接口不可用时显示 "-"。 */
-export function GallerySummary({ loading, unavailable, totalImages, totalBytes, locale }: GallerySummaryProps) {
+export function GallerySummary({
+  loading,
+  unavailable,
+  totalImages,
+  totalBytes,
+  locale,
+}: GallerySummaryProps): ReactElement {
   const { t } = useTranslation();
   const value = (text: string): ReactNode => (loading ? <Spinner className="size-3" /> : unavailable ? "-" : text);
   return (
@@ -66,7 +72,7 @@ type VideoSummaryProps = {
 };
 
 /** 视频任务统计摘要；加载中只显示 spinner，统计不可用时显示 "-"。 */
-export function VideoSummary({ stats, loading, unavailable, locale }: VideoSummaryProps) {
+export function VideoSummary({ stats, loading, unavailable, locale }: VideoSummaryProps): ReactElement {
   const { t } = useTranslation();
   if (loading) {
     return (

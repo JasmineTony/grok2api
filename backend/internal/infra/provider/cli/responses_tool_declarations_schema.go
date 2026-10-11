@@ -85,28 +85,8 @@ func (c *rootObjectLeafCollector) walk(node any, constraints []map[string]any, s
 	if !ok {
 		return invalidBuildFunctionParametersRoot(c.context)
 	}
-	if ref, ok := schema["$ref"].(string); ok {
-		if !strings.HasPrefix(ref, "#/") {
-			return invalidBuildFunctionParametersRoot(c.context)
-		}
-		if _, loop := seen[ref]; loop {
-			return invalidBuildFunctionParametersRoot(c.context)
-		}
-		resolved, ok := resolveLocalSchemaRef(c.doc, ref)
-		if !ok {
-			return invalidBuildFunctionParametersRoot(c.context)
-		}
-		sibling, siblingErr := rootSchemaSiblingConstraint(schema, "$ref")
-		if siblingErr != nil {
-			return invalidBuildFunctionParametersRoot(c.context)
-		}
-		if len(sibling) > 0 {
-			constraints = append(cloneRootConstraints(constraints), sibling)
-		}
-		next := cloneRefSeen(seen)
-		next[ref] = struct{}{}
-		c.changed = true
-		return c.walk(resolved, constraints, next, depth+1, unionDepth)
+	if _, isRef := schema["$ref"].(string); isRef {
+		return c.walkSchemaRef(schema, constraints, seen, depth, unionDepth)
 	}
 	normalized, nullOnly, typeChanged := normalizeRootObjectType(schema)
 	if nullOnly {
@@ -121,48 +101,89 @@ func (c *rootObjectLeafCollector) walk(node any, constraints []map[string]any, s
 		return invalidBuildFunctionParametersRoot(c.context)
 	}
 	if keyword != "" {
-		if c.rootUnionKeyword == "" {
-			c.rootUnionKeyword = keyword
-		} else {
-			c.changed = true
-			if c.rootUnionKeyword == "oneOf" || keyword != c.rootUnionKeyword {
-				c.requiresDisjoint = true
-			}
+		return c.walkRootUnion(normalized, keyword, branches, constraints, seen, depth, unionDepth)
+	}
+	return c.appendObjectLeaf(normalized, constraints, unionDepth)
+}
+
+// walkSchemaRef 解析本地 $ref 并把同级约束叠加到后续叶子。
+func (c *rootObjectLeafCollector) walkSchemaRef(schema map[string]any, constraints []map[string]any, seen map[string]struct{}, depth, unionDepth int) error {
+	ref, _ := schema["$ref"].(string)
+	if !strings.HasPrefix(ref, "#/") {
+		return invalidBuildFunctionParametersRoot(c.context)
+	}
+	if _, loop := seen[ref]; loop {
+		return invalidBuildFunctionParametersRoot(c.context)
+	}
+	resolved, ok := resolveLocalSchemaRef(c.doc, ref)
+	if !ok {
+		return invalidBuildFunctionParametersRoot(c.context)
+	}
+	sibling, siblingErr := rootSchemaSiblingConstraint(schema, "$ref")
+	if siblingErr != nil {
+		return invalidBuildFunctionParametersRoot(c.context)
+	}
+	if len(sibling) > 0 {
+		constraints = append(cloneRootConstraints(constraints), sibling)
+	}
+	next := cloneRefSeen(seen)
+	next[ref] = struct{}{}
+	c.changed = true
+	return c.walk(resolved, constraints, next, depth+1, unionDepth)
+}
+
+// walkRootUnion 记录根联合关键字并把同级约束叠加到分支。
+func (c *rootObjectLeafCollector) walkRootUnion(normalized map[string]any, keyword string, branches []any, constraints []map[string]any, seen map[string]struct{}, depth, unionDepth int) error {
+	if c.rootUnionKeyword == "" {
+		c.rootUnionKeyword = keyword
+	} else {
+		c.changed = true
+		if c.rootUnionKeyword == "oneOf" || keyword != c.rootUnionKeyword {
+			c.requiresDisjoint = true
 		}
-		sibling, siblingErr := rootSchemaSiblingConstraint(normalized, keyword)
-		if siblingErr != nil {
-			return invalidBuildFunctionParametersRoot(c.context)
+	}
+	sibling, siblingErr := rootSchemaSiblingConstraint(normalized, keyword)
+	if siblingErr != nil {
+		return invalidBuildFunctionParametersRoot(c.context)
+	}
+	if len(sibling) > 0 {
+		constraints = append(cloneRootConstraints(constraints), sibling)
+	}
+	for _, branch := range branches {
+		if err := c.walkRootUnionBranch(branch, constraints, seen, depth, unionDepth); err != nil {
+			return err
 		}
-		if len(sibling) > 0 {
-			constraints = append(cloneRootConstraints(constraints), sibling)
-		}
-		for _, branch := range branches {
-			// Build function parameters may contain a nullable or otherwise
-			// non-object alternative at the root. Such alternatives cannot be
-			// represented by Build's grammar and are intentionally omitted; the
-			// whole schema is rejected below when no object leaf remains.
-			branchSchema, branchOK := branch.(map[string]any)
-			if !branchOK || isNullOnlySchema(branchSchema) {
-				c.changed = true
-				continue
-			}
-			branchKeyword, _, branchErr := rootUnion(branchSchema)
-			if branchErr != nil {
-				return invalidBuildFunctionParametersRoot(c.context)
-			}
-			// A root $ref may point to another union (for example a named
-			// Create schema). Let walk resolve it before deciding whether its
-			// leaves are object schemas.
-			if branchKeyword == "" && branchSchema["$ref"] == nil && !isObjectRootSchema(branchSchema, c.doc, nil) {
-				c.changed = true
-				continue
-			}
-			if err := c.walk(branch, constraints, cloneRefSeen(seen), depth+1, unionDepth+1); err != nil {
-				return err
-			}
-		}
+	}
+	return nil
+}
+
+// walkRootUnionBranch 递归处理根联合的单个分支，非对象分支按不可表达丢弃。
+func (c *rootObjectLeafCollector) walkRootUnionBranch(branch any, constraints []map[string]any, seen map[string]struct{}, depth, unionDepth int) error {
+	// Build function parameters may contain a nullable or otherwise
+	// non-object alternative at the root. Such alternatives cannot be
+	// represented by Build's grammar and are intentionally omitted; the
+	// whole schema is rejected below when no object leaf remains.
+	branchSchema, branchOK := branch.(map[string]any)
+	if !branchOK || isNullOnlySchema(branchSchema) {
+		c.changed = true
 		return nil
 	}
+	branchKeyword, _, branchErr := rootUnion(branchSchema)
+	if branchErr != nil {
+		return invalidBuildFunctionParametersRoot(c.context)
+	}
+	// A root $ref may point to another union (for example a named
+	// Create schema). Let walk resolve it before deciding whether its
+	// leaves are object schemas.
+	if branchKeyword == "" && branchSchema["$ref"] == nil && !isObjectRootSchema(branchSchema, c.doc, nil) {
+		c.changed = true
+		return nil
+	}
+	return c.walk(branch, constraints, cloneRefSeen(seen), depth+1, unionDepth+1)
+}
+
+// appendObjectLeaf 把归一化后的对象 schema 作为叶子收集，并叠加父级约束。
+func (c *rootObjectLeafCollector) appendObjectLeaf(normalized map[string]any, constraints []map[string]any, unionDepth int) error {
 	if unionDepth == 0 && c.rootUnionKeyword != "" {
 		return invalidBuildFunctionParametersRoot(c.context)
 	}

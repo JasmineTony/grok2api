@@ -1,4 +1,5 @@
 import { RotateCcw } from "lucide-react";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -17,7 +18,7 @@ const settingsTabs = [
   { value: "about", labelKey: "updates.title" },
 ];
 
-export function SettingsTabsList() {
+export function SettingsTabsList(): ReactElement {
   return (
     <TabsList className="flex h-auto w-full max-w-full shrink-0 justify-start gap-1 overflow-x-auto overscroll-x-contain rounded-none bg-transparent p-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden [&>span]:rounded-md [&>span]:bg-muted/70 [&>span]:shadow-none lg:sticky lg:top-[148px] lg:w-56 lg:flex-col lg:items-stretch lg:overflow-visible">
       {settingsTabs.map((tab) => (
@@ -48,7 +49,7 @@ export function SettingsPageHeader({
   disabled: boolean;
   pending: boolean;
   onReset: () => void;
-}) {
+}): ReactElement {
   const { t } = useTranslation();
   return (
     <header className="relative sticky top-12 z-30 -mx-2 flex min-h-12 items-center justify-between gap-3 bg-background px-2 py-2 lg:top-20 lg:z-40 lg:before:pointer-events-none lg:before:absolute lg:before:inset-x-0 lg:before:-top-[100vh] lg:before:h-[100vh] lg:before:bg-background lg:before:content-['']">

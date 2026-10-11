@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { ArrowLeft, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -76,7 +76,7 @@ export function EgressProxyProfiles({
   onOpenChange,
   startCreating = false,
   onCreated,
-}: EgressProxyProfilesProps) {
+}: EgressProxyProfilesProps): ReactElement {
   const [editing, setEditing] = useState<EgressProxyProfileDTO | null | undefined>(startCreating ? null : undefined);
   const libraryOpen = editing === undefined;
   return (

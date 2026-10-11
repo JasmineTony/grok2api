@@ -1,4 +1,5 @@
 import { Activity, Gauge, ShieldCheck, ShieldX, TimerReset } from "lucide-react";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { QualityGuardStatus } from "@/features/quality-guard/quality-guard-api";
@@ -20,7 +21,7 @@ export function Metric({
   value: string;
   tone?: "good" | "bad";
   testId: string;
-}) {
+}): ReactElement {
   return (
     <div
       data-testid={testId}
@@ -43,7 +44,7 @@ export function Metric({
   );
 }
 
-export function GuardOverview({ status, view }: { status: QualityGuardStatus; view: GuardNodesView }) {
+export function GuardOverview({ status, view }: { status: QualityGuardStatus; view: GuardNodesView }): ReactElement {
   const { t } = useTranslation();
   return (
     <section
@@ -81,7 +82,7 @@ export function GuardOverview({ status, view }: { status: QualityGuardStatus; vi
   );
 }
 
-export function UnavailableState() {
+export function UnavailableState(): ReactElement {
   const { t } = useTranslation();
   return (
     <div

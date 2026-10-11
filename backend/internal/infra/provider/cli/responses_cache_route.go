@@ -30,17 +30,7 @@ func prepareBuildPromptCacheRoute(body []byte, operation, model, promptCacheKey 
 	if err != nil {
 		return nil, route, err
 	}
-	for _, rawTool := range tools {
-		kind, name := buildCacheToolIdentity(rawTool)
-		if kind == "function" || kind == "custom" {
-			if name != "" {
-				route.clientDeclaredTools[name] = struct{}{}
-			}
-		}
-		if kind == "x_search" {
-			route.filterXSearch = true
-		}
-	}
+	recordBuildCacheClientTools(tools, &route)
 
 	// Hide upstream internal subcalls even when the client explicitly declares x_search.
 	// Cache routing itself applies only to plain-text conversations with a stable cache session identity.
@@ -48,20 +38,7 @@ func prepareBuildPromptCacheRoute(body []byte, operation, model, promptCacheKey 
 		return body, route, nil
 	}
 
-	if len(tools) == 0 {
-		// A tool-free request uses none to select the cache-capable route without granting search capability.
-		tools = append(tools, json.RawMessage(`{"type":"web_search"}`), json.RawMessage(`{"type":"x_search"}`))
-		payload["tool_choice"] = mustJSON("none")
-		route.injectedToolTypes["web_search"] = struct{}{}
-		route.injectedToolTypes["x_search"] = struct{}{}
-		route.filterXSearch = true
-	} else if !hasBuildCacheToolType(tools, "x_search") && (allowClientTools || hasBuildCacheToolType(tools, "web_search")) {
-		// With client tools, add only the x_search route required by the official Build behavior and preserve
-		// the original tool_choice. Do not also expose web_search.
-		tools = append(tools, json.RawMessage(`{"type":"x_search"}`))
-		route.injectedToolTypes["x_search"] = struct{}{}
-		route.filterXSearch = true
-	}
+	tools = injectBuildCacheRouteTools(tools, payload, &route, allowClientTools)
 	payload["tools"] = mustJSON(tools)
 	if _, injected := route.injectedToolTypes["x_search"]; injected {
 		updatedChoice, choiceErr := appendBuildCacheXSearchToAllowedTools(payload["tool_choice"])
@@ -77,6 +54,40 @@ func prepareBuildPromptCacheRoute(body []byte, operation, model, promptCacheKey 
 		return nil, route, fmt.Errorf("编码 Build prompt cache 请求: %w", err)
 	}
 	return encoded, route, nil
+}
+
+// recordBuildCacheClientTools 记录客户端声明的工具与 x_search 过滤标记。
+func recordBuildCacheClientTools(tools []json.RawMessage, route *buildPromptCacheRoute) {
+	for _, rawTool := range tools {
+		kind, name := buildCacheToolIdentity(rawTool)
+		if (kind == "function" || kind == "custom") && name != "" {
+			route.clientDeclaredTools[name] = struct{}{}
+		}
+		if kind == "x_search" {
+			route.filterXSearch = true
+		}
+	}
+}
+
+// injectBuildCacheRouteTools 按官方 Build 行为补齐路由所需工具，并返回补齐后的工具列表。
+func injectBuildCacheRouteTools(tools []json.RawMessage, payload map[string]json.RawMessage, route *buildPromptCacheRoute, allowClientTools bool) []json.RawMessage {
+	if len(tools) == 0 {
+		// A tool-free request uses none to select the cache-capable route without granting search capability.
+		tools = append(tools, json.RawMessage(`{"type":"web_search"}`), json.RawMessage(`{"type":"x_search"}`))
+		payload["tool_choice"] = mustJSON("none")
+		route.injectedToolTypes["web_search"] = struct{}{}
+		route.injectedToolTypes["x_search"] = struct{}{}
+		route.filterXSearch = true
+		return tools
+	}
+	if !hasBuildCacheToolType(tools, "x_search") && (allowClientTools || hasBuildCacheToolType(tools, "web_search")) {
+		// With client tools, add only the x_search route required by the official Build behavior and preserve
+		// the original tool_choice. Do not also expose web_search.
+		tools = append(tools, json.RawMessage(`{"type":"x_search"}`))
+		route.injectedToolTypes["x_search"] = struct{}{}
+		route.filterXSearch = true
+	}
+	return tools
 }
 
 func appendBuildCacheXSearchToAllowedTools(raw json.RawMessage) (json.RawMessage, error) {

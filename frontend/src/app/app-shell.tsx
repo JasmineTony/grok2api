@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 
 import { ChangePasswordDialog } from "@/app/change-password-dialog";
@@ -13,7 +13,7 @@ import { cn } from "@/shared/lib/cn";
  * 应用外壳：持有抽屉/改密弹窗/文档分组展开状态，
  * 侧栏、移动端顶栏与账号控制均为独立组件。
  */
-export function AppShell() {
+export function AppShell(): ReactElement {
   const { admin } = useAuth();
   const { pathname } = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);

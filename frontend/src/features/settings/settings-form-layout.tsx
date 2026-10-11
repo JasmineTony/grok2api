@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { type ReactElement, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { UseFormReturn } from "react-hook-form";
 
@@ -19,7 +19,7 @@ import { cn } from "@/shared/lib/cn";
 /** 设置页各分页共享的表单实例契约。 */
 export type SettingsFormApi = UseFormReturn<SettingsForm>;
 
-export function SettingsPane({ value, children }: { value: string; children: ReactNode }) {
+export function SettingsPane({ value, children }: { value: string; children: ReactNode }): ReactElement {
   return (
     <TabsContent
       value={value}
@@ -42,7 +42,7 @@ export function SettingsSection({
   title: string;
   action?: ReactNode;
   children: ReactNode;
-}) {
+}): ReactElement {
   return (
     <section className="space-y-3" data-testid={testId}>
       <div className="flex min-h-8 items-center justify-between gap-3 px-1">
@@ -70,7 +70,7 @@ export function SettingsField({
   error?: string;
   className?: string;
   children: ReactNode;
-}) {
+}): ReactElement {
   const { t } = useTranslation();
   return (
     <div className={cn("min-w-0 py-4", className)} data-testid={`settings-field-${controlId}`}>
@@ -103,7 +103,7 @@ export function ByteSizeInput({
   id: string;
   value?: ByteSizeValue;
   onChange: (value: ByteSizeValue) => void;
-}) {
+}): ReactElement {
   const { t } = useTranslation();
   const unit = value?.unit ?? "MiB";
   return (
@@ -150,7 +150,7 @@ export function DurationInput({
   value?: DurationValue;
   onChange: (value: DurationValue) => void;
   disabled?: boolean;
-}) {
+}): ReactElement {
   const { t } = useTranslation();
   const unit = value?.unit ?? "s";
   return (

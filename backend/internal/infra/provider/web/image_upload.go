@@ -73,33 +73,42 @@ func inspectLiteCaptureValue(value any, result *liteCaptureDiagnostics, imageFie
 	switch current := value.(type) {
 	case map[string]any:
 		for key, nested := range current {
-			if key == "jsonData" {
-				if encoded, _ := nested.(string); encoded != "" {
-					var decoded any
-					if json.Unmarshal([]byte(encoded), &decoded) == nil {
-						inspectLiteCaptureValue(decoded, result, imageFields)
-					}
-				}
-			}
-			if key == "image_chunk" || key == "imageChunk" {
-				if chunk, ok := nested.(map[string]any); ok {
-					result.ImageChunks++
-					for field := range chunk {
-						imageFields[field] = struct{}{}
-					}
-					if firstString(chunk, "imageUrl", "image_url", "url") != "" {
-						result.ImageURLs++
-					}
-					if progress, ok := numberAsInt(chunk["progress"]); ok && progress > result.MaxProgress {
-						result.MaxProgress = progress
-					}
-				}
-			}
+			inspectLiteCaptureField(key, nested, result, imageFields)
 			inspectLiteCaptureValue(nested, result, imageFields)
 		}
 	case []any:
 		for _, nested := range current {
 			inspectLiteCaptureValue(nested, result, imageFields)
+		}
+	}
+}
+
+// inspectLiteCaptureField 记录单个字段上的 jsonData 与 image_chunk 诊断信息。
+func inspectLiteCaptureField(key string, nested any, result *liteCaptureDiagnostics, imageFields map[string]struct{}) {
+	switch key {
+	case "jsonData":
+		encoded, _ := nested.(string)
+		if encoded == "" {
+			return
+		}
+		var decoded any
+		if json.Unmarshal([]byte(encoded), &decoded) == nil {
+			inspectLiteCaptureValue(decoded, result, imageFields)
+		}
+	case "image_chunk", "imageChunk":
+		chunk, ok := nested.(map[string]any)
+		if !ok {
+			return
+		}
+		result.ImageChunks++
+		for field := range chunk {
+			imageFields[field] = struct{}{}
+		}
+		if firstString(chunk, "imageUrl", "image_url", "url") != "" {
+			result.ImageURLs++
+		}
+		if progress, ok := numberAsInt(chunk["progress"]); ok && progress > result.MaxProgress {
+			result.MaxProgress = progress
 		}
 	}
 }

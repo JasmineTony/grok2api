@@ -220,6 +220,18 @@ function StatusTooltip({ children, content }: { children: ReactNode; content: Re
   );
 }
 
+/** 删除与已展示错误消息重复的字符串字段，避免 tooltip 重复渲染同一段文案。 */
+function removeDuplicateMessageFields(
+  details: Record<string, unknown>,
+  fields: readonly string[],
+  messages: ReadonlySet<string>,
+): void {
+  for (const field of fields) {
+    const value = details[field];
+    if (typeof value === "string" && messages.has(value)) delete details[field];
+  }
+}
+
 function formatAdditionalRefreshErrorDetails(account: AccountDTO): string | undefined {
   const response = account.lastRefreshErrorResponse?.trim();
   if (!response) return undefined;
@@ -234,15 +246,11 @@ function formatAdditionalRefreshErrorDetails(account: AccountDTO): string | unde
         .filter(Boolean),
     );
     if (typeof details.error === "string" && details.error === account.lastRefreshErrorCode) delete details.error;
-    for (const key of ["error_description", "message", "detail", "description", "title"]) {
-      if (typeof details[key] === "string" && messages.has(details[key])) delete details[key];
-    }
+    removeDuplicateMessageFields(details, ["error_description", "message", "detail", "description", "title"], messages);
     if (details.error && typeof details.error === "object" && !Array.isArray(details.error)) {
       const nested = { ...(details.error as Record<string, unknown>) };
       if (typeof nested.code === "string" && nested.code === account.lastRefreshErrorCode) delete nested.code;
-      for (const key of ["error_description", "message", "detail", "description"]) {
-        if (typeof nested[key] === "string" && messages.has(nested[key])) delete nested[key];
-      }
+      removeDuplicateMessageFields(nested, ["error_description", "message", "detail", "description"], messages);
       if (Object.keys(nested).length === 0) delete details.error;
       else details.error = nested;
     }

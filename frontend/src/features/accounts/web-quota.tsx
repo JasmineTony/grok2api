@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 
@@ -67,7 +67,7 @@ export function ConsoleQuota({
 }: {
   windows: NonNullable<AccountDTO["quotaWindows"]>;
   locale: string;
-}) {
+}): ReactElement {
   const { t } = useTranslation();
   if (windows.length === 0)
     return <span className="text-xs text-muted-foreground">{t("accounts.quotaNotSynced")}</span>;
@@ -115,7 +115,7 @@ export function WebQuota({
   windows: NonNullable<AccountDTO["quotaWindows"]>;
   locale: string;
   tier?: AccountDTO["webTier"];
-}) {
+}): ReactNode {
   const { t } = useTranslation();
   if (windows.length === 0)
     return <span className="text-xs text-muted-foreground">{t("accounts.quotaNotSynced")}</span>;

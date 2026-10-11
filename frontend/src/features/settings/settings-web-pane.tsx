@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { Controller } from "react-hook-form";
 
@@ -12,7 +13,7 @@ import {
   type SettingsFormApi,
 } from "@/features/settings/settings-form-layout";
 
-export function SettingsWebPane({ form }: { form: SettingsFormApi }) {
+export function SettingsWebPane({ form }: { form: SettingsFormApi }): ReactElement {
   const { t } = useTranslation();
   const statsigMode = form.watch("providerWeb.statsigMode");
   const statsigManualConfigured = form.watch("providerWeb.statsigManualConfigured");

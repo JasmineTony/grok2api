@@ -1,4 +1,4 @@
-import { useRef, useState, type Ref } from "react";
+import { useRef, useState, type ReactElement, type Ref } from "react";
 import { useTranslation } from "react-i18next";
 import { Controller } from "react-hook-form";
 
@@ -22,7 +22,7 @@ import {
 } from "@/features/settings/settings-form-layout";
 import { MAX_ROUTING_ATTEMPTS, UNLIMITED_ROUTING_ATTEMPTS } from "@/features/settings/settings-schema";
 
-export function SettingsRoutingSection({ form }: { form: SettingsFormApi }) {
+export function SettingsRoutingSection({ form }: { form: SettingsFormApi }): ReactElement {
   const { t } = useTranslation();
   const segmentedSelectorEnabled = form.watch("routing.segmentedSelector.enabled") === true;
   return (

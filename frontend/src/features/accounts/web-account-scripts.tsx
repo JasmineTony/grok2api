@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import type { TFunction } from "i18next";
 import { Cake, Handshake, VenusAndMars, type LucideIcon } from "lucide-react";
 import { useState } from "react";
@@ -33,7 +33,7 @@ const defaultActions: WebAccountScriptActions = {
   enableNSFW: true,
 };
 
-export function WebAccountScriptsDialog({ targets, pending, progress, onClose, onRun }: Props) {
+export function WebAccountScriptsDialog({ targets, pending, progress, onClose, onRun }: Props): ReactElement {
   const { t } = useTranslation();
   const [actions, setActions] = useState<WebAccountScriptActions>(defaultActions);
   const hasAction = actions.acceptTerms || actions.setBirthDate || actions.enableNSFW;

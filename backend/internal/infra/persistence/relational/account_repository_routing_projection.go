@@ -26,7 +26,17 @@ func (r *AccountRepository) listActiveProviderAccountRows(ctx context.Context, p
 	for index := range rows {
 		positions[rows[index].ID] = index
 	}
+	if err := r.attachProviderCredentialRows(ctx, provider, credentialColumns, rows, positions); err != nil {
+		return nil, err
+	}
+	if err := r.attachProviderWebProfileRows(ctx, provider, rows, positions); err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
 
+// attachProviderCredentialRows 用一次固定形状的 JOIN 查询把凭据行按账号回填到已加载的账号行。
+func (r *AccountRepository) attachProviderCredentialRows(ctx context.Context, provider account.Provider, credentialColumns []string, rows []accountModel, positions map[uint64]int) error {
 	credentialSelect := "credential.*"
 	if len(credentialColumns) > 0 {
 		credentialSelect = qualifiedColumnList("credential", credentialColumns)
@@ -38,31 +48,36 @@ func (r *AccountRepository) listActiveProviderAccountRows(ctx context.Context, p
 		Joins("JOIN provider_accounts AS account ON account.id = credential.account_id").
 		Where("account.provider = ? AND account.enabled = ? AND account.auth_status = ?", provider, true, account.AuthStatusActive).
 		Find(&credentials).Error; err != nil {
-		return nil, err
+		return err
 	}
 	for index := range credentials {
 		if position, ok := positions[credentials[index].AccountID]; ok {
 			rows[position].Credential = &credentials[index]
 		}
 	}
+	return nil
+}
 
-	if provider == account.ProviderWeb {
-		var profiles []webAccountProfileModel
-		if err := r.db.db.WithContext(ctx).
-			Table("web_account_profiles AS profile").
-			Select("profile.*").
-			Joins("JOIN provider_accounts AS account ON account.id = profile.account_id").
-			Where("account.provider = ? AND account.enabled = ? AND account.auth_status = ?", provider, true, account.AuthStatusActive).
-			Find(&profiles).Error; err != nil {
-			return nil, err
-		}
-		for index := range profiles {
-			if position, ok := positions[profiles[index].AccountID]; ok {
-				rows[position].WebProfile = &profiles[index]
-			}
+// attachProviderWebProfileRows 仅 Web 号池需要回填 Web 资料行。
+func (r *AccountRepository) attachProviderWebProfileRows(ctx context.Context, provider account.Provider, rows []accountModel, positions map[uint64]int) error {
+	if provider != account.ProviderWeb {
+		return nil
+	}
+	var profiles []webAccountProfileModel
+	if err := r.db.db.WithContext(ctx).
+		Table("web_account_profiles AS profile").
+		Select("profile.*").
+		Joins("JOIN provider_accounts AS account ON account.id = profile.account_id").
+		Where("account.provider = ? AND account.enabled = ? AND account.auth_status = ?", provider, true, account.AuthStatusActive).
+		Find(&profiles).Error; err != nil {
+		return err
+	}
+	for index := range profiles {
+		if position, ok := positions[profiles[index].AccountID]; ok {
+			rows[position].WebProfile = &profiles[index]
 		}
 	}
-	return rows, nil
+	return nil
 }
 
 func qualifiedColumnList(alias string, columns []string) string {
@@ -134,8 +149,26 @@ func (r *AccountRepository) getRoutingQuotaWindows(ctx context.Context, provider
 	if provider != account.ProviderWeb && quotaMode == "" {
 		return result, nil
 	}
-	modes := make([]string, 0, 3)
+	modes := routingQuotaWindowModes(provider, quotaMode)
 	webImagineMode := provider == account.ProviderWeb && account.IsWebImagineQuotaMode(quotaMode)
+	rows, err := r.loadRoutingQuotaWindowRows(ctx, provider, modes)
+	if err != nil {
+		return nil, err
+	}
+	webTiers := make(map[uint64]account.WebTier, len(credentials))
+	for _, credential := range credentials {
+		webTiers[credential.ID] = credential.WebTier
+	}
+	for _, row := range rows {
+		mergeRoutingQuotaWindow(result, row, webTiers[row.AccountID], quotaMode, webImagineMode)
+	}
+	return result, nil
+}
+
+// routingQuotaWindowModes 计算需要加载的额度窗口模式：Web 始终加载共享周窗口，
+// Imagine 额外加载产品窗口，最后叠加调用方指定的模式。
+func routingQuotaWindowModes(provider account.Provider, quotaMode string) []string {
+	modes := make([]string, 0, 3)
 	// Paid Web routes use the shared weekly pool. Imagine may additionally
 	// expose a product-specific remainingQueries window (notably for Basic and
 	// older response shapes); load both and prefer the exact product window
@@ -152,6 +185,11 @@ func (r *AccountRepository) getRoutingQuotaWindows(ctx context.Context, provider
 	if quotaMode != "" {
 		modes = append(modes, quotaMode)
 	}
+	return modes
+}
+
+// loadRoutingQuotaWindowRows 按固定形状的 JOIN 加载指定模式下的额度窗口行。
+func (r *AccountRepository) loadRoutingQuotaWindowRows(ctx context.Context, provider account.Provider, modes []string) ([]quotaWindowModel, error) {
 	var rows []quotaWindowModel
 	if err := r.db.db.WithContext(ctx).
 		Table("account_quota_windows AS quota").
@@ -162,34 +200,32 @@ func (r *AccountRepository) getRoutingQuotaWindows(ctx context.Context, provider
 		Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	webTiers := make(map[uint64]account.WebTier, len(credentials))
-	for _, credential := range credentials {
-		webTiers[credential.ID] = credential.WebTier
-	}
-	for _, row := range rows {
-		if webImagineMode {
-			tier := webTiers[row.AccountID]
-			productMode := quotaMode
-			if quotaMode == account.QuotaModeWebImageEdit {
-				productMode = webImageEditRoutingQuotaMode(tier)
-			}
-			switch {
-			case row.Mode == productMode:
-				// An explicit product window is more precise than the shared pool,
-				// regardless of query order.
-				result[row.AccountID] = toRoutingQuotaWindowDomain(row)
-			case row.Mode == "weekly" && (tier == account.WebTierSuper || tier == account.WebTierHeavy):
-				if existing, exists := result[row.AccountID]; !exists || existing.Mode != productMode {
-					result[row.AccountID] = toRoutingQuotaWindowDomain(row)
-				}
-			}
-			continue
-		}
+	return rows, nil
+}
+
+// mergeRoutingQuotaWindow 按账号合并单个额度窗口行；Imagine 场景优先精确产品窗口，
+// 只在确认的 Super/Heavy 账号上回退到共享周窗口。
+func mergeRoutingQuotaWindow(result map[uint64]account.QuotaWindow, row quotaWindowModel, tier account.WebTier, quotaMode string, webImagineMode bool) {
+	if !webImagineMode {
 		if _, exists := result[row.AccountID]; !exists {
 			result[row.AccountID] = toRoutingQuotaWindowDomain(row)
 		}
+		return
 	}
-	return result, nil
+	productMode := quotaMode
+	if quotaMode == account.QuotaModeWebImageEdit {
+		productMode = webImageEditRoutingQuotaMode(tier)
+	}
+	switch {
+	case row.Mode == productMode:
+		// An explicit product window is more precise than the shared pool,
+		// regardless of query order.
+		result[row.AccountID] = toRoutingQuotaWindowDomain(row)
+	case row.Mode == "weekly" && (tier == account.WebTierSuper || tier == account.WebTierHeavy):
+		if existing, exists := result[row.AccountID]; !exists || existing.Mode != productMode {
+			result[row.AccountID] = toRoutingQuotaWindowDomain(row)
+		}
+	}
 }
 
 func webImageEditRoutingQuotaMode(tier account.WebTier) string {

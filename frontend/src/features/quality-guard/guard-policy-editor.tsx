@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
 import { RotateCcw } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { useForm, useWatch, type UseFormReturn } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -256,7 +256,7 @@ export function PolicyEditor({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   status: QualityGuardStatus;
-}) {
+}): ReactElement {
   const { t } = useTranslation();
   const editor = useGuardPolicyForm(status, () => onOpenChange(false));
   const { form, mode, setMode, mutation, resetDefaults, nodeCount } = editor;

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,7 @@ export type EgressSourceDialogProps = {
 };
 
 /** 订阅源新增/编辑弹窗：基础信息、路由与刷新参数分组渲染。 */
-export function EgressSourceDialog(props: EgressSourceDialogProps) {
+export function EgressSourceDialog(props: EgressSourceDialogProps): ReactElement {
   const { t } = useTranslation();
   const { editing, form, invalidProxy, pending, onClose, onSubmit } = props;
   const submitDisabled =

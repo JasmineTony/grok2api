@@ -57,15 +57,62 @@ func (m *Manager) clearanceMode() string {
 	return m.clearanceConfig.Mode
 }
 
+// clearanceDecision is the outcome of one locked clearance cache inspection.
+// reuse reports that the caller can serve the returned values without solving.
+type clearanceDecision struct {
+	config          ClearanceConfig
+	reuse           bool
+	reuseCookies    string
+	reuseUserAgent  string
+	fallback        clearanceSolution
+	fallbackAllowed bool
+	forceRefresh    bool
+	refreshAfter    time.Time
+}
+
 func (m *Manager) ensureClearance(ctx context.Context, node domain.Node, proxyURL, existingCookies, existingUserAgent, key string, persist bool) (string, string, error) {
+	decision := m.resolveClearanceLocked(key, node, proxyURL, existingCookies, existingUserAgent, persist)
+	if decision.reuse {
+		return decision.reuseCookies, decision.reuseUserAgent, nil
+	}
+	result, err, _ := m.clearanceLoads.Do(key, func() (any, error) {
+		return m.refreshNode(ctx, node, proxyURL, key, persist, decision.forceRefresh, !decision.fallbackAllowed, decision.refreshAfter)
+	})
+	if err != nil {
+		if decision.fallbackAllowed {
+			return decision.fallback.Cookies, decision.fallback.UserAgent, nil
+		}
+		return "", "", err
+	}
+	solution := result.(clearanceSolution)
+	return solution.Cookies, solution.UserAgent, nil
+}
+
+// resolveClearanceLocked inspects the clearance cache and decides whether this
+// lease can reuse a cached clearance or must solve a new one.
+func (m *Manager) resolveClearanceLocked(key string, node domain.Node, proxyURL, existingCookies, existingUserAgent string, persist bool) clearanceDecision {
 	m.clearanceMu.Lock()
-	cfg := m.clearanceConfig
+	defer m.clearanceMu.Unlock()
+	decision := clearanceDecision{config: m.clearanceConfig}
 	version := m.clearanceVersion
-	interval := clearanceRefreshInterval(cfg)
+	interval := clearanceRefreshInterval(decision.config)
 	now := time.Now().UTC()
-	fingerprint := clearanceFingerprint(cfg, proxyURL)
-	bindingFingerprint := clearanceBindingFingerprint(cfg, proxyURL)
+	fingerprint := clearanceFingerprint(decision.config, proxyURL)
+	bindingFingerprint := clearanceBindingFingerprint(decision.config, proxyURL)
 	m.cleanupClearanceCacheLocked(now, interval)
+	state, known := m.prepareClearanceStateLocked(key, node, version, now, existingCookies, existingUserAgent, persist)
+	if clearanceStateIsFresh(state, known, version, fingerprint, bindingFingerprint, interval, now) {
+		state.lastUsedAt = now
+		m.clearances[key] = state
+		decision.reuseCookies, decision.reuseUserAgent, decision.reuse = state.cookies, state.userAgent, true
+		return decision
+	}
+	return m.evaluateClearanceFallbackLocked(decision, key, state, known, now, existingCookies, existingUserAgent, bindingFingerprint)
+}
+
+// prepareClearanceStateLocked seeds the cache entry from the persisted node
+// clearance when no usable in-memory state exists yet.
+func (m *Manager) prepareClearanceStateLocked(key string, node domain.Node, version uint64, now time.Time, existingCookies, existingUserAgent string, persist bool) (clearanceState, bool) {
 	state, known := m.clearances[key]
 	if key == "direct" {
 		if !known {
@@ -89,55 +136,47 @@ func (m *Manager) ensureClearance(ctx context.Context, node domain.Node, proxyUR
 		known = true
 		m.clearances[key] = state
 	}
+	return state, known
+}
+
+// clearanceStateIsFresh reports whether the cached clearance still matches the
+// current configuration and refresh interval.
+func clearanceStateIsFresh(state clearanceState, known bool, version uint64, fingerprint, bindingFingerprint string, interval time.Duration, now time.Time) bool {
 	// A successful solve may legitimately return no Cloudflare cookies when the
 	// selected egress does not trigger a challenge. The solver User-Agent marks
 	// that cookie-less result as complete so requests do not block on re-solving.
-	fresh := known && !state.invalid && state.userAgent != "" && state.version == version &&
+	return known && !state.invalid && state.userAgent != "" && state.version == version &&
 		state.fingerprint == fingerprint && (state.bindingFingerprint == "" || state.bindingFingerprint == bindingFingerprint) &&
 		!state.refreshedAt.IsZero() && now.Sub(state.refreshedAt) < interval
-	if fresh {
-		state.lastUsedAt = now
-		m.clearances[key] = state
-		cookies, userAgent := state.cookies, state.userAgent
-		m.clearanceMu.Unlock()
-		return cookies, userAgent, nil
-	}
-	fallbackAllowed := known && !state.invalid && state.userAgent != "" &&
-		(state.bindingFingerprint == "" || state.bindingFingerprint == bindingFingerprint)
-	fallback := clearanceSolution{Cookies: state.cookies, UserAgent: state.userAgent}
-	forceRefresh := known && state.invalid
-	refreshAfter := time.Time{}
-	if forceRefresh {
-		refreshAfter = state.refreshedAt
-	}
-	if fallbackAllowed {
-		state.lastUsedAt = now
-		m.clearances[key] = state
-	}
-	if cfg.Mode == "on_demand" && !forceRefresh {
-		m.clearanceMu.Unlock()
-		if fallbackAllowed {
-			return fallback.Cookies, fallback.UserAgent, nil
-		}
-		return existingCookies, existingUserAgent, nil
-	}
-	if cfg.Mode != "flaresolverr" && cfg.Mode != "on_demand" {
-		m.clearanceMu.Unlock()
-		return existingCookies, existingUserAgent, nil
-	}
-	m.clearanceMu.Unlock()
+}
 
-	result, err, _ := m.clearanceLoads.Do(key, func() (any, error) {
-		return m.refreshNode(ctx, node, proxyURL, key, persist, forceRefresh, !fallbackAllowed, refreshAfter)
-	})
-	if err != nil {
-		if fallbackAllowed {
-			return fallback.Cookies, fallback.UserAgent, nil
-		}
-		return "", "", err
+// evaluateClearanceFallbackLocked records the last-known-good clearance that a
+// solver failure may fall back to, and resolves the modes that never solve.
+func (m *Manager) evaluateClearanceFallbackLocked(decision clearanceDecision, key string, state clearanceState, known bool, now time.Time, existingCookies, existingUserAgent, bindingFingerprint string) clearanceDecision {
+	decision.fallbackAllowed = known && !state.invalid && state.userAgent != "" &&
+		(state.bindingFingerprint == "" || state.bindingFingerprint == bindingFingerprint)
+	decision.fallback = clearanceSolution{Cookies: state.cookies, UserAgent: state.userAgent}
+	decision.forceRefresh = known && state.invalid
+	if decision.forceRefresh {
+		decision.refreshAfter = state.refreshedAt
 	}
-	solution := result.(clearanceSolution)
-	return solution.Cookies, solution.UserAgent, nil
+	if decision.fallbackAllowed {
+		state.lastUsedAt = now
+		m.clearances[key] = state
+	}
+	if decision.config.Mode == "on_demand" && !decision.forceRefresh {
+		decision.reuse = true
+		if decision.fallbackAllowed {
+			decision.reuseCookies, decision.reuseUserAgent = decision.fallback.Cookies, decision.fallback.UserAgent
+			return decision
+		}
+		decision.reuseCookies, decision.reuseUserAgent = existingCookies, existingUserAgent
+		return decision
+	}
+	if decision.config.Mode != "flaresolverr" && decision.config.Mode != "on_demand" {
+		decision.reuseCookies, decision.reuseUserAgent, decision.reuse = existingCookies, existingUserAgent, true
+	}
+	return decision
 }
 
 func (m *Manager) waitPersistedClearance(ctx context.Context, nodeID uint64, fingerprint, bindingFingerprint string, interval, timeout time.Duration, refreshAfter time.Time) (clearanceSolution, time.Time, bool) {

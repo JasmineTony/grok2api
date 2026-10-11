@@ -1,4 +1,5 @@
 import { Check, ListFilter, Search, X } from "lucide-react";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -89,7 +90,7 @@ function findSelectedLabel(options: DataTableFilterOption[], value: string): str
   return undefined;
 }
 
-export function DataTableFilters({ filters }: { filters: DataTableFilter[] }) {
+export function DataTableFilters({ filters }: { filters: DataTableFilter[] }): ReactElement {
   const { t } = useTranslation();
   const activeCount = filters.filter((filter) => filter.value !== "").length;
 

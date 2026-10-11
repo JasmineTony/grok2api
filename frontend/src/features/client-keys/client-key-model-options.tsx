@@ -1,5 +1,6 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Search } from "lucide-react";
+import type { ReactElement } from "react";
 import { useWatch, type UseFormReturn } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 
@@ -24,7 +25,13 @@ type ModelOptionsPanelProps = {
 };
 
 /** 受限模型范围下的模型多选列表（含搜索与分页）。 */
-export function ModelOptionsPanel({ form, query, search, onSearchChange, onPageChange }: ModelOptionsPanelProps) {
+export function ModelOptionsPanel({
+  form,
+  query,
+  search,
+  onSearchChange,
+  onPageChange,
+}: ModelOptionsPanelProps): ReactElement {
   const selected = useWatch({ control: form.control, name: "allowedModelIds" });
 
   function toggleModel(id: string): void {

@@ -123,25 +123,9 @@ func (p *Pool) Do(ctx context.Context, work func(context.Context) error) (err er
 		return err
 	}
 	defer p.releaseSlot()
-	var releaseShared func()
-	if p.shared != nil {
-		for {
-			release, acquired, acquireErr := p.shared.Acquire(ctx, p.key, p.Limit())
-			if acquireErr != nil {
-				return acquireErr
-			}
-			if acquired {
-				releaseShared = release
-				break
-			}
-			timer := time.NewTimer(100 * time.Millisecond)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return ctx.Err()
-			case <-timer.C:
-			}
-		}
+	releaseShared, acquireErr := p.acquireSharedLease(ctx)
+	if acquireErr != nil {
+		return acquireErr
 	}
 	defer func() {
 		if releaseShared != nil {
@@ -159,6 +143,29 @@ func (p *Pool) Do(ctx context.Context, work func(context.Context) error) (err er
 		return p.parent.Do(ctx, run)
 	}
 	return run(ctx)
+}
+
+// acquireSharedLease 在共享集群租约上排队，直到取得容量或 context 结束；未配置共享租约时返回 nil。
+func (p *Pool) acquireSharedLease(ctx context.Context) (func(), error) {
+	if p.shared == nil {
+		return nil, nil
+	}
+	for {
+		release, acquired, err := p.shared.Acquire(ctx, p.key, p.Limit())
+		if err != nil {
+			return nil, err
+		}
+		if acquired {
+			return release, nil
+		}
+		timer := time.NewTimer(100 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 func (p *Pool) waitJitter(ctx context.Context) error {
@@ -302,6 +309,15 @@ func mapObserved[T, R any](ctx context.Context, items []T, options Options, work
 		summary.Duration = time.Since(startedAt)
 		return results, summary, nil
 	}
+	summary = runMapWorkers(ctx, items, options, work, observe, collectResults, results)
+	summary.Total = len(items)
+	summary.Canceled = ctx.Err() != nil
+	summary.Duration = time.Since(startedAt)
+	return results, summary, ctx.Err()
+}
+
+// runMapWorkers 启动 worker 池并按稳定输入顺序投递任务，返回本次批量执行的计数汇总。
+func runMapWorkers[T, R any](ctx context.Context, items []T, options Options, work func(context.Context, T) (R, error), observe func(index int, result Result[R]), collectResults bool, results []Result[R]) Summary {
 	workers := options.Workers
 	if workers < 1 {
 		workers = 1
@@ -313,57 +329,19 @@ func mapObserved[T, R any](ctx context.Context, items []T, options Options, work
 	}
 	queueSize = min(queueSize, len(items))
 	jobs := make(chan indexedItem[T], queueSize)
-	var completed atomic.Int64
-	var succeeded atomic.Int64
-	var failed atomic.Int64
-	var panicked atomic.Int64
+	var completed, succeeded, failed, panicked atomic.Int64
 	var wait sync.WaitGroup
 	wait.Add(workers)
+	execute := func(job indexedItem[T]) {
+		executeMapJob(ctx, options.Pool, work, observe, collectResults, results, job, &completed, &succeeded, &failed, &panicked)
+	}
 	for range workers {
 		go func() {
 			defer wait.Done()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case job, ok := <-jobs:
-					if !ok {
-						return
-					}
-					var value R
-					err := options.Pool.Do(ctx, func(workCtx context.Context) error {
-						var workErr error
-						value, workErr = work(workCtx, job.value)
-						return workErr
-					})
-					execution := Result[R]{Value: value, Err: err, Completed: true}
-					if observe != nil {
-						observeErr := invoke(ctx, func(context.Context) error {
-							observe(job.index, execution)
-							return nil
-						})
-						if execution.Err == nil && observeErr != nil {
-							execution.Err = observeErr
-						}
-					}
-					if collectResults {
-						results[job.index] = execution
-					}
-					completed.Add(1)
-					if execution.Err == nil {
-						succeeded.Add(1)
-					} else {
-						failed.Add(1)
-						var panicErr *PanicError
-						if errors.As(execution.Err, &panicErr) {
-							panicked.Add(1)
-						}
-					}
-				}
-			}
+			runMapWorker(ctx, jobs, execute)
 		}()
 	}
-
+	summary := Summary{}
 sendLoop:
 	for index, item := range items {
 		if ctx.Err() != nil {
@@ -382,9 +360,55 @@ sendLoop:
 	summary.Succeeded = int(succeeded.Load())
 	summary.Failed = int(failed.Load())
 	summary.Panicked = int(panicked.Load())
-	summary.Canceled = ctx.Err() != nil
-	summary.Duration = time.Since(startedAt)
-	return results, summary, ctx.Err()
+	return summary
+}
+
+// runMapWorker 消费任务通道，直到通道关闭或 context 结束。
+func runMapWorker[T any](ctx context.Context, jobs <-chan indexedItem[T], execute func(indexedItem[T])) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case job, ok := <-jobs:
+			if !ok {
+				return
+			}
+			execute(job)
+		}
+	}
+}
+
+// executeMapJob 执行单个任务，通知观察者并累计结果计数。
+func executeMapJob[T, R any](ctx context.Context, pool *Pool, work func(context.Context, T) (R, error), observe func(index int, result Result[R]), collectResults bool, results []Result[R], job indexedItem[T], completed, succeeded, failed, panicked *atomic.Int64) {
+	var value R
+	err := pool.Do(ctx, func(workCtx context.Context) error {
+		var workErr error
+		value, workErr = work(workCtx, job.value)
+		return workErr
+	})
+	execution := Result[R]{Value: value, Err: err, Completed: true}
+	if observe != nil {
+		observeErr := invoke(ctx, func(context.Context) error {
+			observe(job.index, execution)
+			return nil
+		})
+		if execution.Err == nil && observeErr != nil {
+			execution.Err = observeErr
+		}
+	}
+	if collectResults {
+		results[job.index] = execution
+	}
+	completed.Add(1)
+	if execution.Err == nil {
+		succeeded.Add(1)
+		return
+	}
+	failed.Add(1)
+	var panicErr *PanicError
+	if errors.As(execution.Err, &panicErr) {
+		panicked.Add(1)
+	}
 }
 
 // Run 执行只关心成功或失败的批量任务。

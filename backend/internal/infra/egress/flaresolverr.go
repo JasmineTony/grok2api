@@ -57,23 +57,49 @@ func (flaresolverrSolver) Solve(ctx context.Context, cfg ClearanceConfig, proxyU
 	if target == "" {
 		target = "https://grok.com"
 	}
+	body, err := flaresolverrPayload(target, cfg.Timeout, proxyURL)
+	if err != nil {
+		return clearanceSolution{}, err
+	}
+	request, err := flaresolverrRequest(ctx, endpoint, body)
+	if err != nil {
+		return clearanceSolution{}, err
+	}
+	responseBody, err := flaresolverrResponse(cfg, request)
+	if err != nil {
+		return clearanceSolution{}, err
+	}
+	return decodeFlareSolverrSolution(responseBody)
+}
+
+// flaresolverrPayload 按 FlareSolverr 的 request.get 协议编码请求体，仅在配置了出口代理时附带 proxy 字段。
+func flaresolverrPayload(target string, timeout time.Duration, proxyURL string) ([]byte, error) {
 	payload := map[string]any{
 		"cmd":        "request.get",
 		"url":        target,
-		"maxTimeout": cfg.Timeout.Milliseconds(),
+		"maxTimeout": timeout.Milliseconds(),
 	}
 	if proxyURL != "" {
 		payload["proxy"] = map[string]string{"url": proxyURL}
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return clearanceSolution{}, fmt.Errorf("编码 FlareSolverr 请求: %w", err)
+		return nil, fmt.Errorf("编码 FlareSolverr 请求: %w", err)
 	}
+	return body, nil
+}
+
+func flaresolverrRequest(ctx context.Context, endpoint string, body []byte) (*http.Request, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return clearanceSolution{}, fmt.Errorf("创建 FlareSolverr 请求: %w", err)
+		return nil, fmt.Errorf("创建 FlareSolverr 请求: %w", err)
 	}
 	request.Header.Set("Content-Type", "application/json")
+	return request, nil
+}
+
+// flaresolverrResponse 调用 FlareSolverr 并返回通过大小上限与状态码校验的响应体。
+func flaresolverrResponse(cfg ClearanceConfig, request *http.Request) ([]byte, error) {
 	client := &http.Client{
 		Timeout: cfg.Timeout + 15*time.Second,
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
@@ -82,19 +108,24 @@ func (flaresolverrSolver) Solve(ctx context.Context, cfg ClearanceConfig, proxyU
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return clearanceSolution{}, fmt.Errorf("调用 FlareSolverr: %w", err)
+		return nil, fmt.Errorf("调用 FlareSolverr: %w", err)
 	}
 	defer response.Body.Close()
 	responseBody, err := io.ReadAll(io.LimitReader(response.Body, maxFlareSolverrResponseBytes+1))
 	if err != nil {
-		return clearanceSolution{}, fmt.Errorf("读取 FlareSolverr 响应: %w", err)
+		return nil, fmt.Errorf("读取 FlareSolverr 响应: %w", err)
 	}
 	if len(responseBody) > maxFlareSolverrResponseBytes {
-		return clearanceSolution{}, errors.New("FlareSolverr 响应过大")
+		return nil, errors.New("FlareSolverr 响应过大")
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return clearanceSolution{}, fmt.Errorf("FlareSolverr 返回 HTTP %d", response.StatusCode)
+		return nil, fmt.Errorf("FlareSolverr 返回 HTTP %d", response.StatusCode)
 	}
+	return responseBody, nil
+}
+
+// decodeFlareSolverrSolution 解析响应体，把 solution 归一化为可用的 Cloudflare 放行凭据。
+func decodeFlareSolverrSolution(responseBody []byte) (clearanceSolution, error) {
 	var result struct {
 		Status   string `json:"status"`
 		Message  string `json:"message"`

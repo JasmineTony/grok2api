@@ -1,3 +1,5 @@
+import type { ReactElement } from "react";
+
 import { EgressNodesTable } from "@/features/settings/egress-nodes-table";
 import { EgressNodesToolbar } from "@/features/settings/egress-nodes-toolbar";
 import type { EgressNodeListDTO } from "@/entities/egress/egress-dto";
@@ -69,7 +71,7 @@ export function EgressNodesSection({
   title: string;
   clearanceMode: ClearanceMode;
   page: EgressNodesPageModel;
-}) {
+}): ReactElement {
   const { list, selection, scopeLabel, rowActions } = page;
   const selectedOnPage = list.nodes.filter((node) => selection.selected.has(node.id));
   const allPageSelected = list.nodes.length > 0 && selectedOnPage.length === list.nodes.length;

@@ -1,7 +1,8 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient, type UseMutationResult } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
+import type { ModelRouteDTO } from "@/entities/model/types";
 import { saveModel, showModelError } from "@/features/models/model-mutations";
 import type { ModelDialogsController } from "@/features/models/use-model-dialogs";
 import type { ModelForm } from "@/features/models/use-model-form";
@@ -14,7 +15,10 @@ export type ModelSaveMutationScope = {
   dialogs: ModelDialogsController;
 };
 
-export function useModelSaveMutation({ selection, dialogs }: ModelSaveMutationScope) {
+export function useModelSaveMutation({
+  selection,
+  dialogs,
+}: ModelSaveMutationScope): UseMutationResult<ModelRouteDTO, Error, ModelForm> {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
 

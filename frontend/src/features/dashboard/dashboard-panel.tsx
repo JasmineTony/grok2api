@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 
 import { cn } from "@/shared/lib/cn";
 
@@ -11,7 +11,14 @@ type DashboardPanelProps = {
   contentClassName?: string;
 };
 
-export function DashboardPanel({ id, title, actions, children, className, contentClassName }: DashboardPanelProps) {
+export function DashboardPanel({
+  id,
+  title,
+  actions,
+  children,
+  className,
+  contentClassName,
+}: DashboardPanelProps): ReactElement {
   return (
     <section className={cn("rounded-lg bg-card p-4 sm:p-5", className)} aria-labelledby={id}>
       <header className="flex min-h-8 items-center justify-between gap-3">

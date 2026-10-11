@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -19,7 +20,13 @@ import type { ModelDialogsController } from "@/features/models/use-model-dialogs
 type ModelRouteRemoval = { isPending: boolean; mutate: (routes: ModelRouteDTO[]) => void };
 type ModelSelectionRemoval = { isPending: boolean; mutate: () => void };
 
-export function ModelDeleteDialog({ dialogs, remove }: { dialogs: ModelDialogsController; remove: ModelRouteRemoval }) {
+export function ModelDeleteDialog({
+  dialogs,
+  remove,
+}: {
+  dialogs: ModelDialogsController;
+  remove: ModelRouteRemoval;
+}): ReactElement {
   const { t } = useTranslation();
   const { deleting } = dialogs;
   return (
@@ -59,7 +66,7 @@ export function ModelBatchDeleteDialog({
   dialogs: ModelDialogsController;
   removeSelected: ModelSelectionRemoval;
   selectedGroups: number;
-}) {
+}): ReactElement {
   const { t } = useTranslation();
   return (
     <AlertDialog open={dialogs.batchDeleteOpen} onOpenChange={dialogs.setBatchDeleteOpen}>

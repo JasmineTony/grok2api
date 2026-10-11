@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Spinner } from "@/components/ui/spinner";
@@ -15,7 +16,7 @@ type DashboardTrendProps = {
 };
 
 /** 使用量趋势面板：无数据时展示空态，加载中保留图表并叠加遮罩与 spinner。 */
-export function DashboardTrend({ dashboard, locale, loading }: DashboardTrendProps) {
+export function DashboardTrend({ dashboard, locale, loading }: DashboardTrendProps): ReactElement {
   const { t } = useTranslation();
   const trend = useDashboardTrend(dashboard, locale);
 

@@ -3,7 +3,7 @@ import { useCallback } from "react";
 
 import { listAccounts } from "@/entities/accounts/accounts-api";
 import type { AccountDTO } from "@/entities/accounts/types";
-import { getAccountSummary } from "@/features/accounts/accounts-api";
+import { getAccountSummary, type AccountSummaryDTO } from "@/features/accounts/accounts-api";
 import type { AccountsFiltersModel } from "@/features/accounts/use-accounts-filters";
 import type { PaginatedDTO } from "@/shared/api/client";
 
@@ -56,7 +56,7 @@ export function useAccountsListQuery(filters: AccountsFiltersModel): AccountsLis
   return { query, result, pageIds: result?.items.map((account) => account.id) ?? [] };
 }
 
-export function useAccountSummaryQuery() {
+export function useAccountSummaryQuery(): UseQueryResult<AccountSummaryDTO, Error> {
   return useQuery({ queryKey: ["accounts", "summary"], queryFn: getAccountSummary });
 }
 

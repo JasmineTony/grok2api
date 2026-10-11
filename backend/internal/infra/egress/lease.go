@@ -152,46 +152,8 @@ func (m *Manager) acquire(ctx context.Context, scope domain.Scope, affinity stri
 	now := time.Now().UTC()
 	clearanceMode := m.clearanceMode()
 	managedClearance := isGrokWebScope(scope) && (clearanceMode == "flaresolverr" || clearanceMode == "on_demand")
-	configured := false
-	var available []domain.Node
 	if boundNodeID != 0 {
-		waitedForProbe := false
-		qualityProbe := qualityProbeFromContext(ctx)
-		for {
-			now = time.Now().UTC()
-			selected, err := m.repository.GetEgressNode(ctx, boundNodeID)
-			if err != nil {
-				primaryErr := fmt.Errorf("读取绑定出口节点: %w", err)
-				if !errors.Is(err, repository.ErrNotFound) {
-					return nil, true, primaryErr
-				}
-				return m.acquireUnavailableFallback(ctx, scope, affinity, allowDirect, encryptedCredentialCookies, managedClearance, primaryErr)
-			}
-			if !domain.SupportsScope(selected.Scope, scope) {
-				return m.acquireUnavailableFallback(ctx, scope, affinity, allowDirect, encryptedCredentialCookies, managedClearance, fmt.Errorf("绑定出口节点 %d 与 %s 作用域不兼容", boundNodeID, scope))
-			}
-			if !selected.Enabled && !qualityProbe {
-				return m.acquireUnavailableFallback(ctx, scope, affinity, allowDirect, encryptedCredentialCookies, managedClearance, fmt.Errorf("绑定出口节点 %d 已禁用", boundNodeID))
-			}
-			if strings.TrimSpace(selected.EncryptedProxyURL) == "" {
-				return m.acquireUnavailableFallback(ctx, scope, affinity, allowDirect, encryptedCredentialCookies, managedClearance, fmt.Errorf("绑定出口节点 %d 未配置代理地址", boundNodeID))
-			}
-			proxyPool := m.isProxyPoolNode(selected)
-			if !qualityProbe && !proxyPool && selected.CooldownUntil != nil && now.Before(*selected.CooldownUntil) {
-				if !waitedForProbe && selected.LastError == domain.LastErrorTransport {
-					completed, waitErr := m.waitForFailureProbe(ctx, boundNodeID)
-					if waitErr != nil {
-						return nil, true, waitErr
-					}
-					if completed {
-						waitedForProbe = true
-						continue
-					}
-				}
-				return m.acquireUnavailableFallback(ctx, scope, affinity, allowDirect, encryptedCredentialCookies, managedClearance, fmt.Errorf("绑定出口节点 %d 正在冷却", boundNodeID))
-			}
-			return m.leaseForNode(ctx, scope, affinity, encryptedCredentialCookies, managedClearance, selected)
-		}
+		return m.acquireBoundNode(ctx, scope, affinity, allowDirect, encryptedCredentialCookies, managedClearance, boundNodeID)
 	}
 	fallbackConfig, fallbackSupported, fallbackConfigErr := m.loadOperationsConfig(ctx, now)
 	fallback := domain.FallbackConfig{Mode: domain.FallbackModeNone}
@@ -205,6 +167,76 @@ func (m *Manager) acquire(ctx context.Context, scope domain.Scope, affinity stri
 			}
 		}
 	}
+	available, configured, err := m.collectAvailableNodes(ctx, scope, now, reservedFallbackNodes)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(available) > 0 {
+		return m.leaseFromCandidates(ctx, scope, affinity, encryptedCredentialCookies, managedClearance, available)
+	}
+	return m.acquireWithoutAvailableNodes(ctx, scope, affinity, allowDirect, encryptedCredentialCookies, managedClearance, configured, fallback, fallbackSupported, fallbackConfigErr)
+}
+
+// acquireBoundNode serves the account-bound path: the node is fixed by the
+// credential, so only its current state can reject the acquisition.
+func (m *Manager) acquireBoundNode(ctx context.Context, scope domain.Scope, affinity string, allowDirect bool, encryptedCredentialCookies string, managedClearance bool, boundNodeID uint64) (*Lease, bool, error) {
+	waitedForProbe := false
+	qualityProbe := qualityProbeFromContext(ctx)
+	for {
+		now := time.Now().UTC()
+		selected, err := m.repository.GetEgressNode(ctx, boundNodeID)
+		if err != nil {
+			primaryErr := fmt.Errorf("读取绑定出口节点: %w", err)
+			if !errors.Is(err, repository.ErrNotFound) {
+				return nil, true, primaryErr
+			}
+			return m.acquireUnavailableFallback(ctx, scope, affinity, allowDirect, encryptedCredentialCookies, managedClearance, primaryErr)
+		}
+		if !domain.SupportsScope(selected.Scope, scope) {
+			return m.acquireUnavailableFallback(ctx, scope, affinity, allowDirect, encryptedCredentialCookies, managedClearance, fmt.Errorf("绑定出口节点 %d 与 %s 作用域不兼容", boundNodeID, scope))
+		}
+		if !selected.Enabled && !qualityProbe {
+			return m.acquireUnavailableFallback(ctx, scope, affinity, allowDirect, encryptedCredentialCookies, managedClearance, fmt.Errorf("绑定出口节点 %d 已禁用", boundNodeID))
+		}
+		if strings.TrimSpace(selected.EncryptedProxyURL) == "" {
+			return m.acquireUnavailableFallback(ctx, scope, affinity, allowDirect, encryptedCredentialCookies, managedClearance, fmt.Errorf("绑定出口节点 %d 未配置代理地址", boundNodeID))
+		}
+		if m.boundNodeIsCoolingDown(now, selected, qualityProbe) {
+			completed, waitErr := m.waitForBoundNodeProbe(ctx, boundNodeID, selected, waitedForProbe)
+			if waitErr != nil {
+				return nil, true, waitErr
+			}
+			if completed {
+				waitedForProbe = true
+				continue
+			}
+			return m.acquireUnavailableFallback(ctx, scope, affinity, allowDirect, encryptedCredentialCookies, managedClearance, fmt.Errorf("绑定出口节点 %d 正在冷却", boundNodeID))
+		}
+		return m.leaseForNode(ctx, scope, affinity, encryptedCredentialCookies, managedClearance, selected)
+	}
+}
+
+func (m *Manager) boundNodeIsCoolingDown(now time.Time, selected domain.Node, qualityProbe bool) bool {
+	if qualityProbe || selected.CooldownUntil == nil || !now.Before(*selected.CooldownUntil) {
+		return false
+	}
+	return !m.isProxyPoolNode(selected)
+}
+
+// waitForBoundNodeProbe joins the failure probe that a cooling bound node is
+// already waiting on. A node without a transport failure has no probe to join.
+func (m *Manager) waitForBoundNodeProbe(ctx context.Context, boundNodeID uint64, selected domain.Node, alreadyWaited bool) (bool, error) {
+	if alreadyWaited || selected.LastError != domain.LastErrorTransport {
+		return false, nil
+	}
+	return m.waitForFailureProbe(ctx, boundNodeID)
+}
+
+// collectAvailableNodes walks the scope fallback chain and returns the first
+// candidate pool that has at least one usable node.
+func (m *Manager) collectAvailableNodes(ctx context.Context, scope domain.Scope, now time.Time, reservedFallbackNodes map[uint64]struct{}) ([]domain.Node, bool, error) {
+	configured := false
+	var available []domain.Node
 	for _, candidateScope := range fallbackScopes(scope) {
 		nodes, err := m.listNodes(ctx, candidateScope, now)
 		if err != nil {
@@ -212,21 +244,12 @@ func (m *Manager) acquire(ctx context.Context, scope domain.Scope, affinity stri
 		}
 		candidateAvailable := make([]domain.Node, 0, len(nodes))
 		for _, node := range nodes {
-			if !node.Enabled {
-				continue
+			candidate, usable, nodeConfigured := m.usableNodeCandidate(node, now, reservedFallbackNodes)
+			if nodeConfigured {
+				configured = true
 			}
-			// A fixed fallback is a reserved last resort, not another member of
-			// the primary pool. It is validated again immediately before use.
-			if _, reserved := reservedFallbackNodes[node.ID]; reserved {
-				continue
-			}
-			configured = true
-			proxyPool := m.isProxyPoolNode(node)
-			if node.CooldownUntil == nil || !now.Before(*node.CooldownUntil) || proxyPool {
-				if proxyPool {
-					node.Health, node.FailureCount, node.CooldownUntil, node.LastError = 1, 0, nil, ""
-				}
-				candidateAvailable = append(candidateAvailable, node)
+			if usable {
+				candidateAvailable = append(candidateAvailable, candidate)
 			}
 		}
 		if len(candidateAvailable) > 0 {
@@ -234,30 +257,59 @@ func (m *Manager) acquire(ctx context.Context, scope domain.Scope, affinity stri
 			break
 		}
 	}
-	if len(available) == 0 {
-		primaryErr := error(nil)
-		if configured {
-			primaryErr = fmt.Errorf("当前没有可用的 %s 出口节点", scope)
-		}
-		lease, fallbackConfigured, applied, err := m.applyFallback(ctx, scope, affinity, allowDirect, encryptedCredentialCookies, managedClearance, primaryErr, fallback, fallbackSupported, fallbackConfigErr)
-		if err != nil {
-			return nil, fallbackConfigured, err
-		}
-		if applied {
-			return lease, fallbackConfigured, nil
-		}
-		if primaryErr != nil {
-			return nil, false, primaryErr
-		}
-		if !allowDirect {
-			recordSelection(ctx, Selection{NodeName: "direct", Scope: scope})
-			return nil, false, nil
-		}
-		available = []domain.Node{{ID: 0, Name: "direct", Scope: scope, Enabled: true, Health: 1}}
+	return available, configured, nil
+}
+
+// usableNodeCandidate classifies one listed node. nodeConfigured reports that the
+// node counts towards the configured pool, and usable reports that the node can be
+// leased right now. A proxy pool node is refreshed to healthy state before use.
+func (m *Manager) usableNodeCandidate(node domain.Node, now time.Time, reservedFallbackNodes map[uint64]struct{}) (candidate domain.Node, usable, nodeConfigured bool) {
+	if !node.Enabled {
+		return domain.Node{}, false, false
 	}
+	// A fixed fallback is a reserved last resort, not another member of
+	// the primary pool. It is validated again immediately before use.
+	if _, reserved := reservedFallbackNodes[node.ID]; reserved {
+		return domain.Node{}, false, false
+	}
+	proxyPool := m.isProxyPoolNode(node)
+	if node.CooldownUntil != nil && now.Before(*node.CooldownUntil) && !proxyPool {
+		return domain.Node{}, false, true
+	}
+	if proxyPool {
+		node.Health, node.FailureCount, node.CooldownUntil, node.LastError = 1, 0, nil, ""
+	}
+	return node, true, true
+}
+
+func (m *Manager) leaseFromCandidates(ctx context.Context, scope domain.Scope, affinity, encryptedCredentialCookies string, managedClearance bool, available []domain.Node) (*Lease, bool, error) {
 	sort.SliceStable(available, func(i, j int) bool { return available[i].ID < available[j].ID })
 	selected := m.selectNode(available, affinity)
 	return m.leaseForNode(ctx, scope, affinity, encryptedCredentialCookies, managedClearance, selected)
+}
+
+// acquireWithoutAvailableNodes applies the configured fallback, and falls back
+// to the direct transport when the caller allows it.
+func (m *Manager) acquireWithoutAvailableNodes(ctx context.Context, scope domain.Scope, affinity string, allowDirect bool, encryptedCredentialCookies string, managedClearance, configured bool, fallback domain.FallbackConfig, fallbackSupported bool, fallbackConfigErr error) (*Lease, bool, error) {
+	primaryErr := error(nil)
+	if configured {
+		primaryErr = fmt.Errorf("当前没有可用的 %s 出口节点", scope)
+	}
+	lease, fallbackConfigured, applied, err := m.applyFallback(ctx, scope, affinity, allowDirect, encryptedCredentialCookies, managedClearance, primaryErr, fallback, fallbackSupported, fallbackConfigErr)
+	if err != nil {
+		return nil, fallbackConfigured, err
+	}
+	if applied {
+		return lease, fallbackConfigured, nil
+	}
+	if primaryErr != nil {
+		return nil, false, primaryErr
+	}
+	if !allowDirect {
+		recordSelection(ctx, Selection{NodeName: "direct", Scope: scope})
+		return nil, false, nil
+	}
+	return m.leaseFromCandidates(ctx, scope, affinity, encryptedCredentialCookies, managedClearance, []domain.Node{{ID: 0, Name: "direct", Scope: scope, Enabled: true, Health: 1}})
 }
 
 type clientOptions struct {
@@ -269,66 +321,34 @@ func (m *Manager) leaseForNode(ctx context.Context, scope domain.Scope, affinity
 	return m.leaseForNodeWithOptions(ctx, scope, affinity, encryptedCredentialCookies, managedClearance, selected, clientOptions{})
 }
 
+// leaseProxyResolution is the proxy identity resolved for one lease.
+type leaseProxyResolution struct {
+	url         string
+	sticky      bool
+	proxyPool   bool
+	freshTunnel bool
+}
+
 func (m *Manager) leaseForNodeWithOptions(ctx context.Context, scope domain.Scope, affinity, encryptedCredentialCookies string, managedClearance bool, selected domain.Node, options clientOptions) (*Lease, bool, error) {
-	credentialCookies := ""
-	if !managedClearance && usesBrowserClearance(scope) && strings.TrimSpace(encryptedCredentialCookies) != "" {
-		decryptedCookies, decryptErr := m.cipher.Decrypt(encryptedCredentialCookies)
-		if decryptErr != nil {
-			return nil, true, decryptErr
-		}
-		credentialCookies = application.SanitizeCloudflareCookies(decryptedCookies)
+	credentialCookies, err := m.leaseCredentialCookies(scope, encryptedCredentialCookies, managedClearance)
+	if err != nil {
+		return nil, true, err
 	}
-	proxyURL, err := m.cipher.Decrypt(selected.EncryptedProxyURL)
+	proxy, err := m.resolveLeaseProxy(ctx, scope, affinity, selected)
 	if err != nil {
 		return nil, false, err
 	}
-	proxyURL, err = application.NormalizeProxyURL(proxyURL)
+	cookies, err := m.resolveLeaseCookies(scope, selected, managedClearance, credentialCookies)
 	if err != nil {
 		return nil, false, err
 	}
-	sticky := strings.Contains(proxyURL, application.ProxyAccountPlaceholder)
-	proxyPool := selected.ProxyPool || sticky
-	freshTunnel := selected.ProxyPool && !sticky
-	if sticky {
-		accountKey := accountFromContext(ctx)
-		if accountKey == "" && strings.TrimSpace(affinity) != "" {
-			accountKey = string(scope) + "_" + strings.TrimSpace(affinity)
-		}
-		proxyURL, err = renderAccountProxyURL(proxyURL, accountKey)
-		if err != nil {
-			return nil, false, err
-		}
-	}
-	cookies := ""
-	if usesBrowserClearance(scope) {
-		cookies, err = m.cipher.Decrypt(selected.EncryptedCloudflareCookie)
-		if err != nil {
-			// Managed mode can recover a damaged persisted cookie by asking the
-			// solver for a fresh one. Manual mode must still surface the storage
-			// error because it has no safe replacement source.
-			if !managedClearance {
-				return nil, false, err
-			}
-			cookies = ""
-		}
-		cookies = application.SanitizeCloudflareCookies(cookies)
-		if credentialCookies != "" {
-			cookies = credentialCookies
-		}
-	}
-	userAgent := ""
-	if scope != domain.ScopeBuild {
-		userAgent = strings.TrimSpace(selected.UserAgent)
-	}
-	if scope != domain.ScopeBuild && userAgent == "" {
-		userAgent = DefaultUserAgent
-	}
+	userAgent := leaseUserAgent(scope, selected)
 	clearanceKey := ""
 	// Manual mode may prefer account-bound cookies. Managed mode always enters
 	// the FlareSolverr lifecycle so stale imported cookies cannot bypass refresh.
 	if managedClearance {
-		clearanceKey = clearanceCacheKey(selected.ID, proxyURL, sticky)
-		cookies, userAgent, err = m.ensureClearance(ctx, selected, proxyURL, cookies, userAgent, clearanceKey, !sticky)
+		clearanceKey = clearanceCacheKey(selected.ID, proxy.url, proxy.sticky)
+		cookies, userAgent, err = m.ensureClearance(ctx, selected, proxy.url, cookies, userAgent, clearanceKey, !proxy.sticky)
 		if err != nil {
 			return nil, false, err
 		}
@@ -340,18 +360,96 @@ func (m *Manager) leaseForNodeWithOptions(ctx context.Context, scope domain.Scop
 	if scope != domain.ScopeConsoleAsset {
 		accountIdentity = isolationAccountIdentity(ctx, scope, affinity)
 	}
-	client, err := m.clientForWithOptions(selected.ID, scope, proxyURL, userAgent, cookies, sticky, accountIdentity, options)
+	client, err := m.clientForWithOptions(selected.ID, scope, proxy.url, userAgent, cookies, proxy.sticky, accountIdentity, options)
 	if err != nil {
 		return nil, false, err
 	}
 	m.incrementInflight(selected.ID)
-	recordSelection(ctx, Selection{NodeID: selected.ID, NodeName: selected.Name, Scope: scope, Proxied: proxyURL != ""})
+	recordSelection(ctx, Selection{NodeID: selected.ID, NodeName: selected.Name, Scope: scope, Proxied: proxy.url != ""})
 	var once sync.Once
-	return &Lease{NodeID: selected.ID, NodeName: selected.Name, Scope: scope, ProxyURL: proxyURL, UserAgent: userAgent, CFCookies: cookies, client: client.client, browser: client.browser, sticky: sticky, proxyPool: proxyPool, freshTunnel: freshTunnel, clearanceKey: clearanceKey, clearanceManager: m, release: func() {
+	return &Lease{NodeID: selected.ID, NodeName: selected.Name, Scope: scope, ProxyURL: proxy.url, UserAgent: userAgent, CFCookies: cookies, client: client.client, browser: client.browser, sticky: proxy.sticky, proxyPool: proxy.proxyPool, freshTunnel: proxy.freshTunnel, clearanceKey: clearanceKey, clearanceManager: m, release: func() {
 		once.Do(func() {
 			m.decrementInflight(selected.ID)
 		})
 	}}, true, nil
+}
+
+// leaseCredentialCookies decrypts the account-bound Cloudflare cookies that
+// manual mode prefers over the node-wide cookie.
+func (m *Manager) leaseCredentialCookies(scope domain.Scope, encryptedCredentialCookies string, managedClearance bool) (string, error) {
+	if managedClearance || !usesBrowserClearance(scope) || strings.TrimSpace(encryptedCredentialCookies) == "" {
+		return "", nil
+	}
+	decryptedCookies, err := m.cipher.Decrypt(encryptedCredentialCookies)
+	if err != nil {
+		return "", err
+	}
+	return application.SanitizeCloudflareCookies(decryptedCookies), nil
+}
+
+// resolveLeaseProxy decrypts the node proxy, derives the rotation semantics of
+// the lease, and renders the account placeholder when the proxy is sticky.
+func (m *Manager) resolveLeaseProxy(ctx context.Context, scope domain.Scope, affinity string, selected domain.Node) (leaseProxyResolution, error) {
+	resolved := leaseProxyResolution{}
+	proxyURL, err := m.cipher.Decrypt(selected.EncryptedProxyURL)
+	if err != nil {
+		return resolved, err
+	}
+	proxyURL, err = application.NormalizeProxyURL(proxyURL)
+	if err != nil {
+		return resolved, err
+	}
+	resolved.sticky = strings.Contains(proxyURL, application.ProxyAccountPlaceholder)
+	resolved.proxyPool = selected.ProxyPool || resolved.sticky
+	resolved.freshTunnel = selected.ProxyPool && !resolved.sticky
+	if !resolved.sticky {
+		resolved.url = proxyURL
+		return resolved, nil
+	}
+	accountKey := accountFromContext(ctx)
+	if accountKey == "" && strings.TrimSpace(affinity) != "" {
+		accountKey = string(scope) + "_" + strings.TrimSpace(affinity)
+	}
+	proxyURL, err = renderAccountProxyURL(proxyURL, accountKey)
+	if err != nil {
+		return resolved, err
+	}
+	resolved.url = proxyURL
+	return resolved, nil
+}
+
+// resolveLeaseCookies decrypts the node-wide Cloudflare cookie unless the lease
+// carries account-bound cookies.
+func (m *Manager) resolveLeaseCookies(scope domain.Scope, selected domain.Node, managedClearance bool, credentialCookies string) (string, error) {
+	if !usesBrowserClearance(scope) {
+		return "", nil
+	}
+	cookies, err := m.cipher.Decrypt(selected.EncryptedCloudflareCookie)
+	if err != nil {
+		// Managed mode can recover a damaged persisted cookie by asking the
+		// solver for a fresh one. Manual mode must still surface the storage
+		// error because it has no safe replacement source.
+		if !managedClearance {
+			return "", err
+		}
+		cookies = ""
+	}
+	cookies = application.SanitizeCloudflareCookies(cookies)
+	if credentialCookies != "" {
+		cookies = credentialCookies
+	}
+	return cookies, nil
+}
+
+func leaseUserAgent(scope domain.Scope, selected domain.Node) string {
+	if scope == domain.ScopeBuild {
+		return ""
+	}
+	userAgent := strings.TrimSpace(selected.UserAgent)
+	if userAgent == "" {
+		userAgent = DefaultUserAgent
+	}
+	return userAgent
 }
 
 // Console assets are served from public media hosts. They still need the

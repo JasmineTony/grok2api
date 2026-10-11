@@ -1,5 +1,5 @@
 import { KeyRound, Network, Server, type LucideIcon } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -179,7 +179,7 @@ function AttemptTabs({ attempt }: { attempt: AuditAttemptDTO }) {
   );
 }
 
-export function AttemptDetail({ attempt }: { attempt: AuditAttemptDTO }) {
+export function AttemptDetail({ attempt }: { attempt: AuditAttemptDTO }): ReactElement {
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <AttemptTabs attempt={attempt} />

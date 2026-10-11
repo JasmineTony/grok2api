@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { Network, Shuffle } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -175,7 +175,7 @@ function EgressAutomationSaveAction({ form, draftActive, onDraftChange }: Egress
 }
 
 /** 出口自动化分区：探测/分配参数、兜底策略与全量探测、重平衡操作。 */
-export function EgressAutomation({ scopeLabel }: { scopeLabel: (scope: EgressScope) => string }) {
+export function EgressAutomation({ scopeLabel }: { scopeLabel: (scope: EgressScope) => string }): ReactElement {
   const { t } = useTranslation();
   const [operationsDraft, setOperationsDraft] = useState<EgressOperationsForm | null>(null);
   const operationsQuery = useQuery({ queryKey: ["egress-operations"], queryFn: getEgressOperationsConfig });
@@ -358,7 +358,7 @@ function EgressSourceEditor({ editing, form, scopeLabel, onFormChange, onClose, 
 }
 
 /** 订阅源分区：列表筛选分页与新增/编辑/同步/删除操作。 */
-export function EgressSources({ scopeLabel }: { scopeLabel: (scope: EgressScope) => string }) {
+export function EgressSources({ scopeLabel }: { scopeLabel: (scope: EgressScope) => string }): ReactElement {
   const { t } = useTranslation();
   const [sourceEditing, setSourceEditing] = useState<EgressSourceDTO | null | undefined>(undefined);
   const [sourceForm, setSourceForm] = useState<EgressSourceForm>(emptyEgressSource);

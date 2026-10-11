@@ -1,3 +1,5 @@
+import type { ReactElement } from "react";
+
 import {
   EgressImportOverlay,
   EgressNodeEditorOverlay,
@@ -16,7 +18,7 @@ export type EgressNodesProps = { title: string; clearanceMode: ClearanceMode };
  * 出口节点分区容器：装配页面模型（列表查询、勾选、编辑草稿、弹窗开关与写操作），
  * 把列表分区与各弹窗委托给各自模块；既有 data-testid、i18n key、查询 key 与取消语义保持不变。
  */
-export function EgressNodes({ title, clearanceMode }: EgressNodesProps) {
+export function EgressNodes({ title, clearanceMode }: EgressNodesProps): ReactElement {
   const page = useEgressNodesPageModel();
 
   return (

@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
 import { ChevronDown, CircleHelp } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { Controller, useWatch, type UseFormReturn } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -39,7 +39,7 @@ type SetPage = (page: number) => void;
  * 账号/模型范围选择区：provider、tier、模型范围模式与受限模型列表。
  * 范围变化会重置模型列表页码；受限模式下已选模型会被清空并提示。
  */
-export function ClientKeyScopeFields({ form }: FormProps) {
+export function ClientKeyScopeFields({ form }: FormProps): ReactElement {
   const { t } = useTranslation();
   const modelScopeMode = useWatch({ control: form.control, name: "modelScopeMode" });
   const providerScope = useWatch({ control: form.control, name: "providerScope" });
