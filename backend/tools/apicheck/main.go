@@ -13,12 +13,14 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/printer"
 	"go/token"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -26,39 +28,63 @@ import (
 	"strings"
 )
 
-const defaultBaseline = "api-baseline.txt"
+const (
+	defaultBaseline = "api-baseline.txt"
+
+	// 退出码语义（与改造前的 os.Exit 逐条一致）：
+	//   0 = 与基线逐条一致（含 --update 写盘成功）
+	//   1 = 相对基线出现差异（删除/改写/新增）
+	//   2 = 环境或配置错误：扫描失败、基线缺失、--update 写盘失败、参数解析失败
+	exitOK      = 0
+	exitFailure = 1
+	exitConfig  = 2
+)
 
 func main() {
-	root := flag.String("root", ".", "扫描根目录（应指向 backend/）")
-	baselinePath := flag.String("baseline", defaultBaseline, "API 基线文件路径")
-	update := flag.Bool("update", false, "用当前实测导出 API 面重写基线")
-	flag.Parse()
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
 
-	lines, err := collectExportedAPI(*root)
+// run 是 main 的可测试实现：解析参数、执行校验或写基线，返回退出码，
+// 全部输出写入传入的 writer。退出码语义见 exitOK / exitFailure / exitConfig。
+func run(args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("apicheck", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	root := flags.String("root", ".", "扫描根目录（应指向 backend/）")
+	baselinePath := flags.String("baseline", defaultBaseline, "API 基线文件路径")
+	update := flags.Bool("update", false, "用当前实测导出 API 面重写基线")
+	if err := flags.Parse(args); err != nil {
+		// flag.ExitOnError 下 -h/--help 退出码为 0，未知参数退出码为 2；此处保持同样语义。
+		if errors.Is(err, flag.ErrHelp) {
+			return exitOK
+		}
+		return exitConfig
+	}
+
+	lines, err := collectExportedAPI(*root, stderr)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
+		fmt.Fprintln(stderr, err)
+		return exitConfig
 	}
 
 	if *update {
 		if err := writeBaseline(*baselinePath, lines); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(2)
+			fmt.Fprintln(stderr, err)
+			return exitConfig
 		}
-		fmt.Printf("已更新 API 基线：%d 条 → %s\n", len(lines), *baselinePath)
-		return
+		fmt.Fprintf(stdout, "已更新 API 基线：%d 条 → %s\n", len(lines), *baselinePath)
+		return exitOK
 	}
 
 	old, err := readBaseline(*baselinePath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "缺少 API 基线 %s：先运行 go run ./tools/apicheck --update\n", *baselinePath)
-		os.Exit(2)
+		fmt.Fprintf(stderr, "缺少 API 基线 %s：先运行 go run ./tools/apicheck --update\n", *baselinePath)
+		return exitConfig
 	}
-	os.Exit(reportDiff(old, lines))
+	return reportDiff(old, lines, stdout, stderr)
 }
 
 // collectExportedAPI 汇总扫描根下全部生产 Go 文件的导出声明，返回排序去重后的条目。
-func collectExportedAPI(root string) ([]string, error) {
+func collectExportedAPI(root string, stderr io.Writer) ([]string, error) {
 	seen := map[string]bool{}
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() {
@@ -67,7 +93,7 @@ func collectExportedAPI(root string) ([]string, error) {
 		if !isProductionGoFile(root, path) {
 			return nil
 		}
-		for _, line := range fileEntries(root, path) {
+		for _, line := range fileEntries(root, path, stderr) {
 			seen[line] = true
 		}
 		return nil
@@ -100,12 +126,12 @@ func underDirectory(rel, name string) bool {
 	return rel == name || strings.HasPrefix(rel, name+"/") || strings.Contains(rel, "/"+name+"/")
 }
 
-// fileEntries 解析单个文件并返回其导出声明条目。
-func fileEntries(root, path string) []string {
+// fileEntries 解析单个文件并返回其导出声明条目；解析失败写入 stderr 并跳过该文件。
+func fileEntries(root, path string, stderr io.Writer) []string {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, path, nil, 0)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "解析失败（已跳过）: %s: %v\n", path, err)
+		fmt.Fprintf(stderr, "解析失败（已跳过）: %s: %v\n", path, err)
 		return nil
 	}
 	rel, err := filepath.Rel(root, path)
@@ -175,6 +201,15 @@ func genEntries(scope, pkg string, node *ast.GenDecl, render func(ast.Node) stri
 	return lines
 }
 
+// valueEntries 渲染一条 const/var 声明的导出条目。
+//
+// 已知口径边界（有意保留，不修改比对口径）：只有当声明里「值的个数 == 名字的个数」时
+// 才渲染取值，因此省略取值的条目在基线里没有「 = 取值」部分——实测 backend/api-baseline.txt
+// 2062 条中有 6 条常量属于此类（internal/domain/clientkey 的 iota 续行，如 TierScopeSuper、
+// AccountTierSuper），另有 1 条 var（internal/buildinfo 的 Version string，只声明类型）。
+// 后果：这些条目自身的取值/序号变化不会被本门禁检出，但条目增删与类型、签名变化仍然检出。
+// 当前接受该边界：按 iota 求值需要类型检查与编译期上下文，会改变基线内容与比对口径（即契约面），
+// 超出本门禁「导出符号面不变」的职责。
 func valueEntries(scope, pkg, kind string, spec *ast.ValueSpec, render func(ast.Node) string) []string {
 	var lines []string
 	for index, name := range spec.Names {
@@ -235,8 +270,8 @@ func writeBaseline(path string, lines []string) error {
 	return os.WriteFile(path, []byte(builder.String()), 0o644)
 }
 
-// reportDiff 打印基线差异并返回进程退出码。
-func reportDiff(old, current []string) int {
+// reportDiff 打印基线差异并返回进程退出码（0 一致 / 1 有差异）。
+func reportDiff(old, current []string, stdout, stderr io.Writer) int {
 	oldSet := indexLines(old)
 	newSet := indexLines(current)
 
@@ -252,15 +287,15 @@ func reportDiff(old, current []string) int {
 		}
 	}
 
-	fmt.Printf("基线条目 %d 条，当前 %d 条。\n", len(old), len(current))
+	fmt.Fprintf(stdout, "基线条目 %d 条，当前 %d 条。\n", len(old), len(current))
 	if len(removed) == 0 && len(added) == 0 {
-		fmt.Println("导出 API 面与基线逐条一致。")
-		return 0
+		fmt.Fprintln(stdout, "导出 API 面与基线逐条一致。")
+		return exitOK
 	}
-	printLines("公共契约被删除或签名被改写（必须恢复，或确认后 --update）", removed)
-	printLines("公共契约新增（确认是本次需求的一部分后再 --update）", added)
-	fmt.Fprintf(os.Stderr, "\nAPI 契约校验失败：删除/改写 %d 条，新增 %d 条。\n", len(removed), len(added))
-	return 1
+	printLines(stdout, "公共契约被删除或签名被改写（必须恢复，或确认后 --update）", removed)
+	printLines(stdout, "公共契约新增（确认是本次需求的一部分后再 --update）", added)
+	fmt.Fprintf(stderr, "\nAPI 契约校验失败：删除/改写 %d 条，新增 %d 条。\n", len(removed), len(added))
+	return exitFailure
 }
 
 func indexLines(lines []string) map[string]bool {
@@ -271,12 +306,12 @@ func indexLines(lines []string) map[string]bool {
 	return set
 }
 
-func printLines(title string, lines []string) {
+func printLines(stdout io.Writer, title string, lines []string) {
 	if len(lines) == 0 {
 		return
 	}
-	fmt.Printf("\n%s：%d 条\n", title, len(lines))
+	fmt.Fprintf(stdout, "\n%s：%d 条\n", title, len(lines))
 	for _, line := range lines {
-		fmt.Printf("  - %s\n", line)
+		fmt.Fprintf(stdout, "  - %s\n", line)
 	}
 }

@@ -133,14 +133,15 @@ func TestListDetectsAllViolationKinds(t *testing.T) {
 		t.Fatalf("--list 退出码应为 %d，实际 %d", exitOK, code)
 	}
 	items := parseListOutput(t, stdout)
-	if len(items) != 5 {
-		t.Fatalf("应检出 5 项越限，实际 %d 项：\n%s", len(items), stdout)
+	if len(items) != 6 {
+		t.Fatalf("应检出 6 项越限，实际 %d 项：\n%s", len(items), stdout)
 	}
 	want := []listItem{
 		{kind: nestKind, path: "deep_nesting.go", name: "deepNesting", value: 4},
 		{kind: nestKind, path: "deep_nesting.go", name: "elseNesting", value: 4},
 		{kind: nestKind, path: "deep_nesting.go", name: closureName, value: 4},
 		{kind: funcKind, path: "oversized_func.go", name: "oversizedFunction", value: 51},
+		{kind: nestKind, path: "package_closure.go", name: closureName, value: 4},
 		{kind: fileKind, path: "oversized_file.go", name: filePlaceholder, value: 601},
 	}
 	for _, expected := range want {
@@ -197,7 +198,8 @@ func TestCheckFailsOnNewViolations(t *testing.T) {
 		"新增超限文件：oversized_file.go = 601（阈值 600）",
 		"新增超限函数：oversized_func.go#oversizedFunction = 51（阈值 50）",
 		"新增超限嵌套：deep_nesting.go#deepNesting = 4（阈值 3）",
-		"新增超限嵌套：deep_nesting.go#<closure> = 4（阈值 3）",
+		"新增超限嵌套：" + closureKey("deep_nesting.go", 40) + " = 4（阈值 3）",
+		"新增超限嵌套：" + closureKey("package_closure.go", 6) + " = 4（阈值 3）",
 	} {
 		if !strings.Contains(stderr, key) {
 			t.Errorf("失败输出缺少 %q：\n%s", key, stderr)
@@ -248,7 +250,7 @@ func TestUpdateWritesBaselineAndCheckPasses(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("--update 退出码应为 %d，实际 %d\nstderr:\n%s", exitOK, code, stderr)
 	}
-	if !strings.Contains(stdout, "超限文件 1 个，超限函数 1 个，越限嵌套 3 个") {
+	if !strings.Contains(stdout, "超限文件 1 个，超限函数 1 个，越限嵌套 4 个") {
 		t.Errorf("--update 输出计数不符：%s", stdout)
 	}
 	frozen := readBaselineFile(t, baselinePath)
@@ -261,8 +263,8 @@ func TestUpdateWritesBaselineAndCheckPasses(t *testing.T) {
 	if len(frozen.Functions) != 1 || frozen.Functions["oversized_func.go#oversizedFunction"] != 51 {
 		t.Errorf("基线 functions 不符：%+v", frozen.Functions)
 	}
-	if len(frozen.Nesting) != 3 {
-		t.Errorf("基线 nesting 应有 3 条，实际 %+v", frozen.Nesting)
+	if len(frozen.Nesting) != 4 {
+		t.Errorf("基线 nesting 应有 4 条，实际 %+v", frozen.Nesting)
 	}
 	for key, depth := range frozen.Nesting {
 		if depth != 4 {
@@ -494,5 +496,232 @@ func TestCheckReportsScopeCount(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "参与判定的作用域（REV-3）：3 个") {
 		t.Errorf("应报告 3 个参与判定的作用域（2 个具名函数 + 1 个函数字面量）：\n%s", stdout)
+	}
+}
+
+// packageClosureSource 是包级 var 初始化器里的函数字面量：体内 4 层嵌套，且不在任何具名函数体内。
+const packageClosureSource = `package fixture
+
+var handler = func() int {
+	total := 0
+	for i := 0; i < 3; i++ {
+		if i > 0 {
+			switch i {
+			case 1:
+				if i > 0 {
+					total++
+				}
+			}
+		}
+	}
+	return total
+}
+`
+
+// twoPackageClosuresSource 是两个包级闭包：closureA 嵌套 4 层、closureB 嵌套 5 层，
+// 用于证明同文件内不同闭包各有独立基线键。
+const twoPackageClosuresSource = `package fixture
+
+var closureA = func() int {
+	total := 0
+	for i := 0; i < 3; i++ {
+		if i > 0 {
+			switch i {
+			case 1:
+				if i > 0 {
+					total++
+				}
+			}
+		}
+	}
+	return total
+}
+
+var closureB = func() int {
+	total := 0
+	for i := 0; i < 3; i++ {
+		if i > 0 {
+			switch i {
+			case 1:
+				if i > 0 {
+					for j := 0; j < 2; j++ {
+						total++
+					}
+				}
+			}
+		}
+	}
+	return total
+}
+`
+
+// scopeCountOf 解析 run 输出里的「参与判定的作用域（REV-3）：N 个」，返回 N。
+func scopeCountOf(t *testing.T, stdout string) int {
+	t.Helper()
+	const marker = "参与判定的作用域（REV-3）："
+	for _, line := range strings.Split(stdout, "\n") {
+		index := strings.Index(line, marker)
+		if index < 0 {
+			continue
+		}
+		rest := line[index+len(marker):]
+		end := 0
+		for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' {
+			end++
+		}
+		if end == 0 {
+			t.Fatalf("作用域计数不可解析：%q", line)
+		}
+		value, err := strconv.Atoi(rest[:end])
+		if err != nil {
+			t.Fatalf("作用域计数不可解析：%q", line)
+		}
+		return value
+	}
+	t.Fatalf("输出缺少参与判定的作用域计数：\n%s", stdout)
+	return 0
+}
+
+// closureKey 复算闭包的基线键：相对路径#<closure>@函数体起始行。
+func closureKey(path string, line int) string {
+	return path + "#" + closureName + "@" + strconv.Itoa(line)
+}
+
+// TestListDetectsPackageLevelClosure 证明包级函数字面量进入 --list 清单（修复前是漏报通道）。
+func TestListDetectsPackageLevelClosure(t *testing.T) {
+	code, stdout, _ := runTool(t, "--root", fixtureRoot, "--list")
+	if code != exitOK {
+		t.Fatalf("--list 退出码应为 %d，实际 %d", exitOK, code)
+	}
+	item := findItem(parseListOutput(t, stdout), nestKind, "package_closure.go", closureName)
+	if item == nil {
+		t.Fatalf("包级函数字面量未被 --list 检出：\n%s", stdout)
+	}
+	if item.value != 4 {
+		t.Errorf("包级闭包嵌套深度应为 4，实际 %d", item.value)
+	}
+	if text := lineAt(t, filepath.Join(fixtureRoot, "package_closure.go"), item.line); !strings.Contains(text, "func") {
+		t.Errorf("包级闭包行号 %d 不指向函数体起始行：%q", item.line, text)
+	}
+}
+
+// TestCheckFailsOnPackageLevelClosureNesting 证明包级闭包在 check 路径同样被检出并判失败。
+func TestCheckFailsOnPackageLevelClosureNesting(t *testing.T) {
+	root := t.TempDir()
+	writeFixture(t, root, "package_closure.go", packageClosureSource)
+	code, _, stderr := runTool(t, "--root", root, "--baseline", emptyBaselinePath(t))
+	if code != exitFailure {
+		t.Fatalf("包级闭包 4 层嵌套未被基线冻结时应退出码 %d，实际 %d\nstderr:\n%s", exitFailure, code, stderr)
+	}
+	if !strings.Contains(stderr, "新增超限嵌套："+closureKey("package_closure.go", 3)+" = 4（阈值 3）") {
+		t.Errorf("失败输出缺少包级闭包键（含函数体起始行）：\n%s", stderr)
+	}
+}
+
+// namedFunctionSource 是单个具名函数，用于与包级闭包对比参与判定的作用域总数。
+const namedFunctionSource = `package fixture
+
+func named() int {
+	return 0
+}
+`
+
+// TestScopeCountIncludesPackageLevelClosures 证明 scopeCount 随包级闭包增长，不是只统计具名函数。
+func TestScopeCountIncludesPackageLevelClosures(t *testing.T) {
+	withClosure := t.TempDir()
+	writeFixture(t, withClosure, "named.go", namedFunctionSource)
+	writeFixture(t, withClosure, "package_closure.go", packageClosureSource)
+	code, stdout, stderr := runTool(t, "--root", withClosure, "--baseline", emptyBaselinePath(t))
+	if code != exitFailure {
+		t.Fatalf("含 4 层包级闭包的夹具应判失败，实际退出码 %d\nstderr:\n%s", code, stderr)
+	}
+	withCount := scopeCountOf(t, stdout)
+
+	withoutClosure := t.TempDir()
+	writeFixture(t, withoutClosure, "named.go", namedFunctionSource)
+	code, stdout, stderr = runTool(t, "--root", withoutClosure, "--baseline", emptyBaselinePath(t))
+	if code != exitOK {
+		t.Fatalf("无闭包夹具应通过，实际退出码 %d\nstderr:\n%s", code, stderr)
+	}
+	withoutCount := scopeCountOf(t, stdout)
+	if withoutCount != 1 {
+		t.Errorf("无闭包夹具应只有 1 个作用域，实际 %d", withoutCount)
+	}
+	if withCount != withoutCount+1 {
+		t.Errorf("包级闭包应使参与判定的作用域总数增加 1：%d → %d", withoutCount, withCount)
+	}
+}
+
+// TestClosureBaselineKeysDoNotMaskEachOther 证明同文件内两个闭包的基线键互不覆盖：
+// closureA 从 6 层降到 4 层、closureB 从 4 层升到 5 层时，B 的恶化必须判失败（共用键会让 A 掩盖 B）。
+func TestClosureBaselineKeysDoNotMaskEachOther(t *testing.T) {
+	root := t.TempDir()
+	writeFixture(t, root, "two_closures.go", twoPackageClosuresSource)
+	_, listed, _ := runTool(t, "--root", root, "--list")
+	var closureLines []int
+	for _, item := range parseListOutput(t, listed) {
+		if item.kind == nestKind && item.name == closureName {
+			closureLines = append(closureLines, item.line)
+		}
+	}
+	if len(closureLines) != 2 {
+		t.Fatalf("应检出 2 个包级闭包越限，实际 %d 个：\n%s", len(closureLines), listed)
+	}
+	// --list 按严重度降序：closureB（5 层）在前，closureA（4 层）在后。
+	degraded, improved := closureLines[0], closureLines[1]
+	baselinePath := writeBaselineFile(t, baseline{Nesting: map[string]int{
+		closureKey("two_closures.go", improved): 6, // A：基线 6 层，当前 4 层（数值下降，棘轮不报失败）
+		closureKey("two_closures.go", degraded): 4, // B：基线 4 层，当前 5 层 → 恶化
+	}})
+	code, stdout, stderr := runTool(t, "--root", root, "--baseline", baselinePath)
+	if code != exitFailure {
+		t.Fatalf("B 闭包恶化必须判失败，实际退出码 %d\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	}
+	if !strings.Contains(stderr, "超限嵌套继续恶化："+closureKey("two_closures.go", degraded)+" = 5（基线 4）") {
+		t.Errorf("失败输出未指出恶化的闭包键：\n%s", stderr)
+	}
+	if strings.Contains(stderr, "新增超限嵌套") {
+		t.Errorf("两个闭包的键都应命中基线，不应出现新增项：\n%s", stderr)
+	}
+	if !strings.Contains(stdout, "越限嵌套（> 3 层）：当前 2 个，基线 2 个") {
+		t.Errorf("两个闭包应各自命中基线键（当前 2 个 / 基线 2 个）：\n%s", stdout)
+	}
+
+	// 旧的合并键（<路径>#<closure>）不再吸收同文件闭包：冻结 6 层时两个闭包各自成为新增项并判失败。
+	legacyPath := writeBaselineFile(t, baseline{Nesting: map[string]int{"two_closures.go#" + closureName: 6}})
+	code, _, legacyStderr := runTool(t, "--root", root, "--baseline", legacyPath)
+	if code != exitFailure {
+		t.Fatalf("合并键基线不应掩盖两个闭包，实际退出码 %d\nstderr:\n%s", code, legacyStderr)
+	}
+	if strings.Count(legacyStderr, "新增超限嵌套") != 2 {
+		t.Errorf("合并键基线下两个闭包都应报新增：\n%s", legacyStderr)
+	}
+}
+
+// packageLiteralFormsSource 覆盖 var 组、切片字面量与 map 字面量里的包级函数字面量（共 4 个）。
+const packageLiteralFormsSource = `package fixture
+
+var (
+	handler = func() int { return 1 }
+	handlers = []func() int{
+		func() int { return 2 },
+		func() int { return 3 },
+	}
+	registry = map[string]func() int{
+		"a": func() int { return 4 },
+	}
+)
+`
+
+// TestScopeCountCountsPackageLevelLiteralForms 证明 var 组 / 切片 / map 里的包级函数字面量各计一次。
+func TestScopeCountCountsPackageLevelLiteralForms(t *testing.T) {
+	root := t.TempDir()
+	writeFixture(t, root, "forms.go", packageLiteralFormsSource)
+	code, stdout, stderr := runTool(t, "--root", root, "--baseline", emptyBaselinePath(t))
+	if code != exitOK {
+		t.Fatalf("合规的包级字面量不应触发门禁失败，实际退出码 %d\nstderr:\n%s", code, stderr)
+	}
+	if count := scopeCountOf(t, stdout); count != 4 {
+		t.Errorf("4 个包级函数字面量应各计一次作用域，实际 %d", count)
 	}
 }
