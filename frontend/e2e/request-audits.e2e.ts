@@ -62,39 +62,44 @@ test("未登录访问审计页会被重定向到登录页", async ({ page, serve
   await expect(page.getByRole("heading", { name: /管理员登录|Admin sign in/ })).toBeVisible();
 });
 
-test("空池下审计页渲染真实零值与空态，筛选和周期控件保持可用", async ({ page, request, server }) => {
-  // 本 worker 的临时数据库刚启动：审计表必然为空，这是真实可达的状态而非 mock。
-  const empty = await apiAuditPage(request, server, {});
-  expect(empty.ids).toEqual([]);
-  expect(empty.hasMore).toBe(false);
+// @desktop：用例经侧栏导航链接进入审计页（移动 project 下侧栏 display:none，链接不可见）。
+test(
+  "空池下审计页渲染真实零值与空态，筛选和周期控件保持可用",
+  { tag: "@desktop" },
+  async ({ page, request, server }) => {
+    // 本 worker 的临时数据库刚启动：审计表必然为空，这是真实可达的状态而非 mock。
+    const empty = await apiAuditPage(request, server, {});
+    expect(empty.ids).toEqual([]);
+    expect(empty.hasMore).toBe(false);
 
-  await signIn(page, server);
-  await page.getByRole("link", { name: auditsName }).click();
-  await expect(page).toHaveURL(/\/request-audits$/);
-  await expect(page.getByRole("heading", { name: auditsName })).toBeVisible();
-  await expect(page.getByRole("region", { name: usageSummaryName })).toBeVisible();
+    await signIn(page, server);
+    await page.getByRole("link", { name: auditsName }).click();
+    await expect(page).toHaveURL(/\/request-audits$/);
+    await expect(page.getByRole("heading", { name: auditsName })).toBeVisible();
+    await expect(page.getByRole("region", { name: usageSummaryName })).toBeVisible();
 
-  // 汇总卡片展示真实零值（不是加载占位）。
-  await expect(page.getByText(totalRequestsText)).toBeVisible();
-  await expect(page.getByText(totalTokensText)).toBeVisible();
-  await expect(page.getByText(/^0$/).first()).toBeVisible();
+    // 汇总卡片展示真实零值（不是加载占位）。
+    await expect(page.getByText(totalRequestsText)).toBeVisible();
+    await expect(page.getByText(totalTokensText)).toBeVisible();
+    await expect(page.getByText(/^0$/).first()).toBeVisible();
 
-  // 列表空态可见且没有任何数据行。
-  await expect(page.getByText(noDataText)).toBeVisible();
-  await expect(page.getByTestId(/^audit-row-/)).toHaveCount(0);
+    // 列表空态可见且没有任何数据行。
+    await expect(page.getByText(noDataText)).toBeVisible();
+    await expect(page.getByTestId(/^audit-row-/)).toHaveCount(0);
 
-  // 搜索框可编辑并有可访问名称；周期选择器默认 24h 且处于选中态。
-  await expect(page.getByRole("textbox", { name: searchInputName })).toBeEditable();
-  const periodTab = page.getByRole("tab", { name: /^24h$/ });
-  await expect(periodTab).toBeVisible();
-  await expect(periodTab).toHaveAttribute("data-state", "active");
+    // 搜索框可编辑并有可访问名称；周期选择器默认 24h 且处于选中态。
+    await expect(page.getByRole("textbox", { name: searchInputName })).toBeEditable();
+    const periodTab = page.getByRole("tab", { name: /^24h$/ });
+    await expect(periodTab).toBeVisible();
+    await expect(periodTab).toHaveAttribute("data-state", "active");
 
-  // 筛选菜单可展开，状态子菜单提供真实选项。
-  await page.getByRole("button", { name: filterButtonName }).click();
-  await page.getByRole("menuitem", { name: statusFilterItemName }).click();
-  await expect(page.getByRole("menuitemradio", { name: statusOption4xxName })).toBeVisible();
-  await expect(page.getByRole("menuitemradio", { name: allOptionName }).first()).toBeVisible();
-});
+    // 筛选菜单可展开，状态子菜单提供真实选项。
+    await page.getByRole("button", { name: filterButtonName }).click();
+    await page.getByRole("menuitem", { name: statusFilterItemName }).click();
+    await expect(page.getByRole("menuitemradio", { name: statusOption4xxName })).toBeVisible();
+    await expect(page.getByRole("menuitemradio", { name: allOptionName }).first()).toBeVisible();
+  },
+);
 
 test("状态筛选改变真实查询范围并显示激活计数，清除后恢复空态", async ({ page, request, server }) => {
   await signIn(page, server);

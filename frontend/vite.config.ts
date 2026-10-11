@@ -1,56 +1,10 @@
-import { rmSync } from "node:fs";
-import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig, type ConfigEnv, type Plugin, type UserConfig } from "vite";
+import { defineConfig, type ConfigEnv, type UserConfig } from "vite";
 
-import { BUILD_MANIFEST_FILE, buildInputHash, writeBuildManifest } from "./scripts/build-inputs.ts";
-
-/** 仅为成功写出的生产构建签名；构建过程中输入变化时拒绝登记新鲜产物。 */
-function buildManifestPlugin(): Plugin {
-  const options = { mode: "production", environment: { ...process.env } };
-  let root = "";
-  let outDir = "";
-  let inputHash = "";
-  let written = false;
-  let failed = false;
-  return {
-    name: "grok2api-build-manifest",
-    apply: "build",
-    configResolved(config) {
-      root = config.root;
-      outDir = path.resolve(root, config.build.outDir);
-      options.mode = config.mode;
-    },
-    buildStart() {
-      written = false;
-      failed = false;
-      rmSync(path.join(outDir, BUILD_MANIFEST_FILE), { force: true, recursive: true });
-      inputHash = buildInputHash(root, options);
-    },
-    buildEnd(error) {
-      failed = Boolean(error);
-    },
-    writeBundle: {
-      order: "post",
-      sequential: true,
-      handler() {
-        written = true;
-      },
-    },
-    closeBundle: {
-      order: "post",
-      sequential: true,
-      handler() {
-        if (failed || !written) return;
-        if (inputHash !== buildInputHash(root, options)) throw new Error("前端构建期间输入发生变化，请重新构建");
-        writeBuildManifest(outDir, inputHash);
-      },
-    },
-  };
-}
+import { buildManifestPlugin } from "./scripts/build-manifest-plugin.ts";
 
 /**
  * 构建/开发共用配置工厂。

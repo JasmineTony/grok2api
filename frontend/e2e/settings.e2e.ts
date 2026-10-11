@@ -52,7 +52,8 @@ test("设置页未修改时保存与重置禁用，字段修改后保存启用�
   await expect(reset).toBeDisabled();
 });
 
-test("设置页分页可切换：Grok Build 与 Grok Web 面板按标签显隐", async ({ page, server }) => {
+// @desktop：末段断言依赖侧栏设置链接可见（移动 project 下侧栏 display:none，元素不可见）。
+test("设置页分页可切换：Grok Build 与 Grok Web 面板按标签显隐", { tag: "@desktop" }, async ({ page, server }) => {
   await signIn(page, server);
   await openSettingsPage(page, server.baseURL);
 

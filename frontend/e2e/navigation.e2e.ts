@@ -89,7 +89,9 @@ async function expectMobileNavigationKeyboard(page: Page): Promise<void> {
 }
 
 // 每个用例复用 worker 隔离的真实 Go 服务；视口只在本文件内设置，不扩大项目矩阵。
-test.describe("桌面导航与偏好持久化", () => {
+// `@desktop`：本组断言依赖桌面布局本身（侧栏可见、移动端抽屉触发按钮隐藏），
+// 移动 project（Pixel 5）由 playwright.config.ts 的 grepInvert 明确排除，断言不做任何放宽。
+test.describe("桌面导航与偏好持久化", { tag: "@desktop" }, () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   test("侧栏导航到账号和设置，深链接刷新后保持页面与当前导航状态", async ({ page, server }) => {
