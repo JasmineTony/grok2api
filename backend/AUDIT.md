@@ -614,3 +614,130 @@ v0.1.2 发布后继续清空已登记存量：**BE-01 的 >1000 行文件类清�
 - **既有覆盖缺口（本轮未新增测试，如实登记）**：`application/egress` 的 `rebalanceProvider`、`RunMaintenance`、`TestNodes`、`UpdateManyEnabled`、`applySourceInput` 在被拆分前就没有直接单测；本轮受「只改生产文件、不改 `_test.go`」约束未补测。其行为等价性依据为：逐条对照搬移 + 编译期签名一致 + 整包测试通过。其中 `rebalanceProvider` 的**唯一一处语句重排**（`initialAssignmentIndex` 把 `original`/`assignment` 两张 map 由「随放置循环逐条写入」改为「循环前一次性预填」）已独立复核：放置循环对这两张 map 只写不读，容量/均衡两段在放置循环结束后才首次读取，故最终内容与读取时点一致；`balanceNodeLoads` 的 `moveLimit = capacityMoveLimit - moves` 与原共享计数器 `moves < capacityMoveLimit` 算术等价（容量段最多消耗到 `capacityMoveLimit`，差值非负）。
 - **接近 REV-1 上限的文件（观察项）**：`application/egress/operations.go` 581 → 599 行，未越 600 但已贴近；后续在该文件继续拆分前须先做同包文件级搬运。
 - **回滚**：`git revert <本提交>`。本次为纯结构拆分，无数据、协议、配置或依赖迁移。
+
+## 18. 2026-10-11（续二）结构/契约机器门禁 + REV-3 全量清零 + 独立对抗审查（BE-16）
+
+### 18.1 新增门禁：把「人工逐轮核对」变成一条命令
+
+| 交付物 | 作用 | 口径 / 契约 |
+| --- | --- | --- |
+| `backend/tools/structurecheck` | REV-1 / REV-2 / REV-3 机器门禁，基线棘轮 | `--list` 输出 `kind<TAB>路径:行<TAB>函数名<TAB>度量` 的机器可读工作清单；`--update` 收缩基线；无新增/恶化 exit 0、有则 exit 1、基线缺失 exit 2 |
+| `backend/structure-baseline.json` | 冻结存量（当前 `files`/`functions`/`nesting` 均为空） | 棘轮语义与前端 `structure-baseline.json` 一致 |
+| `backend/tools/apicheck` + `backend/api-baseline.txt` | 导出 API 面契约门禁 | 导出名 + 归一化签名/类型定义/常量取值逐条比对；新增、删除、签名变化均失败 |
+| `backend/scripts/verify.sh` + `backend/scripts/README.md` | 后端单一验收入口 | `go build` → `go vet` → `structurecheck` → `apicheck` → `go test -count=1`，失败即停并透传退出码，逐步计时 |
+| `.github/workflows/ghcr-image.yml` | CI 接入 | `Verify` job 新增 `Verify backend structure and API contract`（`Vet backend` 之后、`Verify Swagger document` 之前），job 步骤 17 → 18 |
+| `frontend/scripts/check-structure.mjs` | 前端补 REV-3 | 嵌套 > 3 层失败；`else if` 与 `if` 同层；`case` 体不加层 |
+
+**嵌套口径（前后端统一）**：计入 `if`（含 `else` 分支，但 **`else if` 与 `if` 同层**）/ `for` / `range` / `switch` / type switch / `select`；`case` / `comm` 子句体不额外加层；函数字面量是独立作用域（Go 侧按 `<closure>` 上报，前端侧归属最近外层具名作用域）。`else { if ... }` 比 `else if` 多一层，属有意保留的不对称口径（已在两侧工具头部写明）。
+
+**`apicheck` 的一处工具误报修正（重要）**：初版把「大写方法名」一律当作公共契约，于是 `compatibleSSEEvent` / `nestingVisitor` 这类**未导出类型**上为实现接口而写的大写方法（`Data()`、`Visit()` 等）也被纳入基线。包外无法命名这些类型，因此它们不是契约。修正为「仅导出类型上的导出方法计入」后，基线由 **2228 收缩为 2062**；经逐条核对，被移除的 **166 条全部是未导出接收者上的方法，0 条导出 API 丢失**。
+
+### 18.2 REV-3 全量清零，以及**对上一轮记录的更正**
+
+- **更正**：§17 与提交 `79e280c0` 声称「REV-3 嵌套越限 6 处全部清零」。该数字来自一个临时工具，其 `if` 分支深度公式被写成 `max(1, child)` 而非 `1 + child`，**系统性少报**（实测对同一棵树，修正后工具与 `structurecheck` 分别报 59 / 61）。该临时工具已废弃，结论以仓库内 `structurecheck` 为准。
+- **真实基线**（同一棵树、两种 else-if 口径）：`else if` 计入层 = **59–61**；`else if` 与 `if` 同层（与前端一致，最终采用）= **41**，另加 **2** 处 `<closure>`。
+- **处理**：41 处按包切分为 7 组（account 9 / gateway 8 / conversation 8 / cli+console 5 / web+provider 4 / egress+runtime+config 4 / transport 3）由子代理并行清零；2 处 `<closure>`（`application/gateway/video_tasks.go`、`infra/persistence/relational/account_links.go`）由主代理清零。改动全部是「守卫反转 / 提前返回」或「同包未导出辅助函数抽取」。
+- **结果**：`go run ./tools/structurecheck` 报 **超限文件 0 / 超限函数 0 / 越限嵌套 0**，基线已收缩为空——此后任何新增越限即判定失败。
+
+### 18.3 独立对抗审查：覆盖与发现的 2 处真实偏差
+
+对上一轮 163 个函数的拆分按批次派发 **9 次只读对抗审查**（gateway `createResponseAt`；cli adapter + config `Validate`；relational 33 方法；account + accountsync + audit + dashboard + media；conversation + console；egress(infra+app) + transport；settings + config + domain/audit + pkg + app + ports + runtime + provider；cli `responses_*`；clientkey）。**确认缺陷 2 处，均已修复并补回归测试**：
+
+1. `application/gateway/service_request_failure.go` 的 `markRetryableAccountState`：`PermanentAccountDenial` 分支被误写成 `return markDeniedAccountAccess(...) || failureHandled`，而原实现是**覆盖**（丢弃额度链结果）。触发条件：Build 403 同时带额度信号、且 `selector.MarkModelAccessDenied` 写库失败时，账号的持久失败标记 `MarkFailure` 会被跳过。修复：去掉 `|| failureHandled`。既有测试集对此**无判别力**（该函数此前无任何直接用例）。
+2. `application/clientkey/service_authentication.go` 的 `acquireAuthQuota`：提前返回条件被写成 `MaxConcurrent == 0`，使负值会调用 `Acquire`；原实现只在**正数**时申请租约。当前不可达（应用层与 DB CHECK 均限制 `>= 0`，且两个 limiter 实现把 `limit <= 0` 视为无限），但需触发条件才能自证安全。修复：改为 `<= 0`。
+
+- **另登记 2 处「已核查且等价、但耦合了未声明契约」**（非缺陷）：`relational/client_key_repository.go` 在「事务回调成功但 `Commit()` 失败」这条极窄路径上返回的 `cleaned` 少了当前 key 的行数（只影响一个 perfmetrics 标签，新值反而更准确）；`infra/egress/health.go` 用 `value.ID` 代替入参 `nodeID` 构造 clearance key 与客户端版本（依赖 `GetEgressNode` 返回同 ID 这一未显式声明的契约）。
+- **测试覆盖缺口（如实登记，拆分前后一致）**：`application/egress` 的 `rebalanceProvider` / `RunMaintenance` / `TestNodes` / `UpdateManyEnabled` / `applySourceInput`、relational 33 个仓储方法、`console/voice.go`（TTS/STT）、`clientkey` 的 `CanUseModel` 等，在拆分**之前**就没有直接单测。本轮补了 2 处最关键的：`markRetryableAccountState`（8 个子用例，含专门锁定上述缺陷的用例，已用 overlay 变体验证判别力）与 console STT multipart 字段顺序 + TTS JSON 分支（7 个用例，同样以 overlay 变体证明「把 `filler_words` 提前」会失败）。
+- **未覆盖**：PostgreSQL / Redis 专属路径本机未执行（缺环境变量）；`go test -race ./...` 本机 **Blocked**（`-race requires cgo`，无 C 编译器），由 Linux CI 覆盖。
+
+### 18.4 缩短单次改造耗时的做法（本轮落实）
+
+1. **机器可读工作清单**：`structurecheck --list` 按严重度输出 `kind<TAB>路径:行<TAB>函数名<TAB>度量`，按包分组即可**机械切分为互不重叠的子任务**——本轮 41 处越限就是这样切成 7 组派发的，无需人工读代码分工。
+2. **基线棘轮**：存量冻结、只许持平或下降；子代理只要不新增越限，就无需人工复核「有没有变坏」。
+3. **一条命令验收**：`bash backend/scripts/verify.sh` 串起 5 步；迭代期只跑受影响包（`go test ./internal/<pkg>/` 可命中构建缓存），仅最终验收用 `-count=1`。
+4. **固定派发模板**：每个子任务固定给出「负责范围 + 口径 + 硬约束 + 自检命令（含工具绝对路径与期望输出）+ 报告格式」，子代理可**自证完成**，主代理不必复算。
+5. **对抗审查与写入型任务并行**：审查只读、不阻塞；本轮 2 处「看似等价实则不等价」的改写正是由审查发现（测试集均无判别力），而修复只需 1–2 行。
+
+### 18.5 验证（本机实测）
+
+| 检查 | 结果 |
+| --- | --- |
+| `go build ./...` / `go vet ./...` | exit 0 |
+| `go run ./tools/structurecheck` | 文件 0 / 函数 0 / 嵌套 0，基线同为 0，exit 0 |
+| `go run ./tools/apicheck` | 基线条目 2062，当前 2062，逐条一致，exit 0 |
+| `bash backend/scripts/verify.sh` | 子代理实测 exit 0，总耗时 165.9s；另以注入故障证明「失败即停 + 退出码透传」（exit 127，步骤 2–5 未执行）、以错误工作目录证明守卫分支（exit 2）。**主代理本机 PATH 无 `bash`，无法复跑该脚本**；其 5 个步骤已由主代理逐条独立执行并全部 exit 0 |
+| `cd frontend && pnpm verify` | exit 0；覆盖率 98.00 / 94.30 / 98.28 / 98.68，低于 76% 的文件 0 个；`check:structure` 0/0/0；`test:gates` 15 用例（含 10 个必须失败）全过；体积预算全部在阈值内 |
+| 新增回归测试 | `TestMarkRetryableAccountStateCoversEverySignalBranch`（8 子用例）、console STT/TTS 7 用例，全过 |
+
+- **未完成/未验证**：`verify.sh` 的 Linux CI 行为、CI 新步骤的远端执行结果本轮未取得（需推送后由 CI 产生 run id 后登记）；`shellcheck` 本机未安装，脚本未做静态检查。
+- **回滚**：门禁与清零是独立提交，可分别 `git revert`；无数据、协议、配置或依赖迁移。
+
+## 19. 2026-10-11（续三）规范重写与结构门禁自证补强（BE-17）
+
+### 19.1 背景与产出
+
+维护线负责人要求对当前项目下的**全部会话**做重复错误取证，并以「通用规则 + 可验证判定」重写根 `AGENTS.md`。取证范围与重复错误分类见 `frontend/AUDIT.md` §18.1 / §18.2（8 个会话、18 类跨会话重复错误）。
+
+重写后 `AGENTS.md` 的 §1–§8 编号与语义**保持稳定**，因此本仓库内引用 `AGENTS.md §N` 的位置无需改动，其中后端侧为：
+
+| 位置 | 引用 | 是否仍成立 |
+| --- | --- | --- |
+| `backend/scripts/verify.sh:3` | 「对应 AGENTS.md §7 的 backend 部分」 | 成立（§7 验证入口仍在，且已修正 cwd 说明） |
+| `backend/scripts/README.md:6` | 「§7 验证入口的 backend 部分，是 §TEST-6 与 REV-1/2/3 的可执行入口」 | 成立 |
+| `backend/tools/structurecheck/main.go:1,43,56,62` | REV-1 / REV-2 / REV-3 与 §5 | 成立 |
+| `backend/structure-baseline.json:2` 的 `note` | 「存量债务冻结基线（AGENTS.md §5）」 | 成立（§5 仍为「债务与基线（棘轮）」，语义未变） |
+| `backend/AUDIT.md:161` | 「`AGENTS.md` §6 定义的 P2/P3」 | 成立 |
+| `backend/AUDIT.md:503,517` | 「按 `AGENTS.md` §8 流程执行」 | 成立 |
+| `.github/workflows/ghcr-image.yml:70,77,117` | §8 版本载体、REV-1/2/3 | 成立 |
+
+### 19.2 与后端相关的文档失真更正
+
+| 编号 | 条目 | 原值 | 新值 | 复现命令 |
+| --- | --- | --- | --- | --- |
+| C-37 | 导出 API 面条数（`AGENTS.md` §5 两处、`frontend/AUDIT.md`） | 2228 | **2062** | `cd backend && go run ./tools/apicheck` → 「基线条目 2062 条，当前 2062 条。导出 API 面与基线逐条一致。」 |
+| C-38 | 「后端不在结构门禁扫描范围（REV-1 仅约束前端）」 | 未纳入 | **已纳入**：`backend/tools/structurecheck` 同口径强制 REV-1/REV-2/REV-3 | `cd backend && go run ./tools/structurecheck` → 「扫描生产 Go 文件：478 个」 |
+| C-39 | 「函数级 REV-2 仍为 7 项」「剩余 >600 行生产文件 12 个」 | 7 / 12 | **0 / 0** | 同上 → 超限文件 0 / 超限函数 0 / 越限嵌套 0 |
+| C-40 | `AGENTS.md` §7 的 `bash backend/scripts/verify.sh` | 从仓库根执行 | **exit 2**（`scripts/verify.sh:17-18` 校验 cwd） | 静态读取脚本守卫；§7 已改为 `cd backend && bash scripts/verify.sh` |
+
+> C-38/C-39 与 §16.4（`AGENTS.md:591`）的表述冲突，属**同一文档内自相矛盾**：§16.4 是 2026-10-11 当时的快照（按 §12 的 DOC-2 保留原值），但 `AGENTS.md` 的规则文本未随 §17/§18 同步。本轮随 §5 迁移一并更正，指向 §17 与 §18。
+
+### 19.3 `structurecheck` 新增「参与判定的作用域」计数（EVID-3）
+
+重写后的 §4 REV-3 要求「0 越限必须附带参与判定的作用域总数」——此前两个结构门禁都不输出该数字，该规则不可验证（正是 `AGENTS.md` 初稿被审计点名的「门禁写在规范里但机器从未强制」形态）。本轮后端侧补齐：
+
+| 位置 | 改动 |
+| --- | --- |
+| `backend/tools/structurecheck/main.go` 的 `scanner` | 新增字段 `scopeCount int` |
+| 同文件的 `checkFunc` | 每次调用 `s.scopeCount++`（口径：施加 REV-2/REV-3 的函数体数，含每个函数字面量 `<closure>`） |
+| 同文件的 `reportCounts` | 新增输出 `参与判定的作用域（REV-3）：N 个（0 越限时据此判断不是漏报）` |
+| `backend/tools/structurecheck/main_test.go` | 新增 `TestCheckReportsScopeCount`：夹具 = 2 个具名函数 + 1 个函数字面量，断言输出 `参与判定的作用域（REV-3）：3 个`。该输出行此前没有任何断言，属「规则写进规范、机器未强制」的残留形态，本轮补齐 EVID-3 要求的正样本 |
+
+前端对应改动（`check-structure.mjs` 输出同名字段、`self-test-gates.mjs` 增加正/负样本断言）见 `frontend/AUDIT.md` §18.4。
+
+**判别力证据（§3 TEST-7）**：以 Go `-overlay` 把 `reportCounts` 里的 `scanned.scopeCount` 替换为 `scanned.scopeCount+1` 注入错误变体，`go test -overlay=<变体> -run TestCheckReportsScopeCount ./tools/structurecheck/` → **FAIL（exit 1）**；移除 overlay 后同一命令 → **PASS（exit 0）**。夹具源码与 overlay JSON 只存在于会话 scratch，不入库（§11 CHG-11）。
+
+### 19.4 后端侧的跨会话重复错误（与本目录直接相关）
+
+| 类别 | 取证 | 落点 |
+| --- | --- | --- |
+| 用一次性临时 AST 工具得出全局结论 | 临时嵌套深度工具 `if` 分支深度写成 `max(1, child)`（应为 `1 + child`），系统性少报，得出 REV-3「6 处」并据此派发 10 个子代理；真值为 41（else-if 同层口径）/ 59–61（else-if 计层） | `AGENTS.md` §10 EVID-4 |
+| 门禁自身漏报被当作已达标 | `structurecheck` 初版 nesting 漏报；`apicheck` 初版把未导出接收者上的大写方法计入契约（2228 → 2062） | §10 EVID-3 |
+| 「重写」与「搬运」混在同一提交、同一声明下 | 子代理自述 3 个函数「不是纯搬运而是重写」，而 AUDIT 记的是「语句顺序/标识符逐字不变」 | §11 CHG-2 |
+| 机械拆分引入真实行为偏差，门禁零发现 | 5 处（含 `markRetryableAccountState` 的 `\|\|` 合并、`acquireAuthQuota` 的 `== 0`、`voice.go` multipart 字段顺序），全部由人工对抗审查或既有测试发现 | §11 CHG-3、§3 TEST-7 |
+| 在并行子代理仍改代码时收缩基线 | `--update` 在 9 个并行子代理中途执行（nesting 59 → 2 的中途快照） | §11 CHG-5 |
+| 判定用执行框架的 `exitCode` | 命令向 stderr 写内容即被标 ERR（`git commit` 标 ERR 但实际成功提交） | §10 EVID-5 |
+| 根因只报第一层 | CI-01 先归因「pnpm 供应链策略」，后更正为「GHCR 容器包与仓库未链接」 | §11 CHG-7 |
+| 从静态读取把 CI 项记为 `Passed` | 子代理提案把 BE-11 由 `Pending` 改 `Passed`（仅引 `ghcr-image.yml:20`），被主代理以「需要 run 级证据」拦下 | §10 EVID-1 / EVID-2 |
+
+### 19.5 验证（本机实测）
+
+| 检查 | 结果 |
+| --- | --- |
+| `gofmt -l tools/structurecheck/main.go` | 空输出 |
+| `go vet ./tools/...` | exit 0 |
+| `go test ./tools/... -count=1` | exit 0（`apicheck` 1.939s、`structurecheck` 2.213s） |
+| `go run ./tools/structurecheck` | exit 0；478 个生产文件，超限文件 0 / 超限函数 0 / 越限嵌套 0，参与判定的作用域 **5472** |
+| `go run ./tools/apicheck` | exit 0；基线条目 2062，当前 2062，逐条一致 |
+
+- **未运行（如实登记）**：`bash scripts/verify.sh`（含全量 `go test ./...`）、`go test ./... -count=1`、`go build ./...`、`go test -race ./...` 未在本轮复跑（本轮改动为文档与 `structurecheck` 的一行输出，未触及业务代码）；`go test ./tools/...` 已覆盖被改工具本身。
+- **回滚**：`git revert <本提交>`；无数据、协议、配置或依赖迁移。

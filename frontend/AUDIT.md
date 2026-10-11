@@ -648,3 +648,77 @@ v0.1.2 发布后继续清空已登记存量：**REV-1 超限文件 0（基线 0�
 - 本次只动函数边界与 import 来源，未新增业务逻辑；`pnpm test:e2e` 的 4 个 spec / 16 用例未变（未新增 E2E 场景），E2E 覆盖缺口与 §2 登记一致。
 - 42 个含可执行语句却报 0/0/0/0 的模块仍属 V8 转换统计假象（§15），其内容由真实断言覆盖。
 - 未做真实浏览器性能测量（LCP/FCP），不声称性能变化；仅按 REV-5 口径报告体积。
+
+## 18. 2026-10-11 规范重写与门禁自证补强（FE-11）
+
+### 18.1 背景与产出
+
+- 触发：维护线负责人要求对当前项目下的**全部会话**做重复错误取证，并以「通用规则 + 可验证判定」重写根 `AGENTS.md`。
+- 取证范围：`C:\Users\kehon\.pi-desktop\sessions\*.jsonl` 中归属本项目（`pi.sqlite` 的 `projects.id=6` → `E:/grok2api`）的 8 个会话（`35c53030` / `2ff4067b` / `964d4d4e` / `6b9d955c` / `950a3213` / `d16426e2` / `de01df91` / `1c20cb66`）。
+- 产出：`AGENTS.md` 重写（`git diff --numstat` = +339 / −70）。新增 §0（META）、§9（EXEC）、§10（EVID）、§11（CHG）、§12（DOC）、§13（SEC）、§14（BIND）；**§1–§8 的编号与语义保持稳定**，因此仓库内 12 处 `AGENTS.md §N` 引用（`backend/scripts/{verify.sh,README.md}`、`backend/tools/structurecheck/main.go:56`、两侧 `structure-baseline.json` 的 `note`、`frontend/scripts/check-structure.mjs:249`、`.github/workflows/ghcr-image.yml:70,77,117`、`README.md`、`README.zh-CN.md`、`frontend/README.md`）无需改动。**2026-10-11 复核更正**：本条原记 +334 / −69，根因是该数字在 `AGENTS.md` 最后一轮编辑之前记录；复现命令 `git diff --numstat -- AGENTS.md` → `339	70`。
+- §5 由 4089 字符的历史叙述改为「当前基线 + 指针」（§12 的 DOC-1）；被移出的历史内容本就在本文件 §11–§17 与 `backend/AUDIT.md` §16–§18 有登记，本轮只把两处**只存在于 AGENTS.md** 的当前态数字按 §18.3 更正后归入本文件。
+
+### 18.2 跨会话重复错误类别（取证 → 规则落点）
+
+| #   | 重复错误类别                                                   | 取证（会话与次数）                                                                                                                                                                                          | 落点规则                     |
+| --- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| 1   | 以等待代替推进（阻塞式轮询 / 空等）                            | S1 `AddMinutes(22/6/27/24)` 4 次 + `TaskWait` ≥300s 36 次（18 次打满 900s）；S2 `Start-Sleep` 7 次 ≈26 min；S3 9 次 ≈93 min（占会话 45%）；S7 `TaskWait` 28 次累计 2808s                                    | §9 EXEC-1 / EXEC-2           |
+| 2   | 子代理任务无时长预算                                           | S2 ≥15 次超 20 min、S3 6 次（1236s / 2061s / 1940s / 1601s）、S1 自述 28 min/个                                                                                                                             | §9 EXEC-3                    |
+| 3   | 超过并发上限后原样重试                                         | S7 `[T53]–[T62]` 连续 10 次同一容量错误                                                                                                                                                                     | §9 EXEC-4                    |
+| 4   | 并发子代理互相打断构建/测试                                    | S7 `redeclared` / `build failed` / `syntax error` 78 处、`Start-Sleep` 重试 22 次；S1 子代理遗留语法错误需返工 ≥6 次                                                                                        | §9 EXEC-5                    |
+| 5   | 自建临时度量工具未验证即作为结论与派活依据                     | S7 临时嵌套工具 `max(1, child)` 公式缺陷 → REV-3「6 处」错误；`apicheck` 初版误报 2228→2062；S1 `funclen/main.go` 未与门禁对账                                                                              | §10 EVID-4                   |
+| 6   | 门禁自身漏报通道被当作「已达标」                               | 前端 `check-structure.mjs` 初版无 REV-3、匿名内联回调整段豁免；后端 `structurecheck` 初版 nesting 漏报                                                                                                      | §10 EVID-3、§4 REV-3         |
+| 7   | 文档「当前态」数字失真并成批更正                               | S5 计划一次列出 28 处；跨会话 ≥10 次独立更正                                                                                                                                                                | §10 EVID-8、§12 DOC-1        |
+| 8   | 为让门禁变绿而放宽参数                                         | `testTimeout` 5s→10s→20s、`maxWorkers` 24→4→2、`streamidle` 余量 3×→15×                                                                                                                                     | §11 CHG-4、§3 TEST-4         |
+| 9   | 在并行子代理仍改代码时收缩基线                                 | S7 在 9 个并行子代理中途执行 `--update`（nesting 59→2 的中途快照）                                                                                                                                          | §11 CHG-5                    |
+| 10  | 机械重构声称「行为保持」却引入偏差                             | 5 处真实偏差（`voice.go` multipart 字段顺序、`applyBuildDetectRejection`、`markRetryableAccountState`、`acquireAuthQuota`、`applyAnthropicReasoningOptions`），全部由人工审查或既有测试发现，无一由门禁发现 | §11 CHG-2 / CHG-3、§3 TEST-7 |
+| 11  | 文本往返改写破坏含中文文件                                     | S5 用 PowerShell 改写 `.github/workflows/*.yml` → UTF-8 BOM + 中文注释乱码 → 3 个提交、4 个失败 run                                                                                                         | §11 CHG-10、§2 DEV-5         |
+| 12  | 把执行框架的 `exitCode` 当命令退出码                           | S7 子代理记录（stderr 非空即误判失败；`git commit` 标 ERR 而实际成功）                                                                                                                                      | §10 EVID-5                   |
+| 13  | 临时探针文件写入生产源码树                                     | S1 ≥8 个 `zz-*` / `__probe*` 测试文件反复创建删除                                                                                                                                                           | §11 CHG-11                   |
+| 14  | 根因只报第一层                                                 | CI-01 先记「pnpm 供应链策略」，后更正为「GHCR 容器包与仓库未链接」                                                                                                                                          | §11 CHG-7                    |
+| 15  | 汇总结论自相矛盾                                               | S4 同段出现「CI 全绿」与「tag 的 `Merge image` 必然失败」                                                                                                                                                   | §10 EVID-6                   |
+| 16  | 「未验证/未执行」项夹带进文档；从静态读取把 CI 项记为 `Passed` | S6 子代理表格把 BE-11 从 `Pending` 改 `Passed`（仅引 `ghcr-image.yml:20`），被主代理拦下；S4 `backend/AUDIT.md:503` 在 run 整体 `failure` 时记「镜像发布 Passed」                                           | §10 EVID-1 / EVID-2 / EVID-7 |
+| 17  | 同一阻塞项反复重述、上下文失控                                 | S1 用户连续 25 次「继续执行」、单请求 692–967 KB；`EMPTY_MODEL_RESPONSE` / `TURN_ABORTED` / `AGENT_SIDECAR_CRASHED` 在 8 个会话中反复出现                                                                   | §9 EXEC-6                    |
+| 18  | 同类缺陷只修一处不做同类扫描                                   | 4 组各修 2 次（媒体/视频尝试循环、出口 blocked-delete、版本载体、工作流编码）                                                                                                                               | §11 CHG-6                    |
+
+### 18.3 本轮更正（原值 → 新值 → 根因 → 复现命令）
+
+| 编号 | 条目                                                                                     | 原值         | 新值       | 根因                                                                                                | 复现命令                                                                                                                       |
+| ---- | ---------------------------------------------------------------------------------------- | ------------ | ---------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| C-31 | `AGENTS.md` REV-1 的「>600 行测试文件」                                                  | 7 个         | **9 个**   | 阶段 7 后测试文件扩写未同步该数字                                                                   | `Get-ChildItem -Recurse src,e2e -Include *.test.ts,*.test.tsx \| Where-Object { (Get-Content $_.FullName).Count -gt 600 }` → 9 |
+| C-32 | `coverage.include` 条数（§17.3 与 `AGENTS.md`）                                          | 18 条        | **17 条**  | 删 `src/features/system/**` 与补 `src/entities/**` 的净结果被记错                                   | 读 `frontend/vitest.config.ts:38-56` 逐条计数                                                                                  |
+| C-33 | `test:gates` 用例数（§17.4）                                                             | 9 个         | **15 个**  | §17.4 记录时点早于 REV-3 作用域装置（F2/F3/F4）与预算用例补入                                       | `node scripts/self-test-gates.mjs` → 「15 个用例（含 10 个必须失败）」                                                         |
+| C-34 | `AGENTS.md` §5 的「导出 API 面 2228 条」                                                 | 2228         | **2062**   | `apicheck` 初版把未导出接收者上的大写方法计入契约，修正后收缩 166 条（见 `backend/AUDIT.md` §18.1） | `cd backend && go run ./tools/apicheck` → 「基线条目 2062 条，当前 2062 条」                                                   |
+| C-35 | `AGENTS.md` §5 的「后端不在结构门禁扫描范围 / 函数级 REV-2 仍 7 项 / >600 行文件 12 个」 | 未清零       | **均为 0** | 规则文本停留在 §16 口径，未随 §17/§18 同步（同文件内与另一条自相矛盾）                              | `cd backend && go run ./tools/structurecheck` → 478 个生产文件、0/0/0                                                          |
+| C-36 | `AGENTS.md` §7 的 `bash backend/scripts/verify.sh`                                       | 从仓库根执行 | **exit 2** | `backend/scripts/verify.sh:17-18` 校验 cwd 必须含 `go.mod`                                          | 静态读取脚本守卫；已改为 `cd backend && bash scripts/verify.sh`                                                                |
+
+> C-34/C-35 属「只存在于 `AGENTS.md` 的当前态数字」，随 §5 迁移一并更正；§11–§17 的历史快照按 §12 的 DOC-2 保留原值。
+
+### 18.4 门禁自证补强（EVID-3）
+
+§4 REV-3 要求「0 越限必须附带参与判定的作用域总数」，但重写前**两个结构门禁都不输出该数字**——即该规则此前不可验证（属 `AGENTS.md` 初稿被审计点名的「门禁写在规范里但机器从未强制」形态）。本轮补齐：
+
+| 文件                                        | 改动                                                                                                                    | 口径                                                                                                            |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `frontend/scripts/check-structure.mjs`      | `collectNestingDepths` 返回 `{ depths, scopeCount }`；新增输出 `参与判定的作用域（REV-3）：N 个`                        | `scopeCount` = 遍历中访问到的具名作用域数（含模块级匿名作用域）；匿名内联回调沿用最近外层具名作用域，不重复计数 |
+| `backend/tools/structurecheck/main.go`      | `scanner` 新增 `scopeCount`；`checkFunc` 每次调用计数；`reportCounts` 输出同一行                                        | `scopeCount` = 施加 REV-2/REV-3 的函数体数（含每个函数字面量 `<closure>`）                                      |
+| `frontend/scripts/self-test-gates.mjs`      | 「与冻结基线一致应通过」断言 `参与判定的作用域（REV-3）：1 个`；「匿名内联回调内 4 层嵌套应失败（F2）」断言 `2 个`      | 正/负样本同时覆盖新输出，用例数 15 不变                                                                         |
+| `backend/tools/structurecheck/main_test.go` | 新增 `TestCheckReportsScopeCount`（夹具 = 2 个具名函数 + 1 个函数字面量），断言输出含 `参与判定的作用域（REV-3）：3 个` | 后端侧的正样本，证明闭包计入独立作用域且该数字随实际作用域数变化                                                |
+
+实测：前端 404 文件 / **2524** 个作用域 / 0 越限；后端 478 个生产文件 / **5472** 个作用域 / 0 越限。
+
+### 18.5 验证（本机实测）
+
+| 检查                                                                           | 结果                                                  |
+| ------------------------------------------------------------------------------ | ----------------------------------------------------- |
+| `node scripts/check-structure.mjs`                                             | exit 0；404 文件，超限文件/函数/嵌套均 0，作用域 2524 |
+| `node scripts/self-test-gates.mjs`                                             | exit 0；15 用例（含 10 个必须失败）全过               |
+| `npx prettier --check scripts/check-structure.mjs scripts/self-test-gates.mjs` | exit 0                                                |
+| `npx eslint scripts/check-structure.mjs scripts/self-test-gates.mjs`           | exit 0                                                |
+| `cd backend && gofmt -l tools/structurecheck/main.go`                          | 空输出（已格式化）                                    |
+| `cd backend && go vet ./tools/...`                                             | exit 0                                                |
+| `cd backend && go test ./tools/... -count=1`                                   | exit 0（`apicheck` 1.939s、`structurecheck` 2.213s）  |
+| `cd backend && go run ./tools/structurecheck`                                  | exit 0；478 文件，0/0/0，作用域 5472                  |
+
+- **未运行（如实登记）**：`pnpm verify` / `pnpm test:ui:coverage` / `pnpm test:e2e` / `go test ./...` 未在本轮复跑（本轮改动为文档与两个门禁脚本的输出，未触及被测业务代码）；`AGENTS.md` 位于仓库根，不在 Prettier 的 `frontend/` 管辖范围内，`pnpm format:check` 不受影响。
+- **回滚**：`git revert <本提交>`；本轮无数据、协议、配置或依赖迁移。

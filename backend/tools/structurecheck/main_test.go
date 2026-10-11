@@ -468,3 +468,31 @@ func TestCheckFailsOnRealDeepNesting(t *testing.T) {
 		t.Errorf("失败输出缺少嵌套越限明细：\n%s", stderr)
 	}
 }
+
+// scopeCountSource 是 2 个具名函数，其中一个含 1 个函数字面量：按 REV-3 口径应计 3 个参与判定的作用域。
+const scopeCountSource = `package fixture
+
+func outer(value int) int {
+	apply := func(input int) int {
+		return input + 1
+	}
+	return apply(value)
+}
+
+func second(value int) int {
+	return value
+}
+`
+
+// TestCheckReportsScopeCount 证明「0 越限」附带参与判定的作用域总数，且闭包计入独立作用域（EVID-3：证明不是漏报）。
+func TestCheckReportsScopeCount(t *testing.T) {
+	root := t.TempDir()
+	writeFixture(t, root, "scopes.go", scopeCountSource)
+	code, stdout, stderr := runTool(t, "--root", root, "--baseline", emptyBaselinePath(t))
+	if code != exitOK {
+		t.Fatalf("合规夹具不应触发门禁失败，实际退出码 %d\nstderr:\n%s", code, stderr)
+	}
+	if !strings.Contains(stdout, "参与判定的作用域（REV-3）：3 个") {
+		t.Errorf("应报告 3 个参与判定的作用域（2 个具名函数 + 1 个函数字面量）：\n%s", stdout)
+	}
+}

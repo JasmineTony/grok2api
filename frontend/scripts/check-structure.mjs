@@ -172,21 +172,24 @@ function isElseBranchOfIf(node) {
 }
 
 /**
- * 收集各具名作用域内的最大嵌套深度。
+ * 收集各具名作用域内的最大嵌套深度，并返回参与判定的作用域总数。
  * 匿名内联回调不新建作用域、不重置深度，其函数体累计到最近外层具名作用域的深度上；
  * 模块级代码与模块级匿名回调（没有外层具名作用域）统一归入 MODULE_ANONYMOUS_SCOPE，不会被静默丢弃。
+ * scopeCount 用于在「0 越限」时证明判定确实覆盖了作用域，而不是漏报（AGENTS.md REV-3 / EVID-3）。
  */
 function collectNestingDepths(file) {
   const text = fs.readFileSync(file, "utf8");
   const sourceFile = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
   const relative = relativePath(file);
   const depths = new Map();
+  const scopes = new Set();
   const record = (scope, depth) => {
     if (depth <= NESTING_DEPTH_LIMIT) return;
     const key = `${relative}#${scope}`;
     depths.set(key, Math.max(depths.get(key) ?? 0, depth));
   };
   const visit = (node, depth, scope) => {
+    scopes.add(scope);
     if (isFunctionLike(node)) {
       const key = functionKey(sourceFile, node);
       if (key === null) {
@@ -202,7 +205,7 @@ function collectNestingDepths(file) {
     ts.forEachChild(node, (child) => visit(child, next, scope));
   };
   visit(sourceFile, 0, MODULE_ANONYMOUS_SCOPE);
-  return depths;
+  return { depths, scopeCount: scopes.size };
 }
 
 function readBaseline() {
@@ -237,11 +240,14 @@ function main() {
   const fileSizes = new Map();
   const functionSizes = new Map();
   const nestingDepths = new Map();
+  let nestingScopeCount = 0;
   for (const file of sourceFiles) {
     const lines = countLines(fs.readFileSync(file, "utf8"));
     if (lines > FILE_LINE_LIMIT) fileSizes.set(relativePath(file), lines);
     for (const [key, value] of collectFunctionSizes(file)) functionSizes.set(key, value);
-    for (const [key, depth] of collectNestingDepths(file)) nestingDepths.set(key, depth);
+    const nesting = collectNestingDepths(file);
+    nestingScopeCount += nesting.scopeCount;
+    for (const [key, depth] of nesting.depths) nestingDepths.set(key, depth);
   }
 
   if (shouldUpdate) {
@@ -280,6 +286,7 @@ function main() {
   console.log(
     `超限嵌套（> ${NESTING_DEPTH_LIMIT} 层）：${nestingDepths.size} 个，冻结基线 ${Object.keys(baseline.nesting ?? {}).length} 个`,
   );
+  console.log(`参与判定的作用域（REV-3）：${nestingScopeCount} 个（0 越限时据此判断不是漏报）`);
   const improved = [...files.improved, ...functions.improved, ...nesting.improved];
   if (improved.length > 0) {
     console.log(`已整改（建议用 --update 收缩基线）：${improved.length} 项`);

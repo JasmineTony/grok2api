@@ -237,6 +237,7 @@ const cases = [
   {
     name: "结构：与冻结基线一致应通过",
     expect: 0,
+    contains: ["参与判定的作用域（REV-3）：1 个"],
     run: () => runGate("check-structure.mjs", { ...structureEnv, STRUCTURE_BASELINE_PATH: matchingBaseline }),
   },
   {
@@ -267,7 +268,7 @@ const cases = [
   {
     name: "结构：匿名内联回调内 4 层嵌套应失败（F2 作用域归属）",
     expect: 1,
-    contains: [`${anonymousCallbackKey} = 4 层`],
+    contains: [`${anonymousCallbackKey} = 4 层`, "参与判定的作用域（REV-3）：2 个"],
     run: () => runGate("check-structure.mjs", anonymousCallbackEnv),
   },
   {

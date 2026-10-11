@@ -165,6 +165,7 @@ type scanner struct {
 	root       string
 	fset       *token.FileSet
 	fileCount  int
+	scopeCount int
 	violations []violation
 }
 
@@ -273,6 +274,7 @@ func (s *scanner) checkDecls(rel string, parsed *ast.File) {
 func (s *scanner) checkFunc(rel, name string, body *ast.BlockStmt) {
 	start := s.fset.Position(body.Lbrace).Line
 	end := s.fset.Position(body.Rbrace).Line
+	s.scopeCount++
 	if lines := end - start + 1; lines > funcLineLimit {
 		s.add(funcKind, rel, start, name, lines)
 	}
@@ -576,6 +578,7 @@ func reportCounts(stdout io.Writer, scanned *scanner, files, functions, nesting 
 	fmt.Fprintf(stdout, "超限文件（> %d 行）：当前 %d 个，基线 %d 个\n", fileLineLimit, len(files), len(frozen.Files))
 	fmt.Fprintf(stdout, "超限函数（> %d 行）：当前 %d 个，基线 %d 个\n", funcLineLimit, len(functions), len(frozen.Functions))
 	fmt.Fprintf(stdout, "越限嵌套（> %d 层）：当前 %d 个，基线 %d 个\n", nestingLimit, len(nesting), len(frozen.Nesting))
+	fmt.Fprintf(stdout, "参与判定的作用域（REV-3）：%d 个（0 越限时据此判断不是漏报）\n", scanned.scopeCount)
 }
 
 func reportImproved(stdout io.Writer, improved []string) {
