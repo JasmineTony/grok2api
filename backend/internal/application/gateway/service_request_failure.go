@@ -298,7 +298,8 @@ func (state *responseRequestState) markRetryableAccountState(lease *accountLease
 		return state.service.markReauthRequired(state.ctx, state.input.RequestID, credential, fmt.Sprintf("%s upstream error code %s matched the invalidation policy", credential.Provider, state.lastFailure.UpstreamCode))
 	}
 	if state.service.providers.SupportsCredentialRefresh(credential.Provider) && state.lastFailure.PermanentAccountDenial {
-		return state.markDeniedAccountAccess(credential, retryAfter) || failureHandled
+		// 与拆分前的语义一致：该分支用自身结果「覆盖」failureHandled，而不是与额度链结果合并。
+		return state.markDeniedAccountAccess(credential, retryAfter)
 	}
 	if state.service.providers.SupportsCredentialRefresh(credential.Provider) && state.lastFailure.CredentialRejected {
 		return state.service.markReauthRequired(state.ctx, state.input.RequestID, credential, fmt.Sprintf("%s credential rejected", credential.Provider))

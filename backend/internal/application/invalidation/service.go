@@ -73,26 +73,38 @@ func (s *Service) RunPublisher(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case event := <-s.queue:
-			pending := map[invalidationKey]repository.InvalidationEvent{eventKey(event): event}
-		drain:
-			for drained := 1; drained < maxCoalesceBatch; drained++ {
-				select {
-				case next := <-s.queue:
-					pending[eventKey(next)] = next
-				default:
-					break drain
-				}
-			}
-			for _, next := range pending {
-				publishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), publishTimeout)
-				err := s.bus.PublishInvalidation(publishCtx, next)
-				cancel()
-				if err != nil {
-					failures := s.failures.Add(1)
-					if failures == 1 || failures%logSampleInterval == 0 {
-						s.logger.Warn("invalidation_publish_failed", "failures", failures, "error", err)
-					}
-				}
+			pending := s.coalescePending(event)
+			s.publishPending(ctx, pending)
+		}
+	}
+}
+
+// coalescePending collects the events already queued behind first so that
+// repeated invalidations of the same key collapse into a single remote publish.
+func (s *Service) coalescePending(first repository.InvalidationEvent) map[invalidationKey]repository.InvalidationEvent {
+	pending := map[invalidationKey]repository.InvalidationEvent{eventKey(first): first}
+drain:
+	for drained := 1; drained < maxCoalesceBatch; drained++ {
+		select {
+		case next := <-s.queue:
+			pending[eventKey(next)] = next
+		default:
+			break drain
+		}
+	}
+	return pending
+}
+
+// publishPending delivers one coalesced batch and samples publish failures.
+func (s *Service) publishPending(ctx context.Context, pending map[invalidationKey]repository.InvalidationEvent) {
+	for _, next := range pending {
+		publishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), publishTimeout)
+		err := s.bus.PublishInvalidation(publishCtx, next)
+		cancel()
+		if err != nil {
+			failures := s.failures.Add(1)
+			if failures == 1 || failures%logSampleInterval == 0 {
+				s.logger.Warn("invalidation_publish_failed", "failures", failures, "error", err)
 			}
 		}
 	}

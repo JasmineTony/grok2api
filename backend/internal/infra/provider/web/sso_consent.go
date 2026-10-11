@@ -29,23 +29,29 @@ func consentTokenFromInput(body []byte) string {
 			if !strings.EqualFold(string(name), "input") || !hasAttrs {
 				continue
 			}
-			fieldName := ""
-			value := ""
-			for {
-				key, attrValue, more := tokenizer.TagAttr()
-				switch strings.ToLower(string(key)) {
-				case "name":
-					fieldName = strings.TrimSpace(string(attrValue))
-				case "value":
-					value = strings.TrimSpace(string(attrValue))
-				}
-				if !more {
-					break
-				}
-			}
+			fieldName, value := readInputAttributes(tokenizer)
 			if strings.EqualFold(fieldName, "consent_token") && value != "" {
 				return value
 			}
+		}
+	}
+}
+
+// readInputAttributes 顺序读取当前标签的全部属性，返回 name 与 value 两个属性值（均已 TrimSpace），
+// 未出现的属性返回空串。属性读取一次耗尽，故取到最后一组后直接返回。
+func readInputAttributes(tokenizer *html.Tokenizer) (string, string) {
+	fieldName := ""
+	value := ""
+	for {
+		key, attrValue, more := tokenizer.TagAttr()
+		switch strings.ToLower(string(key)) {
+		case "name":
+			fieldName = strings.TrimSpace(string(attrValue))
+		case "value":
+			value = strings.TrimSpace(string(attrValue))
+		}
+		if !more {
+			return fieldName, value
 		}
 	}
 }

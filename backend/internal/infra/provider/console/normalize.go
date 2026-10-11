@@ -146,28 +146,45 @@ func patchConsoleInput(payload map[string]any) {
 			patchConsoleReasoningContent(item)
 			continue
 		}
-		content, ok := item["content"].([]any)
+		patchConsoleInputContent(item)
+	}
+}
+
+// patchConsoleInputContent rewrites the client-supplied content parts of one
+// Console input item into the forms Console accepts.
+func patchConsoleInputContent(item map[string]any) {
+	content, ok := item["content"].([]any)
+	if !ok {
+		return
+	}
+	for _, rawPart := range content {
+		part, ok := rawPart.(map[string]any)
 		if !ok {
 			continue
 		}
-		for _, rawPart := range content {
-			part, ok := rawPart.(map[string]any)
-			if !ok {
-				continue
-			}
-			typeName, _ := part["type"].(string)
-			switch typeName {
-			case "text", "output_text":
-				part["type"] = "input_text"
-			case "image_url":
-				if image, ok := part["image_url"].(map[string]any); ok {
-					if url, _ := image["url"].(string); strings.TrimSpace(url) != "" {
-						part["type"] = "input_image"
-						part["image_url"] = url
-					}
-				}
-			}
+		patchConsoleInputPart(part)
+	}
+}
+
+// patchConsoleInputPart converts a single content part: text parts become
+// input_text, and image_url parts with a usable URL become input_image with the
+// URL flattened to the plain string Console expects.
+func patchConsoleInputPart(part map[string]any) {
+	typeName, _ := part["type"].(string)
+	switch typeName {
+	case "text", "output_text":
+		part["type"] = "input_text"
+	case "image_url":
+		image, ok := part["image_url"].(map[string]any)
+		if !ok {
+			return
 		}
+		url, _ := image["url"].(string)
+		if strings.TrimSpace(url) == "" {
+			return
+		}
+		part["type"] = "input_image"
+		part["image_url"] = url
 	}
 }
 

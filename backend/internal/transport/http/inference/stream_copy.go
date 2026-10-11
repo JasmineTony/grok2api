@@ -282,20 +282,27 @@ func (f *internalSSEMarkerFilter) Filter(chunk []byte, final bool) []byte {
 			f.pending = nil
 			return result
 		}
-		keep := 0
-		for _, marker := range internalSSEMarkers {
-			limit := min(len(f.pending), len(marker)-1)
-			for size := limit; size > keep; size-- {
-				if bytes.Equal(f.pending[len(f.pending)-size:], marker[:size]) {
-					keep = size
-					break
-				}
-			}
-		}
+		keep := pendingMarkerSuffixKeep(f.pending)
 		result = append(result, f.pending[:len(f.pending)-keep]...)
 		f.pending = f.pending[len(f.pending)-keep:]
 		return result
 	}
+}
+
+// pendingMarkerSuffixKeep 返回尾部需要保留到下一次分片的字节数，
+// 即 pending 与任一内部标记前缀匹配的最长后缀长度。
+func pendingMarkerSuffixKeep(pending []byte) int {
+	keep := 0
+	for _, marker := range internalSSEMarkers {
+		limit := min(len(pending), len(marker)-1)
+		for size := limit; size > keep; size-- {
+			if bytes.Equal(pending[len(pending)-size:], marker[:size]) {
+				keep = size
+				break
+			}
+		}
+	}
+	return keep
 }
 
 func nextInternalSSEMarker(value []byte) (int, int) {

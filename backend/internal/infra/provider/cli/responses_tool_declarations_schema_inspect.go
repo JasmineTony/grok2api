@@ -161,13 +161,8 @@ func referencedDefs(node any, doc map[string]any) map[string]any {
 	for changed {
 		changed = false
 		for name := range needed {
-			extra := map[string]struct{}{}
-			collectDefRefs(rawDefs[name], extra)
-			for key := range extra {
-				if _, exists := needed[key]; !exists {
-					needed[key] = struct{}{}
-					changed = true
-				}
+			if mergeDefRefsIntoNeeded(rawDefs[name], needed) {
+				changed = true
 			}
 		}
 	}
@@ -181,6 +176,19 @@ func referencedDefs(node any, doc map[string]any) map[string]any {
 		}
 	}
 	return out
+}
+
+func mergeDefRefsIntoNeeded(def any, needed map[string]struct{}) bool {
+	extra := map[string]struct{}{}
+	collectDefRefs(def, extra)
+	added := false
+	for key := range extra {
+		if _, exists := needed[key]; !exists {
+			needed[key] = struct{}{}
+			added = true
+		}
+	}
+	return added
 }
 
 func collectDefRefs(node any, needed map[string]struct{}) {
