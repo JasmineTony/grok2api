@@ -24,6 +24,10 @@ func registerFrontend(router *gin.Engine, staticPath string) {
 			return
 		}
 		if filePath, exists := frontendFile(root, requestPath); exists {
+			if isHiddenArtifact(filePath) {
+				c.Status(http.StatusNotFound)
+				return
+			}
 			if strings.HasPrefix(path.Clean(requestPath), "/assets/") {
 				c.Header("Cache-Control", "public, max-age=31536000, immutable")
 			} else {
@@ -88,4 +92,11 @@ func isBackendPath(value string) bool {
 		}
 	}
 	return cleanPath == "/healthz" || cleanPath == "/readyz"
+}
+
+// isHiddenArtifact 报告已解析的相对路径是否为产物根目录下的点文件（构建与测试的内部产物，例如 .build-manifest.json）。
+// 判定必须基于解析后的相对路径：请求路径中的大小写、反斜杠等别名会由 os.Stat 归一化，只有解析结果才与平台无关。
+func isHiddenArtifact(relative string) bool {
+	clean := path.Clean("/" + filepath.ToSlash(relative))
+	return path.Dir(clean) == "/" && strings.HasPrefix(path.Base(clean), ".")
 }

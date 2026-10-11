@@ -104,6 +104,9 @@ func TestFrontendStaticFilesAndSPAFallback(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "assets", "app.js"), []byte("console.log('app')"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(root, ".build-manifest.json"), []byte(`{"version":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	deps := testDependencies()
 	deps.Logger = slog.Default()
 	deps.FrontendStaticPath = root
@@ -116,6 +119,9 @@ func TestFrontendStaticFilesAndSPAFallback(t *testing.T) {
 		cachePrefix string
 	}{
 		{path: "/assets/app.js", status: http.StatusOK, body: "console.log('app')", cachePrefix: "public"},
+		{path: "/.build-manifest.json", status: http.StatusNotFound},
+		{path: "/.BUILD-MANIFEST.JSON", status: http.StatusNotFound},
+		{path: "/x\\..\\.build-manifest.json", status: http.StatusNotFound},
 		{path: "/dashboard", status: http.StatusOK, body: "<html>app</html>", cachePrefix: "no-cache"},
 		{path: "/assets/missing.js", status: http.StatusNotFound},
 		{path: "/api/admin/v1/missing", status: http.StatusNotFound},
