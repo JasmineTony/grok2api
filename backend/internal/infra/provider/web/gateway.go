@@ -614,7 +614,6 @@ func nestedSearchQuery(tool map[string]any) string {
 	return ""
 }
 
-// collectGatewayToolResult folds mgw tool_result into SearchSources and completes hosted calls.
 // gatewayActionSource 构造 OpenAPI 搜索 sources 条目：type 固定为 url，
 // title 作为不影响协议的 UI 扩展保留。
 func gatewayActionSource(rawURL, title string) (map[string]any, bool) {
@@ -695,7 +694,7 @@ func collectGatewayXPostResult(parsed *parsedChat, callID string, xPost map[stri
 		recordGatewaySearchTool(parsed, call.ID, "x_search")
 	}
 }
-
+// collectGatewayToolResult folds mgw tool_result into SearchSources and completes hosted calls.
 func collectGatewayToolResult(parsed *parsedChat, result map[string]any) {
 	if parsed == nil || result == nil {
 		return
