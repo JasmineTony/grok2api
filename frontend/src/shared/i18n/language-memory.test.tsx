@@ -4,10 +4,14 @@ const STORAGE_KEY = "grok2api:language";
 
 type I18nInstance = (typeof import("@/shared/i18n"))["i18n"];
 
-/** 重新导入模块，复现真实启动时序：先读 localStorage，再执行 i18n.init。 */
+/**
+ * 重新导入模块，复现真实启动时序：先读 localStorage，再执行 i18n.init；
+ * 随后按 `app/deferred-pages.tsx` 的真实前置条件补入非首屏文案（resetModules 会拿到新的 i18n 实例）。
+ */
 async function importI18n(): Promise<I18nInstance> {
   vi.resetModules();
   const module = await import("@/shared/i18n");
+  await module.loadDeferredResources();
   await new Promise((resolve) => setTimeout(resolve, 0));
   return module.i18n;
 }

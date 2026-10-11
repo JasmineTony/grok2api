@@ -21,12 +21,12 @@
 | FE-A3  | Oxlint correctness | `pnpm oxlint`                        | Passed（0 warnings / 0 errors，500 文件 / 96 规则）                                                                     |
 | FE-A4  | ESLint 语义        | `pnpm lint`                          | Passed（0 problem）                                                                                                     |
 | FE-A5  | 纯逻辑单测         | `pnpm test`（node:test）             | Passed（68 tests / 37 suites / 0 fail / 0 skip）                                                                        |
-| FE-A6  | 组件单测 + 覆盖率  | `pnpm test:ui:coverage`              | Passed（113 文件 / 1388 tests；全局 97.65 / 93.76 / 97.94 / 98.36）                                                     |
+| FE-A6  | 组件单测 + 覆盖率  | `pnpm test:ui:coverage`              | Passed（113 文件 / 1391 tests；全局 97.65 / 93.76 / 97.94 / 98.36）                                                     |
 | FE-A7  | 生产构建           | `pnpm build`                         | Passed（阶段 7 热构建 1.32s）                                                                                           |
-| FE-A8  | 依赖边界与循环     | `pnpm check:architecture`            | Passed（406 模块 / 1823 依赖 / 0 违规）                                                                                 |
+| FE-A8  | 依赖边界与循环     | `pnpm check:architecture`            | Passed（406 模块 / 1825 依赖 / 0 违规）                                                                                 |
 | FE-A9  | 结构约束           | `pnpm check:structure`               | Passed（380 源码文件；0 超限文件 / 29 超限函数 = 冻结基线）                                                             |
 | FE-A10 | 门禁自测           | `pnpm test:gates`                    | Passed（9 用例，含 4 个必须失败）                                                                                       |
-| FE-A11 | 产物体积预算       | `pnpm check:budget`                  | Passed（首屏 249.99 / 260；全部 JS 620.66 / 650；CSS 16.65 / 20；最大 chunk 458.55 / 500 原始；路由增量 ≤129.08 / 180） |
+| FE-A11 | 产物体积预算       | `pnpm check:budget`                  | Passed（首屏 193.31 / 260；全部 JS 621.23 / 650；CSS 16.65 / 20；最大 chunk 457.17 / 500 原始；路由增量 ≤129.12 / 180） |
 | FE-A12 | 构建可复现性       | 同工具链三次构建产物哈希一致         | Passed（阶段 1 实测 86 文件逐文件 SHA256 零差异；阶段 7 未重跑）                                                        |
 | FE-A13 | 真实全栈 E2E       | `pnpm test:e2e`                      | Passed（4 spec / 16 用例，实测 16 passed / 0 failed / 36.8s / 4 workers / `retries: 0`，见 §12.1）                      |
 | FE-A14 | 聚合全量门禁       | `pnpm verify:full`                   | Passed（`pnpm verify` exit 0 + E2E 16/16）                                                                              |
@@ -88,17 +88,17 @@
 
 | 指标                                          |            实测 |    阈值 | 余量                   |
 | --------------------------------------------- | --------------: | ------: | ---------------------- |
-| 首屏关键 JS 闭包（2 文件：入口 + 图标运行时） | 249.99 KiB gzip | 260 KiB | 10.01 KiB（占 96.15%） |
-| 最大路由新增闭包（`dashboard-page`）          | 129.08 KiB gzip | 180 KiB | 50.92 KiB              |
-| 全部生产 JS（76 文件去重）                    | 620.66 KiB gzip | 650 KiB | 29.34 KiB              |
+| 首屏关键 JS 闭包（2 文件：入口 + 共享运行时） | 193.31 KiB gzip | 260 KiB | 66.69 KiB（占 74.35%） |
+| 最大路由新增闭包（`dashboard-page`）          | 129.12 KiB gzip | 180 KiB | 50.88 KiB              |
+| 全部生产 JS（77 文件去重）                    | 621.23 KiB gzip | 650 KiB | 28.77 KiB              |
 | 全部生产 CSS（1 文件）                        |  16.65 KiB gzip |  20 KiB | 3.35 KiB               |
-| 最大单 chunk（`index-*.js`）                  | 458.55 KiB 原始 | 500 KiB | 41.45 KiB              |
+| 最大单 chunk（`index-*.js`）                  | 457.17 KiB 原始 | 500 KiB | 42.83 KiB              |
 
-阶段 7 实测（`pnpm verify` 内的 `pnpm check:budget`，exit 0）。原始与 Brotli 参考值仍为阶段 6 记录（全部 JS raw 2055.38 KiB / brotli 508.39 KiB；首屏闭包 raw 797.37 KiB / brotli 213.35 KiB），阶段 7 未重新记录。
+阶段 7 实测（`pnpm verify` 内的 `pnpm check:budget`，exit 0）；**2026-10-10 FE-10 修复后复测**（§15）：首屏 193.31 KiB / 2 文件、全部 JS 621.23 KiB / 77 文件。原始与 Brotli 参考值仍为阶段 6 记录（全部 JS raw 2055.38 KiB / brotli 508.39 KiB；首屏闭包 raw 797.37 KiB / brotli 213.35 KiB），阶段 7 与本次均未重新记录。
 
-12 个路由新增闭包（gzip KiB，阶段 7 实测）：dashboard 129.08、creative-console 81.59、accounts 81.05、settings 79.08、client-keys 76.55、quality-guard 67.76、request-audits 60.50、models 50.76、video-gallery 46.64、gallery 32.99、app-shell 31.40、api-docs 29.07。
+13 个路由新增闭包（gzip KiB，2026-10-10 实测；其中 `deferred-*.js` 是 i18n 非首屏文案 chunk，因 `shared/i18n/index.ts` 的 `import("./resources/deferred")` 位于首屏 chunk 内而被门禁按「懒加载入口」归类，见 §15）：dashboard 129.12、creative-console 81.60、accounts 81.05、settings 79.11、client-keys 76.58、quality-guard 67.77、request-audits 60.50、models 50.79、video-gallery 46.66、gallery 33.01、app-shell 31.43、api-docs 29.07、deferred（i18n）57.25。
 
-**关键结论：首屏闭包余量 10.01 KiB（3.85%）**；全部生产 JS 相对冻结基线（`bundle-budget.json` 的 607485 B gzip）增长 **4.6%**，仍在 REV-5 的 5% 容差内，但已接近上限——后续任何进入生产 JS 的改动都必须同时给出体积影响。
+**关键结论（2026-10-10 复测）**：首屏闭包余量 **66.69 KiB（25.65%）**，较修复前的 10.01 KiB 大幅扩大（§15）；全部生产 JS 相对冻结基线（`bundle-budget.json` 的 607485 B gzip）增长 **+4.72%**，仍在 REV-5 的 5% 容差内，但**容差余量仅 1.68 KiB**——后续任何进入生产 JS 的改动（>1.7 KiB gzip）都会让 `check:budget` 失败，必须先说明体积影响，不得静默放宽阈值。
 
 ### 构建可复现性
 
@@ -161,19 +161,19 @@
 
 ## 5. 问题清单
 
-| 编号   | 证据                                                                                  | 现有/新增 | 影响                             | 优先级 | 阶段 | 验证方法                                            | 状态                                  |
-| ------ | ------------------------------------------------------------------------------------- | --------- | -------------------------------- | ------ | ---- | --------------------------------------------------- | ------------------------------------- |
-| FE-01  | `pnpm verify` 原本无 E2E/预算/架构/结构检查                                           | 现有      | 关键路径与体积无自动门禁         | P1     | 1    | 新增四类门禁并实测通过                              | **Passed**（E2E 属 FE-A13，阶段 2）   |
-| FE-02  | 规范 `>75%` 与阈值 `75` 边界不一致；include 仅 3 文件                                 | 现有      | 覆盖率口径歧义、覆盖面过窄       | P1     | 1    | 阈值改 76 并实测通过                                | **Passed**（扩大 include 逐阶段推进） |
-| FE-03  | `AGENTS.md` 债务清单为 11 个/过时行数                                                 | 现有      | 基线不可信                       | P2     | 0    | 已按 18 个文件更正                                  | **Passed**                            |
-| FE-04  | 18 个超限文件、80 个超限具名函数                                                      | 现有      | 可维护性与审查成本               | P2     | 3–6  | 逐模块拆分并收缩基线                                | Pending                               |
-| FE-05  | `vite.config.ts` 无条件 `define` 注入 `VITE_DEV_API_TARGET`，可能进入生产公开地址回退 | 现有      | 开发地址污染生产回退             | P1     | 1    | 改为仅 `serve` 注入，构建期固定空串                 | **Passed**                            |
-| FE-06  | 9 处跨 feature 引用                                                                   | 现有      | 领域契约位置不清晰               | P2     | 3    | 下沉 entity 并删除冻结例外                          | Pending                               |
-| FE-07  | 已有虚拟化/懒加载/Query 能力                                                          | 现有      | 需避免重复建设                   | P2     | 3–6  | 补测并按实测收益优化                                | Pending                               |
-| FE-08  | 双测试运行器（node:test + Vitest）并存                                                | 现有      | 维护两套断言风格                 | P2     | 1    | 迁移后逐项核对用例与断言                            | Pending（迁移属阶段 1 收尾/阶段 3）   |
-| FE-09  | 构建输出 `__dirname` 不受 Vite 原生配置加载器支持的警告                               | 现有      | 每次构建噪声，CI 非 TTY 同样出现 | P3     | 1    | 改用 `fileURLToPath(import.meta.url)`，实测警告消失 | **Passed**                            |
-| FE-10  | 首屏闭包仅余 7.93 KiB（3.05%）预算余量                                                | 现有      | 入口新增代码空间极小             | P1     | 3    | 拆分 i18n/入口依赖并复测预算                        | Pending                               |
-| DOC-01 | `frontend/README.md` 验证章节仅 `pnpm lint`/`pnpm build`                              | 现有      | 文档与门禁不一致                 | P2     | 1    | 已同步真实脚本与门禁表                              | **Passed**                            |
+| 编号   | 证据                                                                                  | 现有/新增 | 影响                             | 优先级 | 阶段 | 验证方法                                            | 状态                                                                                                          |
+| ------ | ------------------------------------------------------------------------------------- | --------- | -------------------------------- | ------ | ---- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| FE-01  | `pnpm verify` 原本无 E2E/预算/架构/结构检查                                           | 现有      | 关键路径与体积无自动门禁         | P1     | 1    | 新增四类门禁并实测通过                              | **Passed**（E2E 属 FE-A13，阶段 2）                                                                           |
+| FE-02  | 规范 `>75%` 与阈值 `75` 边界不一致；include 仅 3 文件                                 | 现有      | 覆盖率口径歧义、覆盖面过窄       | P1     | 1    | 阈值改 76 并实测通过                                | **Passed**（扩大 include 逐阶段推进）                                                                         |
+| FE-03  | `AGENTS.md` 债务清单为 11 个/过时行数                                                 | 现有      | 基线不可信                       | P2     | 0    | 已按 18 个文件更正                                  | **Passed**                                                                                                    |
+| FE-04  | 18 个超限文件、80 个超限具名函数                                                      | 现有      | 可维护性与审查成本               | P2     | 3–6  | 逐模块拆分并收缩基线                                | Pending                                                                                                       |
+| FE-05  | `vite.config.ts` 无条件 `define` 注入 `VITE_DEV_API_TARGET`，可能进入生产公开地址回退 | 现有      | 开发地址污染生产回退             | P1     | 1    | 改为仅 `serve` 注入，构建期固定空串                 | **Passed**                                                                                                    |
+| FE-06  | 9 处跨 feature 引用                                                                   | 现有      | 领域契约位置不清晰               | P2     | 3    | 下沉 entity 并删除冻结例外                          | Pending                                                                                                       |
+| FE-07  | 已有虚拟化/懒加载/Query 能力                                                          | 现有      | 需避免重复建设                   | P2     | 3–6  | 补测并按实测收益优化                                | Pending                                                                                                       |
+| FE-08  | 双测试运行器（node:test + Vitest）并存                                                | 现有      | 维护两套断言风格                 | P2     | 1    | 迁移后逐项核对用例与断言                            | Pending（迁移属阶段 1 收尾/阶段 3）                                                                           |
+| FE-09  | 构建输出 `__dirname` 不受 Vite 原生配置加载器支持的警告                               | 现有      | 每次构建噪声，CI 非 TTY 同样出现 | P3     | 1    | 改用 `fileURLToPath(import.meta.url)`，实测警告消失 | **Passed**                                                                                                    |
+| FE-10  | 首屏闭包仅余 7.93 KiB（3.05%）预算余量                                                | 现有      | 入口新增代码空间极小             | P1     | 3    | 拆分 i18n/入口依赖并复测预算                        | **Passed**（§15：i18n 12 个非首屏领域移出首屏闭包，首屏 249.99 → **193.31 KiB**，余量 10.01 → **66.69 KiB**） |
+| DOC-01 | `frontend/README.md` 验证章节仅 `pnpm lint`/`pnpm build`                              | 现有      | 文档与门禁不一致                 | P2     | 1    | 已同步真实脚本与门禁表                              | **Passed**                                                                                                    |
 
 ## 6. 后续阶段与回滚
 
@@ -485,7 +485,7 @@ CI run `38047249123`（sha `5bd6b34d`）Verify job 其余步骤全 success，「
 | tag              | annotated `v0.1.1`，tag 对象 `db20ef9638fc27cee5bc915dc7afa84724a34610`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | GitHub Release   | https://github.com/JasmineTony/grok2api/releases/tag/v0.1.1 （非草稿、非预发布；本仓库首个 Release）                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | 分支收敛         | `main` 与 `maint/modular-quality-audit` 完全一致（ahead/behind = 0/0）；`wip/stage5-settings-egress-guard` 已完全包含在 `main`（main 领先 31，wip 领先 0），无需单独合并。PR #1 由 GitHub 判定为 merged 并自动关闭                                                                                                                                                                                                                                                                                                                                                                |
-| 本地门禁         | `pnpm verify` **exit 0**（733s）：113 文件 / 1388 用例全过；全局 statements 97.66 / branches 93.76 / functions 97.98 / lines 98.36；结构 0 超限文件 / 29 超限函数（= 冻结基线）；首屏 249.99 KiB、全部 JS 620.66 KiB、CSS 16.65 KiB，均在阈值内                                                                                                                                                                                                                                                                                                                                   |
+| 本地门禁         | `pnpm verify` **exit 0**（733s）：113 文件 / 1388 用例全过；全局 statements 97.66 / branches 93.76 / functions 97.98 / lines 98.36；结构 0 超限文件 / 29 超限函数（= 冻结基线）；首屏 249.99 KiB、全部 JS 620.66 KiB、CSS 16.65 KiB，均在阈值内（**发布时快照**；FE-10 修复后的复测数字见 §15）                                                                                                                                                                                                                                                                                   |
 | 远端 CI（tag）   | `GHCR Image` run `38054220100`（ref `v0.1.1`）：**Verify job 18 步全部 success**——后端 Test、Assert required integration tests ran（0 跳过）、Race、Vet、Swagger 精确 diff、前端 `pnpm verify`、全栈 E2E（16 passed）                                                                                                                                                                                                                                                                                                                                                             |
 | 远端 CI（main）  | `GHCR Image` run `38054197912`（ref `main`）：Verify 同样全部 success                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | 镜像发布         | **Passed**：删除未链接的孤立包后，run `38054220100`（tag `v0.1.1`）attempt 2 的 `Publish image (amd64)`/`(arm64)` 成功；run `38055278879`（`main`，sha `2d386540`）attempt 2 的 `Publish` 与 `Merge image` 全部 success。注册表实测 9 个 tag：`v0.1.1`、`v0.1.1-amd64`、`v0.1.1-arm64`、`main`、`main-amd64`、`main-arm64`、`latest`、`latest-amd64`、`latest-arm64`；`v0.1.1` / `main` / `latest` 均为 `application/vnd.oci.image.index.v1+json` 且实际平台为 linux/amd64 + linux/arm64，匿名拉取 HTTP 200                                                                       |
@@ -494,3 +494,57 @@ CI run `38047249123`（sha `5bd6b34d`）Verify job 其余步骤全 success，「
 | 已修复缺陷（P3） | `merge` 的 `Create manifest list` 循环缺 `set -euo pipefail`，管道退出码只反映 `while` 循环最后一次迭代，前面的 `imagetools create` 失败会被后面的成功掩盖，留下陈旧标签却报绿。**修复**：`a4f58384` 在 `run:` 首行加 `set -euo pipefail`（由只读代码审查发现）                                                                                                                                                                                                                                                                                                                   |
 | 缺陷验证证据     | **tag 推送路径（P1 靶心）**：推临时 tag `v0.1.1-verify.1`（指向含修复的 `a4f58384`）→ run `38060494037` **全部 job success**；`Merge image` 日志 `Processing flavor input → latest=false`、`DOCKER_METADATA_OUTPUT_TAGS = ghcr.io/jasminetony/grok2api:v0.1.1-verify.1`（只剩版本标签）、`imagetools inspect` 成功；`Publish image (amd64)` 只推 `…-amd64`，不再产生裸 `latest`。**main 推送路径**：run `38060467337` 全部 job success（无回归）。验证后已删除临时 tag 与其 3 个镜像版本（另清 4 个孤儿 attestation），注册表回到 9 个正式标签                                    |
 | 未达成项         | ① 历史 tag 运行 `38054220100` 的 `Merge image` 仍显示 `Failed`——GitHub 的 re-run 使用该 run 原始提交 `b2123a7d`（不含修复）的工作流定义，无法就地转绿；修复自 `a4f58384` 起生效，下次 tag 推送即全绿。② tag `v0.1.1` 仍指向 `b2123a7d`，其 AUDIT 内容为发布当时的登记，修订位于 `main`；如需 tag 自身包含修复与登记，需重新打 tag（不可逆，未执行）                                                                                                                                                                                                                               |
+
+## 15. FE-10 修复：i18n 非首屏领域移出首屏闭包（2026-10-10）
+
+`FE-10` 登记的「首屏闭包余量过小」按该条登记的验证方法（「拆分 i18n/入口依赖并复测预算」）修复。
+
+### 根因（实测）
+
+首屏闭包 2 个文件共 249.99 KiB gzip，其中共享 chunk 并非旧描述的「图标运行时」（实测其中**没有任何 lucide 图标模块**），而是 **i18n 两语言全量领域文案 ≈62 KiB gzip + react/i18next/react-i18next/react-query/radix/lucide 运行时 ≈47.5 KiB gzip**。入口 chunk 静态 import 了该共享 chunk，而门禁按整文件计费，于是 15 个领域文案全部进入首屏闭包——但首屏实际只用 3 个。
+
+### 判定依据（源码静态闭包）
+
+从 `src/main.tsx` 出发、不跟随 `deferred-pages.tsx` 的 12 个 `lazy()` 目标，首屏模块集 55 个文件；其中出现翻译调用的只有 4 个文件，涉及 3 个领域：
+
+| 领域         | 首屏使用点                                                                                                         | 是否可异步                                     |
+| ------------ | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------- |
+| `common`     | `features/auth/login-page.tsx:54,65,34`、`components/ui/spinner.tsx:13`（`PageLoadingFallback` 与所有 `Suspense`） | 否（首帧即渲染）                               |
+| `auth`       | `login-page.tsx:20,21,66,67,74,75,79,90,101`、`app/auth-boundary.tsx:50,51,53`（会话不可用时立即渲染）             | 否                                             |
+| `api-errors` | `shared/api/client.ts:43-44` 以 `` `apiErrors.${code}` `` **同步**调用 `i18n.exists`/`i18n.t`                      | 否（异步补入会产生「错误文案回落英文」的竞态） |
+
+其余 12 个领域（`web-accounts`、`accounts`、`account-credentials`、`dashboard`、`creative-console`、`quality-guard`、`models`、`client-keys`、`audits`、`settings`、`egress`、`docs`）**无任何首屏模块引用**。
+
+### 改动
+
+| 文件                                            | 变更                                                                                                                                           |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/shared/i18n/resources/initial.ts`（新增）  | 只静态包含 3 个领域 × 2 语言，导出形状与拆分前一致                                                                                             |
+| `src/shared/i18n/resources/deferred.ts`（新增） | 其余 12 个领域 × 2 语言，独立成一个懒加载 chunk                                                                                                |
+| `src/shared/i18n/resources/index.ts`            | 改为 `export { default as resources } from "./initial"`                                                                                        |
+| `src/shared/i18n/resources/{en,zh-CN}/index.ts` | **删除**（全量静态展开的根源；领域文件一个未删）                                                                                               |
+| `src/shared/i18n/index.ts`                      | 新增 `loadDeferredResources(): Promise<void>`：单例 Promise，`import("./resources/deferred")` 后对两种语言 `addResourceBundle`；失败不静默吞掉 |
+| `src/app/deferred-pages.tsx`                    | `lazyNamed` 改为「先 `await loadDeferredResources()` 再解析页面导出」，顺序不可颠倒                                                            |
+| `src/test/setup.ts`                             | 组件测试直接渲染页面、绕过懒加载包装，故在 `beforeAll` 复现同一前置条件（否则 `t("accounts.x")` 原样回显 key，断言会退化为恒等比较）           |
+
+测试为**新增断言**：`resources.test.tsx` 7 → 10 用例（原 7 个用例的 key 总数/集合/占位符断言数值与文本一字未改，仍在合并后全量资源上执行；新增「initial 同步可用且 4 个 deferred key 不可见」「懒加载后 12 个领域可解析」「重复调用复用同一 Promise」），`language-memory.test.tsx` 在 `vi.resetModules()` 后补前置加载。
+
+### 实测结果
+
+| 指标             | 改前                 | 改后                                                                                                             |
+| ---------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| 首屏关键 JS 闭包 | 249.99 KiB / 2 文件  | **193.31 KiB / 2 文件（−56.68 KiB，−22.7%）**                                                                    |
+| 首屏余量         | 10.01 KiB（3.85%）   | **66.69 KiB（25.65%）**                                                                                          |
+| 全部生产 JS      | 620.66 KiB / 76 文件 | 621.23 KiB / 77 文件（净影响 +0.08 KiB：新增 `deferred-*.js` 58.84 KiB 与首屏减少 58.76 KiB 相抵）               |
+| 路由入口         | 12                   | 13（多出的是 `deferred-*.js`：`import()` 字面量位于首屏 chunk 内，被门禁按懒加载入口归类；增量 57.25 KiB < 180） |
+| 最大路由增量     | 129.08 KiB           | 129.12 KiB（`dashboard-page`）                                                                                   |
+| 相对冻结基线     | —                    | 首屏 −22.8%（下降，通过）；全部 JS +4.72%（容差 5%，**余量仅 1.68 KiB**）                                        |
+
+验证：`pnpm verify` **exit 0**（565s，12 步全绿；113 文件 / 1391 用例，全局 97.65 / 93.76 / 97.94 / 98.36 未变；结构 0 超限文件 / 29 超限函数 = 冻结基线；依赖 406 模块 / 1825 依赖 / 0 违规）；`pnpm test:e2e` **exit 0**（16/16，4 workers，`retries: 0`）——其中 `e2e/auth.e2e.ts` 的登录首屏标题/副标题/按钮/错误提示断言全部通过，且 `auth.e2e.ts:36-43` 断言在 `/dashboard` 上 `page.reload()` 后仍显示已翻译标题，直接证明「直接/刷新进入懒加载路由」时前置加载生效。
+
+### 未处理项与风险（如实登记）
+
+1. **`全部生产 JS` 相对冻结基线的容差余量仅 1.68 KiB**（+4.72% / 5%）。该增长来自 2026-10-09 基线之后的其他改动，不是本次拆分引入（本次净影响 +0.08 KiB）。硬阈值 650 KiB 仍有 28.77 KiB 余量，但基线容差几乎用尽：后续任何 >1.7 KiB gzip 的 JS 新增都会让 `check:budget` 失败。本轮**未修改** `bundle-budget.json`（既不放宽阈值、也不以 `--update` 顺带吸收该漂移），登记为待决策项：或解释并登记该漂移后重定基线，或先降低 `allJs`。
+2. **`src/shared/i18n/**` 不在覆盖率口径内（本轮未改动）**：`vitest.config.ts` 的 `coverage.include` 只含 `src/app/**`、`src/features/*/**`、`src/shared/{api,auth,hooks}/**` 与 `shared/components/virtual-table-body.tsx`，不含 `src/shared/i18n/**`；而 `AGENTS.md` §5 的口径是「已重构模块整目录纳入 + 例外逐项登记原因」，该目录在阶段 3 被重构过，属未登记的缺口。本轮**未擅自加入**：加入后 `shared/i18n/index.ts` 的 SSR 守卫（`typeof window === "undefined"`、`typeof document === "undefined"`）与 `localStorage` 异常分支会拉低该文件的分支覆盖率，而 TEST-1 要求按文件约束、且禁止用 `/* v8 ignore */` 之类手段掩盖；补齐需要在**同一改动内**加断言真实行为的测试（`vi.stubGlobal` 驱动守卫、mock `localStorage` 抛错驱动 catch）并复跑 `pnpm test:ui:coverage` 验证。已登记为独立的下一步（本轮只交付 `FE-10` 修复）。
+3. 未评估：首屏减少 58.76 KiB 后，登录成功后首个懒加载页面需多一次 chunk 请求（与 shell chunk 并行）；未做真实浏览器资源瀑布与首屏指标（LCP/FCP）测量，故**不声称**「首屏更快」——本次只声称「首屏关键 JS 闭包减少 56.68 KiB」，与 REV-5 的度量口径一致。
+4. 回滚：删除 `initial.ts`/`deferred.ts` 与 `loadDeferredResources` 调用，恢复两个被删 `index.ts` 与 `resources/index.ts` 原内容、还原 `deferred-pages.tsx` 与测试改动即可；无数据、配置或接口契约变更。

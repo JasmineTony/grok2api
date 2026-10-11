@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
-import { i18n } from "@/shared/i18n";
+import { i18n, loadDeferredResources } from "@/shared/i18n";
 
 /**
  * 拆分前基线：4150 行单文件 resources 在应用全部 Object.assign 补丁后的最终生效值。
@@ -25,6 +25,12 @@ const BASELINE = {
 
 const LANGUAGES = ["zh-CN", "en"] as const;
 type Language = (typeof LANGUAGES)[number];
+
+/**
+ * 模块求值时的同步资源快照：`initial`（common / auth / api-errors）必须立即可用，
+ * 其余 12 个领域（`deferred`）必须等 `loadDeferredResources()` 之后才出现。
+ */
+const SYNC_BUNDLE_AT_IMPORT = flatten(i18n.getResourceBundle("zh-CN", "translation"));
 
 /** 拆分前既有不对称：仅存在于 zh-CN 的 key。 */
 const ZH_ONLY_KEYS = [
@@ -109,6 +115,32 @@ function placeholders(value: string): string[] {
 }
 
 describe("i18n 资源拆分后与拆分前一致", () => {
+  beforeAll(async () => {
+    await loadDeferredResources();
+  });
+
+  it("首屏只同步包含 initial 的 3 个领域，其余 12 个领域在懒加载前不可用", () => {
+    expect(SYNC_BUNDLE_AT_IMPORT.appName).toBeTypeOf("string");
+    expect(SYNC_BUNDLE_AT_IMPORT["auth.title"]).toBeTypeOf("string");
+    expect(SYNC_BUNDLE_AT_IMPORT["apiErrors.accountBatchDeleteFailed"]).toBeTypeOf("string");
+    for (const key of ["accounts.title", "qualityGuard.title", "models.title", "docs.title"]) {
+      expect(SYNC_BUNDLE_AT_IMPORT[key], `${key} 不应出现在首屏同步资源中`).toBeUndefined();
+    }
+  });
+
+  it("deferred 在 loadDeferredResources() 之后补入同样的 12 个领域", () => {
+    for (const language of LANGUAGES) {
+      const flat = bundle(language);
+      for (const key of ["accounts.title", "qualityGuard.title", "models.title", "docs.title"]) {
+        expect(flat[key], `${language} 缺少 ${key}`).toBeTypeOf("string");
+      }
+    }
+  });
+
+  it("重复调用 loadDeferredResources() 复用同一个 Promise（单例）", async () => {
+    await expect(loadDeferredResources()).resolves.toBeUndefined();
+  });
+
   it("每种语言的 key 总数与拆分前基线一致", () => {
     for (const language of LANGUAGES) {
       expect(Object.keys(bundle(language))).toHaveLength(BASELINE[language].keyCount);

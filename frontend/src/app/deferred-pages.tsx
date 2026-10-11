@@ -1,6 +1,7 @@
 import { lazy, Suspense, type ComponentType, type LazyExoticComponent } from "react";
 
 import { Spinner } from "@/components/ui/spinner";
+import { loadDeferredResources } from "@/shared/i18n";
 
 const AccountsPage = lazyNamed(() => import("@/features/accounts/accounts-page"), "AccountsPage");
 const AppShell = lazyNamed(() => import("@/app/app-shell"), "AppShell");
@@ -18,11 +19,23 @@ const ModelsPage = lazyNamed(() => import("@/features/models/models-page"), "Mod
 const QualityGuardPage = lazyNamed(() => import("@/features/quality-guard/quality-guard-page"), "QualityGuardPage");
 const SettingsPage = lazyNamed(() => import("@/features/settings/settings-page"), "SettingsPage");
 
+/**
+ * 懒加载页面模块：先确保非首屏文案（`loadDeferredResources()`）已合并进 i18n，
+ * 再解析页面导出。顺序不可颠倒，否则页面会渲染出未翻译的 key。
+ */
+async function resolveLazyNamedExport<T extends Record<K, ComponentType>, K extends keyof T>(
+  loader: () => Promise<T>,
+  exportName: K,
+): Promise<{ default: T[K] }> {
+  await loadDeferredResources();
+  return { default: (await loader())[exportName] };
+}
+
 function lazyNamed<T extends Record<K, ComponentType>, K extends keyof T>(
   loader: () => Promise<T>,
   exportName: K,
 ): LazyExoticComponent<T[K]> {
-  return lazy(async () => ({ default: (await loader())[exportName] }));
+  return lazy(() => resolveLazyNamedExport(loader, exportName));
 }
 
 function DeferredPage({ page: Page }: { page: ComponentType }) {
