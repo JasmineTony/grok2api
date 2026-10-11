@@ -503,3 +503,19 @@ ERROR: failed to push ghcr.io/jasminetony/grok2api:main-arm64: denied: permissio
 | 镜像发布      | **Passed**：删除未链接的孤立包（HTTP 204）后，run `38054220100` attempt 2 的 `Publish image (amd64/arm64)` 成功，run `38055278879`（`main`）attempt 2 全绿；注册表实测 `ghcr.io/jasminetony/grok2api` 9 个 tag，`v0.1.1` / `main` / `latest` 均为 amd64 + arm64 多架构索引，匿名拉取 HTTP 200。详见 §11 与 `frontend/AUDIT.md` §14 |
 | 已修复缺陷（P1/P3）| **P1**：tag 推送时 `Merge image` 必然失败——`docker/metadata-action` 默认 `flavor: latest=auto` 会对 `type=ref,event=tag` 无条件生成 `latest`，而 `latest-amd64`/`latest-arm64` 只在 `main` 推送时存在，故 `docker buildx imagetools create` 报 `latest-arm64: not found` → `b4068303` 给两个 `Docker metadata` 步骤加 `flavor: latest=false`。**P3**：`Create manifest list` 循环缺 fail-fast，前面的 `imagetools create` 失败可被后续成功掩盖 → `a4f58384` 加 `set -euo pipefail`。**实测**：tag 推送 run `38060494037`（临时 tag `v0.1.1-verify.1`）与 main 推送 run `38060467337` 全部 job success。完整证据见 `frontend/AUDIT.md` §14 |
 | 回滚点        | 源码与配置随提交回退到 `7c0493a2`（发布前的 `main`）；tag `v0.1.1` 与对应 Release 需一并删除。本次不涉及生产数据迁移，无需数据回滚                                                                                              |
+
+## 15. 发布登记：v0.1.2（2026-10-11）
+
+按 `AGENTS.md` §8 执行。本节按发布流程分两次写入：**15.1 远端仓库重建**（重建动作完成即登记）、**15.2 发布与镜像证据**（tag 与镜像产出后登记）。
+
+### 15.1 远端仓库重建（按维护线负责人 2026-10-11 授权）
+
+为规避历史遗留问题，远端 `origin` 已删除并同名重建：旧仓库 `JasmineTony/grok2api`（repo id `1411672647`）于 2026-10-11 删除（HTTP 204），新仓库同名创建（repo id `1413858145`，2026-10-11T02:37:22Z，public、非 fork、默认分支 `main`、Actions 默认 workflow 权限 `read`）；旧 GHCR 包 `ghcr.io/jasminetony/grok2api` 成为孤立包后删除（HTTP 204），新包由本次 CI 首次发布时创建并链接到新仓库。
+
+有意丢弃：PR #1、Release `v0.1.1`、全部 Actions run 历史、tag `v0.1.1` 及其镜像；上游历史 tag 与 `v0.1.1` tag 未推送到新仓库（避免对旧提交触发镜像工作流）。本地已留 `git clone --mirror` 备份（69 个 ref）与旧仓库 ref 清单。完整表格与动机见 `frontend/AUDIT.md` §16.1。
+
+本机验收（2026-10-11，与前端覆盖率门禁并发运行）：`go build ./...` exit 0（10.6s）；`go vet ./...` exit 0（13.1s）；`go test ./... -count=1` exit 0（142.7s，64 包 ok / 2935 用例通过 / 0 失败 / 20 跳过）。20 个 PostgreSQL·Redis 集成用例因本机无隔离服务 **Skipped**，`go test -race ./...` 因 `CGO_ENABLED=0` 且无 C 编译器 **Blocked**（`go: -race requires cgo`）——两者均不记为通过，须以远端 CI 结果为准（见 15.2）。
+
+### 15.2 发布与镜像证据
+
+待 `v0.1.2` tag 与镜像产出后登记：发布提交与 tag、远端 CI run id（main 与 tag 两条路径）、Verify 各步骤结果、`Publish image (amd64|arm64)` 与 `Merge image` 结果、多架构断言输出、注册表 tag 列表与镜像 digest。
