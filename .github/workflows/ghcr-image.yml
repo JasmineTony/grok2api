@@ -169,6 +169,13 @@ jobs:
         working-directory: frontend
         run: pnpm test:e2e
 
+      # 前端「必需场景确实执行」断言（AGENTS.md TEST-3/TEST-5）：
+      # 复用 Vitest/Playwright 原生 JSON 报告，断言必需文件存在、通过数达标且无未登记跳过；
+      # 与后端 `Assert required integration tests ran` 对齐，不能以「配置已写好」代替执行证据。
+      - name: Assert required frontend tests ran
+        working-directory: frontend
+        run: pnpm test:results:e2e
+
       - name: Upload Playwright artifacts
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

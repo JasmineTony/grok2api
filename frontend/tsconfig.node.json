@@ -1,5 +1,12 @@
 {
   "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "forceConsistentCasingInFileNames": true,
     "composite": true,
     "skipLibCheck": true,
     "module": "ESNext",
@@ -8,5 +15,5 @@
     "tsBuildInfoFile": "./.cache/tsconfig.node.tsbuildinfo",
     "noEmit": true
   },
-  "include": ["vite.config.ts", "vitest.config.ts"]
+  "include": ["vite.config.ts", "vitest.config.ts", "scripts/**/*.ts"]
 }
