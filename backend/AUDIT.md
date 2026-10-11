@@ -19,9 +19,9 @@
 | BE-A4 | 竞态检测          | `go test -race ./...`                   | Passed（CI，见 §8）；本机 **Blocked**（`-race requires cgo`，无 C 编译器） |
 | BE-A5 | PostgreSQL 集成   | 隔离 CI 服务                            | Passed（CI，17 个用例真实执行）                                            |
 | BE-A6 | Redis 集成        | 隔离 CI 服务                            | Passed（CI，3 个用例真实执行）                                             |
-| BE-A7 | 性能基准          | `-bench . -benchmem -count=5`           | **Pending**（本轮测量中）                                                  |
-| BE-A8 | 账号分页聚合基准  | 新增 benchmark                          | **Pending**（当前不存在，见 §3）                                           |
-| BE-A9 | Swagger 精确 diff | `make swagger` + `git diff --exit-code` | **Pending**（阶段 7 复核）                                                 |
+| BE-A7 | 性能基准          | `-bench . -benchmem -count=5`           | Passed（本机 5 次取中位数实测表，见 §3；CI 不跑 benchmark）                |
+| BE-A8 | 账号分页聚合基准  | 新增 benchmark                          | Passed（阶段 4 已补 `BenchmarkServiceListPageAggregation`，见 §3/§10/QA-03） |
+| BE-A9 | Swagger 精确 diff | `make swagger` + `git diff --exit-code` | Passed（CI `Verify Swagger document` step success，见 §8/§14）             |
 
 `Blocked` 与 `Skipped` 均不记为通过。BE-A4/BE-A5/BE-A6 已由 CI 隔离服务补齐，证据见 §8；本机仍不具备 race 与外部存储条件。
 
@@ -223,7 +223,7 @@ go test ./internal/infra/egress ./internal/infra/runtime/memory ./internal/pkg/p
 - 根因（Docker 内日志）：`pnpm fetch` 触发 `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`，`1 lockfile entries failed verification (433 entries in 2.9s)`。
 - 策略来源：仓库未显式配置 `minimumReleaseAge`（`pnpm config get minimumReleaseAge` 返回 `undefined`），约束来自 pnpm 12 的内置默认值；`frontend/pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude: [vite@8.3.4]` 说明此前已命中过一次。
 - 时间依赖：本地与 CI 的 `pnpm install` 会缓存校验结果（"verified 1h ago"），Docker 内为全新校验；本分支 PR 模式的镜像构建（同一 Dockerfile、`push: false`）**通过**，说明当前 lockfile 在本次校验时满足策略。
-- 处置：**不通过降低安全约束绕过**。登记为 P2 待处理项；push 模式无法在未合并 `main` 的前提下验证，因此不声称已修复。
+- 处置：**不通过降低安全约束绕过**。原登记为 P2 待处理项，且当时无法在未合并 `main` 的前提下验证。**2026-10-10 更新**：真实阻塞已查明为 GHCR 孤立包（见 §11）并已解除；本节的 pnpm 供应链瞬时原因亦已自愈（`frontend/pnpm-workspace.yaml` 显式固定 `minimumReleaseAge: 1440`）。本条**已解决**，证据见 §11 与 §14。
 
 ## 9. 阶段 3 成果（后端契约分层）
 
@@ -315,7 +315,7 @@ ERROR: failed to push ghcr.io/jasminetony/grok2api:main-arm64: denied: permissio
 
 `.github/workflows/ghcr-image.yml` 配置了 `concurrency.cancel-in-progress`：连续推送会让先前的运行被判为 `cancelled`（不是失败），只有最后一次推送的运行代表当前状态。
 
-### main 分支的持久阻塞（需人工在 GitHub 操作）
+### main 分支的镜像发布阻塞（2026-10-10 已解除）
 
 `Publish image (amd64/arm64)` 始终失败：
 
@@ -326,7 +326,7 @@ ERROR: failed to push ghcr.io/jasminetony/grok2api:main-arm64: denied: permissio
 **2026-10-10 已解除（实测）**：`GET /users/JasmineTony/packages/container/grok2api` 显示 `repository = null`、162 个版本全部来自重建前的旧实例，证实「孤立包」。经维护线负责人授权，用带 `包读取作用域` + `包删除作用域` 的 交互式授权流程 凭据执行 `DELETE /users/JasmineTony/packages/container/grok2api` → **HTTP 204**（复查 404），再由 CI 重建：新包 2026-10-10T13:57:17Z 创建、`visibility=public`、`repository=JasmineTony/grok2api`。随后重跑 run `38054220100` 的失败任务，`Publish image (amd64)` 与 `(arm64)` 成功；重跑 run `38055278879`（`main`）后 `Publish` 与 `Merge image` 全部 success。注册表实测 9 个 tag（`v0.1.1`、`v0.1.1-amd64`、`v0.1.1-arm64`、`main`、`main-amd64`、`main-arm64`、`latest`、`latest-amd64`、`latest-arm64`），`v0.1.1`/`main`/`latest` 均为 linux/amd64 + linux/arm64 的 `application/vnd.oci.image.index.v1+json`，匿名拉取 HTTP 200。**原「修复方式」中的 UI 连接仓库路径仍然有效，但本次采用删除孤立包并重建，无需人工 UI 操作。**
 先前观察到的 `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` 是第一层**瞬时**原因（pnpm 12 内置 24h 供应链策略），重跑后已自愈；本分支已在 `frontend/pnpm-workspace.yaml` 显式固定 `minimumReleaseAge: 1440`（值不变）使该策略可审查。
 
-修复方式：Packages → grok2api → Package settings → Connect repository → 选 `JasmineTony/grok2api`；或删除孤立包；然后重跑 main 的失败任务。
+原修复方式（**已不再需要人工操作**）：Packages → grok2api → Package settings → Connect repository → 选 `JasmineTony/grok2api`；或删除孤立包；然后重跑 main 的失败任务。—— 本次实际采用「删除孤立包并重建」，见上方 2026-10-10 段落。
 
 **2026-10-10 后续修复（工作流缺陷，与孤立包无关）**：孤立包解除后暴露出独立缺陷——tag 推送时 `Merge image` 必然失败。根因：`docker/metadata-action@v5` 未设 `flavor`，默认 `latest=auto` 对 `type=ref,event=tag` **无条件**标记 latest（自动 latest 只继承 `flavor.prefix/suffix`、不继承条目级 `suffix=`），因此 per-arch 步骤在 tag 推送时另推一个单架构裸 `latest`，merge 步骤去找不存在的 `latest-amd64`/`latest-arm64` 而报 `latest-arm64: not found`。已在 `b4068303` 给两个 `Docker metadata` 步骤加 `flavor: latest=false`，并在 `a4f58384` 给 `Create manifest list` 循环加 `set -euo pipefail`（只读审查发现的 P3）。实测：临时 tag `v0.1.1-verify.1` 的 run `38060494037` 与 main 推送 run `38060467337` 全部 job success；验证后已删除临时 tag 与其 3 个镜像版本。登记见 §5 `BE-07`/`BE-08`。
 
@@ -502,7 +502,7 @@ ERROR: failed to push ghcr.io/jasminetony/grok2api:main-arm64: denied: permissio
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 版本与提交    | 根 `VERSION` = `v0.1.1`（此前 `v3.1.6`，`Dockerfile:66` 复制进镜像 `/app/VERSION`）；`frontend/package.json` 同步为 `0.1.1`；发布提交 `b2123a7d0e250948f9f23b941f5a9acd2640ba35`（`main`，由 `maint/modular-quality-audit` fast-forward 合并）                                              |
 | tag / Release | annotated `v0.1.1`（tag 对象 `db20ef9638fc27cee5bc915dc7afa84724a34610`）；Release https://github.com/JasmineTony/grok2api/releases/tag/v0.1.1 （本仓库首个 Release，非草稿、非预发布）                                                                                                          |
-| 本机验证      | `go build ./...`、`go vet ./...`、`go test ./... -count=1` 均 **exit 0**（75 包：64 ok / 11 无测试文件 / 0 FAIL）；21 个 PostgreSQL·Redis 集成用例因本机无隔离服务 **Skipped**（非 Passed），`-race` 本机 **Blocked**（无 cgo），两者由 Linux CI 覆盖                                       |
+| 本机验证      | `go build ./...`、`go vet ./...`、`go test ./... -count=1` 均 **exit 0**（75 包：64 ok / 11 无测试文件 / 0 FAIL）；**20** 个 PostgreSQL·Redis 集成用例因本机无隔离服务 **Skipped**（`-v` 实测 `--- SKIP` 计数 20，非 Passed），`-race` 本机 **Blocked**（无 cgo），两者由 Linux CI 覆盖 |
 | 远端 CI       | run `38054220100`（tag `v0.1.1`）与 run `38054197912`（`main`）的 Verify job **18 步全部 success**：Test backend、Assert required integration tests ran（PostgreSQL/Redis 用例 **0 跳过**）、Race backend、Vet backend、Swagger 精确 diff、前端 `pnpm verify`、全栈 E2E                            |
 | 镜像发布      | **Passed**：删除未链接的孤立包（HTTP 204）后，run `38054220100` attempt 2 的 `Publish image (amd64/arm64)` 成功，run `38055278879`（`main`）attempt 2 全绿；注册表实测 `ghcr.io/jasminetony/grok2api` 9 个 tag，`v0.1.1` / `main` / `latest` 均为 amd64 + arm64 多架构索引，匿名拉取 HTTP 200。详见 §11 与 `frontend/AUDIT.md` §14 |
 | 已修复缺陷（P1/P3）| **P1**：tag 推送时 `Merge image` 必然失败——`docker/metadata-action` 默认 `flavor: latest=auto` 会对 `type=ref,event=tag` 无条件生成 `latest`，而 `latest-amd64`/`latest-arm64` 只在 `main` 推送时存在，故 `docker buildx imagetools create` 报 `latest-arm64: not found` → `b4068303` 给两个 `Docker metadata` 步骤加 `flavor: latest=false`。**P3**：`Create manifest list` 循环缺 fail-fast，前面的 `imagetools create` 失败可被后续成功掩盖 → `a4f58384` 加 `set -euo pipefail`。**实测**：tag 推送 run `38060494037`（临时 tag `v0.1.1-verify.1`）与 main 推送 run `38060467337` 全部 job success。完整证据见 `frontend/AUDIT.md` §14 |

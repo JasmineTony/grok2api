@@ -80,7 +80,7 @@
 
 空账号池下 `/readyz` 返回 503 `not_ready` 属预期生产语义，管理面可用性单独断言，未放宽生产门槛。
 
-尚未覆盖（后续阶段补齐）：账号导入与列表、设置保存的版本冲突、模型/出口页面、Quality Guard 未启用状态、创作台与媒体流程、语言主题与移动视口。
+- **E2E 层面**尚未覆盖（非验收阻塞：`FE-A13` 的判据是 `pnpm test:e2e` 门禁存在且 16/16 通过，不声称流程覆盖完整）：账号导入与列表、设置保存的版本冲突、模型/出口页面、Quality Guard 未启用状态、创作台与媒体流程、语言主题与移动视口。其中前 5 类**已在 Vitest 组件/集成层覆盖**——账号导入 `src/features/accounts/accounts-page.test.tsx:256`、`use-accounts-task-flows.test.tsx:530`；设置版本冲突 `src/features/settings/settings-page.test.tsx:277`（注入 `ApiError(409, "revisionConflict")` 并断言错误文案与草稿保留）、`use-settings.test.tsx:215`；模型 `src/features/models/*.test.tsx` 9 个、出口 `src/features/settings/egress-*.test.tsx` 9 个；Quality Guard 未启用 `src/features/quality-guard/quality-guard-page.test.tsx:76`；创作台与媒体 `src/features/creative-console/*.test.tsx`、`src/features/media/*.test.tsx`；语言/主题 `src/shared/i18n/language-memory.test.tsx:51`、`src/app/shell-account-control.test.tsx:113`。**只有「移动视口」在任何层都无覆盖**：`playwright.config.ts:25` 仅有 `chromium` + `Devices["Desktop Chrome"]`，无移动 project，spec 内也无 `setViewportSize`。
 
 ## 3. 生产产物与体积预算
 
@@ -178,7 +178,7 @@
 ## 6. 后续阶段与回滚
 
 - 阶段顺序与文件范围见 `.pi/plan/前后端全量审计与分阶段模块化升级计划-20261009-1947.md`。
-- 阶段 1 之后仍待完成：E2E（阶段 2）、公共契约与 i18n 拆分（阶段 3）、账号/密钥/审计/模型（阶段 4）、设置/出口/守护（阶段 5）、创作台/媒体/Gateway（阶段 6）、性能与文档总验收（阶段 7）。
+- 阶段 1 之后各阶段的执行与登记情况：阶段 2–7 均已执行并在 §7–§13 记录；各阶段遗留的存量项以 §5 问题清单为准（`FE-04`/`FE-06`/`FE-07`/`FE-08`、`BE-01`/`BE-02`/`BE-04`/`BE-05` 等仍为 `Pending`）。本行原「阶段 2–7 仍待完成」的表述已过期，2026-10-10 更正。
 - 回滚：按阶段提交回滚源码、配置、文档与锁文件；门禁基线与豁免清单随对应阶段提交一起回滚。本文件在每阶段结束时更新状态与证据，不覆盖历史结论。
 
 ## 7. CI 真实验证（阶段 2）
