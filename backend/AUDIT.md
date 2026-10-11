@@ -996,3 +996,51 @@ main 线 `backend/AUDIT.md` §20（BE-18）、§21（BE-19）记录门禁工具�
 | BE-B4 benchmark 统计检验 | 仍开放（P3） | `benchstat` 未安装，维持「中位数 + 可比性限制」登记 |
 | Linux `-race` 与隔离 PG/Redis 的**本机**证据 | 不适用 | CI 侧已闭环（§21.2），本机不再声称 |
 | 交付分支推送与合并 `main` | **Blocked（需授权 + 凭据能力）** | 见 `frontend/AUDIT.md` §20.5 |
+
+## 22. 2026-10-11（续五）模块边界规则扩展至 transport→infra 与 internal 目录覆盖守卫（BE-21）
+
+提交 `94caa642`（`test(backend)`，+135/−0，仅测试文件，未改生产代码）。
+
+### 22.1 规则与例外变化
+
+| 维度 | 变化前 | 变化后 |
+| --- | --- | --- |
+| 边界规则数 | 4（domain / repository / ports / application） | **5**（新增「transport 生产文件不直连 infra」，`includeTests=false`：handler 测试用真实 infra 装配） |
+| 冻结例外 | 27 文件 / 29 对（仅 application） | 27 / 29（未增删）+ **1 / 1**（transport：`internal/transport/http/middleware/request.go -> infra/security`，附理由与使用点） |
+| internal 一级目录参与判定 | 4 个规则目录 | **11 个**（5 规则目录 + 6 处带理由的豁免：app、buildinfo、cli、infra、pkg、shared） |
+
+`request.go` 的例外理由：`:11` 的 import 与 `:24` 的 `security.NewOpaqueToken(12)` 属「请求元数据原语」，是 transport 层最小必要依赖；例外按 (文件, 包) 精确匹配，只许持平或删除（棘轮语义）。
+
+### 22.2 验证（本机实测，命令 + 退出码 + 关键输出）
+
+```
+cd backend && go test ./internal/ports/provider/ -count=1                       # exit 0
+ok github.com/chenyme/grok2api/backend/internal/ports/provider  4.151s
+
+cd backend && go test ./internal/ports/provider/ -run 'Boundar' -v -count=1     # exit 0
+scope internal/transport: Go 文件=53, AST imports=462, 豁免测试文件=22, 存量依赖=1, 违规=0
+保留存量: internal/transport/http/middleware/request.go -> .../internal/infra/security
+参与判定的边界规则=5、Go 文件=239、存量依赖=30
+internal 一级目录覆盖（BE-G2）：规则=5、豁免=6、参与判定=11
+
+cd backend && go run ./tools/structurecheck                                      # exit 0
+参与判定的作用域（REV-3）：5475 个（0 越限时据此判断不是漏报）
+```
+
+### 22.3 判别力取证（scratch 副本注入，工作树未被污染）
+
+方法：整份复制 `backend/` 到 `%PI_SCRATCH_DIR%\be-g1-g2\backend`，在副本上运行同一命令。
+
+| 步骤 | 注入 | 退出码 | 关键输出 |
+| --- | --- | --- | --- |
+| base | 无 | 0 | `ok … 3.829s` |
+| P1 | 新增 `internal/transport/http/zz_boundary_probe.go`（`import _ infra/security`） | **1** | `违反分层边界:` … `zz_boundary_probe.go:3 -> .../internal/infra/security` |
+| P2 | 新增一级目录 `internal/zz_probe_layer/probe.go` | **1** | `internal/zz_probe_layer 未被任何规则或覆盖登记覆盖：请扩展 layerBoundaries 或登记豁免理由` |
+| P3 | 删除副本 `request.go:11` 的 infra import（使例外失效） | **1** | `存量依赖=0` + `必须删除已消失的依赖例外: …` |
+| restore | 还原探针 | 0 | `ok … 4.031s` |
+
+### 22.4 未覆盖与存量缺口（如实登记）
+
+- BE-G1 只收口 transport→infra 方向；`infra` 目录的豁免理由中已登记存量缺口：`infra/egress` 8 个生产文件依赖 `application/egress`，加规则前需先冻结这 8 条例外（不扩大本轮范围）。
+- `app`（唯一装配入口）保持无自动规则、仅豁免（评审准则）。
+- 本包改动后未重跑 `go test ./...`、`bash scripts/verify.sh` 与 `-race`（改动仅 `_test.go`；相关包测试 + `vet` + `structurecheck` 已闭环）；CI 侧由探针分支覆盖（见 §21.2）。
