@@ -1,4 +1,5 @@
-name: GHCR Image
+﻿name: GHCR Image
+# 触发说明：push 到 main 或推送 v*.*.* tag 时构建并发布多架构镜像。
 
 on:
   push:
@@ -22,8 +23,7 @@ jobs:
   verify:
     name: Verify
     runs-on: ubuntu-latest
-    # PostgreSQL / Redis 集成测试必须有真实服务，否则相关并发、锁与账本不变量没有证据。
-    services:
+    # PostgreSQL / Redis 闆嗘垚娴嬭瘯蹇呴』鏈夌湡瀹炴湇鍔★紝鍚﹀垯鐩稿叧骞跺彂銆侀攣涓庤处鏈笉鍙橀噺娌℃湁璇佹嵁銆?    services:
       postgres:
         image: postgres:17-alpine
         env:
@@ -47,11 +47,9 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     env:
-      # 仅指向本 job 的隔离 service container；测试用 TestMain 会按需创建并回收临时数据库。
-      TEST_POSTGRES_ADMIN_DSN: postgres://grok2api:grok2api@127.0.0.1:5432/grok2api?sslmode=disable
+      # 浠呮寚鍚戞湰 job 鐨勯殧绂?service container锛涙祴璇曠敤 TestMain 浼氭寜闇€鍒涘缓骞跺洖鏀朵复鏃舵暟鎹簱銆?      TEST_POSTGRES_ADMIN_DSN: postgres://grok2api:grok2api@127.0.0.1:5432/grok2api?sslmode=disable
       TEST_REDIS_ADDRESS: 127.0.0.1:6379
-      # 使用独立 DB 序号，避免与其它用途共用默认库。
-      TEST_REDIS_DATABASE: "9"
+      # 浣跨敤鐙珛 DB 搴忓彿锛岄伩鍏嶄笌鍏跺畠鐢ㄩ€斿叡鐢ㄩ粯璁ゅ簱銆?      TEST_REDIS_DATABASE: "9"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,17 +60,16 @@ jobs:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
 
-      # AGENTS.md §8：VERSION 是唯一权威版本源，frontend/package.json 必须与之处于同一条版本线。
-      - name: Verify version carriers are aligned
+      # AGENTS.md 搂8锛歏ERSION 鏄敮涓€鏉冨▉鐗堟湰婧愶紝frontend/package.json 蹇呴』涓庝箣澶勪簬鍚屼竴鏉＄増鏈嚎銆?      - name: Verify version carriers are aligned
         run: |
           set -euo pipefail
           version_file=$(tr -d '[:space:]' < VERSION)
           package_version=$(jq -r .version frontend/package.json)
           if [ "$version_file" != "v$package_version" ]; then
-            echo "版本载体不一致（AGENTS.md §8）：VERSION=$version_file，frontend/package.json=$package_version"
+            echo "鐗堟湰杞戒綋涓嶄竴鑷达紙AGENTS.md 搂8锛夛細VERSION=$version_file锛宖rontend/package.json=$package_version"
             exit 1
           fi
-          echo "版本载体一致：$version_file"
+          echo "鐗堟湰杞戒綋涓€鑷达細$version_file"
 
       - name: Test backend
         working-directory: backend
@@ -80,12 +77,10 @@ jobs:
 
       - name: Assert required integration tests ran
         run: |
-          # 按用例名匹配外部依赖集成测试（Postgres/Redis）；按包路径匹配会漏掉
-          # internal/application/account 中的 Redis 用例。
-          skipped=$(jq -r 'select(.Action == "skip" and .Test != null) | "\(.Package) \(.Test)"' "$RUNNER_TEMP/backend-test.json" \
+          # 鎸夌敤渚嬪悕鍖归厤澶栭儴渚濊禆闆嗘垚娴嬭瘯锛圥ostgres/Redis锛夛紱鎸夊寘璺緞鍖归厤浼氭紡鎺?          # internal/application/account 涓殑 Redis 鐢ㄤ緥銆?          skipped=$(jq -r 'select(.Action == "skip" and .Test != null) | "\(.Package) \(.Test)"' "$RUNNER_TEMP/backend-test.json" \
             | grep -E 'Postgres|Redis' || true)
           if [ -n "$skipped" ]; then
-            echo "必需集成用例被跳过（服务不可达或环境变量缺失），不得记为通过："
+            echo "蹇呴渶闆嗘垚鐢ㄤ緥琚烦杩囷紙鏈嶅姟涓嶅彲杈炬垨鐜鍙橀噺缂哄け锛夛紝涓嶅緱璁颁负閫氳繃锛?
             echo "$skipped"
             exit 1
           fi
@@ -115,8 +110,7 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
-          # 仓库根没有 package.json，action 无法从 packageManager 自动读取版本，需与 frontend/package.json 保持一致
-          version: 12.10.1
+          # 浠撳簱鏍规病鏈?package.json锛宎ction 鏃犳硶浠?packageManager 鑷姩璇诲彇鐗堟湰锛岄渶涓?frontend/package.json 淇濇寔涓€鑷?          version: 12.10.1
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -129,8 +123,7 @@ jobs:
         working-directory: frontend
         run: pnpm install --frozen-lockfile
 
-      # pnpm verify 覆盖格式、类型、Oxlint、ESLint、依赖边界、结构约束、门禁自测、覆盖率、生产构建与体积预算。
-      - name: Verify frontend
+      # pnpm verify 瑕嗙洊鏍煎紡銆佺被鍨嬨€丱xlint銆丒SLint銆佷緷璧栬竟鐣屻€佺粨鏋勭害鏉熴€侀棬绂佽嚜娴嬨€佽鐩栫巼銆佺敓浜ф瀯寤轰笌浣撶Н棰勭畻銆?      - name: Verify frontend
         working-directory: frontend
         run: pnpm verify
 
@@ -138,8 +131,7 @@ jobs:
         working-directory: frontend
         run: pnpm exec playwright install --with-deps chromium
 
-      # 真实全栈 E2E：生产 dist + 真实 Go 服务（临时 SQLite/Memory），每 worker 独立进程与临时目录。
-      - name: Run full-stack E2E
+      # 鐪熷疄鍏ㄦ爤 E2E锛氱敓浜?dist + 鐪熷疄 Go 鏈嶅姟锛堜复鏃?SQLite/Memory锛夛紝姣?worker 鐙珛杩涚▼涓庝复鏃剁洰褰曘€?      - name: Run full-stack E2E
         working-directory: frontend
         run: pnpm test:e2e
 
@@ -233,8 +225,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ steps.image.outputs.name }}
-          # 同 merge 步骤：关闭自动 latest，否则 tag 推送时每个架构都会各自推送一个裸 latest 单架构镜像。
-          flavor: latest=false
+          # 鍚?merge 姝ラ锛氬叧闂嚜鍔?latest锛屽惁鍒?tag 鎺ㄩ€佹椂姣忎釜鏋舵瀯閮戒細鍚勮嚜鎺ㄩ€佷竴涓８ latest 鍗曟灦鏋勯暅鍍忋€?          flavor: latest=false
           tags: |
             type=ref,event=branch,suffix=-${{ matrix.arch }}
             type=ref,event=tag,suffix=-${{ matrix.arch }}
@@ -287,11 +278,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ steps.image.outputs.name }}
-          # 关闭 metadata-action 的自动 latest：flavor=auto 会把 type=ref,event=tag 一律标记为 latest，
-          # 而自动 latest 只继承 flavor.prefix/suffix、不继承条目级 suffix，因此 tag 推送时
-          # per-arch 步骤会推送裸 latest（单架构），且 latest-amd64/arm64 只在 main 推送时生成，
-          # 使 merge 步骤因缺少 latest-<arch> 源而失败。latest 仅由下面的 type=raw 在 main 上显式产生。
-          flavor: latest=false
+          # 鍏抽棴 metadata-action 鐨勮嚜鍔?latest锛歠lavor=auto 浼氭妸 type=ref,event=tag 涓€寰嬫爣璁颁负 latest锛?          # 鑰岃嚜鍔?latest 鍙户鎵?flavor.prefix/suffix銆佷笉缁ф壙鏉＄洰绾?suffix锛屽洜姝?tag 鎺ㄩ€佹椂
+          # per-arch 姝ラ浼氭帹閫佽８ latest锛堝崟鏋舵瀯锛夛紝涓?latest-amd64/arm64 鍙湪 main 鎺ㄩ€佹椂鐢熸垚锛?          # 浣?merge 姝ラ鍥犵己灏?latest-<arch> 婧愯€屽け璐ャ€俵atest 浠呯敱涓嬮潰鐨?type=raw 鍦?main 涓婃樉寮忎骇鐢熴€?          flavor: latest=false
           tags: |
             type=ref,event=branch
             type=ref,event=tag
@@ -307,9 +295,8 @@ jobs:
       - name: Create manifest list
         shell: bash
         run: |
-          # fail-fast：管道的退出码只反映 while 循环最后一次迭代；缺 set -e/pipefail 时，
-          # 前面的 imagetools create 失败会被后面的成功掩盖，留下陈旧标签却报绿。
-          set -euo pipefail
+          # fail-fast锛氱閬撶殑閫€鍑虹爜鍙弽鏄?while 寰幆鏈€鍚庝竴娆¤凯浠ｏ紱缂?set -e/pipefail 鏃讹紝
+          # 鍓嶉潰鐨?imagetools create 澶辫触浼氳鍚庨潰鐨勬垚鍔熸帺鐩栵紝鐣欎笅闄堟棫鏍囩鍗存姤缁裤€?          set -euo pipefail
           jq -cr '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON" | while read -r tag; do
             docker buildx imagetools create \
               -t "$tag" \
@@ -320,15 +307,13 @@ jobs:
       - name: Inspect image
         shell: bash
         run: |
-          # 断言索引真的含两个平台：单架构索引此前也会绿色通过，发布验收只能靠人工读日志。
-          # main 推送时 version 为 main、tag 推送时为 vX.Y.Z，两者都取 metadata-action 的 version 输出。
-          set -euo pipefail
+          # 鏂█绱㈠紩鐪熺殑鍚袱涓钩鍙帮細鍗曟灦鏋勭储寮曟鍓嶄篃浼氱豢鑹查€氳繃锛屽彂甯冮獙鏀跺彧鑳介潬浜哄伐璇绘棩蹇椼€?          # main 鎺ㄩ€佹椂 version 涓?main銆乼ag 鎺ㄩ€佹椂涓?vX.Y.Z锛屼袱鑰呴兘鍙?metadata-action 鐨?version 杈撳嚭銆?          set -euo pipefail
           ref="${{ steps.image.outputs.name }}:${{ steps.meta.outputs.version }}"
-          echo "检查 $ref"
+          echo "妫€鏌?$ref"
           platforms=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' \
             | jq -r '.manifests[].platform | select(. != null) | .os + "/" + .architecture' | sort -u)
           echo "$platforms"
           for expected in linux/amd64 linux/arm64; do
-            grep -qx "$expected" <<< "$platforms" || { echo "发布验收失败：$ref 缺少平台 $expected"; exit 1; }
+            grep -qx "$expected" <<< "$platforms" || { echo "鍙戝竷楠屾敹澶辫触锛?ref 缂哄皯骞冲彴 $expected"; exit 1; }
           done
-          echo "多架构断言通过：linux/amd64 + linux/arm64"
+          echo "澶氭灦鏋勬柇瑷€閫氳繃锛歭inux/amd64 + linux/arm64"
