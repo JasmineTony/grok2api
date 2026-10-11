@@ -944,3 +944,55 @@ go test <pkg> -run '^$' -bench '<正则>' -benchmem -count=5
 | CI 运行（覆盖 race、PG+Redis 0 跳过、镜像 check、前端 E2E 等） | `git push -u origin maint/acceptance-audit-20261011-closeout` → **exit 1**，原文：`! [remote rejected] … (refusing to allow an OAuth App to create or update workflow '.github/workflows/codeql.yml' without 'workflow' scope)`；`gh` CLI 不存在；本地凭据助手 缓存凭据含 `repo`/`仓库删除作用域` 但**无工作流作用域** | **Blocked**（缺凭据 scope，非代码问题）。所需用户动作：提供具备工作流作用域的推送凭据（或 `gh auth login`），随后推送该分支并开草稿 PR（`pull_request`→main 即触发 Verify + check_ghcr_image，不推送镜像）。推送前已按评审准则复核 `git remote -v`（origin=`JasmineTony/grok2api`，upstream 永不推送） |
  
 **说明**：Swagger 精确 diff 已在本机闭环（§20.12），不再属于 CI-only 项；`check_ghcr_image` 的多架构构建仍只能由 CI 产出。
+
+## 21. 2026-10-11（续四）门禁工具版本合并与 CI 证据闭环（BE-20）
+
+本节与 `frontend/AUDIT.md` §20 同批。工作分支：**`maint/acceptance-audit-20261011-residual`（新分支）**，起点 `8a1bd20d`。
+
+### 21.1 合入 main 线门禁修复，并用修复后工具复测
+
+| 提交 | 来源 | 内容 |
+| --- | --- | --- |
+| `83ff5ae7` | `57510159` | `backend/tools/structurecheck`（包级函数字面量漏报、闭包基线键碰撞两处修复）与 `backend/tools/apicheck` 及其自证夹具；搬运，未改语义（CHG-2） |
+
+**复测（本机实测，命令 + 退出码 + 输出）**：
+
+```
+cd backend && go run ./tools/structurecheck          # exit 0
+扫描生产 Go 文件：478 个
+超限文件（> 600 行）：当前 0 个，基线 0 个
+超限函数（> 50 行）：当前 0 个，基线 0 个
+越限嵌套（> 3 层）：当前 0 个，基线 0 个
+参与判定的作用域（REV-3）：5475 个（0 越限时据此判断不是漏报）
+结构门禁通过：未新增超限文件、超限函数或越限嵌套。
+```
+
+REV-3 作用域 **5472 → 5475**（原值见 §20.7、§20.8 的旧工具口径）：工具修复了两处漏报通道，参与判定的作用域计数随之上升；结论仍为 0 越限。
+
+### 21.2 CI 证据闭环（更正 §20.13 的三项 Blocked）
+
+RUN `38147560751`「GHCR Image」（`event=pull_request`，`head_sha=b59e5ff6`）`conclusion=success`；其 `Verify` job 与镜像 job 的相关 step：
+
+| step / job | 结论 | 关闭的阻塞项 |
+| --- | --- | --- |
+| step `Test backend` | success | — |
+| step `Assert required integration tests ran` | success | §20.13「隔离 PostgreSQL/Redis 0 跳过」 |
+| step `Race backend` | success | §20.13「`go test -race`」 |
+| step `Vet backend` | success | — |
+| step `Verify Swagger document` | success | §20.12 的 CI 侧 |
+| JOB `Build image (amd64)` / `Build image (arm64)` | success | §20.13「镜像构建」 |
+
+**原值 → 新值**：§20.13 记三项为「Blocked（需 CI）」→ 现值为 **CI 侧已取得真实成功结论**；**本机侧仍不声称**（无 C 编译器、无隔离服务）。根因与复现命令见 `frontend/AUDIT.md` §20.2。
+
+### 21.3 与 main 线章节的关系
+
+main 线 `backend/AUDIT.md` §20（BE-18）、§21（BE-19）记录门禁工具修复本身的取证。本分支未逐字搬运（本分支 §20 是同号但内容不同的章节，逐字搬运会产生重复编号并破坏内部交叉引用）；完整原文见 main 线提交 `57510159`。本节的复测结论表明：**在修复后的工具口径下，本分支的后端成果仍为 0 越限**。
+
+### 21.4 仍未闭环项（后端相关）
+
+| 项 | 状态 | 说明 |
+| --- | --- | --- |
+| BE-G3 `ports/security` 迁移 | 需单独批准 | 架构迁移，本轮未执行 |
+| BE-B4 benchmark 统计检验 | 仍开放（P3） | `benchstat` 未安装，维持「中位数 + 可比性限制」登记 |
+| Linux `-race` 与隔离 PG/Redis 的**本机**证据 | 不适用 | CI 侧已闭环（§21.2），本机不再声称 |
+| 交付分支推送与合并 `main` | **Blocked（需授权 + 凭据能力）** | 见 `frontend/AUDIT.md` §20.5 |
