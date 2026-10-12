@@ -1184,11 +1184,12 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 
 ### 22.5 EVID-8 数字更正（原值 → 新值）
 
-| 位置                      | 原值                                     | 新值                                      | 根因与复现                                                                                                       |
-| ------------------------- | ---------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| §21.1                     | `pnpm test:gates` = 41 个用例            | **46 个用例（34 必须失败）**              | `844c355c` 新增 5 个用例；复现 `cd frontend; pnpm test:gates`                                                    |
-| §21.3                     | （未记录阈值）                           | `MIN_E2E_FILES = 6`、minPassed 10/7/7/5/5 | 棘轮对齐 (spec × project) 口径；见 `scripts/check-test-results.mjs` 常量与注释                                   |
-| 历史记录中的 E2E 门禁输出 | 文件 5 个 / 用例 21 个                   | **文件 6 个 / 用例 35 个**                | 移动 project 加入后的口径；由 `844c355c` 对齐                                                                    |
-| §20.3                     | REV-3 作用域 5475                        | 5475（不变）                              | `cd backend; go run ./tools/structurecheck`                                                                      |
-| §19.8                     | 前端 REV-3 作用域 2524                   | **2525**                                  | 修复后的工具口径；复现 `cd frontend; node scripts/check-structure.mjs`                                           |
-| §20.4                     | 「FE-19-6 已不成立（主检出已是 13 步）」 | **仍成立**：主检出 `AGENTS.md:85` = 12 步 | 上一版自我更正反向失真（EVID-8：记录更正之更正）；复现 `Select-String E:\grok2api\AGENTS.md -Pattern '覆盖.*步'` |
+| 位置                                 | 原值                                     | 新值                                      | 根因与复现                                                                                                       |
+| ------------------------------------ | ---------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| §21.1                                | `pnpm test:gates` = 41 个用例            | **46 个用例（34 必须失败）**              | `844c355c` 新增 5 个用例；复现 `cd frontend; pnpm test:gates`                                                    |
+| §21.3                                | （未记录阈值）                           | `MIN_E2E_FILES = 6`、minPassed 10/7/7/5/5 | 棘轮对齐 (spec × project) 口径；见 `scripts/check-test-results.mjs` 常量与注释                                   |
+| 历史记录中的 E2E 门禁输出            | 文件 5 个 / 用例 21 个                   | **文件 6 个 / 用例 35 个**                | 移动 project 加入后的口径；由 `844c355c` 对齐                                                                    |
+| §20.3                                | REV-3 作用域 5475                        | 5475（不变）                              | `cd backend; go run ./tools/structurecheck`                                                                      |
+| §19.8                                | 前端 REV-3 作用域 2524                   | **2525**                                  | 修复后的工具口径；复现 `cd frontend; node scripts/check-structure.mjs`                                           |
+| §20.4                                | 「FE-19-6 已不成立（主检出已是 13 步）」 | **仍成立**：主检出 `AGENTS.md:85` = 12 步 | 上一版自我更正反向失真（EVID-8：记录更正之更正）；复现 `Select-String E:\grok2api\AGENTS.md -Pattern '覆盖.*步'` |
+| §14/§16 等历史章节的 `Dockerfile:66` | `Dockerfile:66`                          | **`Dockerfile:67`**                       | `COPY VERSION /app/VERSION` 现位于 `:67`（`:65`=二进制、`:66`=`dist`）；历史行保留原值，按本表指针更正           |
