@@ -1255,3 +1255,12 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 | REV-5 预算口径（认证后首屏 282.30 KiB > 260 KiB）                | 需授权          | 改阈值或口径，依据见 §21.4                                |
 | FE-19-8（i18n 单例失败重试语义）、BE-G3（`ports/security` 迁移） | 需授权          | 本轮未改                                                  |
 | `main` 的 11 个未推送提交                                        | 待决策          | 本轮未改写其引用                                          |
+
+### 23.4 探针 R3：最终内容的 CI 复跑（success）
+
+| run                              | sha        | 结论        | 覆盖内容                                                                                                                                                                                                |
+| -------------------------------- | ---------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `38195708252`「GHCR Image」      | `3714cd39` | **success** | F5 之后的 42 实例 E2E、基准 `ResetTimer` 修复与 §23 全部登记；job 级：`Verify` `success`、`Build image (amd64)` / `(arm64)` `success`、`Publish image` / `Merge image` `skipped`（PR 事件下的预期行为） |
+| `38195708323`「CodeQL Advanced」 | `3714cd39` | **success** | 三个 Analyze job（actions / go / javascript-typescript）                                                                                                                                                |
+
+探针分支 `ci-probe/acceptance-audit-20261011-r1` 的 tip `3714cd39` 内容等同 `maint/acceptance-audit-20261011-residual` 的当前 tip（唯一差异是 `.github/workflows/**` 保持 `origin/main` 版本，`git diff --name-only origin/main -- .github/workflows` 为空）。**注意**：该 run 仍未包含维护线工作流新增的两步（`Verify backend structure and API contract`、`Assert required frontend tests ran`），原因与后果见 §23.2 第 3 条。
