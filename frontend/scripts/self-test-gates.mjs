@@ -6,8 +6,9 @@
  *  - check-structure：新增超限文件 / 超限函数继续增大 / 新增嵌套越限函数 / 缺少基线 → 非零退出；
  *    并覆盖 REV-3 作用域归属（匿名内联回调归属最近外层具名作用域、类构造函数独立作用域、
  *    具名嵌套函数重置为独立作用域）与输出中的键名、深度断言。
- *  - check-bundle-budget：首屏闭包超限 / 路由新增闭包超限 / 无法识别路由 / 相对基线增长 → 非零退出
- * 并通过「阈值放宽」与「符合基线」两组反例，确认门禁不是无条件失败。
+ *  - check-bundle-budget：首屏闭包超限 / 路由新增闭包超限 / 无法识别路由 / 相对基线增长 / dist 陈旧
+ *    （清单输入指纹不一致 / 缺构建清单 / 产物被改写）→ 非零退出；并通过「阈值放宽」与「符合基线」两组
+ *    反例确认门禁不是无条件失败。
  *  - check-test-results：清单文件缺失（部分缺失也算）/ 通过数低于棘轮 / 必填用例标题缺失或未通过 /
  *    报告文件总数低于棘轮 / 出现未登记跳过 / 文件级失效（Vitest 收集期失败、非清单文件整文件跳过）/
  *    移动 project 被移除后 E2E 实例数回落到桌面口径 / E2E 存在 flaky / 报告早于清单文件 mtime / 报告缺失 →
@@ -29,6 +30,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+// 装置清单必须与门禁使用同一套指纹：直接引用产品代码（TS 由 Node 类型剥离加载），不另写一份指纹逻辑。
+import { buildInputHash, writeBuildManifest } from "./build-inputs.ts";
 
 const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -242,6 +246,7 @@ writeFile(
   'import { shared } from "./shared.js";\nvoid import(`./route.js`);\nconsole.log(shared);\n',
 );
 writeFile(path.join(assetsDir, "route.js"), `export const route = "${"r".repeat(400 * 1024)}";\n`);
+
 const distWithoutRoutes = path.join(root, "dist-no-routes");
 writeFile(path.join(distWithoutRoutes, "assets", "shared.js"), `export const shared = "x";\n`);
 writeFile(
@@ -252,6 +257,29 @@ writeFile(
   path.join(distWithoutRoutes, "assets", "entry.js"),
   'import { shared } from "./shared.js";\nconsole.log(shared);\n',
 );
+
+/**
+ * 装置 dist 必须带「与当前构建输入一致」的 `.build-manifest.json`：门禁读取 dist 前会调用
+ * scripts/build-inputs.ts 的 isBuildFresh。这里用产品代码的 buildInputHash / writeBuildManifest 产出清单，
+ * 不在自测里另写一套指纹，否则正样本只证明自测自洽。
+ */
+function writeFreshManifest(outDir) {
+  writeBuildManifest(outDir, buildInputHash(frontendDir));
+}
+writeFreshManifest(distDir);
+writeFreshManifest(distWithoutRoutes);
+
+/** 陈旧夹具（F1）：清单记录的输入指纹与当前构建输入不一致（等价于改了构建输入未重新 build）。 */
+const distStaleInput = path.join(root, "dist-stale-input");
+fs.cpSync(distDir, distStaleInput, { recursive: true });
+/** 陈旧夹具（F2）：完全没有构建清单——旧实现看不到任何新鲜度信息，`--update` 可把陈旧数字冻结进基线。 */
+const distWithoutManifest = path.join(root, "dist-without-manifest");
+fs.cpSync(distDir, distWithoutManifest, { recursive: true });
+fs.rmSync(path.join(distWithoutManifest, ".build-manifest.json"));
+/** 陈旧夹具（F3）：build 之后产物被改写（outputHash 与清单不一致）。 */
+const distTamperedOutput = path.join(root, "dist-tampered-output");
+fs.cpSync(distDir, distTamperedOutput, { recursive: true });
+fs.appendFileSync(path.join(distTamperedOutput, "assets", "shared.js"), "// 被改写的产物\n");
 
 const budgetOk = path.join(root, "budget-ok.json");
 const budgetTightInitial = path.join(root, "budget-tight-initial.json");
@@ -1177,6 +1205,44 @@ const cases = [
     run: () =>
       runGate("check-bundle-budget.mjs", {
         BUDGET_DIST_DIR: distWithoutRoutes,
+        BUDGET_CONFIG_PATH: budgetOk,
+      }),
+  },
+  {
+    name: "预算：dist 输入指纹与当前构建输入不一致应失败（旧实现 exit 0）",
+    expect: 2,
+    contains: ["dist 早于当前构建输入（isBuildFresh=false）", "请先运行 pnpm build", "CHG-5"],
+    absent: ["体积预算门禁通过"],
+    run: () =>
+      runGate("check-bundle-budget.mjs", {
+        ...budgetEnv,
+        BUDGET_DIST_DIR: distStaleInput,
+        BUDGET_CONFIG_PATH: budgetOk,
+        // 只改构建输入（VITE_* 参与输入指纹）而不重新 build：同一份 dist 从通过变为陈旧。
+        VITE_GATE_SELFTEST_INPUT: "1",
+      }),
+  },
+  {
+    name: "预算：dist 缺少构建清单应失败（旧实现完全看不到新鲜度）",
+    expect: 2,
+    contains: ["dist 早于当前构建输入（isBuildFresh=false）"],
+    absent: ["体积预算门禁通过"],
+    run: () =>
+      runGate("check-bundle-budget.mjs", {
+        ...budgetEnv,
+        BUDGET_DIST_DIR: distWithoutManifest,
+        BUDGET_CONFIG_PATH: budgetOk,
+      }),
+  },
+  {
+    name: "预算：build 之后产物被改写应失败（outputHash 不匹配）",
+    expect: 2,
+    contains: ["dist 早于当前构建输入（isBuildFresh=false）"],
+    absent: ["体积预算门禁通过"],
+    run: () =>
+      runGate("check-bundle-budget.mjs", {
+        ...budgetEnv,
+        BUDGET_DIST_DIR: distTamperedOutput,
         BUDGET_CONFIG_PATH: budgetOk,
       }),
   },

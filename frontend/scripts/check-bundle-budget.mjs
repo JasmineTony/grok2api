@@ -17,15 +17,25 @@
  *  - 清单里的路径是 dist 根相对路径（`assets/x.js`，无前导 `./` 或 `/`），且可能包含 CSS。
  * 因此解析必须同时覆盖「相对当前 chunk」与「相对 dist 根」两种写法，否则路由检查会静默失效。
  *
+ * dist 新鲜度：读取 dist 之前先复用 scripts/build-inputs.ts 的 isBuildFresh（输入指纹 + 产物指纹），
+ * 陈旧或缺失的 dist 一律退出 2——否则 `--update` 会把陈旧数字冻结进基线，校验也会在错误产物上通过。
+ *
  * 用法：
  *   node scripts/check-bundle-budget.mjs            # 校验（需先 pnpm build）
- *   node scripts/check-bundle-budget.mjs --update   # 重新冻结基线
+ *   node scripts/check-bundle-budget.mjs --update   # 重新冻结基线（同样拒绝陈旧 dist）
+ *
+ * 退出码：0 = 通过；1 = 阈值或增长超限；2 = dist 缺失/陈旧、index.html 无 JS 入口、配置不可读。
  */
 import { createRequire } from "node:module";
 import { brotliCompressSync, gzipSync } from "node:zlib";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+// dist 新鲜度复用 scripts/build-inputs.ts 的指纹实现（SSOT，不重写第二套指纹逻辑）：该模块是 TS，
+// 靠 Node 类型剥离加载（≥22.18 默认开启；更早的 22.x 由 package.json 的 check:budget 传
+// --experimental-strip-types），与 pnpm test 加载 scripts/**/*.test.ts 的方式一致。
+import { isBuildFresh } from "./build-inputs.ts";
 
 const require = createRequire(import.meta.url);
 const ts = require("typescript");
@@ -378,11 +388,26 @@ function report(metrics) {
   }
 }
 
-function main() {
+/**
+ * dist 必须由当前构建输入生成：脚本直接读 dist，产物陈旧时 `--update` 会把陈旧数字冻结进基线，
+ * 校验也会在错误产物上通过（EVID-1：旧产物不能证明当前代码的体积）。
+ * 复用 scripts/build-inputs.ts 的 isBuildFresh：清单缺失/损坏、输入变化、任一产物变化都判陈旧。
+ */
+function assertBuildFresh() {
   if (!fs.existsSync(distDir)) {
     console.error("缺少 frontend/dist，请先运行 pnpm build。");
     process.exit(2);
   }
+  if (isBuildFresh(frontendDir, distDir)) return;
+  console.error(
+    `dist 早于当前构建输入（isBuildFresh=false）：${distDir}\n` +
+      "请先运行 pnpm build；如需更新冻结基线，另需 CHG-5 授权（工作区静止并记录 HEAD）。",
+  );
+  process.exit(2);
+}
+
+function main() {
+  assertBuildFresh();
   const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
   const metrics = collectMetrics();
   report(metrics);
