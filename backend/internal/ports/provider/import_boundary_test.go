@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -96,8 +97,15 @@ var layerBoundaries = []layerBoundary{
 		forbidden: []string{"app", "application", "transport", "infra"}, includeTests: true,
 	},
 	{
+		// pkg 是通用工具包：生产文件只依赖 repository 契约（reasoningreplay），
+		// 测试文件用真实 infra（runtime/memory）做装配验证，故与 application/transport/infra 同口径，
+		// 只约束生产文件。补此规则是为了关闭「被豁免目录下的嵌套新包静默漏判」（BE-G3）。
+		name: "pkg 生产文件不反向依赖上层或 infra", directory: "pkg",
+		forbidden: []string{"app", "application", "transport", "infra"},
+	},
+	{
 		// application 只约束生产文件；_test.go 可用真实 infra 做装配验证。
-		// domain/repository/ports 的测试不享有此豁免。
+		// domain/repository/ports 的测试不享有此豁免；pkg 与 application 同口径。
 		name: "application 生产依赖边界及 infra 存量", directory: "application",
 		forbidden: []string{"app", "transport", "infra"}, exceptions: applicationInfraExceptions,
 	},
@@ -254,47 +262,38 @@ func unusedImportExceptions(boundary layerBoundary, result importBoundaryScan) [
 	return unused
 }
 
-// internalDirectoryCoverage 登记 internal 下每个一级目录的判定归属（BE-G2）：有规则的目录必须写明
-// 规则名并与 layerBoundaries 一致，无规则的目录必须写明豁免理由。新增或删除一级目录时必须同步本表，
-// 否则 TestInternalDirectoryCoverageBoundary 失败。
+// internalDirectoryCoverage 登记 internal 下每个包目录的判定归属（BE-G2/BE-G3）：有规则的目录必须写明
+// 规则名并与 layerBoundaries 一致，无规则的目录必须写明豁免理由。键是相对 internal 的 slash 路径，
+// 覆盖判定对任意深度生效：有规则目录的整棵子树由该规则递归覆盖，豁免登记只覆盖其自身，
+// 因此被豁免目录下的新嵌套包必须逐条登记，否则 TestInternalDirectoryCoverageBoundary 失败。
 type internalDirectoryCoverage struct {
 	rule   string // 非空时必须与 layerBoundaries 中同 directory 规则的 name 一致
 	reason string // rule 为空时必填：为什么该目录不需要规则
 }
 
 var internalDirectoryCoverageEntries = map[string]internalDirectoryCoverage{
-	"app":         {reason: "唯一装配入口（assemble.go、application.go），装配职责本身就是跨层依赖，禁入规则无意义"},
-	"application": {rule: "application 生产依赖边界及 infra 存量"},
-	"buildinfo":   {reason: "只暴露版本常量，无任何 internal 依赖"},
-	"cli":         {reason: "进程入口，装配序列按需调用 app 与 infra/config、infra/observability"},
-	"domain":      {rule: "domain 不反向依赖上层或 infra"},
-	"pkg":         {reason: "通用工具包；生产代码只依赖 repository 契约（reasoningreplay），其余 internal 引用在测试内"},
-	"ports":       {rule: "ports 不反向依赖上层或 infra"},
-	"repository":  {rule: "repository 不反向依赖上层或 infra"},
-	"shared":      {reason: "纯值类型，无任何 internal 依赖"},
-	"infra":       {rule: "infra 生产文件不反向依赖上层"},
-	"transport":   {rule: "transport 生产文件不直连 infra"},
+	"app":             {reason: "唯一装配入口（assemble.go、application.go），装配职责本身就是跨层依赖，禁入规则无意义"},
+	"application":     {rule: "application 生产依赖边界及 infra 存量"},
+	"buildinfo":       {reason: "只暴露版本常量，无任何 internal 依赖"},
+	"cli":             {reason: "进程入口，装配序列按需调用 app 与 infra/config、infra/observability"},
+	"domain":          {rule: "domain 不反向依赖上层或 infra"},
+	"pkg":             {rule: "pkg 生产文件不反向依赖上层或 infra"},
+	"ports":           {rule: "ports 不反向依赖上层或 infra"},
+	"repository":      {rule: "repository 不反向依赖上层或 infra"},
+	"shared":          {reason: "纯值类型，无任何 internal 依赖"},
+	"shared/response": {reason: "HTTP 响应包装值类型，无任何 internal 依赖；豁免只覆盖自身，嵌套包必须逐条登记"},
+	"infra":           {rule: "infra 生产文件不反向依赖上层"},
+	"transport":       {rule: "transport 生产文件不直连 infra"},
 }
 
-// directoryCoverageViolations 判定 internal 一级目录覆盖完整性：存在的目录必须由规则或带理由的豁免登记
-// 覆盖，规则与登记必须双向一致，且不得指向已消失的目录。返回排序后的违规说明，空表示通过。
+// directoryCoverageViolations 判定 internal 包目录覆盖完整性（含嵌套）：存在的目录必须由规则或带理由的
+// 豁免登记覆盖，规则与登记必须双向一致，且不得指向已消失的目录。返回排序后的违规说明，空表示通过。
 // 抽成纯函数是为了让守卫本身可自证（夹具见 import_boundary_fixtures_test.go 的 TestDirectoryCoverageGuardFixtures）。
 func directoryCoverageViolations(present map[string]bool, ruled map[string]string, entries map[string]internalDirectoryCoverage) []string {
 	var violations []string
 	for directory := range present {
-		coverage, registered := entries[directory]
-		if registered && coverage.rule == "" && strings.TrimSpace(coverage.reason) == "" {
-			violations = append(violations, fmt.Sprintf("internal/%s 的覆盖登记既不是规则也没有豁免理由", directory))
-		}
-		if name, ok := ruled[directory]; ok && coverage.rule != name {
-			violations = append(violations, fmt.Sprintf("internal/%s 覆盖登记 rule=%q，实际规则=%q", directory, coverage.rule, name))
-		}
-		if _, ok := ruled[directory]; !ok {
-			if !registered {
-				violations = append(violations, fmt.Sprintf("internal/%s 未被任何规则或覆盖登记覆盖：请扩展 layerBoundaries 或登记豁免理由", directory))
-			} else if coverage.rule != "" {
-				violations = append(violations, fmt.Sprintf("internal/%s 覆盖登记规则 %q，但 layerBoundaries 无该规则", directory, coverage.rule))
-			}
+		if violation := directoryCoverageViolation(directory, ruled, entries); violation != "" {
+			violations = append(violations, violation)
 		}
 	}
 	for directory, name := range ruled {
@@ -311,29 +310,90 @@ func directoryCoverageViolations(present map[string]bool, ruled map[string]strin
 	return violations
 }
 
-// TestInternalDirectoryCoverageBoundary 守卫 BE-G2：internal 下每个一级目录都必须由 layerBoundaries
-// 规则或 internalDirectoryCoverageEntries 的豁免登记覆盖；新目录未纳入判定时本测试失败。
-func TestInternalDirectoryCoverageBoundary(t *testing.T) {
-	moduleRoot := backendModuleRoot(t)
-	entries, err := os.ReadDir(filepath.Join(moduleRoot, "internal"))
-	if err != nil {
-		t.Fatalf("读取 internal 目录失败: %v", err)
+// directoryCoverageViolation 返回单个目录的覆盖违规说明，空字符串表示已被覆盖。
+func directoryCoverageViolation(directory string, ruled map[string]string, entries map[string]internalDirectoryCoverage) string {
+	coverage, registered := entries[directory]
+	name, hasRule := ruled[directory]
+	switch {
+	case registered && coverage.rule == "" && strings.TrimSpace(coverage.reason) == "":
+		return fmt.Sprintf("internal/%s 的覆盖登记既不是规则也没有豁免理由", directory)
+	case hasRule && coverage.rule != name:
+		return fmt.Sprintf("internal/%s 覆盖登记 rule=%q，实际规则=%q", directory, coverage.rule, name)
+	case hasRule:
+		return "" // 规则按 WalkDir 递归覆盖整棵子树，嵌套包无需单独登记
+	case registered && coverage.rule != "":
+		return fmt.Sprintf("internal/%s 覆盖登记规则 %q，但 layerBoundaries 无该规则", directory, coverage.rule)
+	case registered:
+		return "" // 带理由的豁免只覆盖该目录自身，嵌套包必须各自登记
+	case directoryCoveredByAncestorRule(ruled, directory):
+		return ""
+	default:
+		return fmt.Sprintf("internal/%s 未被任何规则或覆盖登记覆盖：请扩展 layerBoundaries 或登记豁免理由", directory)
 	}
-	present := map[string]bool{}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			present[entry.Name()] = true
+}
+
+// directoryCoveredByAncestorRule 判断目录是否位于某个有规则目录的子树内。
+func directoryCoveredByAncestorRule(ruled map[string]string, directory string) bool {
+	for ancestor := path.Dir(directory); ancestor != "."; ancestor = path.Dir(ancestor) {
+		if _, ok := ruled[ancestor]; ok {
+			return true
 		}
 	}
+	return false
+}
+
+// TestInternalDirectoryCoverageBoundary 守卫 BE-G2/BE-G3：internal 下每个包目录（任意深度）都必须由
+// layerBoundaries 规则或 internalDirectoryCoverageEntries 的豁免登记覆盖；新目录未纳入判定时本测试失败。
+// 递归枚举堵住「被豁免目录下的嵌套新包静默漏判」：豁免登记只覆盖自身，嵌套包必须逐条登记。
+func TestInternalDirectoryCoverageBoundary(t *testing.T) {
+	moduleRoot := backendModuleRoot(t)
+	present, err := internalPackageDirectories(moduleRoot)
+	if err != nil {
+		t.Fatalf("枚举 internal 包目录失败: %v", err)
+	}
 	if len(present) == 0 {
-		t.Fatal("未扫描到 internal 一级目录，不能判定覆盖完整")
+		t.Fatal("未扫描到 internal 包目录，不能判定覆盖完整")
 	}
 	ruled := map[string]string{}
 	for _, boundary := range layerBoundaries {
 		ruled[boundary.directory] = boundary.name
 	}
 	if violations := directoryCoverageViolations(present, ruled, internalDirectoryCoverageEntries); len(violations) > 0 {
-		t.Errorf("internal 一级目录覆盖不完整:\n%s", strings.Join(violations, "\n"))
+		t.Errorf("internal 目录覆盖不完整:\n%s", strings.Join(violations, "\n"))
 	}
-	t.Logf("internal 一级目录覆盖（BE-G2）：规则=%d、豁免=%d、参与判定=%d", len(ruled), len(internalDirectoryCoverageEntries)-len(ruled), len(present))
+	t.Logf("internal 目录覆盖（BE-G2/BE-G3）：规则=%d、豁免登记=%d、参与判定的目录（含嵌套）=%d", len(ruled), len(internalDirectoryCoverageEntries)-len(ruled), len(present))
+}
+
+// internalPackageDirectories 递归枚举 internal 下所有 Go 包目录，键是相对 internal 的 slash 路径。
+func internalPackageDirectories(moduleRoot string) (map[string]bool, error) {
+	internalRoot := filepath.Join(moduleRoot, "internal")
+	present := map[string]bool{}
+	err := filepath.WalkDir(internalRoot, func(current string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !entry.IsDir() {
+			return nil
+		}
+		if current != internalRoot && goToolIgnoredDirectory(entry.Name()) {
+			return fs.SkipDir
+		}
+		relative, relErr := filepath.Rel(internalRoot, current)
+		if relErr != nil {
+			return relErr
+		}
+		if relative != "." {
+			present[filepath.ToSlash(relative)] = true
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return present, nil
+}
+
+// goToolIgnoredDirectory 判定 Go 工具链不会构建的目录名：testdata 与 `_`/`.` 前缀目录不含可导入的包。
+func goToolIgnoredDirectory(name string) bool {
+	return name == "testdata" || strings.HasPrefix(name, "_") || strings.HasPrefix(name, ".")
 }
