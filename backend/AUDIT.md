@@ -1791,14 +1791,14 @@ exit=0
 
 | 登记项 | 值 |
 | --- | --- |
-| 文档清除提交 sha（`AGENTS.md` / `frontend/AUDIT.md` / `backend/AUDIT.md`） | 待补 |
-| 重写后 `main` tip sha（后端门禁复跑基准） | 待补 |
-| 目标提交上 `bash scripts/verify.sh`（`go build` / `go vet` / `structurecheck` / `apicheck` / `dockerfilecheck` / `go test -count=1`） | 待补（本节为纯文档改动，未复跑） |
+| 文档清除提交 sha（`AGENTS.md` / `frontend/AUDIT.md` / `backend/AUDIT.md`） | `eaae5090`、`706d0645`（收口轮消息过滤后的 sha；收口登记提交见 `frontend/AUDIT.md` §38.6） |
+| 重写后 `main` tip sha（后端门禁复跑基准） | `b2a68314`（收口轮消息过滤后 tip；登记提交在其之上） |
+ | 目标提交上 `bash scripts/verify.sh`（`go build` / `go vet` / `structurecheck` / `apicheck` / `dockerfilecheck` / `go test -count=1`） | 待补（在最终发布目标提交上复跑后回填） |
 | CI run id 与 `Assert required integration tests ran`（0 跳过）step 的 conclusion | 待补 |
 | 镜像 digest（含 `merge` 后的 manifest list） | 待补 |
 
 ### 36.4 未收口项与残留风险
 
 - GitHub 侧提交缓存/搜索索引、已克隆副本与 CI 日志无法保证清除（与 `frontend/AUDIT.md` §38.5 同口径）；本轮不得声称凭据元数据已彻底清除。
-- 历史重写后，本文件与 `frontend/AUDIT.md` 中引用的历史 sha（`5625a857`、`04a3a5c9` 等）在新的提交图上失效；重写后的 sha 映射按 §36.3 待补登记，回填前只能按历史快照理解。
+ - 历史重写后，本文件与 `frontend/AUDIT.md` 中引用的历史 sha（`5625a857`、`04a3a5c9` 等）在新的提交图上失效；**sha 映射已登记**于 §36.3 与 `frontend/AUDIT.md` §38.6（旧 `04a3a5c9` → 新 `37fd2dda`，旧远端 tip `4358867f` → 新 `45dd2447`）；旧对象已从本地对象库清除。
 - 本节未执行：`bash scripts/verify.sh`、`go test ./... -count=1`、`-race`、隔离 PG/Redis、Swagger 精确 diff、全栈 E2E（纯文档改动）；发布前置在重发目标提交上按 §8 逐项执行。
