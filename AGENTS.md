@@ -9,7 +9,7 @@
 | ---------- | -------------------------------------------------------------------------------------------------------- |
 | 适用主体   | 人类贡献者、自动化代理（含子代理）、维护线负责人；三者同受约束                                           |
 | 触发时机   | 写入前（§9/§2）、提交前（§11）、PR/合并前（§3/§4/§7）、发布前（§8）                                      |
-| 判定方式   | **机器门禁** = 有命令与退出码（表见 §14.4）；**评审准则** = 无门禁、人工判断，违反须在 PR/汇报中说明理由 |
+| 判定方式   | **机器门禁** = 有命令与退出码（表见 BIND-4）；**评审准则** = 无门禁、人工判断，违反须在 PR/汇报中说明理由 |
 | 失败后果   | P0–P3 完整定义见 §6；阻塞语义与规则编号的绑定见 META-4                                                   |
 | 规则元信息 | 每条规则标注适用主体、判定方式；未标注判定的条目一律视为评审准则                                         |
 
@@ -30,7 +30,7 @@
 - P0–P3 的完整定义只在 §6 一份（DOC-1）；本节只定义阻塞语义与规则编号的绑定，同一分级不在两处并行维护。
 - 阻塞语义：P0/P1 阻塞合并、阶段验收与发布；P2 不阻塞，按棘轮只许持平或下降；P3 只登记，不扩大任务。
 
-规则与 P 级绑定：违反 §2/§3/§4/§7 的机器门禁 = P1；违反 §13 中标注 P0 的条目（SEC-1/SEC-3/SEC-4）= P0，标注 P1 的条目（SEC-2）= P1；违反 §10 的虚假通过 = P1；其余见各节。
+规则与 P 级绑定：违反 §2/§3/§4/§7 的机器门禁 = P1；违反 §8 的发布前置与版本载体一致性门禁 = P1；违反 §13 中标注 P0 的条目（SEC-1/SEC-3/SEC-4）= P0，标注 P1 的条目（SEC-2）= P1；违反 §10 的虚假通过 = P1；其余见各节。
 
 ### META-5 编号稳定
 
@@ -41,7 +41,7 @@
 - 本仓库是 [`chenyme/grok2api`](https://github.com/chenyme/grok2api) 的衍生维护线，不是无关的独立重写。
 - 上游对外行为契约优先，其**载体**是 `backend/api-baseline.txt`、`make swagger` 的精确 diff、`backend/api-baseline.txt` 覆盖不到的公开协议由 E2E 用例固定。偏离须在 PR 说明理由、影响与回滚方式；通用修复优先采用可回馈上游的实现。
 - `origin` 必须指向 `https://github.com/JasmineTony/grok2api.git`，`upstream` 指向 `https://github.com/chenyme/grok2api.git`。推送前执行 `git remote -v`（评审准则，无自动化校验），**禁止推送 upstream**。
-- 技术栈与版本不在本文件复制，以 `backend/go.mod`、`frontend/package.json` 为准（§14.2）。
+- 技术栈与版本不在本文件复制，以 `backend/go.mod`、`frontend/package.json` 为准（BIND-2）。
 - 架构重构不默认授权改变 API、模型路由 ID、凭据/数据库格式、鉴权、计费、账号范围、审计或取消语义；不可逆迁移与生产发布单独确认（§8）。
 - 在维护分支分阶段提交；草稿 PR/CI 验证不等于允许合并 `main`、发布或部署。合并 `main`、创建 tag/Release、推送生产镜像属不可逆操作，逐次单独授权并登记证据（§8）。
 
@@ -122,7 +122,7 @@
 
 - 登录/鉴权、导入与凭据刷新、额度/模型封锁、审计筛选、客户端密钥增删、设置冲突、版本更新等均需覆盖 UI → API → 状态/错误。
 - 网络边界可替换，被测业务组件、hook、decoder 与状态流保持真实；不能只检查 mock 调用次数。
-- 判定：场景覆盖范围按评审准则；用例**真的跑了**按机器门禁——后端 Go 集成用例「0 跳过」断言（CI 步骤 `Assert required integration tests ran`），前端 `pnpm test:results`（Vitest）与 `pnpm test:results:e2e`（Playwright）的必需用例执行/跳过断言（CI 步骤 `Assert required frontend tests ran`，脚本 `frontend/scripts/check-test-results.mjs`；`pnpm verify` 已内含 `pnpm test:results`）。命令见 §7、发布前置见 §8、判定命令列见 §14.4。
+- 判定：场景覆盖范围按评审准则；用例**真的跑了**按机器门禁——后端 Go 集成用例「0 跳过」断言（CI 步骤 `Assert required integration tests ran`），前端 `pnpm test:results`（Vitest）与 `pnpm test:results:e2e`（Playwright）的必需用例执行/跳过断言（CI 步骤 `Assert required frontend tests ran`，脚本 `frontend/scripts/check-test-results.mjs`；`pnpm verify` 已内含 `pnpm test:results`）。命令见 §7、发布前置见 §8、判定命令列见 BIND-4。
 
 ### TEST-4 禁止弱化测试（评审准则）
 
@@ -201,7 +201,7 @@
 - 前端跨 feature 依赖：`frontend/.dependency-cruiser.cjs` 的 `frozenCrossFeatureDebt` 为空对象 → 任何新增跨 feature 直接依赖即违规。
 - 覆盖率与用例数、体积实测值、hook 阈值条目数：以 `pnpm test:ui:coverage`、`pnpm check:budget` 的当次输出为准，历史值见两个 AUDIT。
 - 测试分层现状（已决策接受）：`pnpm test` 运行纯逻辑 `src/**/*.test.ts`（node:test，Node 环境），`pnpm test:ui:coverage` 运行组件/集成 `src/**/*.test.tsx`（Vitest + jsdom）。双运行器不迁移（理由见 `frontend/AUDIT.md` 的 FE-08）。
-- 已登记的 P2/P3 未收口项（含前端 >600 行测试文件、未纳入 100% 阈值的 hook、匿名回调不参与 REV-2 判定等）见两个 AUDIT 的「未达标/未覆盖」章节；按 §6 不阻塞，但不得扩张。
+- 已登记的 P2/P3 未收口项（含前端 >600 行测试文件、未纳入 100% 阈值的 hook、匿名回调不参与 REV-2 判定、REV-3 两侧深度基线差异等）见两个 AUDIT 的「未达标/未覆盖」章节；按 §6 不阻塞，但不得扩张。
 - 棘轮更新必须满足 CHG-5：只在工作区静止时执行，并记录 `git rev-parse HEAD` 与在跑任务数。
 
 ## 6. 文档与验收状态
@@ -475,4 +475,5 @@ CI 的 `uses:` 已全部固定到 commit SHA（22/22，复现：`rg -n "^\s*uses
 ### BIND-5 只有评审准则、没有机器门禁的规则
 
 DEV-1、DEV-3 的复用/职责部分、DEV-5 的编码与文本比对、TEST-4、TEST-7、REV-2 的匿名回调边界、REV-4、REV-5 的后端性能、SEC-1…SEC-4、§8 的外部必需 check 登记、§9 全部、§10 除 EVID-3、§11 全部、§12 全部。
+未在上文列出的条目（§0 的 META-1…META-5、§1、§6、§8 除版本载体，以及上述章节中未列入 BIND-4 的部分）同样按评审准则执行。
 违反这些条目必须说明理由，**不得声称「已由门禁保证」**。
