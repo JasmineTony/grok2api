@@ -18,9 +18,9 @@
  *    （test.skip 与 describe.skip 两种形态）/ 清单文件部分跳过 / 用例失败 / 收集失败 / 清单外文件整文件跳过 /
  *    清单外文件有用例失败 / 清单外文件 0 用例（describe.skip 或用例被删）/
  *    NODE_TEST_REPORT_ROOT 指向 tmp 之外（exit 2）/ 报告早于清单文件 mtime / 缺 startedAt 走报告文件 mtime
- *    兜底 / 报告形状不可用 / 报告与 Node 汇总不自洽 / 用例总数低于棘轮 → 非零退出；并以健康报告、
- *    「清单外文件部分跳过只告警」两组反例确认门禁不是无条件失败，且每个负样本都按「只依赖退出码的旧判定会
- *    通过」构造（见 assertNodeTestExitCodeClean）。
+ *    兜底 / 报告形状不可用 / 报告与 Node 汇总不自洽 / 磁盘多出未登记测试文件（集合必须与清单完全相等）→
+ *    非零退出；并以健康报告、「清单外文件部分跳过只告警」两组反例确认门禁不是无条件失败，且每个负样本都按
+ *    「只依赖退出码的旧判定会通过」构造（见 assertNodeTestExitCodeClean）。
  *
  * 装置全部建立在系统临时目录，不写入仓库；路径通过环境变量注入被测脚本。
  */
@@ -749,8 +749,8 @@ const partialSkipReportRoot = buildReportRoot("report-partial-skip", {
  * ---- node:test 执行性门禁装置（check-node-test-results.mjs：TEST-1 / EVID-1）----
  * 报告写在临时根目录的 .artifacts/node-test/results.json，清单文件写在同一个根目录下，用
  * NODE_TEST_REPORT_ROOT 注入（该变量仅供自测使用），不读取也不覆盖仓库内的真实报告。
- * 下面的清单与用例数按被测脚本的棘轮值（REQUIRED_NODE_TESTS / MIN_NODE_TEST_FILES / MIN_NODE_TEST_CASES）构造，
- * 棘轮调整时必须同步更新，否则正样本会失败。
+ * 下面的清单按被测脚本的棘轮值（REQUIRED_NODE_TESTS）构造，它同时是「磁盘上有哪些 node:test 文件」的
+ * 唯一事实来源；棘轮调整时必须同步更新，否则正样本会失败。
  */
 /** 被测脚本的必需文件清单（与 check-node-test-results.mjs 的 REQUIRED_NODE_TESTS 逐项一致）。 */
 const nodeTestProbe = [
@@ -960,6 +960,17 @@ const nodeTestFillerEmptyCasesRoot = buildNodeTestRoot("node-test-filler-empty-c
  * 目录，越界必须 exit 2 拒绝，否则一次可见的包装层改动就能把门禁重定向到伪造的健康报告。
  */
 const nodeTestEscapeRoot = path.join(frontendDir, "scripts");
+/**
+ * 夹具（F11）：磁盘上多出一个未登记在 REQUIRED_NODE_TESTS 的测试文件——报告健康、清单文件全部达标，
+ * 旧实现（只有清单判定 + 派生的文件/用例总数下限）exit 0；要求磁盘集合与清单完全相等后必须失败。
+ * 这正是「新增一个不受约束的清单外文件 → 再整体删除」的绕过入口。
+ */
+const nodeTestUnregisteredFileRoot = buildNodeTestRoot("node-test-unregistered-file", { startMs: probeNow });
+writeProbeFile(
+  path.join(nodeTestUnregisteredFileRoot, "src/shared/gate-extra-node.test.ts"),
+  "// 未登记在必需清单中的 node:test 文件 装置\n",
+  freshInputMs,
+);
 /** 夹具：报告比清单文件旧（沿用上一次运行的结果）→ 必须失败。 */
 const nodeTestStaleRoot = buildNodeTestRoot("node-test-stale", { startMs: staleMs });
 assertNodeTestExitCodeClean("node-test-stale", nodeTestProbe);
@@ -1324,11 +1335,7 @@ const cases = [
   {
     name: "node:test：必需文件未出现在报告中应失败（用例被删除、改名或未运行）",
     expect: 1,
-    contains: [
-      "必需文件未出现在报告中 src/shared/lib/usd.test.ts",
-      "报告只含 13 个文件，少于要求的 14 个（测试文件被删除或未运行）",
-      "报告只含 122 个用例，少于要求的 126 个（用例被删除或跳过）",
-    ],
+    contains: ["必需文件未出现在报告中 src/shared/lib/usd.test.ts"],
     absent: ["报告可能过期"],
     run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestMissingEntryRoot }),
   },
@@ -1356,7 +1363,7 @@ const cases = [
     expect: 1,
     contains: [
       "src/shared/lib/usd.test.ts 通过 0 个，少于要求的 4 个",
-      "报告只含 122 个用例，少于要求的 126 个（用例被删除或跳过）",
+      "src/shared/lib/usd.test.ts 在报告中 0 个用例（收集失败 / 整文件跳过 / 用例被删除），不得放行",
     ],
     absent: ["必需文件未出现在报告中"],
     run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestDescribeSkipRoot }),
@@ -1457,14 +1464,21 @@ const cases = [
     run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestInconsistentRoot }),
   },
   {
-    name: "node:test：清单文件用例总数低于棘轮应失败（防逐文件掏空绕过）",
+    name: "node:test：清单文件用例被掏空应失败（逐文件 minPassed 棘轮，防逐文件删用例绕过）",
+    expect: 1,
+    contains: ["src/shared/lib/usd.test.ts 通过 3 个，少于要求的 4 个"],
+    absent: ["必需文件未出现在报告中", "磁盘上的 node:test 文件未登记在必需清单中"],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestBelowCasesRoot }),
+  },
+  {
+    name: "node:test：磁盘多出未登记测试文件应失败（关闭「新增后删除」绕过，旧实现 exit 0）",
     expect: 1,
     contains: [
-      "报告只含 125 个用例，少于要求的 126 个（用例被删除或跳过）",
-      "src/shared/lib/usd.test.ts 通过 3 个，少于要求的 4 个",
+      "磁盘上的 node:test 文件未登记在必需清单中：src/shared/gate-extra-node.test.ts",
+      "磁盘上的 node:test 文件 15 个（必须与清单完全相等）",
     ],
-    absent: ["报告只含 13 个文件"],
-    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestBelowCasesRoot }),
+    absent: ["必需文件未出现在报告中"],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestUnregisteredFileRoot }),
   },
 ];
 

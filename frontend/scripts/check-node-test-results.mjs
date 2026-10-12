@@ -17,6 +17,8 @@
  * ③ 报告内任何文件（清单内外一视同仁）的失败 / 被取消用例，任何 `cases` 为空的文件（收集失败 /
  *    describe.skip / 用例被删除）、整文件跳过（用例数 > 0 且全部跳过）与「收集失败」（Node 在文件级
  *    失败时合成的 file-root 用例）→ 失败；
+ * ④ 磁盘上的 node:test 文件集合必须与清单完全相等：少一个（被删除/改名/漏登记）或多一个（新增后删除
+ *    即可静默绕过的未登记文件）都失败——不再用「文件/用例总数下限」这种派生重复值表达同一条规则；
  * ⑤ 报告自洽性：按用例记录统计出的通过/失败/跳过/取消数与 Node 自己的 run 级汇总（test:summary）
  *    必须一致；不一致说明 reporter 的解析口径与真实运行不符，fail-closed。
  * 清单外的文件部分跳过、存在 test.todo → 只告警（test.todo 由 minPassed 棘轮挡住用例被掏空）。
@@ -71,23 +73,18 @@ const REPORT_PATH = ".artifacts/node-test/results.json";
 const RERUN_COMMAND = "pnpm test";
 
 /**
- * 报告内文件总数下限（棘轮，防止整体删除测试文件绕过清单与用例断言）。
- * 实测值（2026-10-12，本工作树；复现：`pnpm test && node scripts/check-node-test-results.mjs`
- * 输出「参与判定的文件 14 个、用例 126 个」）：14 个。
- * 只增不减；确实需要下调时必须是可见改动并说明理由。
+ * 磁盘枚举根：与 package.json 的 test 脚本 `--test "src/**\/*.test.ts" "scripts/**\/*.test.ts"` 一致，
+ * 只有这两棵树里的 `.test.ts` 会被 node:test 运行。
  */
-const MIN_NODE_TEST_FILES = 14;
-/**
- * 报告内用例总数下限（棘轮，口径 = 通过 + 失败 + 跳过 + 取消 + todo，与 Node 的 run 级汇总一致）。
- * 实测值同上：126 个。只增不减。
- */
-const MIN_NODE_TEST_CASES = 126;
+const TEST_GLOB_ROOTS = ["src", "scripts"];
 
 /**
  * 必需文件清单：`pnpm test` 的 `--test "src/**\/*.test.ts" "scripts/**\/*.test.ts"` 覆盖到的全部文件
  * （2026-10-12 实测存在的 14 个 node:test 文件，逐个取自报告，不是估算）。
  * minPassed 是逐文件通过数棘轮，取同一次实测的通过数；用例被删减、改名或跳过时这里必须失败，
- * 缩减数字属于可见改动，需在改动说明中给出理由。新增 node:test 文件时必须同步登记。
+ * 缩减数字属于可见改动，需在改动说明中给出理由。
+ * 本清单同时是「磁盘上存在哪些 node:test 文件」的唯一事实来源：新增文件必须同步登记，删除文件必须同步
+ * 删除条目，否则 checkDiskTestFiles 会因集合不等而失败（多一个少一个都不放行）。
  */
 const REQUIRED_NODE_TESTS = [
   { file: "scripts/build-inputs.test.ts", minPassed: 49 },
@@ -210,6 +207,51 @@ function checkFreshness({ label, required, startMs }) {
   return failures;
 }
 
+/** 递归枚举目录下的 `.test.ts`（跳过 node_modules），路径按 reportRoot 归一为相对正斜杠路径。 */
+function collectTestFiles(dir, found) {
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      if (entry.name !== "node_modules") collectTestFiles(path.join(dir, entry.name), found);
+      continue;
+    }
+    if (entry.isFile() && entry.name.endsWith(".test.ts")) found.push(toRelative(path.join(dir, entry.name)));
+  }
+}
+
+/**
+ * 磁盘测试文件集合与清单必须完全相等（AGENTS.md CHG-6：同一模式必须全量覆盖，不做局部判定）。
+ * 理由：清单是逐文件 minPassed 的唯一来源，`MIN_NODE_TEST_FILES` / `MIN_NODE_TEST_CASES` 只是它的派生
+ * 重复值（且只在 checkRequired 已失败时才触发）；而「新增一个不受约束的清单外文件 → 再整体删除」在只有
+ * 清单判定的实现下完全静默。要求集合相等后，多一个少一个都必须显式登记或删除清单条目。
+ */
+function checkDiskTestFiles(label, required) {
+  const found = [];
+  for (const sub of TEST_GLOB_ROOTS) collectTestFiles(path.join(reportRoot, sub), found);
+  const onDisk = [...new Set(found)].sort();
+  const expected = required.map((entry) => entry.file).sort();
+  const missing = expected.filter((file) => !onDisk.includes(file));
+  const unregistered = onDisk.filter((file) => !expected.includes(file));
+  const failures = [];
+  if (missing.length > 0) {
+    failures.push(
+      `${label}：必需清单中的 node:test 文件不在磁盘上：${missing.join("、")}（被删除或改名；` +
+        `磁盘与清单必须完全相等，请恢复文件或同步清单：${RERUN_COMMAND}）`,
+    );
+  }
+  if (unregistered.length > 0) {
+    failures.push(
+      `${label}：磁盘上的 node:test 文件未登记在必需清单中：${unregistered.join("、")}（新增文件必须同步登记` +
+        ` REQUIRED_NODE_TESTS，否则「新增后再删除」可以静默绕过棘轮）`,
+    );
+  }
+  return { failures, diskCount: onDisk.length };
+}
 function emptyTally() {
   return {
     passed: 0,
@@ -389,8 +431,8 @@ function checkSelfConsistency(label, report, files) {
 }
 
 /**
- * 完整断言：清单命中 + 棘轮通过数 + 文件/用例总数下限 + 文件级失效 + 报告新鲜度 + 报告自洽性。
- * `totals` 与 `fileCount` 供汇总行自证门禁不是空转。
+ * 完整断言：清单命中 + 棘轮通过数 + 磁盘集合与清单相等 + 文件级失效 + 报告新鲜度 + 报告自洽性。
+ * `totals`、`fileCount`、`diskCount` 供汇总行自证门禁不是空转。
  */
 function checkReport({ label, report, files, startMs }) {
   const fileCheck = checkFileFailures(label, files, REQUIRED_NODE_TESTS);
@@ -400,29 +442,31 @@ function checkReport({ label, report, files, startMs }) {
     ...checkSelfConsistency(label, report, files),
     ...checkFreshness({ label, required: REQUIRED_NODE_TESTS, startMs }),
   ];
+  const diskCheck = checkDiskTestFiles(label, REQUIRED_NODE_TESTS);
   const totals = totalsOf(files);
-  if (files.size < MIN_NODE_TEST_FILES) {
-    failures.push(
-      `${label}：报告只含 ${files.size} 个文件，少于要求的 ${MIN_NODE_TEST_FILES} 个（测试文件被删除或未运行）`,
-    );
-  }
   const cases = caseCount(totals);
-  if (cases < MIN_NODE_TEST_CASES) {
-    failures.push(`${label}：报告只含 ${cases} 个用例，少于要求的 ${MIN_NODE_TEST_CASES} 个（用例被删除或跳过）`);
-  }
+  failures.push(...diskCheck.failures);
   if (totals.passed === 0) failures.push(`${label}：报告内没有任何通过用例，门禁不可信`);
-  return { failures, warnings: fileCheck.warnings, totals, fileCount: files.size, cases };
+  return {
+    failures,
+    warnings: fileCheck.warnings,
+    totals,
+    fileCount: files.size,
+    cases,
+    diskCount: diskCheck.diskCount,
+  };
 }
 
 /**
  * 汇总行：参与判定的文件数 / 用例数 + 各状态计数（对照 REV-3 的「参与判定的作用域 N 个」，
  * 用非零规模证明门禁不是空转）。
  */
-function logReport({ label, fileCount, totals, cases, startMs }) {
+function logReport({ label, fileCount, totals, cases, diskCount, startMs }) {
   console.log(
     `${label} 报告：参与判定的文件 ${fileCount} 个、用例 ${cases} 个（通过 ${totals.passed}、失败 ${totals.failed}、` +
       `跳过 ${totals.skipped}、取消 ${totals.cancelled}、todo ${totals.todo}、收集失败 ` +
-      `${totals.collectionFailures.length}），报告开始时间 ${formatMs(startMs)}`,
+      `${totals.collectionFailures.length}），磁盘上的 node:test 文件 ${diskCount} 个（必须与清单完全相等），` +
+      `报告开始时间 ${formatMs(startMs)}`,
   );
 }
 
@@ -435,7 +479,14 @@ function main() {
   const startMs = reportStartMs("node:test", run.report.startedAt, run.reportPath);
   const check = checkReport({ label: "node:test", report: run.report, files, startMs });
 
-  logReport({ label: "node:test", fileCount: check.fileCount, totals: check.totals, cases: check.cases, startMs });
+  logReport({
+    label: "node:test",
+    fileCount: check.fileCount,
+    totals: check.totals,
+    cases: check.cases,
+    diskCount: check.diskCount,
+    startMs,
+  });
   for (const warning of check.warnings) console.warn(`  告警（清单外，不影响退出码）：${warning}`);
 
   if (check.failures.length > 0) {
