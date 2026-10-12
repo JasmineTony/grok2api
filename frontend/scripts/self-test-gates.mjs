@@ -23,6 +23,10 @@
  *    兜底 / 报告形状不可用 / 报告与 Node 汇总不自洽 / 磁盘多出未登记测试文件（集合必须与清单完全相等）→
  *    非零退出；并以健康报告、「清单外文件部分跳过只告警」两组反例确认门禁不是无条件失败，且每个负样本都按
  *    「只依赖退出码的旧判定会通过」构造（见 assertNodeTestExitCodeClean）。
+ *  - check-version-carriers：VERSION 与 frontend/package.json 同一条版本线（正样本）→ exit 0；两侧不一致 →
+ *    exit 1；VERSION 缺失、package.json 缺 version 字段（fail-closed 无法判定）→ exit 2；VERSION_CARRIER_ROOT
+ *    指向 tmp 之外（不得把门禁重定向到伪造载体）→ exit 2。夹具全部是临时目录里的合成载体，不读也不写真实
+ *    `VERSION` 与 `frontend/package.json`。
  *
  * 装置全部建立在系统临时目录，不写入仓库；路径通过环境变量注入被测脚本。
  */
@@ -1253,6 +1257,48 @@ const nodeTestUnparsableRoot = buildNodeTestRoot("node-test-unparsable", {
 const nodeTestNoListFilesRoot = buildNodeTestRoot("node-test-no-list-files", { startMs: probeNow });
 for (const entry of nodeTestProbe) fs.rmSync(path.join(nodeTestNoListFilesRoot, entry.file));
 
+/**
+ * ---- 版本载体一致性门禁装置（check-version-carriers.mjs：AGENTS.md §8）----
+ * 合成「仓库根」写在临时目录，用 VERSION_CARRIER_ROOT 注入（与 TEST_REPORT_ROOT / NODE_TEST_REPORT_ROOT
+ * 同一约定：该覆盖只允许指向 os.tmpdir() 之下，仅供本自测使用）。夹具因此既不读也不写真实 `VERSION` 与
+ * `frontend/package.json`；负样本用两侧不同一条版本线与载体缺失/字段缺失三种形态构造。
+ */
+function buildVersionCarrierRoot(name, options = {}) {
+  const dir = path.join(root, name);
+  if (options.version !== undefined) writeFile(path.join(dir, "VERSION"), options.version);
+  if (options.packageText !== undefined) {
+    writeFile(path.join(dir, "frontend", "package.json"), options.packageText);
+  }
+  return dir;
+}
+
+/** package.json 文本按真实载体同形构造（只保留 name + version）；`version` 为 undefined 时省略该字段。 */
+function packageJsonText(version) {
+  return `${JSON.stringify(version === undefined ? { name: "gate-probe" } : { name: "gate-probe", version }, null, 2)}\n`;
+}
+
+/** 正样本：VERSION = v1.2.3、package.json version = 1.2.3（CI 步骤语义下应 exit 0）。 */
+const versionCarrierOkRoot = buildVersionCarrierRoot("version-carrier-ok", {
+  version: "v1.2.3\n",
+  packageText: packageJsonText("1.2.3"),
+});
+/** 负样本：两侧不在同一条版本线上（VERSION 落后）——CI 上该形态会在 `Verify version carriers are aligned` 失败。 */
+const versionCarrierMismatchRoot = buildVersionCarrierRoot("version-carrier-mismatch", {
+  version: "v0.1.99\n",
+  packageText: packageJsonText("0.1.2"),
+});
+/** fail-closed 负样本（a）：VERSION 缺失——载体不存在时不得静默放行，也不得把空值当成「一致」。 */
+const versionCarrierMissingFileRoot = buildVersionCarrierRoot("version-carrier-missing-file", {
+  packageText: packageJsonText("0.1.2"),
+});
+/** fail-closed 负样本（b）：package.json 缺 version 字段。 */
+const versionCarrierMissingFieldRoot = buildVersionCarrierRoot("version-carrier-missing-field", {
+  version: "v0.1.2\n",
+  packageText: packageJsonText(undefined),
+});
+/** 夹具：VERSION_CARRIER_ROOT 指向仓库内路径（不在 os.tmpdir() 之下）→ 该覆盖必须被拒绝（exit 2）。 */
+const versionCarrierEscapeRoot = path.join(frontendDir, "scripts");
+
 const cases = [
   {
     name: "结构：新增超限文件应失败",
@@ -1867,6 +1913,45 @@ const cases = [
     expect: 1,
     contains: ["清单文件全部不在磁盘上，无法核对报告新鲜度（旧报告不得放行）"],
     run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestNoListFilesRoot }),
+  },
+  {
+    name: "版本载体：VERSION 与 frontend/package.json 同一条版本线应通过",
+    expect: 0,
+    contains: ["版本载体一致：v1.2.3"],
+    run: () => runGate("check-version-carriers.mjs", { VERSION_CARRIER_ROOT: versionCarrierOkRoot }),
+  },
+  {
+    name: "版本载体：两侧不在同一条版本线应失败（给出两侧值与期望格式）",
+    expect: 1,
+    contains: [
+      '仓库根 VERSION = "v0.1.99"',
+      'frontend/package.json:version = "0.1.2"',
+      '期望 VERSION = "v0.1.2"',
+      "AGENTS.md §8",
+    ],
+    absent: ["版本载体一致"],
+    run: () => runGate("check-version-carriers.mjs", { VERSION_CARRIER_ROOT: versionCarrierMismatchRoot }),
+  },
+  {
+    name: "版本载体：VERSION 缺失应无法判定并失败（fail-closed）",
+    expect: 2,
+    contains: ["无法判定版本载体一致性", "仓库根 VERSION 不存在", "AGENTS.md §8"],
+    absent: ["版本载体一致："],
+    run: () => runGate("check-version-carriers.mjs", { VERSION_CARRIER_ROOT: versionCarrierMissingFileRoot }),
+  },
+  {
+    name: "版本载体：package.json 缺 version 字段应无法判定并失败（fail-closed）",
+    expect: 2,
+    contains: ["无法判定版本载体一致性", "缺少字符串 version 字段"],
+    absent: ["版本载体一致："],
+    run: () => runGate("check-version-carriers.mjs", { VERSION_CARRIER_ROOT: versionCarrierMissingFieldRoot }),
+  },
+  {
+    name: "版本载体：VERSION_CARRIER_ROOT 指向 tmp 之外应被拒绝（exit 2，不得重定向门禁）",
+    expect: 2,
+    contains: ["拒绝 VERSION_CARRIER_ROOT", "只允许指向系统临时目录"],
+    absent: ["版本载体一致：", "仓库根 VERSION 不存在"],
+    run: () => runGate("check-version-carriers.mjs", { VERSION_CARRIER_ROOT: versionCarrierEscapeRoot }),
   },
 ];
 

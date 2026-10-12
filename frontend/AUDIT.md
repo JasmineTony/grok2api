@@ -1402,7 +1402,7 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 | `pnpm test:gates`                                                         | 0      | 75 用例（含 61 必须失败）                 |
 | `pnpm format:check` / `oxlint` / `lint` / `typecheck` / `check:structure` | 0      | 逐条单独执行，全部通过                    |
 
-**本工作树只读核对（静态，可复现）**：`frontend/package.json:31` 的 `verify` 共 14 步、第 7 步为 `test:results:node`；`scripts/check-node-test-results.mjs:90-105` 的 `REQUIRED_NODE_TESTS` 为 14 条、`minPassed` 合计 **126**（与上表「14 文件 / 126 用例」一致）；`NODE_TEST_REPORT_ROOT` 的 `os.tmpdir()` 限制见同文件 `:59-66`。
+**本工作树只读核对（静态，可复现）**：`frontend/package.json:32` 的 `verify` 共 15 步、第 1 步为 `check:version`、第 8 步为 `test:results:node`（当次口径为 14 步 / 第 7 步，本轮 W2-1 在首位插入版本载体门禁，见 §31）；`scripts/check-node-test-results.mjs:90-105` 的 `REQUIRED_NODE_TESTS` 为 14 条、`minPassed` 合计 **126**（与上表「14 文件 / 126 用例」一致）；`NODE_TEST_REPORT_ROOT` 的 `os.tmpdir()` 限制见同文件 `:59-66`。
 
 ### 28.2 E2E 报告门禁新增 project 维度棘轮（关闭 §24.2 P2-1）
 
@@ -1807,3 +1807,56 @@ git ls-files --eol <抽查文件>                      # 全部 i/lf w/lf attr/t
 **最终 tip 与探针的差异（如实登记）**：探针之后仅追加 `docs(audit)` 的**纯文档**提交（§30.5/§34.4 与本节，`7764e002`），影响面仅 `prettier --check`；已用 CI 同口径（`cd frontend && prettier --check .`）复核 **exit 0**。代码与配置在 `c250eb75` 与最终 tip 之间**逐字未变**。
 
 **仍未取得 run 证据的步骤**：维护线工作流新增的 `Verify backend structure and API contract` 与 `Assert required frontend tests ran` 两条 step（探针分支按设计保留 `origin/main` 的工作流定义）→ 需合并/推送 `main` 才能触发（同 §28.6）。
+
+## 31. 2026-10-13 版本载体一致性本地门禁与门禁自证夹具（W2-1）
+
+### 31.1 能力与接线
+
+- **能力**：本地校验「仓库根 `VERSION` == `v` + `frontend/package.json` 的 `version`」。语义与 CI 步骤 `Verify version carriers are aligned`（`.github/workflows/ghcr-image.yml`）逐句一致：`VERSION` 去掉全部空白（等价 `tr -d '[:space:]'`）后与 `v` + `jq -r .version frontend/package.json` 比较，不等即失败。此前这条断言只在 CI 上存在，本地改歪版本要等推送后才会红。
+- **脚本**：`frontend/scripts/check-version-carriers.mjs`（仓库根由 `fileURLToPath(import.meta.url)` 上溯两级推导，**不依赖 cwd**；文件 <600 行、函数 <50 行、嵌套 ≤3 层）。
+- **接入点**：`frontend/package.json:28` 新增 `check:version`，并置于 `verify`（`:32`）的**第 1 步**（最廉价、最先失败）；`pnpm verify` 由 14 步变 **15 步**：`check:version → format:check → oxlint → lint → typecheck → typecheck:e2e → test → test:results:node → test:ui:coverage → test:results → check:architecture → check:structure → test:gates → build → check:budget`。规则侧同步：`AGENTS.md:87`（DEV-4）、`AGENTS.md:255`（§8 版本载体）、`AGENTS.md:473`（BIND-4）、`frontend/README.md:64-82` 的步骤表。
+- **退出码**：`0` = 一致（输出一行 `版本载体一致：v0.1.2（…）`）；`1` = 不一致（打印两侧值、期望格式 `v<package.json 的 version>` 与 `AGENTS.md §8` 依据）；`2` = 无法判定（fail-closed）——`VERSION` 缺失 / 去掉空白后为空、`frontend/package.json` 缺失 / JSON 不可解析 / `version` 缺失或非字符串、`VERSION_CARRIER_ROOT` 越界。
+- **根覆盖约定**：`VERSION_CARRIER_ROOT` 与既有 `TEST_REPORT_ROOT`（`check-test-results.mjs:62-74`）、`NODE_TEST_REPORT_ROOT`（`check-node-test-results.mjs:58-70`）同口径——只允许指向 `os.tmpdir()` 之下，仅供自测夹具使用；越界时打印原因并 exit 2，门禁不得被外部环境重定向。
+
+### 31.2 门禁自证夹具（EVID-3）
+
+夹具全部是临时目录里的**合成载体**（用 `VERSION_CARRIER_ROOT` 注入），不读也不写真实 `VERSION` / `frontend/package.json`；装置与用例登记在 `frontend/scripts/self-test-gates.mjs`（`buildVersionCarrierRoot` / `packageJsonText` 见 `:1261-1300`，用例为 `cases` 末尾 5 条 `版本载体：…`）。
+
+| 夹具                                              | 构造                                                         | 期望                                                                     | 判别力                                                                             |
+| ------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `version-carrier-ok`                              | `VERSION`=`v1.2.3`、`frontend/package.json` 的 version=1.2.3 | exit **0**，输出含 `版本载体一致：v1.2.3`                                | 真实仓库为 `v0.1.2`：覆盖未生效时断言不到 `v1.2.3`，证明注入确实指向夹具           |
+| `version-carrier-mismatch`（负）                  | `VERSION`=`v0.1.99`、version=`0.1.2`                         | exit **1**，输出含两侧值、`期望 VERSION = "v0.1.2"`、`AGENTS.md §8`      | 真实载体是一致的（exit 0）：覆盖未生效时该用例会 exit 0 → 比较逻辑与覆盖同时被证伪 |
+| `version-carrier-missing-file`（fail-closed 负）  | 只有 `frontend/package.json`，无 `VERSION`                   | exit **2**，输出含 `无法判定版本载体一致性`、`仓库根 VERSION 不存在`     | 不把「读不到载体」当「一致」放行                                                   |
+| `version-carrier-missing-field`（fail-closed 负） | `VERSION` 正常，package.json 无 `version` 字段               | exit **2**，输出含 `缺少字符串 version 字段`                             | 同上；`version` 非字符串同样落到该分支                                             |
+| 覆盖越界（负）                                    | `VERSION_CARRIER_ROOT` = `frontend/scripts`（非 tmp）        | exit **2**，输出含 `拒绝 VERSION_CARRIER_ROOT`、`只允许指向系统临时目录` | 一次可见的包装层改动不能把门禁指向伪造的「一致」载体                               |
+
+**夹具计数对比**：`pnpm test:gates` 由 **85 用例（含 68 必须失败）→ 90 用例（含 72 必须失败）**。
+
+### 31.3 自检结果（cwd=`frontend/`，本机实测）
+
+| 命令                                                                             | 退出码 | 关键输出                                                                                                                                    |
+| -------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `node scripts/check-version-carriers.mjs`                                        | 0      | `版本载体一致：v0.1.2（仓库根 VERSION 与 frontend/package.json:version 同一条版本线；载体根 E:\grok2api\.pi\worktrees\rv013-version-gate）` |
+| 同上，`VERSION_CARRIER_ROOT` = tmp 下合成根（`v0.1.99` vs `0.1.2`）              | 1      | `版本载体不一致：仓库根 VERSION = "v0.1.99"，frontend/package.json:version = "0.1.2"，期望 VERSION = "v0.1.2"` + `AGENTS.md §8` 依据        |
+| 同上，删掉合成根的 `VERSION`                                                     | 2      | `无法判定版本载体一致性（fail-closed，退出码 2）：仓库根 VERSION 不存在：…`                                                                 |
+| 同上，`VERSION_CARRIER_ROOT` = `$env:PI_SCRATCH_DIR\carrier-manual`（非 tmp 下） | 2      | `拒绝 VERSION_CARRIER_ROOT=…：该覆盖只允许指向系统临时目录 … 之下`                                                                          |
+| `pnpm format:check`                                                              | 0      | `All matched files use Prettier code style!`                                                                                                |
+| `pnpm check:structure`                                                           | 0      | `扫描源码文件：405 个`、`超限文件 / 超限函数 / 超限嵌套：0 个`、`参与判定的作用域（REV-3）：2527 个`                                        |
+| `pnpm test:gates`                                                                | 0      | `门禁自测通过：90 个用例（含 72 个必须失败的用例）。`                                                                                       |
+
+**未执行（如实登记）**：`pnpm verify`、`pnpm build`、`pnpm test:e2e` 未在本轮执行（改动为新增脚本 + `verify` 首步 + 自测夹具 + 文档，完整聚合链路由主代理统一复跑）；`pnpm test` / `pnpm test:ui:coverage` 未重跑（本轮未改被测业务代码与测试清单）。
+
+### 31.4 「14 步」表述的指针（EVID-8 / META-3）
+
+本文件此前 7 处 `14 步` 均为**当次口径 / 运行快照**，逐处定位与处置如下（历史数字按 META-3 不改写，只加指针，当前口径以本节为准）：
+
+| 位置                               | 上下文                                                  | 处置                                                                                                   |
+| ---------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| §28.1 接线提交行（`ae735724`）     | 「DEV-4 由 13 步改 **14 步**」                          | 当次快照，保留原值                                                                                     |
+| §28.1「本工作树只读核对」行        | 「`frontend/package.json:32` 的 `verify` 共 15 步…」    | **已就地更正为 15 步**（原为 14 步 / 第 7 步；现第 1 步 `check:version`、第 8 步 `test:results:node`） |
+| §28.4 最终验收行                   | 「14 步全过 + `test:e2e`」                              | 当次运行快照，保留原值                                                                                 |
+| §28.5「FE-19-6 关闭」              | 「含 14 步口径」                                        | 当次口径，保留原值                                                                                     |
+| §28.7 CI 探针两条（`38206150260`） | 「`Verify frontend`（14 步…）」「14 步 `pnpm verify`…」 | 当次 CI 快照，保留原值                                                                                 |
+| §30.6 CI 探针行（`38214762730`）   | 「`Verify frontend`（14 步…）」                         | 当次 CI 快照，保留原值                                                                                 |
+
+**当前 `pnpm verify` = 15 步**，命令原文见 `frontend/package.json:32`（复现：`node -e "console.log(require('./frontend/package.json').scripts.verify.split(' && ').length)"` → 15）。

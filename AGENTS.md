@@ -84,7 +84,7 @@
 
 ### DEV-4 前端质量门禁（机器门禁）
 
-- `frontend/` 下 `pnpm verify` 必须退出 0，覆盖 14 步：`format:check → oxlint → lint → typecheck → typecheck:e2e → test → test:results:node → test:ui:coverage → test:results → check:architecture → check:structure → test:gates → build → check:budget`；其中 `test:results:node` 紧跟产生报告的那一步 `test` 之后，解析 node:test 原生 JSON 报告（`.artifacts/node-test/results.json`），断言必需文件与用例确实执行、通过数达标、无未登记跳过、磁盘测试文件与清单集合相等；`test:results` 解析 Vitest 原生 JSON 报告，断言必需前端用例确实执行、通过数达标且无未登记跳过。
+- `frontend/` 下 `pnpm verify` 必须退出 0，覆盖 15 步：`check:version → format:check → oxlint → lint → typecheck → typecheck:e2e → test → test:results:node → test:ui:coverage → test:results → check:architecture → check:structure → test:gates → build → check:budget`；其中 `check:version`（`frontend/scripts/check-version-carriers.mjs`）放在第一位，本地校验「仓库根 `VERSION` == `v` + `frontend/package.json` 的 `version`」（§8 的版本载体一致性），与 CI 步骤 `Verify version carriers are aligned` 同一语义，载体缺失/不可解析按 fail-closed 处理；`test:results:node` 紧跟产生报告的那一步 `test` 之后，解析 node:test 原生 JSON 报告（`.artifacts/node-test/results.json`），断言必需文件与用例确实执行、通过数达标、无未登记跳过、磁盘测试文件与清单集合相等；`test:results` 解析 Vitest 原生 JSON 报告，断言必需前端用例确实执行、通过数达标且无未登记跳过。
 - `pnpm verify:full` = `pnpm verify` + `pnpm test:e2e` + `pnpm test:results:e2e`：质量门禁之后运行真实全栈 E2E，并对 Playwright 报告做同样的必需用例执行/跳过断言；CI 必须同时运行前端质量、E2E、后端与镜像检查，不能以快速命令代替全部验收。
 - 聚合命令不重复运行同一套测试。独立 `pnpm test` 用于开发反馈，`pnpm test:ui:coverage` 保留覆盖率入口。
 - 不以 `Skipped`、`Blocked`、未运行、只写好配置或重试后偶然通过代替 `Passed`（§10）。
@@ -252,7 +252,7 @@ git remote -v
 
 ## 8. 发布流程（REL）
 
-- 版本载体：仓库根 `VERSION` 是唯一权威版本源（`Dockerfile:67` 的 `COPY VERSION /app/VERSION` 把它复制到镜像 `/app/VERSION`，`backend/internal/buildinfo/version.go` 的 `CurrentVersion()` 读取它）；`frontend/package.json` 的 `version` 必须与 `VERSION` 处于同一条版本线，二者不一致按文档缺陷处理。该一致性由 CI 步骤「Verify version carriers are aligned」强制。
+- 版本载体：仓库根 `VERSION` 是唯一权威版本源（`Dockerfile:67` 的 `COPY VERSION /app/VERSION` 把它复制到镜像 `/app/VERSION`，`backend/internal/buildinfo/version.go` 的 `CurrentVersion()` 读取它）；`frontend/package.json` 的 `version` 必须与 `VERSION` 处于同一条版本线，二者不一致按文档缺陷处理。该一致性由 CI 步骤「Verify version carriers are aligned」与本地门禁 `pnpm check:version`（`frontend/scripts/check-version-carriers.mjs`，`pnpm verify` 的第 1 步，语义与原命令逐句一致）双向强制。
 - 发布前置（缺一不可，未实际完成不得记为 `Passed`）：目标提交上前端 `pnpm verify`（已内含 `pnpm test:results`）、后端 `go test ./... -count=1` / `go vet ./...` / `go build ./...` 退出 0；`ghcr-image.yml` 的 Verify job 在远端真实跑完（含 race、PostgreSQL/Redis 集成用例 0 跳过、Swagger 精确 diff、全栈 E2E，以及两条必需场景断言：后端 `Assert required integration tests ran`、前端 `Assert required frontend tests ran`（`pnpm test:results:e2e`））。
 - 发布步骤：① 把维护分支 fast-forward 合并到 `main` 并推送 `origin`；② 打 annotated tag `vX.Y.Z` 并推送；③ 创建同名 GitHub Release，说明引用 `frontend/AUDIT.md` / `backend/AUDIT.md` 的验收结论；④ 等待 `ghcr-image.yml` 的 `build_ghcr_image` 与 `merge` 产出 `ghcr.io/<owner>/grok2api:vX.Y.Z` 的 amd64/arm64 与 manifest list。
 - 发布后登记（必须附 run id + step + conclusion，见 EVID-2）：在两个 `AUDIT.md` 中记录 tag、commit sha、CI run id 与镜像 digest；任何未达成的环节按 §6 记为 `Blocked`/`Failed` 并写明精确补救步骤，不得以「配置已写好」代替。
@@ -470,7 +470,7 @@ CI 的 `uses:` 已全部固定到 commit SHA（22/22，复现：`rg -n "^\s*uses
 | TEST-6     | `bash scripts/verify.sh`（`backend/`）                                                | `backend/scripts/verify.sh`、`backend/structure-baseline.json`、`backend/api-baseline.txt` | Verify  | P1       |
 | REV-1/2/3  | `pnpm check:structure`（`frontend/`）、`go run ./tools/structurecheck`（`backend/`）  | 两侧 `structure-baseline.json`                       | Verify  | P1       |
 | REV-5      | `pnpm check:budget`（`frontend/`）                                                    | `bundle-budget.json`                                 | Verify  | P1       |
-| REL 版本载体 | CI 步骤「Verify version carriers are aligned」                                        | `VERSION`、`frontend/package.json`                   | Verify  | P1       |
+| REL 版本载体 | CI 步骤「Verify version carriers are aligned」；本地 `pnpm check:version`（`pnpm verify` 第 1 步） | `VERSION`、`frontend/package.json`                   | Verify  | P1       |
 | EVID-3     | `pnpm test:gates`（`frontend/`）                                                      | `scripts/self-test-gates.mjs`                        | Verify  | P1       |
 
 ### BIND-5 只有评审准则、没有机器门禁的规则
