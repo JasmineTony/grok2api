@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -115,23 +116,29 @@ func TestIdleTimeoutReadCloserIdleAbort(t *testing.T) {
 // TestIdleTimeoutReadCloserResetOnData verifies that each successful Read
 // resets the idle deadline so a slow-but-steady stream is never interrupted.
 func TestIdleTimeoutReadCloserResetOnData(t *testing.T) {
-	body := &feedReader{chunks: [][]byte{[]byte("chunk-1"), []byte("chunk-2"), []byte("chunk-3")}, finalErr: io.EOF}
+	chunks := make([][]byte, 0, 20)
+	for i := 0; i < 20; i++ {
+		chunks = append(chunks, []byte(fmt.Sprintf("chunk-%d", i+1)))
+	}
+	body := &feedReader{chunks: chunks, finalErr: io.EOF}
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(nil)
-	// Idle is shorter than the total read time but longer than each gap.
-	wrapper := newIdleTimeoutReadCloser(body, 60*time.Millisecond, cancel)
+	// 计时余量口径与 internal/infra/provider/streamidle 对齐：单次进度间隔（10ms）必须远小于
+	// 空闲阈值（150ms）——避免机器负载把一次 sleep 拖过阈值造成假失败；整段流耗时（20 次读取
+	// ≈200ms）必须大于阈值——缺少 Reset 时定时器会在 150ms 触发、TimedOut() 变 true，本用例仍失败。
+	wrapper := newIdleTimeoutReadCloser(body, 150*time.Millisecond, cancel)
 
-	for _, expected := range []string{"chunk-1", "chunk-2", "chunk-3"} {
+	for i, expected := range chunks {
 		buffer := make([]byte, 32)
 		n, err := wrapper.Read(buffer)
 		if err != nil && !errors.Is(err, io.EOF) {
 			t.Fatalf("Read() error = %v, want nil or io.EOF", err)
 		}
-		if string(buffer[:n]) != expected {
-			t.Fatalf("Read() = %q, want %q", buffer[:n], expected)
+		if string(buffer[:n]) != string(expected) {
+			t.Fatalf("Read()[%d] = %q, want %q", i, buffer[:n], expected)
 		}
-		// Gap between chunks, well within the idle window.
-		time.Sleep(30 * time.Millisecond)
+		// Gap between chunks, well within the idle window (150ms).
+		time.Sleep(10 * time.Millisecond)
 	}
 	if wrapper.TimedOut() {
 		t.Fatal("timedOut should be false for a steady stream")
