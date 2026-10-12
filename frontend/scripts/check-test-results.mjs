@@ -351,6 +351,10 @@ function walkPlaywrightSuites(suites, files, baseDir) {
  * 记录一个 spec 在每个 project 下的实例：文件级计数口径与旧实现逐条一致（不得放宽），并新增 project 通过数。
  * 归类顺序：预期失败 > unexpected > flaky > skipped > 全 expected > 未知状态 fail-closed（Playwright 把
  * 「正常通过」与 test.fail() 预期失败都记为 status="expected"，故显式判失败）；projectName 缺失 → fail-closed。
+ * 预期失败只认 `expectedStatus === "failed"`（test.fail()）：静态 `test.skip()` / `test.describe.skip()` /
+ * `test.fixme()` 会让 Playwright 把 expectedStatus 记为 "skipped"（只有运行时 `test.skip(cond)` 保留
+ * "passed"）。把 "skipped" 算成预期失败会走错诊断分支，并使 ALLOWED_SKIPS 登记通道与整文件跳过判定在
+ * E2E 侧不可达（跳过被计成失败，tally.skipped 恒为 0）。
  */
 function recordSpecInstances(tally, spec) {
   const groups = new Map();
@@ -361,7 +365,7 @@ function recordSpecInstances(tally, spec) {
   }
   for (const [project, tests] of groups) {
     const statuses = tests.map((test) => test.status ?? "");
-    const expectedFailure = tests.some((test) => (test.expectedStatus ?? "passed") !== "passed");
+    const expectedFailure = tests.some((test) => (test.expectedStatus ?? "passed") === "failed");
     const passed = !expectedFailure && statuses.length > 0 && statuses.every((status) => status === "expected");
     if (expectedFailure) {
       tally.failed += 1;
