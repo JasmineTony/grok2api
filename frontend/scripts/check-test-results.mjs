@@ -13,10 +13,11 @@
  *   node scripts/check-test-results.mjs          # 校验 Vitest 组件/集成报告（需先 pnpm test:ui:coverage）
  *   node scripts/check-test-results.mjs --e2e    # 同时校验 Playwright 全栈 E2E 报告（需先 pnpm test:e2e）
  *
- * 断言五件事：① 清单内文件出现在报告中；② 通过数不少于棘轮 minPassed，且无失败 / 未登记跳过 / flaky
+ * 断言六件事：① 清单内文件出现在报告中；② 通过数不少于棘轮 minPassed，且无失败 / 未登记跳过 / flaky
  * （重试后才通过不放行）；③ 清单登记的必填用例标题（requiredTitles，逐字取自真实测试文件的 it/test 名称）出现在
  * 报告中且为 passed；④ 报告内文件总数不少于实测棘轮（防止整体删除测试文件绕过）；⑤ 报告不比清单文件旧
- * （报告开始时间不早于清单文件最新 mtime），避免沿用过期报告假通过。
+ * （报告开始时间不早于清单文件最新 mtime），避免沿用过期报告假通过；⑥ E2E project 维度棘轮：配置声明的 project
+ * 必须全部出现、逐 project 与「文件 × project」通过数不低于棘轮，缺失或未登记 project 一律 fail-closed（§24.2 P2-1）。
  *
  * 另有两条文件级失效判定，对清单内外的文件一视同仁、不降级为告警：① Vitest 报告里
  * `testResults[].status !== "passed"`（收集期失败，`assertionResults` 为空——只读用例状态会让整个文件消失）；
@@ -116,17 +117,21 @@ const REQUIRED_VITEST = [
 ];
 
 /**
- * Playwright 全栈 E2E 报告：文件 → 最少通过用例数 + 必填用例标题（棘轮，语义同上）。
- * minPassed 同样是 (spec × project) 实例口径（2026-10-12 实测：auth 12 / client-keys 8 / navigation 9 /
- * request-audits 6 / settings 6 / mobile-device 1，共 6 个文件、42 个实例；chromium 21 + mobile-chromium 21）；
- * 移动 project 被移除或收窄后这些数字回落到桌面实例数（auth 6 / client-keys 4 / navigation 5 / request-audits 3 /
- * settings 3，共 21 个实例），必须在门禁上失败。
- * requiredTitles 逐字取自对应 spec 的 test() 名称（按包含匹配）。
+ * Playwright 全栈 E2E 报告：文件 → 最少通过用例数 + 必填用例标题 + project 维度棘轮（棘轮语义同 Vitest）。
+ * minPassed / projectMinPassed 是 (spec × project) 实例口径，数字来源 `.artifacts/playwright/results.json`
+ * （2026-10-12 10:53 的 42 实例报告）与 frontend/AUDIT.md §24.2：auth 6+6、client-keys 4+4、navigation 5+4、
+ * request-audits 3+3、settings 3+3、mobile-device 0+1，合计 chromium 21 + mobile-chromium 21；移动 project
+ * 被移除或收窄后回落到 21 个桌面实例，必须失败。requiredTitles 逐字取自对应 spec 的 test() 名称（包含匹配）。
+ * project 清单显式登记而不解析 playwright.config.ts:40-44（本脚本零依赖，解析 TS 配置需额外依赖/加载器；
+ * 未登记 project 一律 fail-closed，使配置变更成为必须登记的可见改动）。只增不减，缩减须可见并说明理由。
  */
+const REQUIRED_E2E_PROJECTS = ["chromium", "mobile-chromium"];
+const MIN_E2E_PROJECT_PASSED = { chromium: 21, "mobile-chromium": 21 };
 const REQUIRED_E2E = [
   {
     file: "e2e/auth.e2e.ts",
     minPassed: 12,
+    projectMinPassed: { chromium: 6, "mobile-chromium": 6 },
     requiredTitles: [
       "未登录访问受保护路由会被重定向到登录页",
       "正确凭据登录成功、进入受保护页面并在刷新后保持登录",
@@ -136,11 +141,13 @@ const REQUIRED_E2E = [
   {
     file: "e2e/client-keys.e2e.ts",
     minPassed: 8,
+    projectMinPassed: { chromium: 4, "mobile-chromium": 4 },
     requiredTitles: ["创建密钥：表单校验失败后成功创建并展示一次性明文", "删除密钥：确认后行与真实服务端记录同时消失"],
   },
   {
     file: "e2e/navigation.e2e.ts",
     minPassed: 9,
+    projectMinPassed: { chromium: 5, "mobile-chromium": 4 },
     requiredTitles: [
       "侧栏导航到账号和设置，深链接刷新后保持页面与当前导航状态",
       "账号菜单切换英文和中文，导航与刷新后仍使用所选语言",
@@ -150,16 +157,19 @@ const REQUIRED_E2E = [
   {
     file: "e2e/request-audits.e2e.ts",
     minPassed: 6,
+    projectMinPassed: { chromium: 3, "mobile-chromium": 3 },
     requiredTitles: ["状态筛选改变真实查询范围并显示激活计数，清除后恢复空态"],
   },
   {
     file: "e2e/settings.e2e.ts",
     minPassed: 6,
+    projectMinPassed: { chromium: 3, "mobile-chromium": 3 },
     requiredTitles: ["设置页分页可切换：Grok Build 与 Grok Web 面板按标签显隐"],
   },
   {
     file: "e2e/mobile-device.e2e.ts",
     minPassed: 1,
+    projectMinPassed: { "mobile-chromium": 1 },
     requiredTitles: ["移动 project 应用真实设备描述符：hasTouch、isMobile、DPR 与 UA"],
   },
 ];
@@ -253,6 +263,7 @@ function emptyTally() {
     skippedTitles: [],
     flakyTitles: [],
     fileFailures: [],
+    projects: new Map(), // project 名 → 该 project 的通过实例数（仅 E2E 分支写入）
   };
 }
 
@@ -305,43 +316,94 @@ function normalizeSpecFile(baseDir, specFile) {
   return path.isAbsolute(target) ? toRelative(target) : toRelative(path.resolve(baseDir, target));
 }
 
-/** Playwright JSON：suites 递归，spec.tests[].status ∈ expected|unexpected|flaky|skipped。 */
+/**
+ * Playwright JSON：suites 递归，spec.tests[].status ∈ expected|unexpected|flaky|skipped。
+ * 每条实例按 `test.projectName` 归到 project（§24.2 P2-1 的判据来源）；projectName 缺失时 fail-closed。
+ */
 function walkPlaywrightSuites(suites, files, baseDir) {
   for (const suite of suites ?? []) {
     walkPlaywrightSuites(suite.suites, files, baseDir);
     for (const spec of suite.specs ?? []) {
       const file = normalizeSpecFile(baseDir, spec.file);
       const tally = files.get(file) ?? emptyTally();
-      const tests = spec.tests ?? [];
-      const statuses = tests.map((test) => test.status ?? "");
-      // Playwright 把「正常通过」与「test.fail() 预期失败且真的失败」都记为 status="expected"，
-      // 区别只在 expectedStatus（前者 "passed"、后者 "failed"）。只读 status 会让被标记为预期失败的
-      // 必需场景整段失效却仍计为通过，因此这里显式判失败。
-      const expectedFailure = tests.some((test) => (test.expectedStatus ?? "passed") !== "passed");
-      if (expectedFailure) {
-        tally.failed += 1;
-        tally.failedTitles.push(`${spec.title}（被标记为预期失败 test.fail()，不得用于必需场景）`);
-      } else if (statuses.includes("unexpected")) {
-        tally.failed += 1;
-        tally.failedTitles.push(spec.title);
-      } else if (statuses.includes("flaky")) {
-        tally.flaky += 1;
-        tally.flakyTitles.push(`${spec.title}（flaky：重试后才通过）`);
-      } else if (statuses.includes("skipped")) {
-        tally.skipped += 1;
-        tally.skippedTitles.push(`${spec.title}（skipped）`);
-      } else if (statuses.length > 0 && statuses.every((status) => status === "expected")) {
-        tally.passed += 1;
-        tally.passedTitles.push(spec.title);
-      } else {
-        // 未知状态 fail-closed（与 Vitest 分支同一口径）：宁可失败，也不放行无法解释的报告。
-        tally.failed += 1;
-        tally.failedTitles.push(`${spec.title}（未知状态 ${statuses.join("|") || "空"}，不得放行）`);
-      }
+      recordSpecInstances(tally, spec);
       files.set(file, tally);
     }
   }
   return files;
+}
+
+/**
+ * 记录一个 spec 在每个 project 下的实例：文件级计数口径与旧实现逐条一致（不得放宽），并新增 project 通过数。
+ * 归类顺序：预期失败 > unexpected > flaky > skipped > 全 expected > 未知状态 fail-closed（Playwright 把
+ * 「正常通过」与 test.fail() 预期失败都记为 status="expected"，故显式判失败）；projectName 缺失 → fail-closed。
+ */
+function recordSpecInstances(tally, spec) {
+  const groups = new Map();
+  for (const test of spec.tests ?? []) {
+    const name = test.projectName;
+    const project = typeof name === "string" && name.length > 0 ? name : null;
+    groups.set(project, [...(groups.get(project) ?? []), test]);
+  }
+  for (const [project, tests] of groups) {
+    const statuses = tests.map((test) => test.status ?? "");
+    const expectedFailure = tests.some((test) => (test.expectedStatus ?? "passed") !== "passed");
+    const passed = !expectedFailure && statuses.length > 0 && statuses.every((status) => status === "expected");
+    if (expectedFailure) {
+      tally.failed += 1;
+      tally.failedTitles.push(`${spec.title}（被标记为预期失败 test.fail()，不得用于必需场景）`);
+    } else if (statuses.includes("unexpected")) {
+      tally.failed += 1;
+      tally.failedTitles.push(spec.title);
+    } else if (statuses.includes("flaky")) {
+      tally.flaky += 1;
+      tally.flakyTitles.push(`${spec.title}（flaky：重试后才通过）`);
+    } else if (statuses.includes("skipped")) {
+      tally.skipped += 1;
+      tally.skippedTitles.push(`${spec.title}（skipped）`);
+    } else if (passed) {
+      tally.passed += 1;
+      tally.passedTitles.push(spec.title);
+    } else {
+      tally.failed += 1;
+      tally.failedTitles.push(`${spec.title}（未知状态 ${statuses.join("|") || "空"}，不得放行）`);
+    }
+    // 非通过实例也登记 project 名：使「project 被整体移除」与「project 实例全部未通过」在判定上可区分。
+    if (project === null) tally.fileFailures.push(`${spec.title}：报告缺少 project 维度（test.projectName），不得放行`);
+    else tally.projects.set(project, (tally.projects.get(project) ?? 0) + (passed ? 1 : 0));
+  }
+}
+
+/** 逐 project 的通过实例数（棘轮口径）：project 名 → 通过数。 */
+function projectPassedTotals(files) {
+  const totals = new Map();
+  for (const tally of files.values()) {
+    for (const [project, passed] of tally.projects) totals.set(project, (totals.get(project) ?? 0) + passed);
+  }
+  return totals;
+}
+
+/**
+ * E2E project 维度棘轮（§24.2 P2-1）：① 配置声明的 project 必须出现在报告里；② 未登记 project → fail-closed；
+ * ③ 逐 project 通过数 ≥ 棘轮。文件维度看不到「实例被移出某 project」的稀释，只有这里会失败。
+ */
+function checkE2eProjects(files) {
+  const failures = [];
+  const totals = projectPassedTotals(files);
+  for (const project of REQUIRED_E2E_PROJECTS) {
+    if (!totals.has(project)) {
+      failures.push(`E2E：报告未出现配置声明的 project ${project}（project 被删除或改名，移动覆盖丧失不得静默通过）`);
+    } else if (totals.get(project) < MIN_E2E_PROJECT_PASSED[project]) {
+      const min = MIN_E2E_PROJECT_PASSED[project];
+      failures.push(`E2E：project ${project} 通过 ${totals.get(project)} 个实例，少于棘轮 ${min} 个`);
+    }
+  }
+  for (const project of totals.keys()) {
+    if (!REQUIRED_E2E_PROJECTS.includes(project)) {
+      failures.push(`E2E：报告出现未登记的 project ${project}（新增 project 必须先在此登记）`);
+    }
+  }
+  return failures;
 }
 
 function isAllowedSkip(file, title) {
@@ -373,7 +435,7 @@ function missingRequiredTitles(label, file, tally, requiredTitles) {
 function checkRequired(label, files, required) {
   const failures = [];
   const skippedOutsideRequired = [];
-  for (const { file, minPassed, requiredTitles } of required) {
+  for (const { file, minPassed, projectMinPassed, requiredTitles } of required) {
     const tally = files.get(file);
     if (!tally) {
       failures.push(`${label}：必需文件未出现在报告中 ${file}（用例被删除、改名或未运行）`);
@@ -391,6 +453,11 @@ function checkRequired(label, files, required) {
     const unregistered = tally.skippedTitles.filter((title) => !isAllowedSkip(file, title));
     if (unregistered.length > 0) {
       failures.push(`${label}：${file} 存在未登记跳过用例 ${unregistered.join("、")}`);
+    }
+    // project 维度（仅 E2E 清单登记了 projectMinPassed）：文件通过数不变而某 project 少跑实例时在此失败。
+    for (const [project, min] of Object.entries(projectMinPassed ?? {})) {
+      const observed = tally.projects.get(project) ?? 0;
+      if (observed < min) failures.push(`${label}：${file}（${project}）通过 ${observed} 个，少于要求的 ${min} 个`);
     }
   }
   for (const [file, tally] of files) {
@@ -490,11 +557,12 @@ function main() {
   warnings.push(...vitest.warnings);
 
   let e2e = null;
+  let e2eFiles = null;
   let e2eStartMs = null;
   if (withE2e) {
     const e2eRun = readReport(".artifacts/playwright/results.json", "pnpm test:e2e");
     if (e2eRun === null) return 2;
-    const e2eFiles = walkPlaywrightSuites(e2eRun.report.suites, new Map(), playwrightBaseDir(e2eRun.report));
+    e2eFiles = walkPlaywrightSuites(e2eRun.report.suites, new Map(), playwrightBaseDir(e2eRun.report));
     e2eStartMs = reportStartMs("E2E", e2eRun.report.stats?.startTime, e2eRun.reportPath);
     e2e = checkReport({
       label: "E2E",
@@ -505,12 +573,16 @@ function main() {
       rerunCommand: "pnpm test:e2e",
     });
     failures.push(...e2e.failures);
+    // project 维度棘轮与文件维度独立：文件通过数不变而某 project 的实例被移走时只有这里会失败（§24.2 P2-1）。
+    failures.push(...checkE2eProjects(e2eFiles));
     warnings.push(...e2e.warnings);
   }
 
   logReport({ label: "Vitest", fileCount: vitest.fileCount, totals: vitest.totals, startMs: vitestStartMs });
-  if (e2e !== null && e2eStartMs !== null) {
+  if (e2e !== null && e2eStartMs !== null && e2eFiles !== null) {
     logReport({ label: "E2E", fileCount: e2e.fileCount, totals: e2e.totals, startMs: e2eStartMs });
+    const projectRows = [...projectPassedTotals(e2eFiles)].map(([project, passed]) => `${project} 通过 ${passed} 个`);
+    console.log(`E2E project 报告：${projectRows.length} 个 project（${projectRows.join("、")}）`);
   }
   for (const warning of warnings) console.warn(`  跳过告警（未登记在必需清单）：${warning}`);
 
