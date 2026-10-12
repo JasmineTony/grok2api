@@ -1531,6 +1531,8 @@ go test ./internal/transport/http/ -run 'TestFrontendStaticExposure|TestFrontend
 | **F1（P2）** | `frontend.go:76-79` 的 `filepath.Rel` 包含性守卫在 **Linux 上不可达**（`path.Clean` 已消掉根处 `..`；唯一触发形态是含 `filepath.Separator` 的别名路径，而 Linux 上 `\` 是普通文件名字符）⇒ 删除该守卫 CI(Linux) 仍为绿，平台无关回归必须由谓词单测承担。 | **待并入**。本工作树 `frontend.go:77` **仍是内联判定**（未抽出谓词）。重构在分支 `maint/acceptance-audit-20261012-static-guard-testable`（提交 `b1d38714`：抽出 `isRelativePathWithinRoot` + 新增 `TestIsRelativePathWithinRoot`，仅改 `frontend.go` 与 `server_test.go`）；实测 `git merge-base --is-ancestor maint/acceptance-audit-20261012-static-guard-testable HEAD` **exit 1** ⇒ 尚未并入。 |
 | **F5（P3）** | §32.1 的回归命令未含本批新增用例；§25.3①「穿越/编码别名（httptest + 哨兵文件，删守卫必失败）」的预期**需更正**——该测试缺口已由 `98cc6f06` 的 `TestFrontendStaticExposureRejectsDirectoryTraversal`（哨兵文件在静态根外、断言 404）在 **Windows** 上覆盖；Linux 侧因 F1 的不可达性，仍需谓词单测补足。 | **待并入**。文档更正与 F1 同属 `b1d38714` 所在分支，但该分支当前**只含 `frontend.go` 与 `server_test.go` 两个文件**（无 AUDIT 改动）⇒ §32.1 / §25.3① 的文本更正**尚未落地**。本节按 META-3 只登记事实与并入状态，不改写 §32.1 / §25.3 原文。 |
 
+> **更正（2026-10-12，tip `5625a857`）**：上表 **F1** 与 **F5** 两行的「**待并入** … `exit 1` ⇒ 尚未并入」**已过时**——`b1d38714` 与 `0f0be18d`（经 `e4e3dec7` 并入）**均已并入交付线**。本节只加指针，**不改写上表原文**（META-3 / EVID-8：历史快照保留原值）。复现：`git merge-base --is-ancestor b1d38714 HEAD` → **exit 0**、`git merge-base --is-ancestor 0f0be18d HEAD` → **exit 0**（在 tip `5625a857` 上实测，详见 §35.6）。
+
 **未执行（如实登记）**：本节**未重跑**变异注入验证 F1/F5 的判别力归属（该结论引用 R20 复核，见会话 scratch `plan-progress.md` 的 R20 结论）；`go test ./... -count=1`、`bash scripts/verify.sh`、`-race` 与隔离 PG/Redis 均未在本节范围内重跑（其最新证据见 §31.4、§32.4 与 `frontend/AUDIT.md` §28.4）。
 
 ## 34. 2026-10-12（续三）静态托管表征测试、守卫可测化与回归同步
@@ -1596,3 +1598,166 @@ go test ./internal/transport/http/ -run 'TestFrontendStaticExposure|TestFrontend
 | `85e54740` | **P3**：修正 `b1d38714` 抽出谓词后失效的 3 处 `frontend.go:` 注释行号（`server_test.go:166`、`frontend_exposure_test.go:109`/`:125` → `108-110`）；另 9 处经逐条核对**当前正确**未改（含 `server_test.go:186` 的 `76-79`，与主代理任务书中的假设不同）                                                                                                                                       |
 
 **实测（B17，cwd=`backend`）**：`go test ./internal/infra/egress/ -count=1` **3/3 exit 0**；`-run TestPinnedHTTPSClientSOCKS5HReceivesPinnedIP -count=5` **5/5 PASS**；`go test ./... -count=1` **exit 0**（89 s）；`go build` / `go vet` / `structurecheck`（REV-3 **5537**）/ `apicheck`（2062/2062，基线未改）/ `go test ./internal/transport/http/` 均 exit 0。
+
+## 35. 证据更正与 CI 取证更正（2026-10-12，tip `5625a857`）
+
+> 分支 `maint/acceptance-audit-20261012-audit-evidence-correction`（基点 = 交付 tip `5625a857`，本节只改本文件）。按 META-3 / EVID-8 只追加：§1–§34 的既有文本与数字**不改写**（§33.3 的两行陈旧状态只加指针，见 §35.6）。标注「本节实跑」的命令在本工作树执行，附命令原文、退出码与关键输出（EVID-2）；标注「引用本轮实测」的数字来自本轮会话记录，**本节未复跑**（原因逐条写明，EVID-1）。
+
+### 35.1 F1（EVID-8 更正）：CI 探针 `bc0bfc52` 不等于 `c250eb75` 的内容
+
+| 项 | 内容 |
+| --- | --- |
+| 原值（更正前登记） | `bc0bfc52` 的内容等于 `c250eb75`，即探针提交未引入任何差异。 |
+| 新值（本节实跑） | `bc0bfc52` 是 `c250eb75` 的**直接子提交（+1 提交）**，标题 `chore(ci-probe): 以 origin/main 工作流定义验证装配后的交付线`；二者差异**仅在 3 个 workflow 文件**：`.github/workflows/codeql.yml`、`.github/workflows/ghcr-image.yml`、`.github/workflows/stale.yml`，合计 `3 files changed, 21 insertions(+), 4 deletions(-)`。 |
+| 根因 | 该探针提交自述「本机凭据缺工作流作用域，带工作流改动的推送会被拒」，故刻意保留 `origin/main` 的工作流定义，使探针分支可被推送。 |
+| 复现（本节实跑） | `git diff --stat bc0bfc52 c250eb75` → **exit 0**，只列上述 3 个 workflow 文件；`git merge-base --is-ancestor c250eb75 bc0bfc52` → **exit 0**；`git log --oneline -2 bc0bfc52` 第 1 行 `bc0bfc52 chore(ci-probe): …`、第 2 行 `c250eb75 Merge branch 'maint/acceptance-audit-20261012-review-fixes' into maint/acceptance-audit-20261012-final`。 |
+
+```
+$ git diff --stat bc0bfc52 c250eb75
+ .github/workflows/codeql.yml     |  6 +++---
+ .github/workflows/ghcr-image.yml | 17 +++++++++++++++++
+ .github/workflows/stale.yml      |  2 +-
+ 3 files changed, 21 insertions(+), 4 deletions(-)
+exit=0
+```
+
+### 35.2 F2（未收口项）：交付线新增的两条 CI step 零 run 证据
+
+| step 名 | 位置与执行内容 |
+| --- | --- |
+| `Verify backend structure and API contract` | `.github/workflows/ghcr-image.yml`，`working-directory: backend`，`set -euo pipefail` 后依次 `go run ./tools/structurecheck`、`go run ./tools/apicheck` |
+| `Assert required frontend tests ran` | 同文件，`working-directory: frontend`，`run: pnpm test:results:e2e` |
+
+两条 step 在交付线 tip `5625a857` 的 `.github/workflows/ghcr-image.yml` 中**确实存在**（本节实跑：`git show HEAD:.github/workflows/ghcr-image.yml` 命中两行 `- name:`），但在**所有曾被推送的 sha** 上**均不存在** ⇒ 运行证据为零。复现命令（对 7 个 sha 逐个执行 `git show <sha>:.github/workflows/ghcr-image.yml` 后按两条 step 名精确匹配）：
+
+```
+$ for sha in 1a510f5d b59e5ff6 3714cd39 bc0bfc52 542c8084 61f8f0a3 547956eb:
+    git show <sha>:.github/workflows/ghcr-image.yml | Select-String -SimpleMatch "<step 名>"
+1a510f5d : structure-step=0 ; frontend-step=0     # 1a510f5d = origin/main
+b59e5ff6 : structure-step=0 ; frontend-step=0
+3714cd39 : structure-step=0 ; frontend-step=0
+bc0bfc52 : structure-step=0 ; frontend-step=0
+542c8084 : structure-step=0 ; frontend-step=0
+61f8f0a3 : structure-step=0 ; frontend-step=0
+547956eb : structure-step=0 ; frontend-step=0
+exit=0
+```
+
+**7/7 零命中（两条 step 各 7 个 sha 全部 0 命中；本节实跑复核）。** 探针 run `38214762730` 的 `Verify` job step 清单已**逐条核对**（本节实跑，GitHub 公共 REST API，见 §35.4 的取证方式）⇒ **25 个 step 中不含这两条**：
+
+```
+$ (REST) GET /repos/JasmineTony/grok2api/actions/runs/38214762730/jobs
+JOB: Verify | success | steps=25
+   - Set up job / Initialize containers / Checkout / Set up Go
+   - Verify version carriers are aligned / Test backend
+   - Assert required integration tests ran          <- 只有后端这条
+   - Race backend / Vet backend / Verify Swagger document / Upload backend test report
+   - Set up pnpm / Set up Node.js / Install frontend dependencies / Verify frontend
+   - Install Playwright browser / Run full-stack E2E
+   - Upload Playwright artifacts / Upload frontend coverage
+   - Post Set up Node.js / Post Set up pnpm / Post Set up Go / Post Checkout
+   - Stop containers / Complete job
+（无 `Verify backend structure and API contract`，无 `Assert required frontend tests ran`）
+```
+
+**结论**：这两条 step 的运行证据为零，按 §6 / EVID-1 记 `Pending`，**不得记 `Passed`**；其门禁语义（后端结构+契约、前端测试报告存在性）在交付线上**尚未由任何真实 run 覆盖**。
+
+### 35.3 F3（发布阻塞根因）：推送交付线被凭据拒绝
+
+| 项 | 内容 |
+| --- | --- |
+| 命令原文（2026-10-12） | `git push origin maint/acceptance-audit-20261012-final:refs/heads/ci-probe/acceptance-audit-20261012-r2` |
+| 结果 | **exit 1**，远端返回 `! [remote rejected] … (refusing to allow an OAuth App to create or update workflow .github/workflows/codeql.yml without 'workflow' scope)` |
+| 影响 | 交付线相对 `origin/main` 含 3 个 workflow 文件改动（见 §35.1）⇒ **合并 main / 打 tag / Release 全部被该凭据能力阻塞**；阻塞根因是**凭据缺工作流作用域**，而非缺授权。 |
+| 复现（本节实跑） | `git remote -v` → `origin https://github.com/JasmineTony/grok2api.git (fetch/push)`、`upstream https://github.com/chenyme/grok2api.git`；`git config --get <凭据助手配置项>` → `<已脱敏>`。 |
+
+- **本节未复跑该 push**（远端写操作，不属本次文档更正的授权范围）；上表命令与远端原文为**本轮实测**记录，按 EVID-1 记 `Failed`（命令实际执行且退出码非 0）。
+- **未验证**：换用带 `workflow` scope 的凭据后能否推送成功——该结论需一次真实推送，未执行。
+
+### 35.4 F4（EVID-9 取证更正）：`origin/main` = `1a510f5d` 的 CI 全绿
+
+`gh run` 在本机不可用；证据经 GitHub 公共 REST API 取得（本节实跑 `Invoke-RestMethod`，头 `User-Agent` + `Accept: application/vnd.github+json`）：
+
+```
+$ git rev-parse origin/main
+1a510f5d31ac5f268a6cb53af3afd9121b713d35
+
+$ (REST) GET /repos/JasmineTony/grok2api/actions/runs?branch=main&per_page=5
+38219598125 Close inactive issues and PRs | 1a510f5d | success
+38200420879 CodeQL Advanced              | 1a510f5d | success
+38121078196 CodeQL Advanced              | 1a510f5d | success
+38121078190 GHCR Image                   | 1a510f5d | success
+38110961679 CodeQL Advanced              | 0688e1a1 | success
+
+$ (REST) GET /repos/JasmineTony/grok2api/commits/1a510f5d/check-runs
+check-runs total = 12
+Mark and close inactive issues and PRs | completed | success
+Analyze (actions)                      | completed | success
+Analyze (javascript-typescript)        | completed | success
+Analyze (go)                           | completed | success
+Merge image                            | completed | success
+Build image (${{ matrix.arch }})       | completed | skipped   <- 矩阵占位 check-run，非失败
+Publish image (arm64)                  | completed | success
+Publish image (amd64)                  | completed | success
+Verify                                 | completed | success
+（另有 Analyze 三项重复条目，均为 completed | success）
+exit=0
+```
+
+- **口径更正（本节实测，EVID-8）**：`commits/1a510f5d/check-runs` 的 12 项**不是**「12 项全部 completed/success」——实测为 **11 项 completed/success + 1 项 `Build image (${{ matrix.arch }})` = completed / `skipped`**（矩阵展开占位 check-run，非失败；同 run 的实际构建由 `Publish image (amd64)` / `Publish image (arm64)` / `Merge image` 的 success 覆盖）。除该 `skipped` 项外**无任何 failure / cancelled**。
+- **结论**：用户此前投诉的「当前 main 分支 CI 有报错」在**当前 `origin/main`(`1a510f5d`) 上不成立**；本地 `main`(`13626e6c`) 比 `origin/main` 多 **11** 个未推送提交（本节实跑 `git rev-list --count origin/main..main` → `11`），这 11 个提交**尚未取得任何 CI 证据**（EVID-9：`1a510f5d` 全绿不等于交付线已验证）。
+
+### 35.5 F5（本轮本地复跑证据 @ `c250eb75` 工作树）
+
+**引用本轮实测（本节未复跑；数字与退出码来自本轮会话记录，工作树 = `c250eb75`）**：
+
+| 命令 | 退出码 | 关键输出 |
+| --- | --- | --- |
+| `pnpm check:structure` | 0 | 扫描源码文件 **405** 个；超限文件 0 / 超限函数 0 / 超限嵌套 0；参与判定的作用域（REV-3）**2527** 个 |
+| `pnpm test:gates` | 0 | 门禁自测通过 **85** 个用例（含 68 个必须失败） |
+| `pnpm check:budget` | 0 | 首屏关键 JS 闭包 **3** 文件 **194.05 KiB**；全部生产 JS **76** 文件 **624.82 KiB**；全部生产 CSS **1** 文件 **16.65 KiB**；最大 chunk **458.55 KiB** 原始；路由入口 **13** 个 |
+| `pnpm typecheck` | 0 | — |
+| `pnpm format:check` | 0 | `All matched files use Prettier code style!` |
+
+**提交数口径更正（本节实跑复核，EVID-8）**：交付线 `maint/acceptance-audit-20261012-final`(`5625a857`) 的提交数
+
+```
+$ git rev-list --count 0c23f902..5625a857    -> 62    # 相对基点 0c23f902
+$ git rev-list --count origin/main..5625a857 -> 115   # 相对 origin/main(1a510f5d)
+$ git rev-list --count 13626e6c..5625a857    -> 104   # 相对本地 main(13626e6c)
+exit=0
+```
+
+### 35.6 F6（文档滞后指针）：§33.3 的「尚未并入」已过时
+
+- §33.3 表内 **F1**/**F5** 两行写「**待并入** … `exit 1` ⇒ 尚未并入」（原实测对象为分支名 `maint/acceptance-audit-20261012-static-guard-testable`），该状态**已过时**：`b1d38714` 与 `0f0be18d` 经合并 `e4e3dec7` **均已并入交付线**。
+- 本节实跑（tip `5625a857`）：
+
+```
+$ git merge-base --is-ancestor b1d38714 HEAD
+exit=0
+$ git merge-base --is-ancestor 0f0be18d HEAD
+exit=0
+$ git merge-base --is-ancestor e4e3dec7 HEAD
+exit=0
+```
+
+- 处理：**只在 §33.3 表后追加一行指针**（「更正（2026-10-12，tip `5625a857`）」），**未删除、未改写原句**（META-3 / EVID-8：历史快照保留原值，只加指针）。
+
+### 35.7 F7（GAP-5 未登记提交）：`f67e3aa7`、`5377e113`
+
+来源：**计划完成度核对清单 GAP-5**（两个 AUDIT 中检索这两个 sha 均 0 命中）。本节实跑 `git log -1 --format="%h %ad %s%n%b" --date=short <sha>`（exit 0）：
+
+| sha | 类型 | 标题与用途（据提交信息如实概括） |
+| --- | --- | --- |
+| `f67e3aa7` | 修复（2026-10-12） | `fix(frontend): 限制 TEST_REPORT_ROOT 到系统临时目录（关闭 F4 门禁重定向逃生口）`——原实现中 `TEST_REPORT_ROOT` 无条件生效，任何可见的 CI/包装层 env 改动都能把报告门禁指向伪造的健康报告并拿到 exit 0；改为只允许指向 `os.tmpdir()` 之下（realpath 归一后判定），越界时打印原因并以 **exit 2** 拒绝（不忽略、不降级）。提交自述验证：正常路径 `node scripts/check-test-results.mjs` → exit 0（123 文件 / 1488 用例）；非 tmp 伪造报告 → exit 2（修复前 exit 0）；tmp 内报告 → exit 0（自测装置未破坏，46 用例全绿）；`../` 穿越、同名前缀兄弟目录、tmp 内 junction 全部 exit 2。提交自述**未覆盖**：未新增自测用例固化「非 tmp 拒绝」；残余面——能在 CI/包装层写 tmp 的仍可放伪造报告。 |
+| `5377e113` | 合并（2026-10-12） | `Merge branch 'maint/acceptance-audit-20261012-node-test-gate' into maint/acceptance-audit-20261012-final`——把 `node-test-gate` 分支并入交付线（无独立正文）。 |
+
+- **未验证**：上表 `f67e3aa7` 的验证数字与未覆盖项均**引自该提交信息**，本节未复跑（不属本次文档更正范围）。
+
+### 35.8 本节未执行 / 未验证（如实登记）
+
+- **未复跑** F5 的 5 条前端门禁命令（`pnpm check:structure` / `pnpm test:gates` / `pnpm check:budget` / `pnpm typecheck` / `pnpm format:check`）：其数字与退出码为本轮实测记录，本节按 EVID-2 引用并标注来源，**不记为「本节 Passed」**。
+- **未复跑** F3 的 push（远端写操作）；**未验证**换用带 `workflow` scope 的凭据后能否推送。
+- **未执行**：`bash scripts/verify.sh`、`go test ./... -count=1`、`-race`、隔离 PG/Redis、Swagger 精确 diff、全栈 E2E —— 本节为纯文档更正，未触碰代码。
+- **未修改**：除本文件外未改动任何文件；未 commit、未 push。
