@@ -271,6 +271,141 @@ func TestImportBoundaryTransportTestFilesExempt(t *testing.T) {
 	checkImportBoundaryFixture(t, boundary, map[string]string{relative: source}, importBoundaryScan{skippedTests: 1})
 }
 
+func TestImportBoundaryInfraRule(t *testing.T) {
+	boundary := importBoundaryFor(t, "infra")
+	for _, target := range []string{"app", "application", "application/egress", "transport", "transport/http"} {
+		t.Run("unregistered_"+target, func(t *testing.T) {
+			file := "internal/infra/egress/fixture.go"
+			imported := internalModulePrefix + target
+			checkImportBoundaryFixture(t, boundary, map[string]string{file: importFixtureSource(imported)}, importBoundaryScan{
+				files: 1, imports: 1, violations: []string{file + ":3 -> " + imported},
+			})
+		})
+	}
+	cases := []struct {
+		name, file, target string
+		allowed            bool
+	}{
+		{"frozen_exception", "internal/infra/egress/manager.go", "application/egress", true},
+		{"same_package_other_file", "internal/infra/egress/egress_manager.go", "application/egress", false},
+		{"same_basename_other_directory", "internal/infra/other/manager.go", "application/egress", false},
+		{"frozen_file_other_package", "internal/infra/egress/manager.go", "application/gateway", false},
+		{"frozen_file_subpackage", "internal/infra/egress/manager.go", "application/egress/nested", false},
+	}
+	for _, fixture := range cases {
+		t.Run(fixture.name, func(t *testing.T) {
+			imported := internalModulePrefix + fixture.target
+			want := importBoundaryScan{files: 1, imports: 1}
+			if fixture.allowed {
+				want.exceptions = []string{fixture.file + " -> " + imported}
+			} else {
+				want.violations = []string{fixture.file + ":3 -> " + imported}
+			}
+			checkImportBoundaryFixture(t, boundary, map[string]string{fixture.file: importFixtureSource(imported)}, want)
+		})
+	}
+}
+
+func TestImportBoundaryInfraTestFilesExempt(t *testing.T) {
+	boundary := importBoundaryFor(t, "infra")
+	// includeTests=false：infra 的装配/集成测试用真实 application 类型，只有生产文件受约束。
+	relative := "internal/infra/egress/fixture_test.go"
+	source := strings.Replace(importFixtureSource(internalModulePrefix+"application/egress"), "package fixture", "package fixture_test", 1)
+	checkImportBoundaryFixture(t, boundary, map[string]string{relative: source}, importBoundaryScan{skippedTests: 1})
+}
+
+// TestDirectoryCoverageGuardFixtures 自证 BE-G2/BE-G3 的目录覆盖守卫：旧实现（判定只内联在
+// TestInternalDirectoryCoverageBoundary 里、且只枚举 internal 一级目录）无法被夹具调用，且会漏判
+// 「被豁免目录下的嵌套新包」，此处直接断言纯函数（含嵌套目录负样本）。
+//
+// 真实目录级负样本（可复现，BE-G3）：在 backend/ 下临时新增未登记目录，probe.go 内容为
+// package <pkg>、空行、import _ "github.com/chenyme/grok2api/backend/internal/app"，然后运行
+//
+//	New-Item -ItemType Directory internal/zz_probe_layer, internal/pkg/zzprobe
+//	go test ./internal/ports/provider/ -run TestInternalDirectoryCoverageBoundary -count=1
+//
+// 期望 exit 1 并同时输出「internal/zz_probe_layer 未被任何规则或覆盖登记覆盖」与
+// 「internal/pkg/zzprobe 未被任何规则或覆盖登记覆盖」（修复前只报前者，后者静默通过）；删除目录后恢复 exit 0。
+func TestDirectoryCoverageGuardFixtures(t *testing.T) {
+	aligned := map[string]internalDirectoryCoverage{"app": {rule: "app 规则"}}
+	exempt := map[string]internalDirectoryCoverage{"app": {reason: "装配入口，禁入规则无意义"}}
+	ruledTree := map[string]internalDirectoryCoverage{"application": {rule: "application 规则"}}
+	exemptTree := map[string]internalDirectoryCoverage{
+		"pkg":       {reason: "通用工具包，只依赖 repository 契约"},
+		"pkg/batch": {reason: "批量工具，无 internal 依赖"},
+	}
+	cases := []struct {
+		name    string
+		present map[string]bool
+		ruled   map[string]string
+		entries map[string]internalDirectoryCoverage
+		want    []string
+	}{
+		{"new_directory_without_rule_or_exemption", map[string]bool{"app": true, "zz_new": true}, map[string]string{"app": "app 规则"}, aligned,
+			[]string{"internal/zz_new 未被任何规则或覆盖登记覆盖：请扩展 layerBoundaries 或登记豁免理由"}},
+		{"registered_rule_missing_in_boundaries", map[string]bool{"app": true}, nil, aligned,
+			[]string{`internal/app 覆盖登记规则 "app 规则"，但 layerBoundaries 无该规则`}},
+		{"rule_name_mismatch", map[string]bool{"app": true}, map[string]string{"app": "app 规则"}, map[string]internalDirectoryCoverage{"app": {rule: "旧规则"}},
+			[]string{`internal/app 覆盖登记 rule="旧规则"，实际规则="app 规则"`}},
+		{"entry_without_rule_and_reason", map[string]bool{"app": true}, nil, map[string]internalDirectoryCoverage{"app": {}},
+			[]string{"internal/app 的覆盖登记既不是规则也没有豁免理由"}},
+		{"rule_points_to_missing_directory", map[string]bool{"app": true}, map[string]string{"app": "app 规则", "gone": "gone 规则"}, aligned,
+			[]string{`规则 "gone 规则" 指向不存在的目录 internal/gone`}},
+		{"entry_for_missing_directory", map[string]bool{"app": true}, map[string]string{"app": "app 规则"},
+			map[string]internalDirectoryCoverage{"app": {rule: "app 规则"}, "gone": {reason: "已删除目录"}},
+			[]string{"覆盖登记 internal/gone 已消失：请删除该登记"}},
+		{"exemption_reason_covers_directory", map[string]bool{"app": true}, nil, exempt, nil},
+		{"aligned_rule_covers_directory", map[string]bool{"app": true}, map[string]string{"app": "app 规则"}, aligned, nil},
+		{"nested_package_under_exempted_directory_without_entry", map[string]bool{"pkg": true, "pkg/zzprobe": true}, nil,
+			map[string]internalDirectoryCoverage{"pkg": {reason: "通用工具包，只依赖 repository 契约"}},
+			[]string{"internal/pkg/zzprobe 未被任何规则或覆盖登记覆盖：请扩展 layerBoundaries 或登记豁免理由"}},
+		{"deep_nested_package_under_registered_exempted_directory", map[string]bool{"pkg": true, "pkg/batch": true, "pkg/batch/zzdeep": true}, nil, exemptTree,
+			[]string{"internal/pkg/batch/zzdeep 未被任何规则或覆盖登记覆盖：请扩展 layerBoundaries 或登记豁免理由"}},
+		{"nested_package_under_exempted_directory_with_entry", map[string]bool{"pkg": true, "pkg/batch": true}, nil, exemptTree, nil},
+		{"nested_package_under_ruled_directory_inherits_rule", map[string]bool{"application": true, "application/account": true},
+			map[string]string{"application": "application 规则"}, ruledTree, nil},
+		{"nested_registration_without_matching_rule", map[string]bool{"application": true, "application/account": true},
+			map[string]string{"application": "application 规则"},
+			map[string]internalDirectoryCoverage{"application": {rule: "application 规则"}, "application/account": {rule: "旧规则"}},
+			[]string{`internal/application/account 覆盖登记规则 "旧规则"，但 layerBoundaries 无该规则`}},
+		{"nested_registration_for_missing_directory", map[string]bool{"pkg": true}, nil, exemptTree,
+			[]string{"覆盖登记 internal/pkg/batch 已消失：请删除该登记"}},
+	}
+	for _, fixture := range cases {
+		t.Run(fixture.name, func(t *testing.T) {
+			got := directoryCoverageViolations(fixture.present, fixture.ruled, fixture.entries)
+			if !slices.Equal(got, fixture.want) {
+				t.Fatalf("违规=%q, 期望=%q", got, fixture.want)
+			}
+		})
+	}
+}
+
+// TestInternalPackageDirectoriesFixtures 自证 internalPackageDirectories 的枚举口径（EVID-3）：
+// 递归包含嵌套包目录，排除 Go 工具链忽略的 testdata 与 `_`/`.` 前缀目录。
+func TestInternalPackageDirectoriesFixtures(t *testing.T) {
+	root := writeImportBoundaryFixture(t, map[string]string{
+		"internal/app/probe.go":                        "package app\n",
+		"internal/pkg/batch/batch.go":                  "package batch\n",
+		"internal/pkg/batch/nested/nested.go":          "package nested\n",
+		"internal/pkg/_ignored/ignored.go":             "package ignored\n",
+		"internal/pkg/.hidden/hidden.go":               "package hidden\n",
+		"internal/infra/provider/cli/testdata/data.go": "package testdata\n",
+	})
+	present, err := internalPackageDirectories(root)
+	if err != nil {
+		t.Fatalf("枚举夹具目录失败: %v", err)
+	}
+	want := map[string]bool{
+		"app": true, "pkg": true, "pkg/batch": true, "pkg/batch/nested": true,
+		"infra": true, "infra/provider": true, "infra/provider/cli": true,
+	}
+	if !reflect.DeepEqual(present, want) {
+		t.Fatalf("枚举结果=%v, 期望=%v", present, want)
+	}
+	t.Logf("枚举口径夹具通过：参与判定的目录=%d", len(present))
+}
+
 func importBoundaryFor(t *testing.T, directory string) layerBoundary {
 	t.Helper()
 	for _, boundary := range layerBoundaries {

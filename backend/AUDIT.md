@@ -867,8 +867,8 @@ R8 缺口登记（P2，未改代码）：**G-1** `layerBoundaries` 硬编码 dom
 
 | 编号 | 项 | 状态与恢复条件 |
 | --- | --- | --- |
-| BE-G1 | `internal/transport`、`internal/infra`、`internal/app` 无边界规则；`middleware/request.go:11` 的 transport→infra 直连未登记例外 | P2；扩展 `layerBoundaries` 或登记豁免后复跑 `go test ./internal/ports/provider/ -count=1` |
-| BE-G2 | R8 新目录覆盖缺口（M-R8d exit 0） | P2；补「所有 `internal/*` 目录均被覆盖」断言或目录清单守卫 |
+| BE-G1 | `internal/transport`、`internal/infra`、`internal/app` 无边界规则；`middleware/request.go:11` 的 transport→infra 直连未登记例外 | **已关闭（§29.1）**：transport 规则与例外在 `94caa642`（BE-21）落地；`infra` 规则与 8 条 `infra/egress` 存量例外本轮补齐；`app` 保持带理由的豁免（唯一装配入口） |
+| BE-G2 | R8 新目录覆盖缺口（M-R8d exit 0） | **已关闭（§29.2）**：`TestInternalDirectoryCoverageBoundary` + 覆盖登记表在 `94caa642` 落地（M-R8d 已由 exit 0 变 exit 1）；本轮判定抽为纯函数 `directoryCoverageViolations` 并补自证夹具（含未覆盖目录负样本与变异注入证据） |
 | BE-G3 | BA-02 `ports/security` 迁移未执行 | P2/需单独批准；执行时按 20.6 清单 + `apicheck --update` + §8 证据 |
 | BE-B1 | `go test -race` 本机不可执行 | Blocked（`CGO_ENABLED=0`）；由 CI `Race backend` 覆盖 |
 | BE-B2 | 本机无隔离 PostgreSQL/Redis；集成用例跳过数未取到 | Pending；`TEST_POSTGRES_DSN`/`TEST_REDIS_ADDRESS` 就绪后 `go test ./... -count=1 -v` 取 `--- SKIP` 计数，CI 断言 0 跳过 |
@@ -1043,7 +1043,7 @@ cd backend && go run ./tools/structurecheck                                     
 
 ### 22.4 未覆盖与存量缺口（如实登记）
 
-- BE-G1 只收口 transport→infra 方向；`infra` 目录的豁免理由中已登记存量缺口：`infra/egress` 8 个生产文件依赖 `application/egress`，加规则前需先冻结这 8 条例外（不扩大本轮范围）。
+- BE-G1 在 `94caa642` 只收口 transport→infra 方向；当时 `infra` 的存量缺口（`infra/egress` 8 个生产文件依赖 `application/egress`）已在本轮按该计划冻结为 8 条精确例外，并加上 `infra 生产文件不反向依赖上层` 规则（§29.1）。
 - `app`（唯一装配入口）保持无自动规则、仅豁免（评审准则）。
 - 本包改动后未重跑 `go test ./...`、`bash scripts/verify.sh` 与 `-race`（改动仅 `_test.go`；相关包测试 + `vet` + `structurecheck` 已闭环）；CI 侧由探针分支覆盖（见 §21.2）。
 
@@ -1343,3 +1343,74 @@ BenchmarkDashboardUsageAggregate/performance-8      1   167337300 ns/op   23768 
 
 - **未验证/未执行**：`go test -race ./...`（本机无 C 编译器 → `Blocked`，由 Linux CI 覆盖）；`bash scripts/verify.sh`（本机 PATH 无 `bash`）；`pnpm test:e2e`；CI 远端执行结果需推送后登记。
 - **回滚**：本轮无代码语义改动（门禁工具与其夹具、文档），可 `git revert`；无数据、协议、配置或依赖迁移。
+## 31. 2026-10-12 关闭 BE-G1 / BE-G2（后端边界门禁补齐与自证）
+
+### 31.1 BE-G1：`internal/infra` 分层规则 + 8 条存量例外
+
+**缺口**：`94caa642`（BE-21）只落地 transport 规则与 `middleware/request.go` 例外；`internal/infra` 无任何规则（`internalDirectoryCoverageEntries` 的 `infra` 条目只是带理由的豁免）⇒ 新增 `infra` 生产文件直连 `application`/`app`/`transport` 不会被发现。
+
+**改动**：
+
+- 新增规则 `infra 生产文件不反向依赖上层`（`directory: "infra"`、`forbidden: {app, application, transport}`、`includeTests=false`：infra 的装配/集成测试用真实 application 类型）；允许 `infra → domain/ports/repository`（实现契约方向）。
+- 新增 `infraApplicationExceptions`，冻结 8 个 `infra/egress` 生产文件 → `application/egress` 的存量依赖，命中行：`clearance.go:11`、`clearance_refresh.go:11`、`fallback.go:10`、`flaresolverr.go:16`、`lease.go:15`、`manager.go:12`、`node_select.go:13`、`probe.go:17`。例外按 (文件, 包) 精确匹配并受 `unusedImportExceptions` 棘轮约束：8 条全部命中（扫描输出 `存量依赖=8`），文件移除依赖时必须同步删除例外。
+- `internalDirectoryCoverageEntries` 的 `infra` 由豁免登记改为规则（`规则=6、豁免=5、参与判定=11`）。
+- 夹具：`TestImportBoundaryInfraRule`（5 个未登记方向必须报违规 + 5 条例外精确性用例）、`TestImportBoundaryInfraTestFilesExempt`（`_test.go` 豁免）。
+
+**同类扫描范围（CHG-6）**：`internal/infra/**/*.go` 全量扫描（224 文件 / 1578 条 import），对 `app`、`application`、`transport` 三个禁止方向逐一检索，命中 **15 文件 / 16 处**：**8 处生产文件**（本轮冻结）+ **7 处 `_test.go`**（`includeTests=false` 已豁免：`provider/web/security_test.go`、`provider/cli/oauth_test.go`、`persistence/relational/{selector_segmented_integration,postgres_integration,egress_proxy_profile_repository,egress_operations}_test.go`、`egress/buildclient_test.go`）。**未处理项 0**。
+
+**负样本（先证明旧实现通过、新实现失败）**：临时新增 `internal/infra/zz_be_g1_probe/probe.go`（`import _ …/internal/application/egress`）后运行 `go test ./internal/ports/provider/ -run TestLayerImportBoundaries -count=1`：改动前 `ok … 2.607s`（**exit 0**，漏判）；改动后 `--- FAIL: TestLayerImportBoundaries/infra_生产文件不反向依赖上层` + `internal/infra/zz_be_g1_probe/probe.go:3 -> …/internal/application/egress`（**exit 1**）；删除探针后恢复 `ok … 4.068s`（exit 0）。探针目录已删除，工作树无残留。
+
+### 31.2 BE-G2：目录覆盖守卫抽纯函数 + 自证夹具
+
+**缺口**：`94caa642` 已落地 `TestInternalDirectoryCoverageBoundary` + `internalDirectoryCoverageEntries`（M-R8d 由 exit 0 变 exit 1），但判定逻辑内联在测试函数里，**没有任何夹具**，无法证明「守卫失效时会失败」。
+
+**改动**：判定抽为纯函数 `directoryCoverageViolations(present, ruled, entries) []string`（6 类违规消息逐字保留，输出排序以消除 map 迭代顺序的不确定性；`structurecheck` 判定函数与嵌套均未越限），测试函数只负责读取真实目录并断言；新增夹具 `TestDirectoryCoverageGuardFixtures`：**6 条负样本**（未登记新目录、登记规则但无对应 boundary、规则名不一致、登记既无规则也无理由、规则指向已消失目录、登记指向已消失目录）+ **2 条正样本**（豁免理由覆盖、规则对齐）。夹具注释内给出真实目录级负样本的可复现命令。
+
+**负样本（两级）**：
+
+1. 真实目录级：新增 `internal/zz_be_g2_probe/probe.go` 后 `go test ./internal/ports/provider/ -run TestInternalDirectoryCoverageBoundary -count=1` → `--- FAIL` + `internal/zz_be_g2_probe 未被任何规则或覆盖登记覆盖：请扩展 layerBoundaries 或登记豁免理由`（**exit 1**）；删除探针后 exit 0（探针已删除，工作树无残留）。
+2. 变异注入（复现 M-R8d 漏判）：把纯函数的 `if !registered {` 改为 `if !registered && coverage.rule != "" {` 后 `go test ./internal/ports/provider/ -run 'TestDirectoryCoverageGuardFixtures|TestInternalDirectoryCoverageBoundary' -count=1` → `--- FAIL: TestDirectoryCoverageGuardFixtures/new_directory_without_rule_or_exemption` + `违规=[], 期望=["internal/zz_new 未被任何规则或覆盖登记覆盖…"]`（**exit 1**）；还原后 exit 0。**该夹具对守卫缺陷有判别力**。
+
+### 31.3 本轮命令与退出码（cwd=`backend`，2026-10-12，Windows/go1.26.1，`CGO_ENABLED=0`）
+
+| 命令 | 退出码 | 关键输出 |
+| --- | --- | --- |
+| `gofmt -l internal/ports/provider/import_boundary_test.go internal/ports/provider/import_boundary_fixtures_test.go` | 0 | 无输出（同目录既有 `video_error.go` 被 `gofmt -l` 列出，属未触碰的存量，本轮未处理） |
+| `go build ./...` | 0 | 无输出 |
+| `go vet ./...` | 0 | 无输出 |
+| `go run ./tools/structurecheck` | 0 | 生产 Go 文件 483；超限文件 0 / 超限函数 0 / 越限嵌套 0；参与判定的作用域（REV-3）：**5536**；「结构门禁通过」 |
+| `go test ./internal/ports/provider/ -count=1` | 0 | `ok … 4.215s`；`scope internal/infra: Go 文件=224, AST imports=1578, 豁免测试文件=109, 存量依赖=8, 违规=0`；`参与判定的边界规则=6、Go 文件=463、存量依赖=38`；`internal 一级目录覆盖（BE-G2）：规则=6、豁免=5、参与判定=11` |
+
+**本轮未执行（如实登记）**：`go test -race`（本机 `CGO_ENABLED=0`，由 CI `Race backend` 覆盖，BE-B1）；隔离 PostgreSQL/Redis 集成用例（本机无服务 → 按 TEST-6 记 `Blocked`，由 CI 隔离服务覆盖）。全量收敛证据见 §31.4。
+
+### 31.4 后续补强：目录覆盖守卫递归判定嵌套包（提交 `93954469`）
+
+**缺口（本批独立审计实测）**：`TestInternalDirectoryCoverageBoundary` 只枚举 `internal/` 的**一级目录**，因此**被豁免目录下的嵌套新包静默漏判**。反例：`internal/pkg/zzprobe/probe.go`（`import _ …/internal/app`）→ 守卫 **exit 0**（漏判）；同一 import 放在 `internal/ports/zzprobe/` → exit 1。
+
+**改动**：枚举改为 `filepath.WalkDir` 递归全量目录（排除 `testdata` 与 `_`/`.` 前缀目录，与 Go 工具链忽略规则一致）；覆盖语义改为「规则覆盖整棵子树 / 豁免登记只覆盖自身」；为 `pkg` 补分层规则（forbidden = app/application/transport/infra，`includeTests=false`），新增存量例外 **0** 条；新增 `TestInternalPackageDirectoriesFixtures` 自证枚举口径，`TestDirectoryCoverageGuardFixtures` 增 6 条嵌套用例。计数由「规则=6、豁免=5、参与判定=11」变为「规则=7、豁免登记=5、参与判定的目录（含嵌套）=82」；存量依赖总数仍为 38（application 29 + transport 1 + infra 8），**例外面未扩大**。
+
+**负样本（修复前 → 修复后，同一反例）**：
+
+| 反例                                         | 修复前                                    | 修复后                                                                              |
+| -------------------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------- |
+| `internal/pkg/zzprobe`（豁免目录下嵌套）     | `--- PASS` + `参与判定=11`，**exit 0**（漏判） | `--- FAIL: TestLayerImportBoundaries/pkg_生产文件不反向依赖上层或_infra`，**exit 1** |
+| `internal/shared/zzprobe`（仍为豁免目录）    | exit 0                                    | `--- FAIL` + `internal/shared/zzprobe 未被任何规则或覆盖登记覆盖`，**exit 1**        |
+
+**全量门禁（cwd=`backend`，命令自身退出码）**：
+
+| 命令                                                | 退出码 | 关键输出                                                                                                              |
+| --------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------- |
+| `go build ./...`                                    | 0      | 无输出                                                                                                                |
+| `go vet ./...`                                      | 0      | 无输出                                                                                                                |
+| `go run ./tools/structurecheck`                     | 0      | 生产 Go 文件 483；超限文件 0 / 超限函数 0 / 越限嵌套 0；参与判定的作用域（REV-3）：5536                                 |
+| `go run ./tools/apicheck`                           | 0      | 基线条目 2062 条，当前 2062 条；导出 API 面与基线逐条一致（基线未被改写）                                              |
+| `"D:\softwares\Git\bin\bash.exe" scripts/verify.sh` | 0      | `全部通过`；脚本计时 168.308 秒（PowerShell 计时 187.8s）                                                              |
+| `go test ./... -count=1`                            | 0      | 131.2s；`"Action":"fail"` 事件 0；`skip` 事件 31（11 包级 `[no test files]` + 20 测试级环境门控）                       |
+
+**跳过明细（20 条，全部环境门控，与本轮改动无关）**：`internal/infra/persistence/relational` 17 条 `TestPostgres*`、`internal/infra/runtime/redis` 2 条（`TestRedisRuntimeStoreIntegration`、`TestRedisInvalidationBusIntegration`）、`internal/application/account` 1 条（`TestRedisQuotaRefreshCrossInstanceTrailing`）→ 本机无 PostgreSQL/Redis 服务，按 TEST-6 记 **Blocked**（CI 有隔离服务覆盖）。
+
+**未验证/未执行**：`go test -race ./...`（本机 `CGO_ENABLED=0` → Blocked，由 Linux CI 覆盖）；前端门禁与全栈 E2E（不在本项范围）。
+
+**存量观察（未触碰）**：`gofmt -l ./cmd ./internal ./tools` 报 5 个未格式化文件（`internal/application/gateway/selector_test.go`、`internal/infra/provider/web/account_settings.go`、`internal/infra/provider/web/sso_build_test.go`、`internal/ports/provider/video_error.go`、`internal/transport/http/swagger_annotations.go`）；`verify.sh` 无 gofmt 步骤，不影响门禁，登记为 P3。
+
+**回滚**：`git revert 93954469`（仅测试文件与文档，无生产代码、无生成物）。
