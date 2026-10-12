@@ -8,10 +8,12 @@
  *    具名嵌套函数重置为独立作用域）与输出中的键名、深度断言。
  *  - check-bundle-budget：首屏闭包超限 / 路由新增闭包超限 / 无法识别路由 / 相对基线增长 → 非零退出
  * 并通过「阈值放宽」与「符合基线」两组反例，确认门禁不是无条件失败。
- *  - check-test-results：清单文件缺失 / 通过数低于棘轮 / 必填用例标题缺失或未通过 / 报告文件总数低于棘轮 /
- *    出现未登记跳过 / E2E 存在 flaky / 报告早于清单文件 mtime / 报告缺失 → 非零退出；并以健康报告（含 E2E
- *    三种 file 形态：报告自带 `config.rootDir` + 纯文件名、绝对路径、缺 `config.rootDir`）与「缺 startTime 时
- *    改用报告文件 mtime 兜底」两组反例，确认门禁既不是无条件失败，也不会静默跳过新鲜度检查。
+ *  - check-test-results：清单文件缺失（部分缺失也算）/ 通过数低于棘轮 / 必填用例标题缺失或未通过 /
+ *    报告文件总数低于棘轮 / 出现未登记跳过 / 文件级失效（Vitest 收集期失败、非清单文件整文件跳过）/
+ *    移动 project 被移除后 E2E 实例数回落到桌面口径 / E2E 存在 flaky / 报告早于清单文件 mtime / 报告缺失 →
+ *    非零退出；并以健康报告（含 E2E 三种 file 形态：报告自带 `config.rootDir` + 纯文件名、绝对路径、
+ *    缺 `config.rootDir`）、「非清单文件部分跳过只告警」与「缺 startTime 时改用报告文件 mtime 兜底」三组反例，
+ *    确认门禁既不是无条件失败，也不会静默跳过新鲜度检查。
  *
  * 装置全部建立在系统临时目录，不写入仓库；路径通过环境变量注入被测脚本。
  */
@@ -261,6 +263,7 @@ const budgetEnv = { BUDGET_DIST_DIR: distDir };
 // 报告与清单文件都写在临时目录，用 TEST_REPORT_ROOT 注入（该变量仅供自测使用），
 // 既不读取也不覆盖仓库内 .artifacts 的真实报告。下面的用例数、必填标题与文件总数按被测脚本的棘轮值构造
 // （minPassed / requiredTitles / MIN_VITEST_FILES / MIN_E2E_FILES），棘轮调整时必须同步更新，否则正样本会失败。
+// E2E 侧的 minPassed 是 (spec × project) 实例数，不是 spec 文件数：`e2eProbe` 用 desktop + mobile 两列推导。
 const probeNow = Date.now();
 const freshInputMs = probeNow - 60_000;
 const staleMs = probeNow - 3_600_000;
@@ -287,11 +290,19 @@ const vitestProbe = [
     titles: ["StrictMode 首次挂载、重渲染及重新挂载均复用加载结果，卸载不残留页面"],
   },
 ];
-/** 必填标题逐字取自真实 spec，与被测脚本的 REQUIRED_E2E.requiredTitles 保持一致。 */
-const e2eProbe = [
+/**
+ * 必填标题逐字取自真实 spec，与被测脚本的 REQUIRED_E2E.requiredTitles 保持一致。
+ * `desktop` / `mobile` 是 project 展开后的 (spec × project) 实例数（2026-10-12 实测 21 + 14 = 35，6 个文件），
+ * `passed` = desktop + mobile，即被测脚本的实例口径棘轮值；矩阵削回桌面后报告会回落到 `desktop` 列数字。
+ */
+function withInstanceTotals(entries) {
+  return entries.map((entry) => ({ ...entry, passed: entry.desktop + entry.mobile }));
+}
+const e2eProbe = withInstanceTotals([
   {
     file: "e2e/auth.e2e.ts",
-    passed: 6,
+    desktop: 6,
+    mobile: 4,
     titles: [
       "未登录访问受保护路由会被重定向到登录页",
       "正确凭据登录成功、进入受保护页面并在刷新后保持登录",
@@ -300,12 +311,14 @@ const e2eProbe = [
   },
   {
     file: "e2e/client-keys.e2e.ts",
-    passed: 4,
+    desktop: 4,
+    mobile: 3,
     titles: ["创建密钥：表单校验失败后成功创建并展示一次性明文", "删除密钥：确认后行与真实服务端记录同时消失"],
   },
   {
     file: "e2e/navigation.e2e.ts",
-    passed: 5,
+    desktop: 5,
+    mobile: 2,
     titles: [
       "侧栏导航到账号和设置，深链接刷新后保持页面与当前导航状态",
       "账号菜单切换英文和中文，导航与刷新后仍使用所选语言",
@@ -314,15 +327,30 @@ const e2eProbe = [
   },
   {
     file: "e2e/request-audits.e2e.ts",
-    passed: 3,
+    desktop: 3,
+    mobile: 2,
     titles: ["状态筛选改变真实查询范围并显示激活计数，清除后恢复空态"],
   },
   {
     file: "e2e/settings.e2e.ts",
-    passed: 3,
+    desktop: 3,
+    mobile: 2,
     titles: ["设置页分页可切换：Grok Build 与 Grok Web 面板按标签显隐"],
   },
-];
+  {
+    file: "e2e/mobile-device.e2e.ts",
+    desktop: 0,
+    mobile: 1,
+    titles: ["移动 project 应用真实设备描述符：hasTouch、isMobile、DPR 与 UA"],
+  },
+]);
+/**
+ * 夹具（F1）：project 矩阵被削回桌面（删除 mobile-chromium project，或把它的 grepInvert 收窄成 /./）后的报告——
+ * 5 个文件 / 21 个实例，恰好满足旧口径的 5 文件与 6/4/5/3/3 阈值，因此在旧实现下是 exit 0（假通过）。
+ */
+const e2eDesktopOnlyProbe = e2eProbe
+  .filter((entry) => entry.desktop > 0)
+  .map((entry) => ({ ...entry, passed: entry.desktop }));
 /** 被测脚本的必需文件总数棘轮；用只含 1 个通过用例的填充文件补足，正样本在真实下限上通过。 */
 const MIN_VITEST_PROBE_FILES = 123;
 function padVitestEntries(entries, target = MIN_VITEST_PROBE_FILES) {
@@ -334,7 +362,12 @@ function padVitestEntries(entries, target = MIN_VITEST_PROBE_FILES) {
 }
 const vitestHealthyEntries = padVitestEntries(vitestProbe);
 const vitestHealthyTotal = vitestHealthyEntries.reduce((total, entry) => total + entry.passed, 0);
-const e2eProbeTotal = e2eProbe.reduce((total, entry) => total + entry.passed, 0);
+/**
+ * 实例口径的固定期望（真实产物 2026-10-12：chromium 21 + mobile-chromium 14 = 35 个实例、6 个文件）。
+ * 写死而不从 `e2eProbe` 推导：从探针推导的话，矩阵被削减时正样本会跟着缩水，等于没有棘轮。
+ */
+const E2E_EXPECTED_FILES = 6;
+const E2E_EXPECTED_CASES = 35;
 /** 一支用例重试后才通过：其余计数不变，用于验证 flaky 不被计入通过。 */
 const e2eProbeFlaky = e2eProbe.map((entry, index) => (index === 0 ? { ...entry, flaky: 1 } : entry));
 const vitestBelowRatchet = vitestProbe.map((entry, index) =>
@@ -359,18 +392,23 @@ function statusAssertions(file, status, count) {
 
 /** Vitest JSON：startMs 为 undefined 时故意省略 startTime，用于验证报告文件 mtime 兜底分支。 */
 function vitestJson(rootDir, entries, startMs) {
+  /** 收集期失败：文件级 status 非 passed 且 assertionResults 为空（真实产物里导入报错即此形态）。 */
+  const resultsOf = (entry) => {
+    if (entry.collectError) return [];
+    return [
+      ...(entry.titles ?? []).map((title) => ({ fullName: `装置用例 ${title}`, status: "passed" })),
+      ...(entry.failedTitles ?? []).map((title) => ({ fullName: `装置用例 ${title}`, status: "failed" })),
+      ...statusAssertions(entry.file, "passed", entry.passed - (entry.titles ?? []).length),
+      ...statusAssertions(entry.file, "failed", (entry.failed ?? 0) - (entry.failedTitles ?? []).length),
+      ...statusAssertions(entry.file, "skipped", entry.skipped ?? 0),
+    ];
+  };
   return `${JSON.stringify({
     startTime: startMs,
     testResults: entries.map((entry) => ({
       name: path.join(rootDir, entry.file),
-      status: "passed",
-      assertionResults: [
-        ...(entry.titles ?? []).map((title) => ({ fullName: `装置用例 ${title}`, status: "passed" })),
-        ...(entry.failedTitles ?? []).map((title) => ({ fullName: `装置用例 ${title}`, status: "failed" })),
-        ...statusAssertions(entry.file, "passed", entry.passed - (entry.titles ?? []).length),
-        ...statusAssertions(entry.file, "failed", (entry.failed ?? 0) - (entry.failedTitles ?? []).length),
-        ...statusAssertions(entry.file, "skipped", entry.skipped ?? 0),
-      ],
+      status: entry.collectError ? "failed" : "passed",
+      assertionResults: resultsOf(entry),
     })),
   })}\n`;
 }
@@ -561,6 +599,48 @@ writeProbeFile(
   probeNow,
 );
 const missingReportRoot = path.join(root, "report-missing");
+/**
+ * 夹具（F1）：project 矩阵被削回桌面后的 E2E 报告——5 个文件 / 21 个实例，恰好满足旧口径的 5 文件与
+ * 6/4/5/3/3 阈值，所以在旧实现下 exit 0：移动覆盖丧失在门禁上不可见。
+ */
+const e2eDesktopOnlyReportRoot = buildReportRoot("report-e2e-desktop-only", {
+  vitest: vitestHealthyEntries,
+  vitestStartMs: probeNow,
+  e2e: e2eDesktopOnlyProbe,
+  e2eStartMs: probeNow,
+});
+/**
+ * 夹具（F2）：报告本身完整通过，但清单里的一个测试文件已从磁盘删除——新鲜度只按剩余文件核对，
+ * 旧实现只 `console.warn`（exit 0），修复后任何缺失都必须失败。
+ */
+const missingListFileReportRoot = buildReportRoot("report-missing-list-file", {
+  vitest: vitestHealthyEntries,
+  vitestStartMs: probeNow,
+});
+fs.rmSync(path.join(missingListFileReportRoot, "src/app/deferred-pages-loading.test.tsx"));
+/** 清单外的装置文件（填充文件里最靠后的一支），用于构造文件级失效夹具。 */
+const lastProbeFile = vitestHealthyEntries[vitestHealthyEntries.length - 1].file;
+/** 夹具（F3a）：非清单文件收集期失败（文件级 status="failed" 且 assertionResults 为空）。 */
+const collectionFailureReportRoot = buildReportRoot("report-collection-failure", {
+  vitest: vitestHealthyEntries.map((entry, index) =>
+    index === vitestHealthyEntries.length - 1 ? { ...entry, passed: 0, collectError: true } : entry,
+  ),
+  vitestStartMs: probeNow,
+});
+/** 夹具（F3b）：非清单文件整文件跳过（跳过数 == 断言总数且 > 0），旧实现只告警。 */
+const wholeFileSkipReportRoot = buildReportRoot("report-whole-file-skip", {
+  vitest: vitestHealthyEntries.map((entry, index) =>
+    index === vitestHealthyEntries.length - 1 ? { ...entry, passed: 0, skipped: 1 } : entry,
+  ),
+  vitestStartMs: probeNow,
+});
+/** 反例：非清单文件部分跳过仍只告警，不得因 F3b 的修复被升级为失败。 */
+const partialSkipReportRoot = buildReportRoot("report-partial-skip", {
+  vitest: vitestHealthyEntries.map((entry, index) =>
+    index === vitestHealthyEntries.length - 1 ? { ...entry, skipped: 1 } : entry,
+  ),
+  vitestStartMs: probeNow,
+});
 
 const cases = [
   {
@@ -732,7 +812,7 @@ const cases = [
   {
     name: "测试执行：E2E 健康报告应通过（ISO 时间戳 + 清单齐）",
     expect: 0,
-    contains: [`E2E 报告：参与判定的文件 ${e2eProbe.length} 个、用例 ${e2eProbeTotal} 个`],
+    contains: [`E2E 报告：参与判定的文件 ${E2E_EXPECTED_FILES} 个、用例 ${E2E_EXPECTED_CASES} 个`],
     run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: healthyReportRoot }, ["--e2e"]),
   },
   {
@@ -744,13 +824,13 @@ const cases = [
   {
     name: "测试执行：E2E 报告 file 为绝对路径应通过（无 config.rootDir）",
     expect: 0,
-    contains: [`E2E 报告：参与判定的文件 ${e2eProbe.length} 个、用例 ${e2eProbeTotal} 个`],
+    contains: [`E2E 报告：参与判定的文件 ${E2E_EXPECTED_FILES} 个、用例 ${E2E_EXPECTED_CASES} 个`],
     run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: absoluteE2eReportRoot }, ["--e2e"]),
   },
   {
     name: "测试执行：E2E 报告缺 config.rootDir 时按 <root>/e2e 归一应通过",
     expect: 0,
-    contains: [`E2E 报告：参与判定的文件 ${e2eProbe.length} 个、用例 ${e2eProbeTotal} 个`],
+    contains: [`E2E 报告：参与判定的文件 ${E2E_EXPECTED_FILES} 个、用例 ${E2E_EXPECTED_CASES} 个`],
     run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: noRootDirE2eReportRoot }, ["--e2e"]),
   },
   {
@@ -792,7 +872,7 @@ const cases = [
     name: "测试执行：E2E 必需文件总数低于棘轮应失败",
     expect: 1,
     contains: [
-      "E2E：报告只含 4 个文件，少于要求的 5 个（测试文件被删除或未运行）",
+      "E2E：报告只含 5 个文件，少于要求的 6 个（测试文件被删除或未运行）",
       "E2E：必需文件未出现在报告中 e2e/settings.e2e.ts",
     ],
     run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: belowMinFilesE2eReportRoot }, ["--e2e"]),
@@ -814,6 +894,42 @@ const cases = [
     expect: 1,
     contains: ["清单文件全部不在磁盘上，无法核对报告新鲜度（旧报告不得放行）"],
     run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: absentFilesReportRoot }),
+  },
+  {
+    name: "测试执行：移动 project 被移除（报告回落到 5 文件 / 21 实例）应失败",
+    expect: 1,
+    contains: [
+      "E2E 报告：参与判定的文件 5 个、用例 21 个",
+      "E2E：必需文件未出现在报告中 e2e/mobile-device.e2e.ts",
+      "E2E：报告只含 5 个文件，少于要求的 6 个（测试文件被删除或未运行）",
+    ],
+    run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: e2eDesktopOnlyReportRoot }, ["--e2e"]),
+  },
+  {
+    name: "测试执行：清单中的单个测试文件被删除应失败（不得只告警）",
+    expect: 1,
+    contains: ["清单文件不在磁盘上（被删除或改名）", "src/app/deferred-pages-loading.test.tsx"],
+    run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: missingListFileReportRoot }),
+  },
+  {
+    name: "测试执行：清单外文件收集期失败应失败（testResults[].status 非 passed）",
+    expect: 1,
+    contains: [`Vitest：${lastProbeFile} 文件级状态为 failed，收集期失败，断言结果不可信`],
+    run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: collectionFailureReportRoot }),
+  },
+  {
+    name: "测试执行：清单外文件整文件跳过应失败（不得只告警）",
+    expect: 1,
+    contains: [`Vitest：${lastProbeFile} 整文件跳过（1 个用例全部未执行），不得放行`],
+    absent: ["跳过告警（未登记在必需清单）"],
+    run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: wholeFileSkipReportRoot }),
+  },
+  {
+    name: "测试执行：清单外文件部分跳过仍只告警（不得升级为失败）",
+    expect: 0,
+    contains: [`跳过告警（未登记在必需清单）：${lastProbeFile}`],
+    absent: ["整文件跳过", "文件级状态为"],
+    run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: partialSkipReportRoot }),
   },
 ];
 
