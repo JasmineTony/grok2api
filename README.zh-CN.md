@@ -491,6 +491,8 @@ docker network inspect grok2api_default \
 
 ```bash
 cd backend
+bash scripts/verify.sh   # 本地必需检查单一入口（cwd 必须为 backend/；步骤与退出码见
+                         # backend/scripts/README.md），失败即停
 go test ./... -count=1   # 全量（PostgreSQL/Redis 集成用例需提供 TEST_POSTGRES_*/Redis
                          # 环境，否则跳过；跳过不等于通过）
 go vet ./...
@@ -498,13 +500,16 @@ go build ./...
 go test -race ./...      # 需支持 cgo 的 Linux/CI 工具链
 ```
 
+`go run ./tools/structurecheck` 支持 `--update`（仅在有意变更后重冻基线）与 `--list`（输出机读工作清单），相对冻结基线出现任何新增或恶化项都失败；`go run ./tools/apicheck` 只支持 `--update`，对 `backend/api-baseline.txt` 逐条精确比对，没有「越限严重度」概念。见 `AGENTS.md` REV-1/REV-2/REV-3。
+
 ```bash
 cd frontend
 pnpm install --frozen-lockfile
-pnpm verify          # 格式、类型、双 Lint、单测、覆盖率、依赖边界、结构约束、
-                     # 门禁自测、生产构建、体积预算
-pnpm verify:full     # pnpm verify + 真实全栈 Playwright E2E（生产 dist + 真实 Go 服务
-                     # + 临时 SQLite/Memory）
+pnpm verify          # 格式、类型、双 Lint、单测、覆盖率、必需场景报告门禁（test:results）、
+                     # 依赖边界、结构约束、门禁自测、生产构建、体积预算
+pnpm verify:full     # pnpm verify + 真实全栈 Playwright E2E（生产 dist + 真实 Go 服务 +
+                     # 临时 SQLite/Memory）+ test:results:e2e（必需用例标题、文件/用例
+                     # 下限、未知状态 fail-closed）
 ```
 
 规则与阈值见 [`AGENTS.md`](./AGENTS.md)；实测证据与已登记的未达标项见

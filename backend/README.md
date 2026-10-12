@@ -77,6 +77,8 @@ internal/repository/ 持久化接口
 ## 验证
 
 ```bash
+bash scripts/verify.sh       # 本地必需检查单一入口（cwd 必须为 backend/；步骤与退出码见
+                             # scripts/README.md），失败即停
 go test ./... -count=1     # 全量（含 PostgreSQL/Redis 集成用例；本机无隔离服务时会跳过）
 go vet ./...               # 静态检查
 go build ./...             # 全量编译

@@ -536,6 +536,8 @@ Important optional settings:
 
 ```bash
 cd backend
+bash scripts/verify.sh   # single entry for all required local checks (cwd must be backend/;
+                         # step list and exit codes: backend/scripts/README.md), stops at first failure
 go test ./... -count=1   # full suite (PostgreSQL/Redis integration cases are skipped
                          # unless TEST_POSTGRES_*/Redis env is provided; skipped != passed)
 go vet ./...
@@ -545,17 +547,22 @@ go run ./tools/apicheck         # exported API surface must match backend/api-ba
 go test -race ./...      # requires a cgo-capable Linux/CI toolchain
 ```
 
-Both gate tools compare against a frozen baseline and fail on any new or worsened
-violation (`--update` re-freezes only after an intentional change; `--list` prints the
-current violations as a machine-readable work list). See `AGENTS.md` REV-1/REV-2/REV-3.
+`structurecheck` supports `--update` (re-freeze only after an intentional change) and
+`--list` (machine-readable work list), and fails on any new or worsened violation
+against its frozen baseline. `apicheck` has no `--list`: it diffs the exported API
+surface against `backend/api-baseline.txt` entry by entry and can only re-freeze with
+`--update` (no per-item "worsened violation" severity concept).
+See `AGENTS.md` REV-1/REV-2/REV-3.
 
 ```bash
 cd frontend
 pnpm install --frozen-lockfile
-pnpm verify          # format, types, both linters, unit tests, coverage, dependency
-                     # boundaries, structure limits, gate self-tests, build, bundle budget
+pnpm verify          # format, types, both linters, unit tests, coverage, required-scenario
+                     # report gate (test:results), dependency boundaries, structure limits,
+                     # gate self-tests, build, bundle budget
 pnpm verify:full     # pnpm verify + real full-stack Playwright E2E (production dist +
-                     # real Go service + temporary SQLite/Memory)
+                     # real Go service + temporary SQLite/Memory) + test:results:e2e
+                     # (required titles, file/case floors, unknown status fail-closed)
 ```
 
 See [`AGENTS.md`](./AGENTS.md) for the rules and thresholds, and
