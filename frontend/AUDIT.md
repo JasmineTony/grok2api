@@ -1058,9 +1058,9 @@ main 线的 AUDIT 章节（`backend/AUDIT.md` §20/§21（BE-18/BE-19）、`fron
 - 4 × `Clear-text logging of sensitive information` → `backend/internal/application/gateway/service_request_failure.go` 约 `:154`、`:180`、`:182`、`:284`；
 - 1 × `Uncontrolled data used in path expression` → `backend/internal/transport/http/frontend.go:80`。
 
-真/假阳性 triage 进行中（登记为**待裁定项**，不预判结论）。
+**triage 结论（2026-10-12）**：5 条**全部为假阳性**，完整证据见 `backend/AUDIT.md` §24。本轮 CI 双轮核对补充：该 check 在 `b59e5ff6`、`118a6ba0`、`a59e0d43` 三个 sha 上 `conclusion` 均为 `failure`、annotations 各 5 条且完全相同；仓库 `/code-scanning/alerts?state=open` 的 5 条告警 `created=2026-10-11`、`ref=refs/heads/main` ⇒ 属**存量**而非本轮引入；PR #1/#2 的 `mergeable_state=unstable`（非 `blocked`）⇒ 该 check 不是阻塞合并的必需检查。
 
-**附**：`Upload Playwright artifacts` 的 `skipped` 由该 step 的 `if: failure()` 决定（工作流 `:179-180`）；Verify job 无失败步骤 ⇒ 条件为假 ⇒ `skipped` 属预期，非缺陷。
+**附**：`Upload Playwright artifacts` 的 `skipped` 由该 step 的 `if: failure()` 决定；Verify job 无失败步骤 ⇒ 条件为假 ⇒ `skipped` 属预期，非缺陷。注意：这些 run 实际执行的是**远端版本**的工作流定义（base `1a510f5d` 与 head `a59e0d43` 的工作流内容哈希一致：13507 B / 354 行），与工作区文件（14094 B / 363 行）**不同**——引用行号时须用远端版本（`if: failure()` 位于远端 `:163`）。
 
 ## 21. 2026-10-11（续二）报告门禁强化、构建指纹与真实移动 E2E（FE-15）
 

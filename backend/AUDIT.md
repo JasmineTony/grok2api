@@ -1177,3 +1177,7 @@ PR #1（head `ci-probe/acceptance-audit-20261011`，`b59e5ff6`）上名为「Cod
 | BE-G3 `ports/security` 迁移 | 需单独批准 | 本轮未执行 |
 | BE-B4 benchmark 统计检验 | 仍开放（P3） | `benchstat` 未安装，维持「中位数 + 可比性限制」登记 |
 | 交付分支推送（含 `.github/workflows/**`） | Blocked（需凭据 scope） | 实测 `git push` exit 1；解除条件见 `frontend/AUDIT.md` §20.5 |
+
+## 27. CodeQL 告警存量判定补充证据（BE-26）
+
+**补充证据（2026-10-12，CI 双轮核对）**：仓库 `/code-scanning/alerts?state=open` 的 5 条告警 `created=2026-10-11`、`ref=refs/heads/main`（`go/clear-text-logging` × 4 → `service_request.go:635/637/647/789`；`go/path-injection` × 1 → `transport/http/frontend.go:76`）⇒ 属**存量**告警；名为「CodeQL」的 check-run 在 `b59e5ff6`、`118a6ba0`、`a59e0d43` 三个 sha 上均为 `failure` 且 annotations 完全相同；PR #1/#2 的 `mergeable_state=unstable`（非 `blocked`）⇒ 该 check 不是阻塞合并的必需检查。「同一批告警因重命名/指纹变化被计为 PR 新增」仍为**推断**（未取到 fingerprint 级证据）。
