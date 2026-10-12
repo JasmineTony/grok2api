@@ -537,8 +537,10 @@ function playwrightJson(entries, startMs, shape) {
     }
     return { title: entry.file, file, suites: [], specs };
   };
+  const suites = entries.map(specsOf);
+  const instanceCount = suites.reduce((total, suite) => total + suite.specs.length, 0);
   return `${JSON.stringify({
-    config: shape.rootDir === null ? {} : { rootDir: shape.rootDir },
+    config: playwrightConfigOf(shape),
     errors: [],
     stats: {
       startTime: new Date(startMs).toISOString(),
@@ -546,10 +548,17 @@ function playwrightJson(entries, startMs, shape) {
       expected: 0,
       unexpected: 0,
       flaky: 0,
-      skipped: 0,
+      // listOnly 形态复现 `playwright test --list`：收集清单里全部用例只出现在 stats.skipped。
+      skipped: shape.listOnly ? instanceCount : 0,
     },
-    suites: entries.map(specsOf),
+    suites,
   })}\n`;
+}
+
+/** 报告形态 → config：listOnly 形态带 argv（含 `--list`），其余只按 rootDir 是否存在构造。 */
+function playwrightConfigOf(shape) {
+  if (shape.listOnly) return { argv: ["playwright", "test", "--list"] };
+  return shape.rootDir === null ? {} : { rootDir: shape.rootDir };
 }
 
 /** 建一个报告根目录：写清单文件（mtime 固定）与可选的两份报告。 */
@@ -579,13 +588,15 @@ function buildReportRoot(name, options) {
 /**
 /**
  * E2E 报告的形态：默认与真实产物一致（file 是纯文件名 + `config.rootDir` 指向 <dir>/e2e）；e2eAbsoluteShape
- * 构造绝对路径形态，e2eWithoutRootDir 构造缺 `config.rootDir` 形态，e2eProjects 覆盖 project 形态。
+ * 构造绝对路径形态，e2eWithoutRootDir 构造缺 `config.rootDir` 形态，e2eProjects 覆盖 project 形态，
+ * e2eListOnly 构造 `playwright test --list` 的收集清单形态（config.argv 含 `--list`、stats 只有 skipped）。
  */
 function e2eShapeOf(dir, options) {
   const projects = options.e2eProjects ?? E2E_PROJECTS;
-  if (options.e2eAbsoluteShape) return { rootDir: null, fileOf: (file) => path.join(dir, file), projects };
-  if (options.e2eWithoutRootDir) return { rootDir: null, fileOf: (file) => path.basename(file), projects };
-  return { rootDir: path.join(dir, "e2e"), fileOf: (file) => path.basename(file), projects };
+  const listOnly = options.e2eListOnly === true;
+  if (options.e2eAbsoluteShape) return { rootDir: null, fileOf: (file) => path.join(dir, file), projects, listOnly };
+  if (options.e2eWithoutRootDir) return { rootDir: null, fileOf: (file) => path.basename(file), projects, listOnly };
+  return { rootDir: path.join(dir, "e2e"), fileOf: (file) => path.basename(file), projects, listOnly };
 }
 
 const healthyReportRoot = buildReportRoot("report-healthy", {
@@ -661,6 +672,17 @@ const noRootDirE2eReportRoot = buildReportRoot("report-no-rootdir-e2e", {
   e2e: e2eProbe,
   e2eStartMs: probeNow,
   e2eWithoutRootDir: true,
+});
+/**
+ * 夹具：`playwright test --list` 写出的收集清单（config.argv 含 `--list`、stats.skipped 等于用例总数、
+ * stats.expected = 0）。它不含任何执行结果，旧判定会把它当健康报告（清单齐、无失败、通过数够）放行。
+ */
+const listOnlyE2eReportRoot = buildReportRoot("report-e2e-list-only", {
+  vitest: vitestHealthyEntries,
+  vitestStartMs: probeNow,
+  e2e: e2eProbe,
+  e2eStartMs: probeNow,
+  e2eListOnly: true,
 });
 /** 夹具：首个 E2E 文件含一个 test.fail() 预期失败用例（status="expected" + expectedStatus="failed"）。 */
 const expectedFailureE2eEntries = e2eProbe.map((entry, index) =>
@@ -1250,6 +1272,13 @@ const cases = [
       "E2E project 报告：2 个 project（chromium 通过 21 个、mobile-chromium 通过 21 个）",
     ],
     run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: healthyReportRoot }, ["--e2e"]),
+  },
+  {
+    name: "测试执行：E2E 报告来自 playwright test --list（收集清单）应报错退出（未运行不得称通过）",
+    expect: 2,
+    contains: ["playwright test --list", "请运行：pnpm test:e2e"],
+    absent: ["必需前端场景执行门禁通过"],
+    run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: listOnlyE2eReportRoot }, ["--e2e"]),
   },
   {
     name: "测试执行：E2E 报告早于清单文件 mtime 应失败",

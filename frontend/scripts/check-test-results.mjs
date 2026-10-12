@@ -28,10 +28,11 @@
  *
  * 环境变量：TEST_REPORT_ROOT 覆盖报告根目录，**只允许指向系统临时目录（os.tmpdir()）之下**，仅供
  * scripts/self-test-gates.mjs 的临时装置使用；本地门禁与 CI 都不设置它。指向 tmp 之外时打印原因并以
- * 退出码 2 拒绝：任何可见的 CI / 包装层改动（workflow env:、脚本前缀）都不得把门禁重定向到伪造的健康报告。
+ * 退出码 2 拒绝。注意该限制只覆盖 tmp 之外的路径：tmp 之内的伪造报告根仍会被接受（self-test 装置即使用
+ * 这种形态），真正的防线是「本地门禁与 CI 都不设置该变量」，不是本变量本身。
  *
- * 退出码：0 = 通过；1 = 断言失败（缺失/跳过/失败/flaky/数量不足/报告过期）；2 = 报告缺失、不可解析，
- * 或 TEST_REPORT_ROOT 越界被拒绝。
+ * 退出码：0 = 通过；1 = 断言失败（缺失/跳过/失败/flaky/数量不足/报告过期）；2 = 报告缺失、不可解析、
+ * 报告来自 `playwright test --list`（收集清单，不含执行结果），或 TEST_REPORT_ROOT 越界被拒绝。
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -77,10 +78,13 @@ const reportRoot = resolveReportRoot();
  * 报告内必需文件最小总数（棘轮，防止整体删除测试文件绕过清单 / 标题检查）。
  * 实测值（2026-10-12，本工作树；复现：`pnpm test:ui:coverage && node scripts/check-test-results.mjs`
  * 输出「参与判定的文件 125 个」）：Vitest 125 个（原 123 + 本轮 FE-19-8 新增的 2 个用例文件）。
- * E2E 的计数口径是 **(spec × project) 实例**，不是 spec 文件数：Playwright JSON 把每个 project 各展开一遍，
- * 复现 `pnpm test:e2e && node scripts/check-test-results.mjs --e2e` 输出「参与判定的文件 6 个、用例 42 个」
- * （chromium 21 + mobile-chromium 21；仅断言桌面布局本身成立的用例保留 `@desktop`）。删掉 `mobile-chromium` project
- * 或把它的 `grepInvert` 收窄成 `/./` 后，文件数回落 5、实例数回落 21，必须在这里失败——移动覆盖丧失不得静默通过。
+ * E2E 的计数口径是 **(spec × project) 实例**，不是 spec 文件数：Playwright JSON 把每个 project 各展开一遍。
+ * 实测值来自 `pnpm test:e2e` 写出的 `.artifacts/playwright/results.json`（2026-10-12，stats.expected = 42）：
+ * 参与判定的文件 6 个、用例 42 个（chromium 21 + mobile-chromium 21；仅断言桌面布局本身成立的用例保留
+ * `@desktop`）。`playwright test --list` 写出的是收集清单（config.argv 含 `--list`、stats.skipped 等于用例
+ * 总数、stats.expected = 0），复现不出该计数，被 isListOnlyReport 显式拒绝（不得把未执行当通过）。
+ * 删掉 `mobile-chromium` project 或把它的 `grepInvert` 收窄成 `/./` 后，文件数回落 5、实例数回落 21，
+ * 必须在这里失败——移动覆盖丧失不得静默通过。
  * 只增不减；确实需要下调时必须是可见改动并说明理由。
  */
 const MIN_VITEST_FILES = 125;
@@ -553,6 +557,19 @@ function logReport({ label, fileCount, totals, startMs }) {
   );
 }
 
+/**
+ * `playwright test --list` 写出的是收集清单，不含任何执行结果：`config.argv` 含 `--list`，且 stats 里只有
+ * skipped（等于用例总数）、expected = 0。据它判定「必需场景已运行并通过」等于把未运行当通过（EVID-1）。
+ * 判据取「argv 含 --list」或「expected = 0 且 skipped > 0」：后者在真实执行里只可能是「所有用例都被跳过」，
+ * 同样不得放行，因此两种情形都按报告不可用处理（退出码 2）。
+ */
+function isListOnlyReport(report) {
+  const argv = report.config?.argv;
+  if (Array.isArray(argv) && argv.includes("--list")) return true;
+  const stats = report.stats;
+  return typeof stats === "object" && stats !== null && stats.expected === 0 && (stats.skipped ?? 0) > 0;
+}
+
 function main() {
   // TEST_REPORT_ROOT 越界已被 resolveReportRoot 拒绝：不读取任何报告，直接以退出码 2 失败。
   if (reportRoot === null) return 2;
@@ -580,6 +597,13 @@ function main() {
   if (withE2e) {
     const e2eRun = readReport(".artifacts/playwright/results.json", "pnpm test:e2e");
     if (e2eRun === null) return 2;
+    if (isListOnlyReport(e2eRun.report)) {
+      console.error(
+        "E2E 报告来自 `playwright test --list`（收集清单，不含真实执行结果）或全部用例被跳过，" +
+          "无法判定必需场景是否真的运行；请运行：pnpm test:e2e",
+      );
+      return 2;
+    }
     e2eFiles = walkPlaywrightSuites(e2eRun.report.suites, new Map(), playwrightBaseDir(e2eRun.report));
     e2eStartMs = reportStartMs("E2E", e2eRun.report.stats?.startTime, e2eRun.reportPath);
     e2e = checkReport({
