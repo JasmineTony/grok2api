@@ -557,8 +557,9 @@ See `AGENTS.md` REV-1/REV-2/REV-3.
 ```bash
 cd frontend
 pnpm install --frozen-lockfile
-pnpm verify          # format, types, both linters, unit tests, coverage, required-scenario
-                     # report gate (test:results), dependency boundaries, structure limits,
+pnpm verify          # format, types, both linters, unit tests, node:test report gate
+                     # (test:results:node), coverage, required-scenario report gate
+                     # (test:results), dependency boundaries, structure limits,
                      # gate self-tests, build, bundle budget
 pnpm verify:full     # pnpm verify + real full-stack Playwright E2E (production dist +
                      # real Go service + temporary SQLite/Memory) + test:results:e2e

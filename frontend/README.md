@@ -71,6 +71,7 @@ pnpm verify        # 完整质量门禁
 | 类型             | `pnpm typecheck`          | `tsc -b --force`                                                                                                                                                                                                             |
 | E2E 类型         | `pnpm typecheck:e2e`      | `tsc -p tsconfig.e2e.json`                                                                                                                                                                                                   |
 | 纯逻辑单测       | `pnpm test`               | `node:test`（含 `tsc -p tsconfig.test.json` 与 `scripts/**` 的构建输入指纹与构建清单插件用例，2 个文件）                                                                                                                     |
+| node:test 报告   | `pnpm test:results:node`  | 解析 node:test 原生 JSON（`.artifacts/node-test/results.json`）：必需文件与用例确实执行、通过数达标、无未登记跳过，且磁盘 `src/**/*.test.ts` + `scripts/**/*.test.ts` 集合与清单**完全相等**；清单外失败、整文件零用例与未知状态一律 fail-closed；`NODE_TEST_REPORT_ROOT` 只允许指向系统临时目录 |
 | 组件单测与覆盖率 | `pnpm test:ui:coverage`   | Vitest + jsdom；逐文件门槛 76%，口径与例外见 `vitest.config.ts`                                                                                                                                                              |
 | 必需场景执行     | `pnpm test:results`       | 解析 Vitest 原生 JSON：必需文件存在、必需用例标题为 `passed`、通过数与文件数不低于棘轮、无未登记跳过与 flaky；文件级收集失败 / 整文件跳过 / 未知或缺失状态一律 fail-closed，且报告不得早于清单文件 mtime（防止沿用过期报告） |
 | 依赖边界         | `pnpm check:architecture` | dependency-cruiser：循环、分层方向、跨 feature                                                                                                                                                                               |
@@ -91,7 +92,7 @@ pnpm verify        # 完整质量门禁
 - 每个 worker 独占一个后端进程：动态端口 + 独立临时目录（`config.yaml`、SQLite、媒体目录）+ 一次性合成管理员凭据。
 - 不读取仓库 `config.yaml`；启动前剔除 `GROK2API_*`、`TEST_POSTGRES_*`、`TEST_REDIS_*`，并把 `HTTP(S)_PROXY` 指向未监听端口，使未知外呼快速失败而不是挂起。
 - `globalSetup` 用内容指纹（`scripts/build-inputs.ts` 的 `inputHash`/`outputHash`）判定 `dist` 是否与当前构建输入一致，缺失或不一致即重建前端，并每次重建后端二进制，避免测到过期产物。
-- 产物与报告输出到 `frontend/.artifacts/`（已忽略，不参与格式与 lint 门禁）：Playwright 的 HTML/JSON 在 `.artifacts/playwright`，`pnpm test:results` 读取的 Vitest JSON 为 `.artifacts/vitest/results.json`。
+- 产物与报告输出到 `frontend/.artifacts/`（已忽略，不参与格式与 lint 门禁）：Playwright 的 HTML/JSON 在 `.artifacts/playwright`，`pnpm test:results` 读取的 Vitest JSON 为 `.artifacts/vitest/results.json`，`pnpm test:results:node` 读取的 node:test JSON 为 `.artifacts/node-test/results.json`。
 - project 矩阵：`chromium`（Desktop Chrome，运行除 `e2e/mobile-device.e2e.ts` 外的全部用例，由 project `testIgnore` 排除该文件）与 `mobile-chromium`（Pixel 5 真实设备描述符：`isMobile`/`hasTouch`/`deviceScaleFactor`/`userAgent`）。仅在桌面布局成立的用例标 `@desktop` 并由移动 project `grepInvert` 排除（当前只有 `e2e/navigation.e2e.ts` 的 1 个 describe 标签，覆盖 1 个用例）；`e2e/mobile-device.e2e.ts` 只在移动 project 运行。
 
 规则与阈值定义在根目录 [`AGENTS.md`](../AGENTS.md)，实际证据与问题状态见 [`AUDIT.md`](./AUDIT.md)。
