@@ -62,6 +62,7 @@ run_step "go build ./..." go build ./...
 run_step "go vet ./..." go vet ./...
 run_step "go run ./tools/structurecheck" go run ./tools/structurecheck
 run_step "go run ./tools/apicheck" go run ./tools/apicheck
+run_step "go run ./tools/dockerfilecheck" go run ./tools/dockerfilecheck
 run_step "go test ./... -count=1" go test ./... -count=1
 
 echo "全部通过"
