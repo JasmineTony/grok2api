@@ -48,5 +48,7 @@ export const router = createBrowserRouter([
       },
     ],
   },
-  { path: "*", element: <Navigate to="/dashboard" replace /> },
+  // 通配路由同样带 errorElement：未知路径上的元素抛错时必须落到与兄弟路由一致的可恢复界面，
+  // 而不是 React Router 自带的英文默认错误页。
+  { path: "*", element: <Navigate to="/dashboard" replace />, errorElement: <RouteErrorFallback /> },
 ]);

@@ -35,6 +35,24 @@ async function apiAccounts(request: APIRequestContext, server: E2EServer, search
   return { items, total: typeof payload.data?.total === "number" ? payload.data.total : items.length };
 }
 
+/**
+ * 按标记清理真实账号：先从服务端查回记录，再逐个删除。
+ * 清理不依赖调用点是否拿到过 id，也不吞掉失败——删除未成功时直接抛出，使清理失败显式失败。
+ */
+async function removeAccountsByMarker(request: APIRequestContext, server: E2EServer, marker: string): Promise<void> {
+  const created = await apiAccounts(request, server, marker);
+  if (created.items.length === 0) return;
+  const accessToken = await apiLogin(request, server);
+  for (const item of created.items) {
+    const removed = await request.delete(`${server.baseURL}/api/admin/v1/accounts/${item.id}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!removed.ok()) {
+      throw new Error(`清理账号 ${item.id} 失败：HTTP ${removed.status()} ${await removed.text()}`);
+    }
+  }
+}
+
 /** 走真实入口上传账号文件：账号接入菜单 → 导入项 → 隐藏 file input 的 filechooser。 */
 async function uploadAccountsFile(page: Page, file: { name: string; mimeType: string; buffer: Buffer }): Promise<void> {
   const chooser = page.waitForEvent("filechooser");
@@ -101,29 +119,30 @@ test("导入合法账号文件：列表出现新账号且服务端可读回，�
   await page.getByLabel(searchLabelName).fill(marker);
   await expect(page.getByText(noDataText).first()).toBeVisible();
 
-  await uploadAccountsFile(page, {
-    name: `${marker}.json`,
-    mimeType: "application/json",
-    buffer: Buffer.from(document, "utf8"),
-  });
+  // server fixture 是 worker 作用域（每 worker 独立后端 + 临时 SQLite），导入成功的账号会残留给同一
+  // worker 之后运行的 spec：auth.e2e 的必填用例依赖空账号池下的 /readyz 语义，残留会让一次断言失败
+  // 变成两次失败并引入顺序依赖。因此断言与清理必须同处 try/finally：任一断言失败也要执行清理。
+  try {
+    await uploadAccountsFile(page, {
+      name: `${marker}.json`,
+      mimeType: "application/json",
+      buffer: Buffer.from(document, "utf8"),
+    });
 
-  await expect(page.locator("[data-sonner-toast]").filter({ hasText: importedToast }).first()).toBeVisible();
+    await expect(page.locator("[data-sonner-toast]").filter({ hasText: importedToast }).first()).toBeVisible();
 
-  // UI：按标记搜索后出现该账号行。
-  const row = page.getByRole("row").filter({ hasText: marker });
-  await expect(row).toHaveCount(1);
+    // UI：按标记搜索后出现该账号行。
+    const row = page.getByRole("row").filter({ hasText: marker });
+    await expect(row).toHaveCount(1);
 
-  // 服务端：真实账号记录可读回，且与 UI 名称一致。
-  const created = await apiAccounts(request, server, marker);
-  expect(created.items.map((item) => item.name)).toEqual([marker]);
-  const accountId = created.items[0]?.id ?? "";
-  expect(accountId.length).toBeGreaterThan(0);
-
-  // 清理：删除本次导入的账号，恢复空号池（auth.e2e 依赖空号池的 /readyz 断言）。
-  const accessToken = await apiLogin(request, server);
-  const removed = await request.delete(`${server.baseURL}/api/admin/v1/accounts/${accountId}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  expect(removed.ok()).toBe(true);
-  expect((await apiAccounts(request, server, marker)).items).toEqual([]);
+    // 服务端：真实账号记录可读回，且与 UI 名称一致。
+    const created = await apiAccounts(request, server, marker);
+    expect(created.items.map((item) => item.name)).toEqual([marker]);
+    const accountId = created.items[0]?.id ?? "";
+    expect(accountId.length).toBeGreaterThan(0);
+  } finally {
+    // 清理结果同样显式断言：删除失败或仍有残留时本用例必须失败，不得静默放过。
+    await removeAccountsByMarker(request, server, marker);
+    expect((await apiAccounts(request, server, marker)).items).toEqual([]);
+  }
 });
