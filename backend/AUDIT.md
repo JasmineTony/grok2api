@@ -995,7 +995,7 @@ main 线 `backend/AUDIT.md` §20（BE-18）、§21（BE-19）记录门禁工具�
 | 项 | 状态 | 说明 |
 | --- | --- | --- |
 | BE-G3 `ports/security` 迁移 | 需单独批准 | 架构迁移，本轮未执行 |
-| BE-B4 benchmark 统计检验 | 仍开放（P3） | `benchstat` 未安装，维持「中位数 + 可比性限制」登记 |
+| BE-B4 benchmark 统计检验 | **已关闭（§28.1）** | `benchstat` 已装并实际执行统计检验；结论是「本机不具备 ns/op 判别力」，见 §28.1 |
 | Linux `-race` 与隔离 PG/Redis 的**本机**证据 | 不适用 | CI 侧已闭环（§21.2），本机不再声称 |
 | 交付分支推送与合并 `main` | **Blocked（需授权 + 凭据能力）** | 见 `frontend/AUDIT.md` §20.5 |
 
@@ -1177,7 +1177,7 @@ PR #1（head `ci-probe/acceptance-audit-20261011`，`b59e5ff6`）上名为「Cod
 | --- | --- | --- |
 | `Verify backend structure and API contract` 的 **CI 侧** | 未闭环（登记） | 该 step 只存在于维护线工作流；探针分支必须保留 `origin/main` 工作流定义（本机凭据缺工作流作用域），故不在 run 中。本机侧已闭环（§26.1） |
 | BE-G3 `ports/security` 迁移 | 需单独批准 | 本轮未执行 |
-| BE-B4 benchmark 统计检验 | 仍开放（P3） | `benchstat` 未安装，维持「中位数 + 可比性限制」登记 |
+| BE-B4 benchmark 统计检验 | **已关闭（§28.1）** | `benchstat` 已装并实际执行统计检验；结论是「本机不具备 ns/op 判别力」，见 §28.1 |
 | 交付分支推送（含 `.github/workflows/**`） | Blocked（需凭据 scope） | 实测 `git push` exit 1；解除条件见 `frontend/AUDIT.md` §20.5 |
 
 ## 27. CodeQL 告警存量判定补充证据（BE-26）
@@ -1196,7 +1196,7 @@ PR #1（head `ci-probe/acceptance-audit-20261011`，`b59e5ff6`）上名为「Cod
 
 ### 28.2 发现并修复的基准缺陷（P2）
 
-`BenchmarkDashboardUsageAggregate`（`internal/infra/persistence/relational/dashboard_repository_test.go:143-185`）在建表并插入 50,000 行后**没有 `b.ResetTimer()`** ⇒ 负载下校准退化到 `b.N=1`，一次性初始化被摊进 ns/op（离群样本 1.02s–5.53s，benchstat 曾报 +1213.59%，p=0.000）。修复：在插入完成后加 `b.ResetTimer()`（并在注释里写明该陷阱）。
+`BenchmarkDashboardUsageAggregate`（`internal/infra/persistence/relational/dashboard_repository_test.go:143-188`；`b.ResetTimer()` 插入于 `:169`，插入后函数末尾由 185 行顺延为 188 行）在建表并插入 50,000 行后**没有 `b.ResetTimer()`** ⇒ 负载下校准退化到 `b.N=1`，一次性初始化被摊进 ns/op（离群样本 1.02s–5.53s，benchstat 曾报 +1213.59%，p=0.000）。修复：在插入完成后加 `b.ResetTimer()`（并在注释里写明该陷阱）。
 
 **修复验证（本机实测）**：
 
