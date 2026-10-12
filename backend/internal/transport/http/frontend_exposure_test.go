@@ -106,7 +106,7 @@ func TestFrontendStaticExposureServesSensitiveFilesFromConfiguredRoot(t *testing
 }
 
 // TestFrontendStaticExposureRejectsRootLevelDotfiles 固定现状：唯一的守卫只拦「产物根级点文件」。
-// 语义：isHiddenArtifact(frontend.go:99-101) 要求解析后的相对路径目录为根且基名以 "." 开头，
+// 语义：isHiddenArtifact(frontend.go:108-110) 要求解析后的相对路径目录为根且基名以 "." 开头，
 // 所以 /.env 返回 404；但该守卫不是白名单——同目录的 config.yaml、data/*.db 仍被 200 服务
 // （见 TestFrontendStaticExposureServesSensitiveFilesFromConfiguredRoot），
 // 且**子目录**点文件不受拦：/data/.env 返回 200 文件原文（path.Dir(clean) != "/" ⇒ 守卫不触发）。
@@ -122,7 +122,7 @@ func TestFrontendStaticExposureRejectsRootLevelDotfiles(t *testing.T) {
 	router := staticExposureRouter(t, root)
 	status, body := staticExposureGet(router, "/.env")
 	if status != http.StatusNotFound {
-		t.Fatalf("/.env status = %d, want %d（根级点文件守卫 frontend.go:99-101 失效）", status, http.StatusNotFound)
+		t.Fatalf("/.env status = %d, want %d（根级点文件守卫 frontend.go:108-110 失效）", status, http.StatusNotFound)
 	}
 	if strings.Contains(body, "JWT_SECRET") {
 		t.Fatalf("/.env body = %q，泄漏了点文件内容", body)

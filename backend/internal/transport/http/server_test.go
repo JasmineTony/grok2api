@@ -163,7 +163,7 @@ func TestFrontendStaticFilesAndSPAFallback(t *testing.T) {
 	}
 }
 
-// TestIsHiddenArtifactOnResolvedAliases 固定 isHiddenArtifact 的平台无关语义（frontend.go:97-101）：
+// TestIsHiddenArtifactOnResolvedAliases 固定 isHiddenArtifact 的平台无关语义（frontend.go:108-110）：
 // 判定输入是 os.Stat 解析后的相对路径，因此别名一旦被文件系统归一化（大小写变化、`x\..` 折叠），
 // 仍然必须按根级点文件拦截。Linux CI 上 os.Stat 对这类别名直接失败、HTTP 层覆盖不到该归一化结果，回归只能靠这里。
 func TestIsHiddenArtifactOnResolvedAliases(t *testing.T) {
