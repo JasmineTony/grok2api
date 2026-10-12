@@ -924,6 +924,7 @@ go test <pkg> -run '^$' -bench '<正则>' -benchmem -count=5
 - `DashboardUsageAggregate` 的 legacy 子基准首个样本是预热离群点（B/op 17,501、allocs 137，其余 4 次 13,539–13,572 / 113），两子基准共享同一 DB 与页缓存，**禁止**把 legacy 与 performance 的差值当收益。
 - 本轮未改动任何被基准覆盖的生产路径（diff 只有 `frontend.go` 静态托管排除与测试），故这些数字是**当前基线**，不是优化成果。
 - 未覆盖：`-race`（本机 `CGO_ENABLED=0` 不可用，由 CI `Race backend` 覆盖）、隔离 PostgreSQL/Redis 用例（本机无服务，`relational.TestMain` 在无 DSN 时正常结束，集成用例被 `-run '^$'` 过滤，无 `--- SKIP` 行）。
+- **后续更新（2026-10-12，见 §28）**：本节「本机无 `benchstat`，未做统计检验」已被取代——`benchstat` 已装并实际执行：§28.1 给出同代码 R1 vs R2 的空对照（45 个比较行中 12 行被判显著 = 26.7%，95% CI 半宽中位 ±36%），结论是**本机不具备 ns/op 判别力**，唯一稳定的是分配指纹；本节提到的 legacy 子基准「首样本预热离群点」也已定位为**基准缺陷**（`dashboard_repository_test.go` 缺 `b.ResetTimer()`，§28.2 已修）。本节数字保留为历史快照，引用时以 §28 为准。
 ### 20.11 回滚
 
 按类别独立回滚：边界测试与夹具回退 `import_boundary_test.go` 并删除 `import_boundary_fixtures_test.go`；静态托管收口回退 `frontend.go` +6/−1 与 `server_test.go` +4/−0（回退后 `/.build-manifest.json` 会重新 200 公开返回，不建议）；`.dockerignore` 三行白名单回退不影响本机验证（真实容器判定仍以 CI `check_ghcr_image` 为准）。本轮无数据、协议、配置（除 `.dockerignore`）或依赖迁移。
