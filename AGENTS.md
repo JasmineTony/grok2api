@@ -258,6 +258,7 @@ git remote -v
 - 固有局限（必须一并登记）：tag 指向发布提交，其 `AUDIT.md` 不含 tag run 之后的登记；如需 tag 自带登记只能重打 tag（不可逆，默认不做）。
 - 授权与边界：合并 `main`、创建 tag/Release、推送镜像、删除/重建远端仓库或容器包属不可逆操作，逐次单独授权；`upstream` 永不推送。执行前必须逐项列出并确认外部依赖（CI 包权限、Secrets、Release、Webhook、镜像 tag、下游消费者），无法确认则阻塞（§11 的 CHG-9）。
 - 非 `ghcr-image.yml` 的外部必需 check（例如 CodeQL 的告警 check）为 `failure` 时，必须登记 check/run id、`conclusion`、告警条目与 triage 结论；假阳性须在 `AUDIT.md` 记录最小复现命令；**不得**为消除告警而修改被检代码语义或删除日志（评审准则）。现有 triage 见 `backend/AUDIT.md` §24。
+- 绑定事实：`ghcr.io` 容器包必须与 `origin` 仓库建立链接，否则 `GITHUB_TOKEN` 即使声明 `packages: write` 也会以 `permission_denied: write_package` 失败（证据与根因见 `backend/AUDIT.md` §11）。
 
 ## 9. 执行与委派纪律（EXEC）
 
@@ -301,7 +302,7 @@ git remote -v
 
 ### EVID-1 未运行不得称通过（评审准则，可检索）
 
-`Passed` 只能来自**实际执行**的命令。配置已写好、脚本已存在、静态读取到步骤 → 只能记 `Pending` 或「部分实施」。
+`Passed` 只能来自**实际执行**的命令。配置已写好、脚本已存在、静态读取到步骤 → 只能记 `Pending` 或「部分实施」。其余状态：`Failed` = 命令实际执行且退出码非 0 或断言失败；`Skipped` = 命令主动跳过且必须记录跳过原因；`Blocked` = 因环境/外部依赖不足未执行，必须写明精确原因与可复现命令；四者不得互相替代。
 
 ### EVID-2 Passed 三要素（评审准则，可检索）
 
