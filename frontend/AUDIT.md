@@ -1184,17 +1184,19 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 
 ### 22.5 EVID-8 数字更正（原值 → 新值）
 
-| 位置                                 | 原值                                     | 新值                                      | 根因与复现                                                                                                       |
-| ------------------------------------ | ---------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| §21.1                                | `pnpm test:gates` = 41 个用例            | **46 个用例（34 必须失败）**              | `844c355c` 新增 5 个用例；复现 `cd frontend; pnpm test:gates`                                                    |
-| §21.3                                | （未记录阈值）                           | `MIN_E2E_FILES = 6`、minPassed 10/7/7/5/5 | 棘轮对齐 (spec × project) 口径；见 `scripts/check-test-results.mjs` 常量与注释                                   |
-| 历史记录中的 E2E 门禁输出            | 文件 5 个 / 用例 21 个                   | **文件 6 个 / 用例 35 个**                | 移动 project 加入后的口径；由 `844c355c` 对齐                                                                    |
-| §20.3                                | REV-3 作用域 5475                        | 5475（不变）                              | `cd backend; go run ./tools/structurecheck`                                                                      |
-| §19.8                                | 前端 REV-3 作用域 2524                   | **2525**                                  | 修复后的工具口径；复现 `cd frontend; node scripts/check-structure.mjs`                                           |
-| §20.4                                | 「FE-19-6 已不成立（主检出已是 13 步）」 | **仍成立**：主检出 `AGENTS.md:85` = 12 步 | 上一版自我更正反向失真（EVID-8：记录更正之更正）；复现 `Select-String E:\grok2api\AGENTS.md -Pattern '覆盖.*步'` |
-| §14/§16 等历史章节的 `Dockerfile:66` | `Dockerfile:66`                          | **`Dockerfile:67`**                       | `COPY VERSION /app/VERSION` 现位于 `:67`（`:65`=二进制、`:66`=`dist`）；历史行保留原值，按本表指针更正           |
-| §22.4                                | minPassed 10/7/7/5/5                     | **12/8/9/6/6**                            | F5 扩大移动覆盖后的实测真值（`571a16fd`）；复现 `node scripts/check-test-results.mjs --e2e`                      |
-| §22.1                                | E2E `35 passed` / 用例 35                | **`42 passed` / 用例 42**                 | 同上；§22.1 是 2026-10-12 09:25 的快照，保留原值                                                                 |
+| 位置                                 | 原值                                     | 新值                                          | 根因与复现                                                                                                                         |
+| ------------------------------------ | ---------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| §21.1                                | `pnpm test:gates` = 41 个用例            | **46 个用例（34 必须失败）**                  | `844c355c` 新增 5 个用例；复现 `cd frontend; pnpm test:gates`                                                                      |
+| §21.3                                | （未记录阈值）                           | `MIN_E2E_FILES = 6`、minPassed 10/7/7/5/5     | 棘轮对齐 (spec × project) 口径；见 `scripts/check-test-results.mjs` 常量与注释                                                     |
+| 历史记录中的 E2E 门禁输出            | 文件 5 个 / 用例 21 个                   | **文件 6 个 / 用例 42 个**                    | 移动 project（`844c355c`）与 F5 扩大覆盖（`571a16fd`）后的口径；中间态 35 个已被替代                                               |
+| §28 概览表 FE-A10 / FE-A13 / FE-A14  | 33 用例（22 必失败）；5 spec / 21 用例   | **46 用例（34 必失败）；6 spec / 42 用例**    | 真值取自当前配置（`self-test-gates.mjs` 的 `cases` 46 条、`pnpm test:e2e --list` = 42 tests in 6 files）；概览表按 EVID-8 保留原值 |
+| §22.4 / §22.6 的 minPassed 列表      | 12/8/9/6/6（5 个值）                     | **12/8/9/6/6 + `mobile-device` 1（共 6 条）** | `REQUIRED_E2E` 实为 6 条；复现 `Select-String frontend/scripts/check-test-results.mjs -Pattern 'minPassed'`                        |
+| §20.3                                | REV-3 作用域 5475                        | 5475（不变）                                  | `cd backend; go run ./tools/structurecheck`                                                                                        |
+| §19.8                                | 前端 REV-3 作用域 2524                   | **2525**                                      | 修复后的工具口径；复现 `cd frontend; node scripts/check-structure.mjs`                                                             |
+| §20.4                                | 「FE-19-6 已不成立（主检出已是 13 步）」 | **仍成立**：主检出 `AGENTS.md:85` = 12 步     | 上一版自我更正反向失真（EVID-8：记录更正之更正）；复现 `Select-String E:\grok2api\AGENTS.md -Pattern '覆盖.*步'`                   |
+| §14/§16 等历史章节的 `Dockerfile:66` | `Dockerfile:66`                          | **`Dockerfile:67`**                           | `COPY VERSION /app/VERSION` 现位于 `:67`（`:65`=二进制、`:66`=`dist`）；历史行保留原值，按本表指针更正                             |
+| §22.4                                | minPassed 10/7/7/5/5                     | **12/8/9/6/6**                                | F5 扩大移动覆盖后的实测真值（`571a16fd`）；复现 `node scripts/check-test-results.mjs --e2e`                                        |
+| §22.1                                | E2E `35 passed` / 用例 35                | **`42 passed` / 用例 42**                     | 同上；§22.1 是 2026-10-12 09:25 的快照，保留原值                                                                                   |
 
 ### 22.6 移动端 E2E 覆盖扩大（F5）
 
@@ -1205,7 +1207,7 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 - 验证（cwd = `frontend/`）：`pnpm test:e2e` → **exit 0**（`42 passed`，两次运行 1.3m / 2.0m，无 flaky）；`node scripts/check-test-results.mjs --e2e` → **exit 0**（`文件 6 个、用例 42 个`）；`pnpm test:gates` → **exit 0**（46 用例 / 34 必失败）；`pnpm test:e2e --list` → `Total: 42 tests in 6 files`；`prettier --check` / `eslint` / `oxlint` / `typecheck` / `typecheck:e2e` → exit 0。
 - 判别力：把真实报告裁剪为**仅桌面 project** 后用 `TEST_REPORT_ROOT` 指向副本 → 新阈值 **exit 1**，7 项失败全部指向移动覆盖丧失（auth 6<12 等 + `mobile-device.e2e.ts` 缺失 + 5<6 文件）；同一场景已固化为 `self-test-gates.mjs` 的 F1 用例。
 - 无断言弱化：`expect(` 净 **+2**、`test(` 净 **0**（22 个场景全保留）；负 delta 仅来自把断言搬入 fixtures 共享助手（每次调用仍执行，且现在两个 project 都跑）。
-- 未覆盖：本轮未跑 `pnpm verify:full` 全量（其余 12 步中受影响项已单独 exit 0）；全量验收由 §23 覆盖。
+- 未覆盖：F5 之后的全量验收由 §23.1 的 r7 覆盖（`verifyfull-r7.exit.txt` = 0）。**更正（EVID-5）**：本行原写「其余 12 步中受影响项已单独 exit 0」——该轮 sweep 日志仅有 PowerShell 的 `NativeCommandError` 噪音、无工具输出与退出码，**不作为证据**；一律以 §23.1 的全量运行为准。
 
 ## 23. 2026-10-12（续二）F5 之后的最终全量验收、门禁差异清单与未闭环项（FE-18）
 

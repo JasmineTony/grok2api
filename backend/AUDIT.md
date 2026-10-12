@@ -967,7 +967,7 @@ cd backend && go run ./tools/structurecheck          # exit 0
 结构门禁通过：未新增超限文件、超限函数或越限嵌套。
 ```
 
-REV-3 作用域 **5472 → 5475**（原值见 §20.7、§20.8 的旧工具口径）：工具修复了两处漏报通道，参与判定的作用域计数随之上升；结论仍为 0 越限。
+REV-3 作用域 **5472 → 5475**（原值出处更正：5472 记于 §19.5，§20.8 记的是 5473；均属旧工具口径）：工具修复了两处漏报通道后，参与判定的作用域计数上升；结论仍为 0 越限。
 
 ### 21.2 CI 证据闭环（更正 §20.13 的三项 Blocked）
 
@@ -1130,7 +1130,7 @@ PR #1（head `ci-probe/acceptance-audit-20261011`，`b59e5ff6`）上名为「Cod
 
 ① 穿越/编码别名（httptest + 哨兵文件，删守卫必失败）；② 缓存值精确断言 + `runtime-config.js`/`sponner`/`favicon.ico` 三行；③ 方法/前缀矩阵与 Content-Type 契约；④ 条件请求 304 语义（保留 mtime 场景写成特性化用例）；⑤ `frontendRoot` 失败矩阵；⑥ 静态根暴露边界（断言现行为 + 注释默认安全来自 Dockerfile）；⑦ 压缩：E2E 断言「带 `Accept-Encoding` 仍无 `Content-Encoding`、`content-length` = raw」，并在 AUDIT 登记「预算 = 磁盘 gzip、线上无传输压缩」。
 
-**更正（EVID-8）**：`backend/AUDIT.md:849` 引用 `isHiddenArtifact` 为 `frontend.go:94-99` → 现文件实际为 **`:99-101`**（行号漂移 3 行，由本轮前端改动引入，结论不变）。
+**更正（EVID-8）**：`backend/AUDIT.md:849` 引用 `isHiddenArtifact` 为 `frontend.go:94-99` → 现文件实际为 **`:99-101`**；本轮前端改动在此文件净增 11 行（起点前移 5 行、该函数末尾前移 2 行），其中 sink `os.Stat` 由 `origin/main` 的 `:76` 变为 `:80`（+4）；`origin/main` 版本并无 `isHiddenArtifact`（该函数是本轮新增的前置拦截），故此处以实测行号为准、结论不变。
 
 **未执行**：真实 Docker/Linux 镜像内探测（本机无 Docker）、反代/CDN 场景、浏览器对 `immutable` 的真实复用行为。
 
