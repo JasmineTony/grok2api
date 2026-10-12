@@ -1746,14 +1746,17 @@ git ls-files --eol <抽查文件>                      # 全部 i/lf w/lf attr/t
 
 - **新增用例**：`e2e/settings.e2e.ts` 两条——「设置页保存真实写入服务端：成功提示后刷新页面仍读到新值」「设置保存遇到 409 版本冲突时提示冲突并保留用户草稿」；`e2e/accounts.e2e.ts`（新增文件）两条——「导入非法账号文件：提示导入失败且真实服务端账号数不变」（`:54`）「导入合法账号文件：列表出现新账号且服务端可读回，随后清理恢复空号池」（`:83`）。
 - **棘轮同步（本工作树实读 `frontend/scripts/check-test-results.mjs`）**：`MIN_VITEST_FILES = 126`（`:90`）、`MIN_E2E_FILES = 7`（`:91`）、`MIN_E2E_PROJECT_PASSED = { chromium: 25, "mobile-chromium": 25 }`（`:153`）；对照本批起点 §29.1 的 6 文件与 21+21（=42）。分步口径：`543de355` 把 project 下限提到 **23/23**（settings `minPassed 10`），`b32ac08a` 再提到 **25/25** 并把 E2E 文件下限 6 → **7**（accounts 清单 `minPassed 4`）。`self-test-gates.mjs` 同步为 `E2E_EXPECTED_FILES = 7`、`E2E_EXPECTED_CASES = 50` 与逐文件 `minPassed`/`requiredTitles`；合并 `77d4aa65` 的冲突解决为「棘轮常量取更高值 126/7」（出处：会话 scratch `plan-progress.md` 第五批收敛状态表）。
-- **实测值待回填（EVID-1）**：`pnpm verify:full` 在最终 tip `77d4aa65` 上的真实通过数与耗时以主代理结果为唯一口径（会话 scratch `t4-verifyfull.out.log`；本节登记时该文件尚未收敛）。**回填前本节不得记为 `Passed`**。
+- **实测（最终 tip `77d4aa65`，会话 scratch `t4-verifyfull.out.log`）**：`pnpm verify:full` **exit 0**，外部墙钟 **1000.9 s**（日志 2365 行 / 275528 B）。16 步全过，其中 `test` 126 用例、`test:results:node` 14 文件 / 126 用例、`test:ui:coverage` **126 文件 / 1495 用例**（`All files 98.01 | 94.32 | 98.29 | 98.69`）、`test:results` 126 文件 / 1495 用例、`check:architecture` 431 模块 / 2040 依赖、`check:structure` 405 文件 + `参与判定的作用域（REV-3）：2527`、`test:gates` **81 用例（含 66 必须失败）**、`check:budget` 首屏 **3 文件 194.05 KiB gzip**（阈值 260）/ 全部生产 JS 624.82（650）/ CSS 16.65（20）/ 最大 chunk 458.52 KiB 原始（500）。
 
-| 口径                 | 命令                    | 棘轮/期望                           | 实测   | 状态    |
-| -------------------- | ----------------------- | ----------------------------------- | ------ | ------- |
-| E2E 文件数           | `pnpm test:results:e2e` | ≥ 7                                 | 待回填 | Pending |
-| project 通过实例数   | `pnpm test:results:e2e` | chromium ≥ 25、mobile-chromium ≥ 25 | 待回填 | Pending |
-| 失败 / 跳过 / flaky  | `pnpm test:results:e2e` | 0 / 0 / 0                           | 待回填 | Pending |
-| `verify:full` 总耗时 | `pnpm verify:full`      | —（参照本批起点 §28.7 的 660.7s）   | 待回填 | Pending |
+| 口径                 | 命令                    | 棘轮/期望                           | 实测                                                  | 状态   |
+| -------------------- | ----------------------- | ----------------------------------- | ----------------------------------------------------- | ------ |
+| E2E 文件数           | `pnpm test:results:e2e` | ≥ 7                                 | **7**                                                 | Passed |
+| E2E 用例数           | `pnpm test:e2e`         | —                                   | **50 passed**（0 failed / 0 skipped / 0 flaky，1.6m） | Passed |
+| project 通过实例数   | `pnpm test:results:e2e` | chromium ≥ 25、mobile-chromium ≥ 25 | **chromium 25 / mobile-chromium 25**                  | Passed |
+| 失败 / 跳过 / flaky  | `pnpm test:results:e2e` | 0 / 0 / 0                           | **0 / 0 / 0**                                         | Passed |
+| `verify:full` 总耗时 | `pnpm verify:full`      | —（参照本批起点 §28.7 的 660.7s）   | **1000.9 s**                                          | Passed |
+
+**注（EVID-2）**：以上为链式 `&&` 的总退出码 0 与各步输出行；`MIN_E2E_PROJECT_PASSED = 25/25` 与实测**恰好持平（零余量）**——任何单个实例丢失都会使门禁失败（刻意的 fail-closed 口径）。非阻塞 stderr：`audit-row-cells.test.tsx` 的 `<tr> cannot be a child of <div>` 告警与 Playwright `DEP0190`，均未导致失败。
 
 ### 30.4 装配、生成物与格式核对
 
