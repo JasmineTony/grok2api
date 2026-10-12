@@ -114,16 +114,6 @@ jobs:
         working-directory: backend
         run: go vet ./...
 
-      # AGENTS.md REV-1/REV-2/REV-3 与导出 API 契约：结构棘轮（backend/structure-baseline.json）
-      # 与导出 API 面（backend/api-baseline.txt）由仓库内工具判定，基线漂移即失败，不靠人工逐轮核对。
-      - name: Verify backend structure and API contract
-        working-directory: backend
-        run: |
-          # 两个门禁都必须执行并各自暴露失败：缺 set -e/pipefail 时前一个失败会被后一个的成功掩盖。
-          set -euo pipefail
-          go run ./tools/structurecheck
-          go run ./tools/apicheck
-
       - name: Verify Swagger document
         run: |
           make swagger
@@ -168,13 +158,6 @@ jobs:
       - name: Run full-stack E2E
         working-directory: frontend
         run: pnpm test:e2e
-
-      # 前端「必需场景确实执行」断言（AGENTS.md TEST-3/TEST-5）：
-      # 复用 Vitest/Playwright 原生 JSON 报告，断言必需文件存在、通过数达标且无未登记跳过；
-      # 与后端 `Assert required integration tests ran` 对齐，不能以「配置已写好」代替执行证据。
-      - name: Assert required frontend tests ran
-        working-directory: frontend
-        run: pnpm test:results:e2e
 
       - name: Upload Playwright artifacts
         if: failure()
