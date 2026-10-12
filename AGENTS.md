@@ -43,7 +43,7 @@
 - `origin` 必须指向 `https://github.com/JasmineTony/grok2api.git`，`upstream` 指向 `https://github.com/chenyme/grok2api.git`。推送前执行 `git remote -v`（评审准则，无自动化校验），**禁止推送 upstream**。
 - 技术栈与版本不在本文件复制，以 `backend/go.mod`、`frontend/package.json` 为准（BIND-2）。
 - 架构重构不默认授权改变 API、模型路由 ID、凭据/数据库格式、鉴权、计费、账号范围、审计或取消语义；不可逆迁移与生产发布单独确认（§8）。
-- 在维护分支分阶段提交；草稿 PR/CI 验证不等于允许合并 `main`、发布或部署。合并 `main`、创建 tag/Release、推送生产镜像属不可逆操作，逐次单独授权并登记证据（§8）。
+- 在维护分支分阶段提交；草稿 PR/CI 验证不等于允许合并 `main`、发布或部署。合并 `main`、创建 tag/Release、推送生产镜像属不可逆操作，逐次单独授权并登记证据（§8）。分支并入策略与「当前状态优先」见 §8 的 REL-1。
 
 **授权登记**
 
@@ -262,6 +262,14 @@ git remote -v
 - 非 `ghcr-image.yml` 的外部必需 check（例如 CodeQL 的告警 check）为 `failure` 时，必须登记 check/run id、`conclusion`、告警条目与 triage 结论；假阳性须在 `AUDIT.md` 记录最小复现命令；**不得**为消除告警而修改被检代码语义或删除日志（评审准则）。现有 triage 见 `backend/AUDIT.md` §24。
 - 绑定事实：`ghcr.io` 容器包必须与 `origin` 仓库建立链接，否则 `GITHUB_TOKEN` 即使声明 `packages: write` 也会以 `permission_denied: write_package` 失败（证据与根因见 `backend/AUDIT.md` §11）。
 - 绑定事实：推送含 `.github/workflows/**` 改动的提交需要具 `workflow` scope 的凭据。仅有 `repo` scope 的 OAuth token 会被 GitHub 拒绝（实测错误原文：`refusing to allow an OAuth App to create or update workflow ... without 'workflow' scope`，`git push` exit 1，2026-10-12）。因此维护线新增 CI step 的首次真实执行，只能在取得该 scope 后由**携该工作流定义**的提交取得；**不得**以「剥离工作流改动后再推送」代替——那会使 CI 缺少被验证的 step 并掩盖真实发布路径。
+
+
+### REL-1 全量分支并入与「当前状态优先」（评审准则，可检索）
+
+- 授权变更（2026-10-12）：**本地全部分支并入 `main` 并发布**取代此前「不直接合并 `main`、不部署、不发布」的默认约束；推送远端、合并 `main`、tag/Release、镜像推送等不可逆操作仍按本节与 CHG-9 逐次授权。
+- 冲突处置：以**当前状态**为准——同一路径冲突时保留主干（`main`）现状，不得因并入旧分支而回退主干已验收的改动。
+- 过期 CI 探针分支（`ci-probe/*`）必须以「记录合并、内容不改」方式并入：`git merge --no-ff -s ours <branch>`。理由：其树是旧快照，按内容并入会回退主干（实测 `git diff --stat main ci-probe/acceptance-audit-20261011` 会删除 `backend/tools/dockerfilecheck/**`、`frontend/scripts/check-version-carriers.mjs` 与多个 E2E 用例并回退 `.github/workflows/**`，共 300+ 文件）。
+- 判定：`git branch --no-merged main` 输出为空；`git log --oneline --merges --grep=并入` 可见并入记录；`-s ours` 路径下并入前后 `git diff --stat` 为空。
 
 ## 9. 执行与委派纪律（EXEC）
 

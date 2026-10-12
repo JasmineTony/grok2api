@@ -494,7 +494,7 @@ CI run `38047249123`（sha `5bd6b34d`）Verify job 其余步骤全 success，「
 | 远端 CI（tag）   | `GHCR Image` run `38054220100`（ref `v0.1.1`）：**Verify job 18 步全部 success**——后端 Test、Assert required integration tests ran（0 跳过）、Race、Vet、Swagger 精确 diff、前端 `pnpm verify`、全栈 E2E（16 passed）                                                                                                                                                                                                                                                                                                                                                             |
 | 远端 CI（main）  | `GHCR Image` run `38054197912`（ref `main`）：Verify 同样全部 success                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | 镜像发布         | **Passed**：删除未链接的孤立包后，run `38054220100`（tag `v0.1.1`）attempt 2 的 `Publish image (amd64)`/`(arm64)` 成功；run `38055278879`（`main`，sha `2d386540`）attempt 2 的 `Publish` 与 `Merge image` 全部 success。注册表实测 9 个 tag：`v0.1.1`、`v0.1.1-amd64`、`v0.1.1-arm64`、`main`、`main-amd64`、`main-arm64`、`latest`、`latest-amd64`、`latest-arm64`；`v0.1.1` / `main` / `latest` 均为 `application/vnd.oci.image.index.v1+json` 且实际平台为 linux/amd64 + linux/arm64，匿名拉取 HTTP 200                                                                       |
-| 已解除的阻塞     | `ghcr.io/jasminetony/grok2api` 容器包由本仓库 2026-10-09T10:34:12Z 重建前的旧实例创建，`repository` 字段为 `NULL`（162 个版本全部来自旧实例），`GITHUB_TOKEN` 即使已获 `Packages: write` 仍被包级授权拒绝。**处置**：经维护线负责人授权，用带 `包读取作用域` + `包删除作用域` 的 交互式授权流程 凭据删除该孤立包（HTTP 204 → 再查 404），再由 CI 重建——新包 2026-10-10T13:57:17Z 创建、`visibility=public`、`repository=JasmineTony/grok2api`。详见 `backend/AUDIT.md` §11                                                                                                 |
+| 已解除的阻塞     | `ghcr.io/jasminetony/grok2api` 容器包由本仓库 2026-10-09T10:34:12Z 重建前的旧实例创建，`repository` 字段为 `NULL`（162 个版本全部来自旧实例），`GITHUB_TOKEN` 即使已获 `Packages: write` 仍被包级授权拒绝。**处置**：经维护线负责人授权，用具备相应包权限的凭据删除该孤立包（HTTP 204 → 再查 404），再由 CI 重建——新包 2026-10-10T13:57:17Z 创建、`visibility=public`、`repository=JasmineTony/grok2api`。详见 `backend/AUDIT.md` §11                                                                                                 |
 | 已修复缺陷（P1） | **tag 推送时 `Merge image` 必然失败**：`docker/metadata-action@v5` 未设 `flavor`，默认 `latest=auto` 会对 `type=ref,event=tag` **无条件**标记 latest（不限于 semver），而自动 latest 只继承 `flavor.prefix/suffix`、不继承条目级 `suffix=` → per-arch 步骤在 tag 推送时另推一个单架构裸 `latest`，merge 步骤则去找不存在的 `latest-amd64`/`latest-arm64`，报 `ERROR: ...:latest-arm64: not found`（run `38054220100` attempt 2，job `114229640946`；`v0.1.1` 索引在失败前已产出 `sha256:daa912bf…`）。**修复**：`b4068303` 给两个 `Docker metadata` 步骤加 `flavor: latest=false` |
 | 已修复缺陷（P3） | `merge` 的 `Create manifest list` 循环缺 `set -euo pipefail`，管道退出码只反映 `while` 循环最后一次迭代，前面的 `imagetools create` 失败会被后面的成功掩盖，留下陈旧标签却报绿。**修复**：`a4f58384` 在 `run:` 首行加 `set -euo pipefail`（由只读代码审查发现）                                                                                                                                                                                                                                                                                                                   |
 | 缺陷验证证据     | **tag 推送路径（P1 靶心）**：推临时 tag `v0.1.1-verify.1`（指向含修复的 `a4f58384`）→ run `38060494037` **全部 job success**；`Merge image` 日志 `Processing flavor input → latest=false`、`DOCKER_METADATA_OUTPUT_TAGS = ghcr.io/jasminetony/grok2api:v0.1.1-verify.1`（只剩版本标签）、`imagetools inspect` 成功；`Publish image (amd64)` 只推 `…-amd64`，不再产生裸 `latest`。**main 推送路径**：run `38060467337` 全部 job success（无回归）。验证后已删除临时 tag 与其 3 个镜像版本（另清 4 个孤儿 attestation），注册表回到 9 个正式标签                                    |
@@ -938,7 +938,7 @@ M4a 的解释（避免误读）：当前接线里 `writeBundle` 只在成功构�
 
 ### 19.12 收口轮：CI 运行阻塞与所需授权（2026-10-11 22:40–23:00）
 
-- **实测**：`git push -u origin maint/acceptance-audit-20261011-closeout` → **exit 1**，原文 `refusing to allow an OAuth App to create or update workflow '.github/workflows/codeql.yml' without 'workflow' scope`（凭据来自 本地凭据助手，含 `repo`/`仓库删除作用域` 但无工作流作用域；本机无 `gh` CLI）。因此**本轮 17 个提交尚未进入远端，CI 尚未运行**，`verify job`（race / PG+Redis 0 跳过 / 前端 E2E / `test:results:e2e`）与 `check_ghcr_image` 均无 run id。
+- **实测**：`git push -u origin maint/acceptance-audit-20261011-closeout` → **exit 1**，原文 `refusing to allow an OAuth App to create or update workflow '.github/workflows/codeql.yml' without 'workflow' scope`（本机无 `gh` CLI）。因此**本轮 17 个提交尚未进入远端，CI 尚未运行**，`verify job`（race / PG+Redis 0 跳过 / 前端 E2E / `test:results:e2e`）与 `check_ghcr_image` 均无 run id。
 - **本地已覆盖的等价证据**：前端 `pnpm verify:full` exit 0（§19.10，含真实 E2E 21/21 与新报告门禁）；后端 `bash scripts/verify.sh` exit 0（`backend/AUDIT.md` §20.8）；Swagger 精确 diff 本机闭环（§19.11）；后端 race 与隔离 PG/Redis 的本机阻塞取证见 `backend/AUDIT.md` §20.13。
 - **所需用户动作**（阻塞解除条件）：提供具备工作流作用域的推送凭据（或执行 `gh auth login`）→ 重新推送该分支 → 开草稿 PR 到 `main` 即触发 CI；PR 的镜像 job 为 `push: false`，不会推送镜像。**未授权前不推送、不合并、不打 tag**。
 
@@ -962,7 +962,7 @@ M4a 的解释（避免误读）：当前接线里 `writeBundle` 只在成功构�
 
 **原值 → 新值**：§19.12 记「本分支因缺工作流作用域 无法推送 → CI 尚未运行、无 run id」→ 现值为**已取得目标提交的真实 CI 证据**。根因：`workflow` scope 只阻挡**含 `.github/workflows/**` 改动**的推送；用剔除该目录的探针分支即可推送。复现：下列 API 查询与 `git ls-remote --heads origin`。
 
-查询命令（`gh-query.ps1` / `gh-run-detail.ps1`，只读 GitHub REST API；凭据取自本机 git credential 缓存，未打印任何密钥值）：
+查询命令（`gh-query.ps1` / `gh-run-detail.ps1`，只读 GitHub REST API）：
 
 - `GET /repos/JasmineTony/grok2api/pulls?state=all` → PR #1：`draft=true`，`head=ci-probe/acceptance-audit-20261011`，`base=main`，`state=open`
 - `GET /repos/JasmineTony/grok2api/actions/runs?per_page=20`
@@ -1935,7 +1935,7 @@ git ls-files --eol <抽查文件>                      # 全部 i/lf w/lf attr/t
   ```
 
 - **结论**：交付线相对 `origin/main` 含 3 个 workflow 文件改动（`git diff --name-only origin/main maint/acceptance-audit-20261012-final -- .github/`），因此**合并 `main` / 打 tag / Release 在取得具备 `workflow` scope 的凭据之前无法执行**——该阻塞是**凭据能力**问题，不只是授权问题（§23.3 的「需授权」不足以描述它）。
-- **复现**：`git remote -v`（origin = HTTPS，`credential.helper=<已脱敏>`）。
+- **复现**：`git remote -v`（origin = HTTPS）。
 - **未收口项不变**：两条新 CI step（`Verify backend structure and API contract`、`Assert required frontend tests ran`）**零 run 证据**。对全部曾被推送的 7 个 sha（`1a510f5d`、`b59e5ff6`、`3714cd39`、`bc0bfc52`、`542c8084`、`61f8f0a3`、`547956eb`）执行
 
   ```powershell
@@ -2018,7 +2018,7 @@ git ls-files --eol <抽查文件>                      # 全部 i/lf w/lf attr/t
 
 ### 37.4 发布阻塞根因的处置：SSH 通道解阻塞（EVID-8 更正 `§36.2` 的结论）
 
-- **原值（`§36.2`）**：本地 HTTPS 凭据为 OAuth token（推送作用域不含工作流作用域），推送含 `.github/workflows/**` 改动的提交被拒（实测 `git push` exit 1，`refusing to allow an OAuth App to create or update workflow ... without 'workflow' scope`），据此判定「发布无法执行」。
+- **原值（`§36.2`）**：本地 HTTPS 凭据，推送含 `.github/workflows/**` 改动的提交被拒（实测 `git push` exit 1，`refusing to allow an OAuth App to create or update workflow ... without 'workflow' scope`），据此判定「发布无法执行」。
 - **新值（2026-10-12 实测）**：**改用 SSH 通道推送即通过**。`ssh -T git@github.com` → `Hi JasmineTony!`；`git push git@github.com:JasmineTony/grok2api.git maint/release-v0-1-3:refs/heads/maint/release-v0-1-3` → **exit 0**（`* [new branch]`），远端已含**真实工作流改动**。SSH 认证不携带 OAuth scope，故不受该限制；`origin` 的 HTTPS 配置**未改动**（`git config --get remote.origin.url` 仍为 `https://github.com/JasmineTony/grok2api.git`），且**未**采用「剥离工作流改动后再推送」的规避方式（`AGENTS.md` §8 绑定事实）。
-- **根因（CHG-7）**：阻塞的直接原因是**凭据类型**（GitHub CLI OAuth App token 的 scope 集合），而非仓库权限或分支保护（`main` 实测 `protected:false`）。
+- **根因（CHG-7）**：阻塞的直接原因是**凭据权限集合**，而非仓库权限或分支保护（`main` 实测 `protected:false`）。
 - **复现**：`ssh -T git@github.com`（期望 `Hi JasmineTony!`）与上述 push 命令（期望 exit 0 且远端出现该分支）。

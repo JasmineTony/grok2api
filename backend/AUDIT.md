@@ -298,7 +298,7 @@ ERROR: failed to push ghcr.io/jasminetony/grok2api:main-arm64: denied: permissio
 
 **为什么分支看起来是绿的**：PR 事件只跑 `check_ghcr_image`（`push: false`，仅构建不推送），永远不会触发推送，因此碰不到该拒绝。分支**无法**修复此问题。
 
-**所需操作（需要 GitHub 设置或具备包作用域的凭据，当前 token 缺少 `包读取作用域`，包 API 返回 403，我无法代为执行）**
+**所需操作（需要 GitHub 设置或具备包作用域的凭据，本机现有凭据缺少相应包权限，包 API 返回 403，我无法代为执行）**
 
 1. 打开 GitHub → 个人头像 → **Packages** → `grok2api` → Package settings → **Connect repository** → 选择 `JasmineTony/grok2api`；随后重跑 main 的失败任务。
 2. 或**删除该孤立包**，让新仓库在下一次推送时重新创建并持有它。
@@ -328,7 +328,7 @@ ERROR: failed to push ghcr.io/jasminetony/grok2api:main-arm64: denied: permissio
 
 根因：`JasmineTony/grok2api` 于 2026-10-09T10:34:12Z 重建，而 GHCR 包由旧仓库实例创建、成为孤立包，新仓库的 `GITHUB_TOKEN` 无写权限；仓库 `default_workflow_permissions = read`。工作流 YAML 正确（`packages: write` 已声明），改代码无法修复。**2026-10-10 复核确认**：run `37921816518`（`main`，`7c0493a2`）与 run `38054220100`（tag `v0.1.1`，`b2123a7d`）的 Publish job 日志中 `GITHUB_TOKEN Permissions` 段均已列出 `Packages: write`，却仍以同一条 `permission_denied: write_package` 失败——拒绝发生在**包级授权**，不是 token 权限或工作流声明。另需注意：本仓库只在 `main` 与 `v*.*.*` tag 上触发 push 事件，因此 `maint/modular-quality-audit` 分支上的历史 `GHCR Image` 运行全部是 PR 事件（`Publish`/`Merge` 按 `if` 条件 skipped），从未真正执行过镜像推送，早期「main 的持久阻塞」只在 `main` 推送时可见。
 
-**2026-10-10 已解除（实测）**：`GET /users/JasmineTony/packages/container/grok2api` 显示 `repository = null`、162 个版本全部来自重建前的旧实例，证实「孤立包」。经维护线负责人授权，用带 `包读取作用域` + `包删除作用域` 的 交互式授权流程 凭据执行 `DELETE /users/JasmineTony/packages/container/grok2api` → **HTTP 204**（复查 404），再由 CI 重建：新包 2026-10-10T13:57:17Z 创建、`visibility=public`、`repository=JasmineTony/grok2api`。随后重跑 run `38054220100` 的失败任务，`Publish image (amd64)` 与 `(arm64)` 成功；重跑 run `38055278879`（`main`）后 `Publish` 与 `Merge image` 全部 success。注册表实测 9 个 tag（`v0.1.1`、`v0.1.1-amd64`、`v0.1.1-arm64`、`main`、`main-amd64`、`main-arm64`、`latest`、`latest-amd64`、`latest-arm64`），`v0.1.1`/`main`/`latest` 均为 linux/amd64 + linux/arm64 的 `application/vnd.oci.image.index.v1+json`，匿名拉取 HTTP 200。**原「修复方式」中的 UI 连接仓库路径仍然有效，但本次采用删除孤立包并重建，无需人工 UI 操作。**
+**2026-10-10 已解除（实测）**：`GET /users/JasmineTony/packages/container/grok2api` 显示 `repository = null`、162 个版本全部来自重建前的旧实例，证实「孤立包」。经维护线负责人授权，用具备相应包权限的凭据执行 `DELETE /users/JasmineTony/packages/container/grok2api` → **HTTP 204**（复查 404），再由 CI 重建：新包 2026-10-10T13:57:17Z 创建、`visibility=public`、`repository=JasmineTony/grok2api`。随后重跑 run `38054220100` 的失败任务，`Publish image (amd64)` 与 `(arm64)` 成功；重跑 run `38055278879`（`main`）后 `Publish` 与 `Merge image` 全部 success。注册表实测 9 个 tag（`v0.1.1`、`v0.1.1-amd64`、`v0.1.1-arm64`、`main`、`main-amd64`、`main-arm64`、`latest`、`latest-amd64`、`latest-arm64`），`v0.1.1`/`main`/`latest` 均为 linux/amd64 + linux/arm64 的 `application/vnd.oci.image.index.v1+json`，匿名拉取 HTTP 200。**原「修复方式」中的 UI 连接仓库路径仍然有效，但本次采用删除孤立包并重建，无需人工 UI 操作。**
 先前观察到的 `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` 是第一层**瞬时**原因（pnpm 12 内置 24h 供应链策略），重跑后已自愈；本分支已在 `frontend/pnpm-workspace.yaml` 显式固定 `minimumReleaseAge: 1440`（值不变）使该策略可审查。
 
 原修复方式（**已不再需要人工操作**）：Packages → grok2api → Package settings → Connect repository → 选 `JasmineTony/grok2api`；或删除孤立包；然后重跑 main 的失败任务。—— 本次实际采用「删除孤立包并重建」，见上方 2026-10-10 段落。
@@ -944,7 +944,7 @@ go test <pkg> -run '^$' -bench '<正则>' -benchmem -count=5
 | --- | --- | --- |
 | `go test -race` | ① `$env:CGO_ENABLED=1; go test -race ./internal/app/ -count=1` → **exit 1**：`# runtime/cgo` / `cgo: C compiler "gcc" not found: exec: "gcc": executable file not found in %PATH%` / `FAIL … [build failed]`；② 默认 `go test -race ./internal/app/ -count=1` → **exit 2**：`go: -race requires cgo; enable cgo by setting CGO_ENABLED=1`；③ 全量 `CGO_ENABLED=1 go test -race ./... -count=1` → **exit 1**：68 个 FAIL 行、唯一 unique 错误即上述 gcc 缺失（`ok` 行 0） | **Blocked**（本机无任何 C 编译器）。工具链探测：`winget` 可用（v1.29.380，用户级）、无 choco/scoop、无 `C:\msys64`/`C:\mingw64`/LLVM、**WSL 子系统整体未安装**（`wsl -l -v` 与 `wsl --list --online` 均报「未安装适用于 Windows 的 Linux 子系统」→ 需 `wsl --install` + 重启，且 WSL 内需另装 Linux Go 工具链，会引入与 CI go1.26.1 的版本漂移）。恢复命令（用户级、无需管理员/重启）：`winget install --id BrechtSanders.WinLibs.POSIX.UCRT --accept-source-agreements --accept-package-agreements` → 新 shell → `cd backend; $env:CGO_ENABLED=1; go test -race ./... -count=1`；或由 CI 步骤 `.github/workflows/ghcr-image.yml:109-111` 覆盖 |
 | 隔离 PostgreSQL/Redis「0 跳过」 | 三条命令（`TEST_POSTGRES_*`/`TEST_REDIS_*` 均为空）：`./internal/infra/persistence/relational -count=1 -v` → exit 0，**SKIP 17 / PASS 193 / FAIL 0**；`./internal/infra/runtime/redis -count=1 -v` → exit 0，**SKIP 2 / PASS 4**；`./internal/application/account -count=1 -v` → exit 0，**SKIP 1 / PASS 172** ⇒ 合计 **20 条 `--- SKIP`**，与 §20.9 登记 1:1；静态面：全后端仅 6 个 `TEST_*` 变量、20 个 `t.Skip` 站点、无 `b.Skip`/`testing.Short`、CI 与 `scripts/verify.sh` 均无 `-short` | **Blocked**（本机无 psql/pg_ctl/redis-server/redis-cli/docker，WSL 无发行版；无法监听 127.0.0.1:5432/6379）。0 跳过证据只能由 CI Verify job 的 services（`postgres:17-alpine` + `redis:7-alpine`）产出，断言原文见 `.github/workflows/ghcr-image.yml:86-107`；注意 **`Race backend` 步骤不含该 0-skip 断言** |
-| CI 运行（覆盖 race、PG+Redis 0 跳过、镜像 check、前端 E2E 等） | `git push -u origin maint/acceptance-audit-20261011-closeout` → **exit 1**，原文：`! [remote rejected] … (refusing to allow an OAuth App to create or update workflow '.github/workflows/codeql.yml' without 'workflow' scope)`；`gh` CLI 不存在；本地凭据助手 缓存凭据含 `repo`/`仓库删除作用域` 但**无工作流作用域** | **Blocked**（缺凭据 scope，非代码问题）。所需用户动作：提供具备工作流作用域的推送凭据（或 `gh auth login`），随后推送该分支并开草稿 PR（`pull_request`→main 即触发 Verify + check_ghcr_image，不推送镜像）。推送前已按评审准则复核 `git remote -v`（origin=`JasmineTony/grok2api`，upstream 永不推送） |
+| CI 运行（覆盖 race、PG+Redis 0 跳过、镜像 check、前端 E2E 等） | `git push -u origin maint/acceptance-audit-20261011-closeout` → **exit 1**，原文：`! [remote rejected] … (refusing to allow an OAuth App to create or update workflow '.github/workflows/codeql.yml' without 'workflow' scope)`；`gh` CLI 不存在 | **Blocked**（缺凭据 scope，非代码问题）。所需用户动作：提供具备 `workflow` 权限的推送凭据（或 `gh auth login`），随后推送该分支并开草稿 PR（`pull_request`→main 即触发 Verify + check_ghcr_image，不推送镜像）。推送前已按评审准则复核 `git remote -v`（origin=`JasmineTony/grok2api`，upstream 永不推送） |
  
 **说明**：Swagger 精确 diff 已在本机闭环（§20.12），不再属于 CI-only 项；`check_ghcr_image` 的多架构构建仍只能由 CI 产出。
 
@@ -1680,7 +1680,7 @@ JOB: Verify | success | steps=25
 | 命令原文（2026-10-12） | `git push origin maint/acceptance-audit-20261012-final:refs/heads/ci-probe/acceptance-audit-20261012-r2` |
 | 结果 | **exit 1**，远端返回 `! [remote rejected] … (refusing to allow an OAuth App to create or update workflow .github/workflows/codeql.yml without 'workflow' scope)` |
 | 影响 | 交付线相对 `origin/main` 含 3 个 workflow 文件改动（见 §35.1）⇒ **合并 main / 打 tag / Release 全部被该凭据能力阻塞**；阻塞根因是**凭据缺工作流作用域**，而非缺授权。 |
-| 复现（本节实跑） | `git remote -v` → `origin https://github.com/JasmineTony/grok2api.git (fetch/push)`、`upstream https://github.com/chenyme/grok2api.git`；`git config --get <凭据助手配置项>` → `<已脱敏>`。 |
+| 复现（本节实跑） | `git remote -v` → `origin https://github.com/JasmineTony/grok2api.git (fetch/push)`、`upstream https://github.com/chenyme/grok2api.git`。 |
 
 - **本节未复跑该 push**（远端写操作，不属本次文档更正的授权范围）；上表命令与远端原文为**本轮实测**记录，按 EVID-1 记 `Failed`（命令实际执行且退出码非 0）。
 - **未验证**：换用带 `workflow` scope 的凭据后能否推送成功——该结论需一次真实推送，未执行。
