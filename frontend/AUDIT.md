@@ -1009,23 +1009,23 @@ main 线的 AUDIT 章节（`backend/AUDIT.md` §20/§21（BE-18/BE-19）、`fron
 
 ### 20.4 剩余阻塞状态（本轮执行后）
 
-| 编号                                 | 上一轮状态      | 本轮状态                                 | 证据                                                                                                                       |
-| ------------------------------------ | --------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| X-03 GitHub Actions 真实 run         | 需授权          | **已关闭**                               | RUN `38147560751` / `38147560768`（§20.2）                                                                                 |
-| BE-B1 `go test -race`                | 仅 CI           | **已关闭**                               | step `Race backend` = `success`                                                                                            |
-| BE-B2 集成用例 0 跳过                | 仅 CI           | **已关闭**                               | step `Assert required integration tests ran` = `success`                                                                   |
-| BE-B3 Linux CI 行为                  | 仅 CI           | **已关闭**                               | JOB `Verify` = `success`（含 `Vet backend`）                                                                               |
-| X-07 镜像与 `.dockerignore` 纳入判定 | 仅 CI           | **已关闭**                               | `Build image (amd64)` 与 `(arm64)` = `success`                                                                             |
-| X-09 前端报告门禁 CI 侧              | 仅 CI           | **已关闭**                               | step `Run full-stack E2E` 与 `Verify frontend` = `success`                                                                 |
-| X-08 Swagger 精确 diff               | P1 发布前置     | **本机与 CI 双侧闭环**                   | §19.11 本机字节一致 + step `Verify Swagger document` = `success`                                                           |
+| 编号                                 | 上一轮状态      | 本轮状态                                 | 证据                                                                                                                                                                                         |
+| ------------------------------------ | --------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| X-03 GitHub Actions 真实 run         | 需授权          | **已关闭**                               | RUN `38147560751` / `38147560768`（§20.2）                                                                                                                                                   |
+| BE-B1 `go test -race`                | 仅 CI           | **已关闭**                               | step `Race backend` = `success`                                                                                                                                                              |
+| BE-B2 集成用例 0 跳过                | 仅 CI           | **已关闭**                               | step `Assert required integration tests ran` = `success`                                                                                                                                     |
+| BE-B3 Linux CI 行为                  | 仅 CI           | **已关闭**                               | JOB `Verify` = `success`（含 `Vet backend`）                                                                                                                                                 |
+| X-07 镜像与 `.dockerignore` 纳入判定 | 仅 CI           | **已关闭**                               | `Build image (amd64)` 与 `(arm64)` = `success`                                                                                                                                               |
+| X-09 前端报告门禁 CI 侧              | 仅 CI           | **已关闭**                               | step `Run full-stack E2E` 与 `Verify frontend` = `success`                                                                                                                                   |
+| X-08 Swagger 精确 diff               | P1 发布前置     | **本机与 CI 双侧闭环**                   | §19.11 本机字节一致 + step `Verify Swagger document` = `success`                                                                                                                             |
 | FE-19-6 父检出 AGENTS 旧 12 步       | 需主人同步      | **仍成立**（原判定被本轮更正，见 §22.5） | 主检出 `E:\grok2api`（`main`，`13626e6c`）`AGENTS.md:85` 实测为「覆盖 **12 步**」；工作树版本为 13 步（含 `test:results`）；**已由 §28.5 关闭**（原判定成立 → 本批 `main` → 交付线合并解决） |
-| X-04 提交纪律                        | 待授权          | **部分关闭**                             | `closeout` 的 8 个提交 + 本轮单一目的提交 `83ff5ae7`、`339c53ca`；`main` 的 11 个提交仍待处理                              |
-| X-02 冻结预算基线                    | 需授权（CHG-5） | 仍开放（P3）                             | 需工作区静止 + 授权                                                                                                        |
-| FE-19-8 i18n 单例失败缓存            | 需单独授权      | 仍开放（P2）                             | 重试语义变更，本轮未改                                                                                                     |
-| BE-G3 `ports/security` 迁移          | 需单独批准      | 仍开放（P2）                             | 架构迁移，本轮未改                                                                                                         |
-| X-05 重打 tag                        | 逐次授权        | 未执行                                   | 不可逆，默认不做                                                                                                           |
-| FE-19-5-C 生产压缩配置               | 需外部事实      | 仍开放                                   | 本机无生产访问                                                                                                             |
-| 交付分支推送与合并 `main`            | —               | **Blocked（需授权 + 凭据能力）**       | 见 §20.5                                                                                                                   |
+| X-04 提交纪律                        | 待授权          | **部分关闭**                             | `closeout` 的 8 个提交 + 本轮单一目的提交 `83ff5ae7`、`339c53ca`；`main` 的 11 个提交仍待处理                                                                                                |
+| X-02 冻结预算基线                    | 需授权（CHG-5） | 仍开放（P3）                             | 需工作区静止 + 授权                                                                                                                                                                          |
+| FE-19-8 i18n 单例失败缓存            | 需单独授权      | 仍开放（P2）                             | 重试语义变更，本轮未改                                                                                                                                                                       |
+| BE-G3 `ports/security` 迁移          | 需单独批准      | 仍开放（P2）                             | 架构迁移，本轮未改                                                                                                                                                                           |
+| X-05 重打 tag                        | 逐次授权        | 未执行                                   | 不可逆，默认不做                                                                                                                                                                             |
+| FE-19-5-C 生产压缩配置               | 需外部事实      | 仍开放                                   | 本机无生产访问                                                                                                                                                                               |
+| 交付分支推送与合并 `main`            | —               | **Blocked（需授权 + 凭据能力）**       | 见 §20.5                                                                                                                                                                                     |
 
 ### 20.5 仍未闭环项（如实登记）
 
@@ -1382,13 +1382,13 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 
 **修复提交（分支 `maint/acceptance-audit-20261012-node-gate-hardening`，基点 `d109130c`）**：
 
-| 提交       | 改动                                                                                                                                                                                             |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ae735724` | 接线：`pnpm verify` 第 7 步 `test:results:node`，紧跟产生报告的第 6 步 `test`；`AGENTS.md:87` 的 DEV-4 由 13 步改 **14 步**                                                                       |
-| `6b3eb402` | `NODE_TEST_REPORT_ROOT` 限制到 `os.tmpdir()` 之下，越界 **exit 2**（关闭「把报告根重定向到任意目录」的逃生口）                                                                                    |
-| `9641e824` | 清单外文件出现 `failed`、以及任何文件 `cases.length === 0`，一律失败；reporter 的 suite 状态不再把跳过写成 passed                                                                                 |
+| 提交       | 改动                                                                                                                                                                                               |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ae735724` | 接线：`pnpm verify` 第 7 步 `test:results:node`，紧跟产生报告的第 6 步 `test`；`AGENTS.md:87` 的 DEV-4 由 13 步改 **14 步**                                                                        |
+| `6b3eb402` | `NODE_TEST_REPORT_ROOT` 限制到 `os.tmpdir()` 之下，越界 **exit 2**（关闭「把报告根重定向到任意目录」的逃生口）                                                                                     |
+| `9641e824` | 清单外文件出现 `failed`、以及任何文件 `cases.length === 0`，一律失败；reporter 的 suite 状态不再把跳过写成 passed                                                                                  |
 | `017b020f` | 要求磁盘 `src/**/*.test.ts` + `scripts/**/*.test.ts` 集合与 `REQUIRED_NODE_TESTS` **完全相等**；删除由清单派生的 `MIN_NODE_TEST_FILES` / `MIN_NODE_TEST_CASES`（关闭「新增后再删除」静默绕过棘轮） |
-| `e9e7a67b` | 补 5 个 fail-closed 分支负样本（`kind` / `version` / `files` 非数组 / JSON 不可解析 / `present.length === 0`），满足 EVID-3                                                                       |
+| `e9e7a67b` | 补 5 个 fail-closed 分支负样本（`kind` / `version` / `files` 非数组 / JSON 不可解析 / `present.length === 0`），满足 EVID-3                                                                        |
 
 **夹具计数**：`pnpm test:gates` 由 63 → **75** 用例（必须失败 49 → **61**）。
 
@@ -1396,11 +1396,11 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 
 **验证（cwd=`frontend/`，主代理实测）**：
 
-| 命令                                                                     | 退出码 | 关键输出                                 |
-| ------------------------------------------------------------------------ | ------ | ---------------------------------------- |
-| `node scripts/check-node-test-results.mjs`                               | 0      | 14 文件 / 126 用例；磁盘文件 14 = 清单 14 |
-| `pnpm test:gates`                                                        | 0      | 75 用例（含 61 必须失败）                |
-| `pnpm format:check` / `oxlint` / `lint` / `typecheck` / `check:structure` | 0      | 逐条单独执行，全部通过                   |
+| 命令                                                                      | 退出码 | 关键输出                                  |
+| ------------------------------------------------------------------------- | ------ | ----------------------------------------- |
+| `node scripts/check-node-test-results.mjs`                                | 0      | 14 文件 / 126 用例；磁盘文件 14 = 清单 14 |
+| `pnpm test:gates`                                                         | 0      | 75 用例（含 61 必须失败）                 |
+| `pnpm format:check` / `oxlint` / `lint` / `typecheck` / `check:structure` | 0      | 逐条单独执行，全部通过                    |
 
 **本工作树只读核对（静态，可复现）**：`frontend/package.json:31` 的 `verify` 共 14 步、第 7 步为 `test:results:node`；`scripts/check-node-test-results.mjs:89-103` 的 `REQUIRED_NODE_TESTS` 为 14 条、`minPassed` 合计 **126**（与上表「14 文件 / 126 用例」一致）；`NODE_TEST_REPORT_ROOT` 的 `os.tmpdir()` 限制见同文件 `:50-65`。
 
@@ -1430,36 +1430,52 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 
 ### 28.4 最终验收（装配分支 `maint/acceptance-audit-20261012-final`）
 
-下表命令与退出码**留空，由主代理回填**；**回填前不得记为 `Passed`（EVID-1）**。
+验收在装配提交 `580fd9e7`（本批全部**代码**改动的收敛点）上执行；其后只追加两个**纯文档**提交（`11c1aa6b` §28、`3d81ced2` README/步数同步），文档增量以 `prettier --check` 单独复核，**不重跑** E2E（E2E 只依赖代码与配置，不依赖 md）。
 
-| 命令                     | 执行目录    | 退出码 | 关键输出 |
-| ------------------------ | ----------- | ------ | -------- |
-| `pnpm verify:full`       | `frontend/` |        |          |
-| `bash scripts/verify.sh` | `backend/`  |        |          |
+| 命令                     | 执行目录    | 退出码 | 关键输出                                                                                                                                                                                                                                 |
+| ------------------------ | ----------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm verify:full`       | `frontend/` | **0**  | 14 步全过 + `test:e2e`：`42 passed (1.1m)`（0 failed / 0 skipped / 0 flaky）+ `test:results:e2e`：`参与判定的文件 6 个、用例 42 个（通过 42、失败 0、跳过 0、flaky 0）`、`project 报告：chromium 通过 21 个、mobile-chromium 通过 21 个` |
+| `bash scripts/verify.sh` | `backend/`  | **0**  | `全部通过`；脚本计时 170.167 秒（6 步：`build` / `vet` / `structurecheck` / `apicheck` / `dockerfilecheck` / `go test`）；`go test ./... -count=1` 67 包 `ok`、0 `FAIL`、20 条环境门控跳过；`api-baseline.txt` SHA256 与 mtime 前后一致  |
 
-- `pnpm verify:full` 的预期链路 = 14 步（§28.1）+ `test:e2e` + `test:results:e2e`。
-- 装配分支 HEAD 为 `580fd9e7`；`git merge-base --is-ancestor 13626e6c maint/acceptance-audit-20261012-final` 在本工作树实测 **exit 0**（即 `main` 可 fast-forward）。
+逐步关键数字（`pnpm verify:full`，墙钟 **789.9 s**，日志 2257 行 / 264111 B）：
+
+- `test`：`tests 126 / pass 126 / fail 0 / skipped 0 / todo 0`；`test:results:node`：`参与判定的文件 14 个、用例 126 个`、`磁盘上的 node:test 文件 14 个`（与清单**完全相等**）
+- `test:ui:coverage`：`Test Files 125 passed (125)` / `Tests 1492 passed (1492)`，`All files 98.01 | 94.32 | 98.29 | 98.69`
+- `test:results`：`参与判定的文件 125 个、用例 1492 个（通过 1492、失败 0、跳过 0、flaky 0）`
+- `check:architecture`：`no dependency violations found (430 modules, 2037 dependencies cruised)`；`check:structure`：`扫描源码文件 404 个`、超限文件/函数/嵌套均 0、`参与判定的作用域（REV-3）：2525 个`
+- `test:gates`：`门禁自测通过：75 个用例（含 61 个必须失败的用例）`
+- `check:budget`：`体积预算门禁通过`（首屏 2 文件 193.59 KiB gzip / 阈值 260；全部生产 JS 76 文件 624.43 KiB / 650；CSS 16.65 KiB / 20；最大 chunk 457.73 KiB 原始 / 500；路由入口 13 个）
+
+**未执行 / 未覆盖（如实登记，不得记为 `Passed`）**：`go test -race`（本机 `CGO_ENABLED=0` → `Blocked`，由 CI `Race backend` 覆盖）；PostgreSQL/Redis 集成 20 条（本机无服务 → `Blocked`/`Skipped`，由 CI 隔离服务覆盖，清单见 `backend/AUDIT.md` §31.4 与本批会话 scratch `t2-gotest-verbose.log`）；Swagger 精确 diff 与镜像构建（仅 CI 可执行）。
+
+**非阻塞告警（未导致任何门禁失败，如实记录）**：`audit-row-cells.test.tsx` 有一条 `<tr> cannot be a child of <div>` 的 React 告警（用例通过）；Vitest 期间有重复 key（`w-24`/`w-40`）告警；`playwright test` 打印 `DEP0190`（子进程 shell 选项）弃用告警。
+
+**文档增量复核**：`prettier --check` 对 `frontend/AUDIT.md`、`frontend/README.md` 在 §28 与 README 提交**前后各跑一次均 exit 0**（判别力自证：故意破坏表格对齐后同一命令 exit 1）。
+
+**装配分支 tip 与 main 关系**：`git merge-base --is-ancestor 13626e6c maint/acceptance-audit-20261012-final` 实测 **exit 0**（`main` 可 fast-forward 到装配分支，不重写历史）。
+
+**CI 探针（本轮）**：分支 `ci-probe/acceptance-audit-20261012-r1`（`547956eb` = `3d81ced2` 的内容，`.github/workflows/**` 保持 `origin/main` 版本）、draft PR #3；run 与结论见 §28.7。
 
 ### 28.5 本批新增登记项（未实施，附最小修复设计）
 
-| 项                                  | 现状证据                                                                                                                       | 定级        | 最小修复设计                                                                                          |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------- | ----------------------------------------------------------------------------------------------------- |
-| 体积门禁缺 dist 新鲜度校验          | `scripts/check-bundle-budget.mjs` 内**无** `isBuildFresh`/`inputHash` 命中（本工作树只读核对）⇒ `--update` 可把陈旧 dist 冻结进基线；当前 `isBuildFresh=false` | P2（口径）  | 复用 `scripts/build-inputs.ts:160` 的 `isBuildFresh`，dist 陈旧时非 0 退出 + 负样本；验证 `pnpm test:gates`、`pnpm verify` |
-| `/runtime-config.js` 未被首屏采集   | 首屏入口正则只采 `/assets/**`；实测 193.58 → **193.67 KiB**（差额即该文件）                                                     | P2（口径）  | 入口采集同时纳入 HTML 同步脚本 + 负样本                                                               |
+| 项                                            | 现状证据                                                                                                                                                                                       | 定级                  | 最小修复设计                                                                                                                                                                                                                                                            |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 体积门禁缺 dist 新鲜度校验                    | `scripts/check-bundle-budget.mjs` 内**无** `isBuildFresh`/`inputHash` 命中（本工作树只读核对）⇒ `--update` 可把陈旧 dist 冻结进基线；当前 `isBuildFresh=false`                                 | P2（口径）            | 复用 `scripts/build-inputs.ts:160` 的 `isBuildFresh`，dist 陈旧时非 0 退出 + 负样本；验证 `pnpm test:gates`、`pnpm verify`                                                                                                                                              |
+| `/runtime-config.js` 未被首屏采集             | 首屏入口正则只采 `/assets/**`；实测 193.58 → **193.67 KiB**（差额即该文件）                                                                                                                    | P2（口径）            | 入口采集同时纳入 HTML 同步脚本 + 负样本                                                                                                                                                                                                                                 |
 | 静态托管暴露面（backend §25.2 第 3 项的定级） | `frontend.go` 的静态托管除「根级点文件」外无白名单，`staticPath: "."`/`".."` 且 root 含 `index.html` 时可 200 读取同目录 `config.yaml`、`data/*.db`；默认 `./frontend/dist` 与镜像布局不可触发 | **P2**（该形态为 P1） | 启动期 fail-fast（root 含 `config.yaml`/`.env`/`*.db`/可执行文件即拒绝启动）或托管白名单；回归 `go test ./internal/transport/http/ -run TestFrontendStaticFilesAndSPAFallback -count=1`（用例在 `backend/internal/transport/http/server_test.go:96`，本工作树只读核对） |
-| E2E 覆盖缺口（P1）                  | 设置**真实保存 + 409 版本冲突**、账号**导入（含失败路径）** 仍无 E2E 覆盖                                                      | P1          | 逐项登记，待后续批次                                                                                  |
-| E2E 覆盖缺口（P2）                  | 移动布局「侧栏应隐藏」的直接断言、修改密码流程、模型封锁                                                                       | P2          | 逐项登记，待后续批次                                                                                  |
-| `backend/tools/structurecheck/main.go` 体量 | 本工作树字节级实测 **597 行**（口径 = 该文件 `:249-259` 的 `countLines`，`bytes.Count("\n")`；主代理记为 598 行，差异 1 行，以本工作树实测为准，EVID-8）⇒ 距 REV-1 的 600 仅 **3** 行余量 | P3          | 该文件为门禁工具本体，不在 `structurecheck` 的扫描范围（只扫生产 Go 文件）；如需收紧可把夹具/输出拆到独立文件 |
-| 后端 `gofmt -l` 存量                | 5 个未格式化文件（明细见 `backend/AUDIT.md` §31.4）；`verify.sh` 无 gofmt 步骤，不影响门禁                                      | P3          | 已登记，未处理                                                                                        |
+| E2E 覆盖缺口（P1）                            | 设置**真实保存 + 409 版本冲突**、账号**导入（含失败路径）** 仍无 E2E 覆盖                                                                                                                      | P1                    | 逐项登记，待后续批次                                                                                                                                                                                                                                                    |
+| E2E 覆盖缺口（P2）                            | 移动布局「侧栏应隐藏」的直接断言、修改密码流程、模型封锁                                                                                                                                       | P2                    | 逐项登记，待后续批次                                                                                                                                                                                                                                                    |
+| `backend/tools/structurecheck/main.go` 体量   | 本工作树字节级实测 **597 行**（口径 = 该文件 `:249-259` 的 `countLines`，`bytes.Count("\n")`；主代理记为 598 行，差异 1 行，以本工作树实测为准，EVID-8）⇒ 距 REV-1 的 600 仅 **3** 行余量      | P3                    | 该文件为门禁工具本体，不在 `structurecheck` 的扫描范围（只扫生产 Go 文件）；如需收紧可把夹具/输出拆到独立文件                                                                                                                                                           |
+| 后端 `gofmt -l` 存量                          | 5 个未格式化文件（明细见 `backend/AUDIT.md` §31.4）；`verify.sh` 无 gofmt 步骤，不影响门禁                                                                                                     | P3                    | 已登记，未处理                                                                                                                                                                                                                                                          |
 
 **FE-19-6 关闭**：主检出 `E:\grok2api` 的 `AGENTS.md` 旧「12 步」由本批 `main` → 交付线合并解决（合并后 main 内容 = 交付线内容，含 14 步口径）。§20.4 与 §2 的对应行已加指针，历史数字按 META-3 保留原值。
 
 ### 28.6 未闭环 / 需授权（更新）
 
-| 项                                                              | 状态                                                                                                     |
-| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| 交付线推送、合并 `main`、tag/Release、镜像推送                   | **需授权**；本批只做**本地**合并（`git merge-base --is-ancestor 13626e6c <final tip>` = exit 0），未推送 |
-| `frontend/bundle-budget.json` 的 `--update`                     | 需授权且须工作区静止（CHG-5）；当前 `isBuildFresh=false`，现在更新会把陈旧 dist 冻结进基线                |
-| REV-5「认证后首屏 282.30 KiB」                                   | 属口径外（门禁只保护未认证首屏）；**不可**调高 `initialJsGzipKiB`（同 §21.4 / FE-19-5）                   |
-| BE-G3 `ports/security` 迁移                                      | 设计已出（会话 scratch `BA-02-ports-security-migration-design.md`）；需单独批准 + `apicheck --update` 批准 |
-| CI 侧维护线新增步骤（`Assert required frontend tests ran` 等）   | 仍无 run 证据 → 需合并/推送 `main` 才能取证（同 §23.2 第 3 条）                                           |
+| 项                                                             | 状态                                                                                                       |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 交付线推送、合并 `main`、tag/Release、镜像推送                 | **需授权**；本批只做**本地**合并（`git merge-base --is-ancestor 13626e6c <final tip>` = exit 0），未推送   |
+| `frontend/bundle-budget.json` 的 `--update`                    | 需授权且须工作区静止（CHG-5）；当前 `isBuildFresh=false`，现在更新会把陈旧 dist 冻结进基线                 |
+| REV-5「认证后首屏 282.30 KiB」                                 | 属口径外（门禁只保护未认证首屏）；**不可**调高 `initialJsGzipKiB`（同 §21.4 / FE-19-5）                    |
+| BE-G3 `ports/security` 迁移                                    | 设计已出（会话 scratch `BA-02-ports-security-migration-design.md`）；需单独批准 + `apicheck --update` 批准 |
+| CI 侧维护线新增步骤（`Assert required frontend tests ran` 等） | 仍无 run 证据 → 需合并/推送 `main` 才能取证（同 §23.2 第 3 条）                                            |
