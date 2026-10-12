@@ -14,6 +14,11 @@
  *    非零退出；并以健康报告（含 E2E 三种 file 形态：报告自带 `config.rootDir` + 纯文件名、绝对路径、
  *    缺 `config.rootDir`）、「非清单文件部分跳过只告警」与「缺 startTime 时改用报告文件 mtime 兜底」三组反例，
  *    确认门禁既不是无条件失败，也不会静默跳过新鲜度检查。
+ *  - check-node-test-results：node:test 报告缺失 / 清单文件被删除 / 必需文件未出现在报告中 / 整文件跳过
+ *    （test.skip 与 describe.skip 两种形态）/ 清单文件部分跳过 / 用例失败 / 收集失败 / 清单外文件整文件跳过 /
+ *    报告早于清单文件 mtime / 缺 startedAt 走报告文件 mtime 兜底 / 报告形状不可用 / 报告与 Node 汇总不自洽 /
+ *    用例总数低于棘轮 → 非零退出；并以健康报告、「清单外文件部分跳过只告警」两组反例确认门禁不是无条件失败，
+ *    且每个负样本都按「只依赖退出码的旧判定会通过」构造（见 assertNodeTestExitCodeClean）。
  *
  * 装置全部建立在系统临时目录，不写入仓库；路径通过环境变量注入被测脚本。
  */
@@ -644,6 +649,225 @@ const partialSkipReportRoot = buildReportRoot("report-partial-skip", {
   vitestStartMs: probeNow,
 });
 
+/**
+ * ---- node:test 执行性门禁装置（check-node-test-results.mjs：TEST-1 / EVID-1）----
+ * 报告写在临时根目录的 .artifacts/node-test/results.json，清单文件写在同一个根目录下，用
+ * NODE_TEST_REPORT_ROOT 注入（该变量仅供自测使用），不读取也不覆盖仓库内的真实报告。
+ * 下面的清单与用例数按被测脚本的棘轮值（REQUIRED_NODE_TESTS / MIN_NODE_TEST_FILES / MIN_NODE_TEST_CASES）构造，
+ * 棘轮调整时必须同步更新，否则正样本会失败。
+ */
+/** 被测脚本的必需文件清单（与 check-node-test-results.mjs 的 REQUIRED_NODE_TESTS 逐项一致）。 */
+const nodeTestProbe = [
+  { file: "scripts/build-inputs.test.ts", passed: 49 },
+  { file: "scripts/build-manifest-plugin.test.ts", passed: 9 },
+  { file: "src/features/audits/audit-detail-format.test.ts", passed: 11 },
+  { file: "src/features/audits/audit-format.test.ts", passed: 8 },
+  { file: "src/features/audits/audit-usage.test.ts", passed: 7 },
+  { file: "src/features/dashboard/dashboard-activity-format.test.ts", passed: 5 },
+  { file: "src/features/dashboard/dashboard-provider-format.test.ts", passed: 6 },
+  { file: "src/features/dashboard/dashboard-trend-buckets.test.ts", passed: 5 },
+  { file: "src/features/dashboard/dashboard-trend-series.test.ts", passed: 4 },
+  { file: "src/features/docs/api-docs-examples.test.ts", passed: 8 },
+  { file: "src/features/media/media-format.test.ts", passed: 5 },
+  { file: "src/features/quality-guard/quality-guard-query.test.ts", passed: 3 },
+  { file: "src/shared/lib/format.test.ts", passed: 2 },
+  { file: "src/shared/lib/usd.test.ts", passed: 4 },
+];
+const NODE_TEST_PROBE_FILES = nodeTestProbe.length;
+const NODE_TEST_PROBE_CASES = nodeTestProbe.reduce((total, entry) => total + entry.passed, 0);
+/** 清单外的新增 node:test 文件，用于构造文件级失效（整文件跳过 / 部分跳过 / 收集失败）夹具。 */
+const nodeTestFiller = { file: "src/shared/gate-fixture-node.test.ts", passed: 1 };
+/** 被掏空的清单文件（usd 有 4 个用例）：整文件跳过 / describe.skip / 部分跳过 / 用例失败都作用在它身上。 */
+const nodeTestTarget = "src/shared/lib/usd.test.ts";
+
+/** 把清单中某个文件的计数替换成 patch，其余文件保持不变。 */
+function nodeTestEntryWith(file, patch) {
+  return nodeTestProbe.map((entry) => (entry.file === file ? { ...entry, ...patch } : entry));
+}
+
+/**
+ * 夹具判别力前提（TEST-7）：只依赖退出码的旧判定下，node --test 仅当存在 failed / cancelled / 收集失败用例时
+ * 才退出非 0。下面这些夹具必须在构造时就满足「退出码干净」，否则它们只能证明「本来就会失败」，
+ * 证明不了新门禁补上了「跳过 / 删除 / 过期报告」的盲区。
+ */
+function assertNodeTestExitCodeClean(label, entries) {
+  const dirty = entries.filter(
+    (entry) => (entry.failed ?? 0) > 0 || (entry.cancelled ?? 0) > 0 || (entry.collectionError ?? 0) > 0,
+  );
+  if (dirty.length > 0) {
+    throw new Error(
+      `夹具 ${label} 声称退出码干净，却含失败/取消/收集失败用例：${dirty.map((entry) => entry.file).join("、")}`,
+    );
+  }
+}
+
+/**
+ * node:test 报告装置：与 scripts/node-test-json-reporter.mjs 的输出同形（kind / version / totals / files）。
+ * totals 由用例条目推导，默认自洽；`mutate` 用于构造形状不可用与不自洽的夹具；`startMs` 省略时报告不带 startedAt。
+ */
+function nodeTestProbeReport(entries, options) {
+  const casesOf = (entry, status, count) =>
+    Array.from({ length: count }, (_, index) => ({
+      name: `${entry.file} ${status} #${index + 1}`,
+      kind: "test",
+      status,
+    }));
+  const totals = { tests: 0, passed: 0, failed: 0, cancelled: 0, skipped: 0, todo: 0 };
+  const files = entries.map((entry) => {
+    totals.passed += entry.passed ?? 0;
+    totals.failed += (entry.failed ?? 0) + (entry.collectionError ?? 0);
+    totals.skipped += entry.skipped ?? 0;
+    totals.todo += entry.todo ?? 0;
+    totals.cancelled += entry.cancelled ?? 0;
+    return {
+      file: entry.file,
+      cases: [
+        ...casesOf(entry, "passed", entry.passed ?? 0),
+        ...casesOf(entry, "failed", entry.failed ?? 0),
+        ...casesOf(entry, "skipped", entry.skipped ?? 0),
+        ...casesOf(entry, "todo", entry.todo ?? 0),
+        ...casesOf(entry, "cancelled", entry.cancelled ?? 0),
+        // 收集失败：Node 在文件级失败时合成的、以文件名为用例名的事件（不计入真实用例数）。
+        ...Array.from({ length: entry.collectionError ?? 0 }, () => ({
+          name: path.basename(entry.file),
+          kind: "file-root",
+          status: "failed",
+          failureType: "testCodeFailure",
+        })),
+      ],
+      suites: [],
+      summary: null,
+    };
+  });
+  totals.tests = totals.passed + totals.failed + totals.skipped + totals.todo + totals.cancelled;
+  return {
+    kind: "node-test-json",
+    version: 1,
+    nodeVersion: process.version,
+    cwd: root,
+    finishedAt: new Date(options.startMs ?? probeNow).toISOString(),
+    diagnostics: [],
+    totals,
+    files,
+    ...(options.startMs === undefined ? {} : { startedAt: new Date(options.startMs).toISOString() }),
+  };
+}
+
+/** 建一个 node:test 报告根目录：写清单文件（mtime 固定）与报告（时间戳 / mtime / 内容可控）。 */
+function buildNodeTestRoot(name, options = {}) {
+  const dir = path.join(root, name);
+  for (const entry of nodeTestProbe) {
+    writeProbeFile(path.join(dir, entry.file), `// ${entry.file} 装置\n`, freshInputMs);
+  }
+  const report = nodeTestProbeReport(options.entries ?? nodeTestProbe, options);
+  if (options.mutate) options.mutate(report);
+  if (options.writeReport !== false) {
+    writeProbeFile(
+      path.join(dir, ".artifacts", "node-test", "results.json"),
+      `${JSON.stringify(report, null, 2)}\n`,
+      options.reportMtimeMs ?? probeNow,
+    );
+  }
+  return dir;
+}
+
+const nodeTestHealthyRoot = buildNodeTestRoot("node-test-healthy", { startMs: probeNow });
+assertNodeTestExitCodeClean("node-test-healthy", nodeTestProbe);
+const nodeTestMissingEntryRoot = buildNodeTestRoot("node-test-missing-entry", {
+  entries: nodeTestProbe.filter((entry) => entry.file !== nodeTestTarget),
+  startMs: probeNow,
+});
+assertNodeTestExitCodeClean("node-test-missing-entry", nodeTestProbe);
+/** 夹具：报告健康，但清单里的一个测试文件已从磁盘删除（旧判定完全看不到）。 */
+const nodeTestMissingListFileRoot = buildNodeTestRoot("node-test-missing-list-file", { startMs: probeNow });
+fs.rmSync(path.join(nodeTestMissingListFileRoot, nodeTestTarget));
+assertNodeTestExitCodeClean("node-test-missing-list-file", nodeTestProbe);
+/** 夹具：整文件 test.skip（用例全部未执行、0 失败）→ 退出码仍为 0。 */
+const nodeTestWholeFileSkipRoot = buildNodeTestRoot("node-test-whole-file-skip", {
+  entries: nodeTestEntryWith(nodeTestTarget, { passed: 0, skipped: 4 }),
+  startMs: probeNow,
+});
+assertNodeTestExitCodeClean("node-test-whole-file-skip", nodeTestEntryWith(nodeTestTarget, { passed: 0, skipped: 4 }));
+/** 夹具：describe.skip 把清单文件整体跳过——该文件不再注册任何用例，报告里只剩 0 用例条目。 */
+const nodeTestDescribeSkipRoot = buildNodeTestRoot("node-test-describe-skip", {
+  entries: nodeTestEntryWith(nodeTestTarget, { passed: 0 }),
+  startMs: probeNow,
+});
+assertNodeTestExitCodeClean("node-test-describe-skip", nodeTestEntryWith(nodeTestTarget, { passed: 0 }));
+/** 夹具：清单文件部分跳过（用例数不变，仍有 3 个通过）。 */
+const nodeTestPartialSkipRoot = buildNodeTestRoot("node-test-partial-skip", {
+  entries: nodeTestEntryWith(nodeTestTarget, { passed: 3, skipped: 1 }),
+  startMs: probeNow,
+});
+assertNodeTestExitCodeClean("node-test-partial-skip", nodeTestEntryWith(nodeTestTarget, { passed: 3, skipped: 1 }));
+/** 夹具：清单文件少跑一个用例（通过数低于棘轮，用例总数也低于棘轮）。 */
+const nodeTestBelowCasesRoot = buildNodeTestRoot("node-test-below-cases", {
+  entries: nodeTestEntryWith(nodeTestTarget, { passed: 3 }),
+  startMs: probeNow,
+});
+assertNodeTestExitCodeClean("node-test-below-cases", nodeTestEntryWith(nodeTestTarget, { passed: 3 }));
+/** 夹具：清单文件有用例失败（这种形状退出码本就会红，这里验证的是逐文件原因与自洽性不误报）。 */
+const nodeTestFailedCaseRoot = buildNodeTestRoot("node-test-failed-case", {
+  entries: nodeTestEntryWith(nodeTestTarget, { passed: 3, failed: 1 }),
+  startMs: probeNow,
+});
+/**
+ * 夹具：清单文件出现被取消用例（父用例失败导致，真实形态为 failureType=cancelledByParent，
+ * 采集口径已用真实 node 输出核对）——这种形状退出码本就会红，这里验证的是逐文件原因与自洽性不误报。
+ */
+const nodeTestCancelledRoot = buildNodeTestRoot("node-test-cancelled", {
+  entries: nodeTestEntryWith(nodeTestTarget, { cancelled: 1 }),
+  startMs: probeNow,
+});
+/** 夹具：清单外文件收集失败（导入报错）——以 file-root 用例呈现，不计入真实用例数。 */
+const nodeTestCollectionFailureRoot = buildNodeTestRoot("node-test-collection-failure", {
+  entries: [...nodeTestProbe, { ...nodeTestFiller, passed: 0, collectionError: 1 }],
+  startMs: probeNow,
+});
+/** 夹具：清单外文件整文件跳过 → 必须失败（不得只告警）。 */
+const nodeTestWholeFileSkipFillerRoot = buildNodeTestRoot("node-test-whole-file-skip-filler", {
+  entries: [...nodeTestProbe, { ...nodeTestFiller, passed: 0, skipped: 2 }],
+  startMs: probeNow,
+});
+assertNodeTestExitCodeClean("node-test-whole-file-skip-filler", [
+  ...nodeTestProbe,
+  { ...nodeTestFiller, passed: 0, skipped: 2 },
+]);
+/** 反例：清单外文件部分跳过仍只告警，不得因整文件跳过的修复被升级为失败。 */
+const nodeTestPartialSkipFillerRoot = buildNodeTestRoot("node-test-partial-skip-filler", {
+  entries: [...nodeTestProbe, { ...nodeTestFiller, passed: 1, skipped: 1 }],
+  startMs: probeNow,
+});
+assertNodeTestExitCodeClean("node-test-partial-skip-filler", [
+  ...nodeTestProbe,
+  { ...nodeTestFiller, passed: 1, skipped: 1 },
+]);
+/** 夹具：报告比清单文件旧（沿用上一次运行的结果）→ 必须失败。 */
+const nodeTestStaleRoot = buildNodeTestRoot("node-test-stale", { startMs: staleMs });
+assertNodeTestExitCodeClean("node-test-stale", nodeTestProbe);
+/** 夹具：报告缺 startedAt，只有报告文件 mtime 可用且已过期 → 必须走 mtime 兜底并失败，不得静默跳过。 */
+const nodeTestNoTimestampRoot = buildNodeTestRoot("node-test-no-timestamp", {
+  startMs: undefined,
+  reportMtimeMs: staleMs,
+});
+assertNodeTestExitCodeClean("node-test-no-timestamp", nodeTestProbe);
+/** 夹具：报告文件缺失（从未运行或产物被清理）→ 退出码 2。 */
+const nodeTestMissingReportRoot = buildNodeTestRoot("node-test-missing-report", { writeReport: false });
+/** 夹具：报告形状不可用（缺 run 级汇总）→ 退出码 2，不放行无法解释的报告。 */
+const nodeTestBadShapeRoot = buildNodeTestRoot("node-test-bad-shape", {
+  startMs: probeNow,
+  mutate: (report) => {
+    delete report.totals;
+  },
+});
+/** 夹具：报告与 Node 自己的 run 级汇总不自洽（reporter 口径与实际运行不符）→ 必须 fail-closed。 */
+const nodeTestInconsistentRoot = buildNodeTestRoot("node-test-inconsistent", {
+  startMs: probeNow,
+  mutate: (report) => {
+    report.totals.passed += 1;
+  },
+});
+
 const cases = [
   {
     name: "结构：新增超限文件应失败",
@@ -934,6 +1158,139 @@ const cases = [
     contains: [`跳过告警（未登记在必需清单）：${lastProbeFile}`],
     absent: ["整文件跳过", "文件级状态为"],
     run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: partialSkipReportRoot }),
+  },
+  {
+    name: "node:test：健康报告应通过（清单齐 / 无跳过取消 / 达文件与用例棘轮 / 新鲜且自洽）",
+    expect: 0,
+    contains: [
+      "node:test 执行门禁通过",
+      `node:test 报告：参与判定的文件 ${NODE_TEST_PROBE_FILES} 个、用例 ${NODE_TEST_PROBE_CASES} 个`,
+    ],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestHealthyRoot }),
+  },
+  {
+    name: "node:test：必需文件未出现在报告中应失败（用例被删除、改名或未运行）",
+    expect: 1,
+    contains: [
+      "必需文件未出现在报告中 src/shared/lib/usd.test.ts",
+      "报告只含 13 个文件，少于要求的 14 个（测试文件被删除或未运行）",
+      "报告只含 122 个用例，少于要求的 126 个（用例被删除或跳过）",
+    ],
+    absent: ["报告可能过期"],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestMissingEntryRoot }),
+  },
+  {
+    name: "node:test：清单中的测试文件被删除应失败（旧报告不得放行）",
+    expect: 1,
+    contains: [
+      "清单文件不在磁盘上（被删除或改名），旧报告不得放行：src/shared/lib/usd.test.ts",
+      "请先恢复清单文件：pnpm test",
+    ],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestMissingListFileRoot }),
+  },
+  {
+    name: "node:test：清单文件整文件 test.skip 应失败（退出码为 0，旧判定看不到）",
+    expect: 1,
+    contains: [
+      "src/shared/lib/usd.test.ts 整文件跳过（4 个用例全部未执行），不得放行",
+      "src/shared/lib/usd.test.ts 通过 0 个，少于要求的 4 个",
+      "src/shared/lib/usd.test.ts 存在未登记跳过用例",
+    ],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestWholeFileSkipRoot }),
+  },
+  {
+    name: "node:test：describe.skip 让清单文件不再注册用例应失败（报告里该文件 0 用例）",
+    expect: 1,
+    contains: [
+      "src/shared/lib/usd.test.ts 通过 0 个，少于要求的 4 个",
+      "报告只含 122 个用例，少于要求的 126 个（用例被删除或跳过）",
+    ],
+    absent: ["必需文件未出现在报告中"],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestDescribeSkipRoot }),
+  },
+  {
+    name: "node:test：清单文件部分跳过应失败（清单内不允许未登记跳过）",
+    expect: 1,
+    contains: ["src/shared/lib/usd.test.ts 存在未登记跳过用例"],
+    absent: ["整文件跳过"],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestPartialSkipRoot }),
+  },
+  {
+    name: "node:test：清单文件有用例失败应失败（并给出逐文件原因）",
+    expect: 1,
+    contains: ["src/shared/lib/usd.test.ts 有 1 个失败用例", "src/shared/lib/usd.test.ts 通过 3 个，少于要求的 4 个"],
+    absent: ["报告自洽性校验失败"],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestFailedCaseRoot }),
+  },
+  {
+    name: "node:test：清单文件出现被取消用例应失败（给出逐文件原因）",
+    expect: 1,
+    contains: ["src/shared/lib/usd.test.ts 有 1 个被取消用例"],
+    absent: ["报告自洽性校验失败"],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestCancelledRoot }),
+  },
+  {
+    name: "node:test：清单外文件收集失败应失败（file-root 用例不计入用例数）",
+    expect: 1,
+    contains: [
+      "src/shared/gate-fixture-node.test.ts 收集失败（文件级用例未执行：gate-fixture-node.test.ts），断言结果不可信",
+    ],
+    absent: ["报告自洽性校验失败"],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestCollectionFailureRoot }),
+  },
+  {
+    name: "node:test：清单外文件整文件跳过应失败（不得只告警）",
+    expect: 1,
+    contains: ["src/shared/gate-fixture-node.test.ts 整文件跳过（2 个用例全部未执行），不得放行"],
+    absent: ["告警（清单外，不影响退出码）"],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestWholeFileSkipFillerRoot }),
+  },
+  {
+    name: "node:test：清单外文件部分跳过仍只告警（不得升级为失败）",
+    expect: 0,
+    contains: ["告警（清单外，不影响退出码）", "src/shared/gate-fixture-node.test.ts 部分跳过"],
+    absent: ["整文件跳过"],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestPartialSkipFillerRoot }),
+  },
+  {
+    name: "node:test：报告早于清单文件 mtime 应失败（过期报告）",
+    expect: 1,
+    contains: ["报告可能过期", "请重新运行：pnpm test"],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestStaleRoot }),
+  },
+  {
+    name: "node:test：报告缺 startedAt 时改用报告文件 mtime 兜底且仍能判过期",
+    expect: 1,
+    contains: ["node:test：报告缺少可用时间戳字段，改用报告文件 mtime 兜底", "报告可能过期"],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestNoTimestampRoot }),
+  },
+  {
+    name: "node:test：报告文件缺失应报错退出",
+    expect: 2,
+    contains: ["缺少 node:test 报告 .artifacts/node-test/results.json，请先运行：pnpm test"],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestMissingReportRoot }),
+  },
+  {
+    name: "node:test：报告形状不可用（缺 run 级汇总）应报错退出（fail-closed）",
+    expect: 2,
+    contains: ["形状不可用", "缺少 run 级汇总 totals（test:summary）"],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestBadShapeRoot }),
+  },
+  {
+    name: "node:test：报告与 Node run 级汇总不自洽应失败（fail-closed）",
+    expect: 1,
+    contains: ["报告自洽性校验失败——按用例记录统计的通过数为 126，Node run 级汇总为 127"],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestInconsistentRoot }),
+  },
+  {
+    name: "node:test：清单文件用例总数低于棘轮应失败（防逐文件掏空绕过）",
+    expect: 1,
+    contains: [
+      "报告只含 125 个用例，少于要求的 126 个（用例被删除或跳过）",
+      "src/shared/lib/usd.test.ts 通过 3 个，少于要求的 4 个",
+    ],
+    absent: ["报告只含 13 个文件"],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestBelowCasesRoot }),
   },
 ];
 
