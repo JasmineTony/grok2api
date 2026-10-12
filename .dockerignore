@@ -24,7 +24,8 @@ backend/**/*_test.go
 !frontend/tsconfig.node.json
 !frontend/vitest.config.ts
 !frontend/scripts/
-!frontend/scripts/build-inputs.ts
+!frontend/scripts/**
+frontend/scripts/**/*.test.ts
 !frontend/public/
 !frontend/public/**
 !frontend/src/
