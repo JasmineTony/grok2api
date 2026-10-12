@@ -183,6 +183,36 @@ func TestIsHiddenArtifactOnResolvedAliases(t *testing.T) {
 	}
 }
 
+// TestIsRelativePathWithinRoot 固定 frontendFile 的包含性守卫（frontend.go:76-79 调用的 isRelativePathWithinRoot）
+// 的平台无关语义：输入是 filepath.Rel 归一化后的相对路径，判定本身是纯字符串逻辑，不经过 HTTP 与文件系统。
+// 这是 CI(Linux) 上唯一能覆盖该守卫的用例：HTTP 层拿不到越界输入（path.Clean 已把根处的 ".." 消掉），
+// 唯一触发形态是含 filepath.Separator 的别名路径，而非归一化平台（Linux）上 "\" 是普通文件名字符 ⇒
+// TestFrontendFileRejectsResolvedPathsOutsideRoot 在 Linux 上不具判别力（同 server_test.go:116-119 的别名口径）。
+// 口径：判定依赖 filepath.Separator，两种斜杠写法只有与当前平台分隔符一致的那一种算越界，
+// 另一侧（Windows 下的 "../x"、Linux 下的 `..\x`）是 root 内的普通文件名，故其期望值随平台取值。
+func TestIsRelativePathWithinRoot(t *testing.T) {
+	sep := string(filepath.Separator)
+	for _, test := range []struct {
+		relative string
+		within   bool
+	}{
+		{relative: "", within: true},
+		{relative: ".", within: true},
+		{relative: "index.html", within: true},
+		{relative: "assets/app.js", within: true},
+		{relative: "..", within: false},
+		{relative: ".." + sep + "x", within: false},
+		{relative: "../x", within: sep != "/"},
+		{relative: `..\x`, within: sep != `\`},
+		{relative: "..x", within: true},
+		{relative: "sub/../file", within: true},
+	} {
+		if got := isRelativePathWithinRoot(test.relative); got != test.within {
+			t.Fatalf("isRelativePathWithinRoot(%q) = %v, want %v（filepath.Separator = %q）", test.relative, got, test.within, sep)
+		}
+	}
+}
+
 func TestSwaggerRegistrationFollowsStartupConfig(t *testing.T) {
 	disabledDeps := testDependencies()
 	disabledDeps.Logger = slog.Default()

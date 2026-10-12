@@ -1132,6 +1132,8 @@ PR #1（head `ci-probe/acceptance-audit-20261011`，`b59e5ff6`）上名为「Cod
 
 ① 穿越/编码别名（httptest + 哨兵文件，删守卫必失败）；② 缓存值精确断言 + `runtime-config.js`/`sponner`/`favicon.ico` 三行；③ 方法/前缀矩阵与 Content-Type 契约；④ 条件请求 304 语义（保留 mtime 场景写成特性化用例）；⑤ `frontendRoot` 失败矩阵；⑥ 静态根暴露边界（断言现行为 + 注释默认安全来自 Dockerfile）；⑦ 压缩：E2E 断言「带 `Accept-Encoding` 仍无 `Content-Encoding`、`content-length` = raw」，并在 AUDIT 登记「预算 = 磁盘 gzip、线上无传输压缩」。
 
+**更正（EVID-8，独立复核 R20 F1/F5）**：① 的「删守卫必失败」是**预期**而非实测。实测修正——**原值**「删 `filepath.Rel` 守卫 ⇒ ① 的 HTTP 用例失败」→ **新值**「删守卫 ⇒ HTTP 层用例仍全绿，CI 无告警（覆盖洞，P2）」。根因：`path.Clean("/"+requestPath)` 已把根处的 `..` 消掉、`http.FileServer` 也把别名归一化回 root 内，故该守卫在 HTTP 层**不可观测**；其唯一触发形态（含 `filepath.Separator` 的别名路径）在 Linux 上不可达（`os.Stat` 先失败）。复现（本机 Windows，`backend/` 下）：把 `frontend.go:77` 改成只判 `err` 后 `go test ./internal/transport/http/ -run TestFrontendStaticExposureRejectsDirectoryTraversal -count=1` **仍 PASS**，同批 `TestFrontendFileRejectsResolvedPathsOutsideRoot` FAIL（该用例仅 Windows 有判别力）。收口：守卫已逐字等价抽出为纯谓词 `isRelativePathWithinRoot`（`frontend.go:92-94`，调用点 `frontend.go:77`），平台无关回归由 `TestIsRelativePathWithinRoot`（`server_test.go:193`）承担，判别力实测为「谓词体改恒 `true` ⇒ 该用例 FAIL」；残留口径边界：该单测覆盖谓词逻辑，删除**调用点**本身仍只由 `TestFrontendFileRejectsResolvedPathsOutsideRoot`（`frontend_exposure_test.go:213`）在 Windows 捕获（Linux 上不可达，同 §25.3 的既有别名口径）。
+
 **更正（EVID-8）**：`backend/AUDIT.md:849` 引用 `isHiddenArtifact` 为 `frontend.go:94-99` → 现文件实际为 **`:99-101`**；本轮前端改动在此文件净增 11 行（起点前移 5 行、该函数末尾前移 2 行），其中 sink `os.Stat` 由 `origin/main` 的 `:76` 变为 `:80`（+4）；`origin/main` 版本并无 `isHiddenArtifact`（该函数是本轮新增的前置拦截），故此处以实测行号为准、结论不变。
 
 **未执行**：真实 Docker/Linux 镜像内探测（本机无 Docker）、反代/CDN 场景、浏览器对 `immutable` 的真实复用行为。
@@ -1427,7 +1429,8 @@ BenchmarkDashboardUsageAggregate/performance-8      1   167337300 ns/op   23768 
 - **定级 P2**：默认配置 `./frontend/dist`（`config_defaults.go`）与镜像布局（静态根与二进制/`VERSION` 分离）**不可触发**，需误配置才成立 ⇒ 现存形态记 **P2**。
 - **升级条件（P1）**：一旦以该形态部署，泄露面含 `jwtSecret` / `credentialEncryptionKey` / 管理员口令 ⇒ **该形态为 P1**。
 - **最小修复方向**：启动期 fail-fast（静态根含 `config.yaml`/`.env`/`*.db`/可执行文件即拒绝启动）或托管白名单。
-- **回归命令**：`go test ./internal/transport/http/ -run TestFrontendStaticFilesAndSPAFallback -count=1`（用例位于 `internal/transport/http/server_test.go:96`）。
+- **回归命令**：`go test ./internal/transport/http/ -run 'TestFrontendStaticFilesAndSPAFallback|TestFrontendStaticExposure|TestFrontendFileRejectsResolvedPathsOutsideRoot|TestIsRelativePathWithinRoot' -count=1`（用例位于 `internal/transport/http/server_test.go:96`（SPA 回退与隐藏产物）、`internal/transport/http/server_test.go:193`（`isRelativePathWithinRoot` 谓词，平台无关）、`internal/transport/http/frontend_exposure_test.go:82`（暴露面表征，含子目录点文件、Cache-Control 精确值、方法维度与 `frontendRoot` 失败矩阵））。
+- **本轮收口（独立复核 R20 F1）**：`filepath.Rel` 包含性守卫（`frontend.go:77`）在 HTTP 层**不可观测**，其唯一触发形态在 Linux 上不可达 ⇒ 删守卫时上述 HTTP 层用例仍全绿（覆盖洞，原值「删守卫必失败」→ 新值「HTTP 层不报警」，见 §25.3 的 EVID-8 更正）。守卫已逐字等价抽出为纯谓词 `isRelativePathWithinRoot`（`frontend.go:92-94`），平台无关回归由 `server_test.go:193` 的 `TestIsRelativePathWithinRoot` 承担，判别力已实测（谓词体改恒 `true` → 该用例 FAIL）。
 - **未执行**：真实 Docker/Linux 镜像内探测（本机无 Docker，同 §25.2 的登记）。
 
 ### 32.2 本批后端侧未实施登记（P3）

@@ -74,7 +74,7 @@ func frontendFile(root, requestPath string) (string, bool) {
 	}
 	fullPath := filepath.Join(root, filepath.FromSlash(cleanPath))
 	relative, err := filepath.Rel(root, fullPath)
-	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+	if err != nil || !isRelativePathWithinRoot(relative) {
 		return "", false
 	}
 	info, err := os.Stat(fullPath)
@@ -82,6 +82,15 @@ func frontendFile(root, requestPath string) (string, bool) {
 		return "", false
 	}
 	return relative, true
+}
+
+// isRelativePathWithinRoot 报告 filepath.Rel 得到的相对路径是否落在 root 内（frontendFile 的包含性守卫）。
+// 逻辑逐字等价于该处原有的内联判定（CHG-2：搬运，仅抽出与命名），抽出原因是这条分支只在含 filepath.Separator
+// 的别名路径上触发、Linux 上不可达，单独抽成纯字符串谓词后才能由平台无关的单测直接覆盖。
+// 口径：恰好为 ".." 或以 ".."+filepath.Separator 开头才算越界；"..x"、"..foo/bar" 这类以两点开头但不是父目录
+// 的名字必须判为 root 内。filepath.Rel 已归一化输出，故 "sub/../file" 这类形态不会出现，此处按非越界处理。
+func isRelativePathWithinRoot(relative string) bool {
+	return relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
 func isBackendPath(value string) bool {

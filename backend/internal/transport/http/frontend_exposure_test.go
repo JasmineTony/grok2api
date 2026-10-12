@@ -25,6 +25,7 @@ const (
 	// 仅用于行为表征的假值，不包含任何真实凭据。
 	testExposureConfigContent = "jwtSecret: TEST-ONLY\ncredentialEncryptionKey: TEST-ONLY\n"
 	testExposureDotEnvContent = "JWT_SECRET=TEST-ONLY\n"
+	testExposureNestedDotEnv  = "NESTED_JWT_SECRET=TEST-ONLY\n"
 	testExposureDBContent     = "TEST-ONLY-SQLITE-BYTES"
 	testExposureIndexContent  = "<html>app</html>"
 )
@@ -60,10 +61,16 @@ func staticExposureRouter(t *testing.T, root string) *gin.Engine {
 	return New(deps)
 }
 
+// staticExposureRequest 对已装配路由发起一次真实请求，返回原始 recorder（需要读响应头或非 GET 方法时使用）。
+func staticExposureRequest(router *gin.Engine, method, requestPath string) *httptest.ResponseRecorder {
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(method, requestPath, nil))
+	return recorder
+}
+
 // staticExposureGet 对已装配路由发起一次真实 GET，返回状态码与响应体。
 func staticExposureGet(router *gin.Engine, requestPath string) (int, string) {
-	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, requestPath, nil))
+	recorder := staticExposureRequest(router, http.MethodGet, requestPath)
 	return recorder.Code, recorder.Body.String()
 }
 
@@ -99,21 +106,33 @@ func TestFrontendStaticExposureServesSensitiveFilesFromConfiguredRoot(t *testing
 }
 
 // TestFrontendStaticExposureRejectsRootLevelDotfiles 固定现状：唯一的守卫只拦「产物根级点文件」。
-// 语义：isHiddenArtifact(frontend.go:97-101) 要求解析后的相对路径目录为根且基名以 "." 开头，
+// 语义：isHiddenArtifact(frontend.go:99-101) 要求解析后的相对路径目录为根且基名以 "." 开头，
 // 所以 /.env 返回 404；但该守卫不是白名单——同目录的 config.yaml、data/*.db 仍被 200 服务
-// （见 TestFrontendStaticExposureServesSensitiveFilesFromConfiguredRoot）。登记：backend/AUDIT.md §25.2 第 3 项。
+// （见 TestFrontendStaticExposureServesSensitiveFilesFromConfiguredRoot），
+// 且**子目录**点文件不受拦：/data/.env 返回 200 文件原文（path.Dir(clean) != "/" ⇒ 守卫不触发）。
+// 后者是「唯一守卫」的精确边界，也是未来收紧白名单/加目录规则时最易误伤的一侧，故用独有内容
+// NESTED_JWT_SECRET=TEST-ONLY 区分，确保响应来自 data/.env 而非根级 .env。
+// 登记：backend/AUDIT.md §25.2 第 3 项、§32.1。
 func TestFrontendStaticExposureRejectsRootLevelDotfiles(t *testing.T) {
 	root := newStaticRoot(t, map[string]string{
 		"index.html": testExposureIndexContent,
 		".env":       testExposureDotEnvContent,
+		"data/.env":  testExposureNestedDotEnv,
 	})
 	router := staticExposureRouter(t, root)
 	status, body := staticExposureGet(router, "/.env")
 	if status != http.StatusNotFound {
-		t.Fatalf("/.env status = %d, want %d（根级点文件守卫 frontend.go:97-101 失效）", status, http.StatusNotFound)
+		t.Fatalf("/.env status = %d, want %d（根级点文件守卫 frontend.go:99-101 失效）", status, http.StatusNotFound)
 	}
 	if strings.Contains(body, "JWT_SECRET") {
 		t.Fatalf("/.env body = %q，泄漏了点文件内容", body)
+	}
+	status, body = staticExposureGet(router, "/data/.env")
+	if status != http.StatusOK {
+		t.Fatalf("/data/.env status = %d, want %d：守卫只覆盖根级点文件，子目录点文件语义已变化，必须同步 backend/AUDIT.md §25.2/§32.1", status, http.StatusOK)
+	}
+	if !strings.Contains(body, testExposureNestedDotEnv) {
+		t.Fatalf("/data/.env body = %q, want 含 %q", body, testExposureNestedDotEnv)
 	}
 }
 
@@ -122,6 +141,11 @@ func TestFrontendStaticExposureRejectsRootLevelDotfiles(t *testing.T) {
 // 任一不满足即 return，NoRoute 不注册 ⇒ 敏感文件请求落到 gin 默认 404。
 // 这正是 §32.1 把该风险定为 P2 的依据（默认 ./frontend/dist 与镜像布局不可触发），
 // 也是本文件其余用例都必须先写入 index.html 的原因。
+// 口径更正（F2）：判别力来自带扩展名的路径（/config.yaml、/data/backend.db）——注册后它们会返回 200 文件原文，
+// 未注册才是 404；`/dashboard` 子例**不构成**「路由未注册」的证据：它在「NoRoute 未注册」与
+// 「NoRoute 已注册但 SPA 回退目标 index.html 缺失」两种情形下同样是 404，故只作为 SPA 回退路径的负向对照保留。
+// frontendRoot 的四种失败形态（staticPath 为空 / 目录不存在 / 路径是普通文件 / index.html 是目录）
+// 另见 TestFrontendStaticExposureRootFailureMatrix。
 func TestFrontendStaticExposureNotRegisteredWithoutIndexHTML(t *testing.T) {
 	root := newStaticRoot(t, map[string]string{
 		"config.yaml":     testExposureConfigContent,
@@ -198,5 +222,110 @@ func TestFrontendFileRejectsResolvedPathsOutsideRoot(t *testing.T) {
 	}
 	if relative, exists := frontendFile(root, `/..\outside-secret.txt`); exists {
 		t.Fatalf(`frontendFile(root, "/..\\outside-secret.txt") = %q, true；解析结果越出 root 却未被 filepath.Rel 拦截`, relative)
+	}
+}
+
+// TestFrontendStaticExposureCacheControlValues 固定 frontend.go:31-35 的 Cache-Control **精确取值**：
+// 请求路径经 path.Clean 后以 "/assets/" 开头 ⇒ "public, max-age=31536000, immutable"；
+// 其余命中静态文件（含 config.yaml）与 SPA 回退（/dashboard）⇒ "no-cache"。
+// 断言完整字符串而非前缀：哈希资源的长期复用与 index.html 的即时失效都建立在这两个取值上，
+// 任何取值变化（例如加 must-revalidate、把 index.html 改为 no-store）必须显式修改本断言。
+func TestFrontendStaticExposureCacheControlValues(t *testing.T) {
+	root := newStaticRoot(t, map[string]string{
+		"index.html":    testExposureIndexContent,
+		"config.yaml":   testExposureConfigContent,
+		"assets/app.js": "console.log('app')",
+	})
+	router := staticExposureRouter(t, root)
+	for _, test := range []struct {
+		path string
+		want string
+	}{
+		{path: "/config.yaml", want: "no-cache"},
+		{path: "/assets/app.js", want: "public, max-age=31536000, immutable"},
+		{path: "/dashboard", want: "no-cache"},
+	} {
+		t.Run(test.path, func(t *testing.T) {
+			recorder := staticExposureRequest(router, http.MethodGet, test.path)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("%s status = %d, want %d", test.path, recorder.Code, http.StatusOK)
+			}
+			if got := recorder.Header().Get("Cache-Control"); got != test.want {
+				t.Fatalf("%s Cache-Control = %q, want %q", test.path, got, test.want)
+			}
+		})
+	}
+}
+
+// TestFrontendStaticExposureMethodDimension 固定方法维度（frontend.go:22-25）：NoRoute 只处理 GET/HEAD，
+// 其余方法一律 404 且不进入静态文件解析。
+// HEAD /config.yaml 与 GET 走同一条解析链（200 + 空体，Cache-Control 与 GET 相同）；
+// POST /config.yaml 由 `c.Status(http.StatusNotFound)` 直接结束 ⇒ 404、空体（实测行为，非 gin 默认 404 文本）。
+func TestFrontendStaticExposureMethodDimension(t *testing.T) {
+	root := newStaticRoot(t, map[string]string{
+		"index.html":  testExposureIndexContent,
+		"config.yaml": testExposureConfigContent,
+	})
+	router := staticExposureRouter(t, root)
+
+	head := staticExposureRequest(router, http.MethodHead, "/config.yaml")
+	if head.Code != http.StatusOK {
+		t.Fatalf("HEAD /config.yaml status = %d, want %d（HEAD 应与 GET 同样命中静态文件）", head.Code, http.StatusOK)
+	}
+	if head.Body.Len() != 0 {
+		t.Fatalf("HEAD /config.yaml body = %q, want 空体", head.Body.String())
+	}
+
+	post := staticExposureRequest(router, http.MethodPost, "/config.yaml")
+	if post.Code != http.StatusNotFound {
+		t.Fatalf("POST /config.yaml status = %d, want %d（非 GET/HEAD 不应进入静态托管）", post.Code, http.StatusNotFound)
+	}
+	if strings.Contains(post.Body.String(), "TEST-ONLY") {
+		t.Fatalf("POST /config.yaml body = %q，非 GET/HEAD 请求泄漏了静态文件内容", post.Body.String())
+	}
+}
+
+// TestFrontendStaticExposureRootFailureMatrix 参数化 frontendRoot(frontend.go:49-68) 的失败矩阵：
+// staticPath 为空、目录不存在、路径是普通文件、index.html 是目录 —— 四种形态下静态托管整体不注册，
+// 敏感文件请求落到 gin 默认 404。这正是 §32.1 把该风险定为 P2 的依据（默认 ./frontend/dist 不可触发）。
+// 末段对照组用同一夹具下的正常根，证明上面的 404 来自 frontendRoot 失败而不是夹具写错（避免空转断言）。
+func TestFrontendStaticExposureRootFailureMatrix(t *testing.T) {
+	base := t.TempDir()
+	plainFile := filepath.Join(base, "not-a-directory.txt")
+	writeStaticRootFiles(t, base, map[string]string{
+		"not-a-directory.txt":        testExposureConfigContent,
+		"index-is-a-dir/config.yaml": testExposureConfigContent,
+		"dist/index.html":            testExposureIndexContent,
+		"dist/config.yaml":           testExposureConfigContent,
+	})
+	indexDirRoot := filepath.Join(base, "index-is-a-dir")
+	if err := os.MkdirAll(filepath.Join(indexDirRoot, "index.html"), 0o755); err != nil {
+		t.Fatalf("创建 index.html 目录失败: %v", err)
+	}
+	for _, test := range []struct {
+		name       string
+		staticPath string
+	}{
+		{name: "staticPath 为空", staticPath: ""},
+		{name: "目录不存在", staticPath: filepath.Join(base, "missing")},
+		{name: "路径是普通文件", staticPath: plainFile},
+		{name: "index.html 是目录", staticPath: indexDirRoot},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			router := staticExposureRouter(t, test.staticPath)
+			status, body := staticExposureGet(router, "/config.yaml")
+			if status != http.StatusNotFound {
+				t.Fatalf("静态根形态 %q：/config.yaml status = %d, want %d（frontendRoot 应判定失败并不注册）", test.staticPath, status, http.StatusNotFound)
+			}
+			if strings.Contains(body, "TEST-ONLY") {
+				t.Fatalf("静态根形态 %q：/config.yaml body = %q，静态托管在该形态下仍然生效", test.staticPath, body)
+			}
+		})
+	}
+
+	control := staticExposureRouter(t, filepath.Join(base, "dist"))
+	status, body := staticExposureGet(control, "/config.yaml")
+	if status != http.StatusOK || !strings.Contains(body, "jwtSecret: TEST-ONLY") {
+		t.Fatalf("对照组 dist/config.yaml status = %d body = %q, want %d 且含文件原文", status, body, http.StatusOK)
 	}
 }
