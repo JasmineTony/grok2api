@@ -1008,23 +1008,23 @@ main 线的 AUDIT 章节（`backend/AUDIT.md` §20/§21（BE-18/BE-19）、`fron
 
 ### 20.4 剩余阻塞状态（本轮执行后）
 
-| 编号                                 | 上一轮状态      | 本轮状态                           | 证据                                                                                          |
-| ------------------------------------ | --------------- | ---------------------------------- | --------------------------------------------------------------------------------------------- |
-| X-03 GitHub Actions 真实 run         | 需授权          | **已关闭**                         | RUN `38147560751` / `38147560768`（§20.2）                                                    |
-| BE-B1 `go test -race`                | 仅 CI           | **已关闭**                         | step `Race backend` = `success`                                                               |
-| BE-B2 集成用例 0 跳过                | 仅 CI           | **已关闭**                         | step `Assert required integration tests ran` = `success`                                      |
-| BE-B3 Linux CI 行为                  | 仅 CI           | **已关闭**                         | JOB `Verify` = `success`（含 `Vet backend`）                                                  |
-| X-07 镜像与 `.dockerignore` 纳入判定 | 仅 CI           | **已关闭**                         | `Build image (amd64)` 与 `(arm64)` = `success`                                                |
-| X-09 前端报告门禁 CI 侧              | 仅 CI           | **已关闭**                         | step `Run full-stack E2E` 与 `Verify frontend` = `success`                                    |
-| X-08 Swagger 精确 diff               | P1 发布前置     | **本机与 CI 双侧闭环**             | §19.11 本机字节一致 + step `Verify Swagger document` = `success`                              |
-| FE-19-6 父检出 AGENTS 旧 12 步       | 需主人同步      | **已不成立（EVID-8 更正）**        | 主检出 `AGENTS.md` 的 DEV-4 已是 13 步；原登记基于更早快照                                    |
-| X-04 提交纪律                        | 待授权          | **部分关闭**                       | `closeout` 的 8 个提交 + 本轮单一目的提交 `83ff5ae7`、`339c53ca`；`main` 的 11 个提交仍待处理 |
-| X-02 冻结预算基线                    | 需授权（CHG-5） | 仍开放（P3）                       | 需工作区静止 + 授权                                                                           |
-| FE-19-8 i18n 单例失败缓存            | 需单独授权      | 仍开放（P2）                       | 重试语义变更，本轮未改                                                                        |
-| BE-G3 `ports/security` 迁移          | 需单独批准      | 仍开放（P2）                       | 架构迁移，本轮未改                                                                            |
-| X-05 重打 tag                        | 逐次授权        | 未执行                             | 不可逆，默认不做                                                                              |
-| FE-19-5-C 生产压缩配置               | 需外部事实      | 仍开放                             | 本机无生产访问                                                                                |
-| 交付分支推送与合并 `main`            | —               | **Blocked（需授权 + 凭据能力）** | 见 §20.5                                                                                      |
+| 编号                                 | 上一轮状态      | 本轮状态                                 | 证据                                                                                                                       |
+| ------------------------------------ | --------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| X-03 GitHub Actions 真实 run         | 需授权          | **已关闭**                               | RUN `38147560751` / `38147560768`（§20.2）                                                                                 |
+| BE-B1 `go test -race`                | 仅 CI           | **已关闭**                               | step `Race backend` = `success`                                                                                            |
+| BE-B2 集成用例 0 跳过                | 仅 CI           | **已关闭**                               | step `Assert required integration tests ran` = `success`                                                                   |
+| BE-B3 Linux CI 行为                  | 仅 CI           | **已关闭**                               | JOB `Verify` = `success`（含 `Vet backend`）                                                                               |
+| X-07 镜像与 `.dockerignore` 纳入判定 | 仅 CI           | **已关闭**                               | `Build image (amd64)` 与 `(arm64)` = `success`                                                                             |
+| X-09 前端报告门禁 CI 侧              | 仅 CI           | **已关闭**                               | step `Run full-stack E2E` 与 `Verify frontend` = `success`                                                                 |
+| X-08 Swagger 精确 diff               | P1 发布前置     | **本机与 CI 双侧闭环**                   | §19.11 本机字节一致 + step `Verify Swagger document` = `success`                                                           |
+| FE-19-6 父检出 AGENTS 旧 12 步       | 需主人同步      | **仍成立**（原判定被本轮更正，见 §22.5） | 主检出 `E:\grok2api`（`main`，`13626e6c`）`AGENTS.md:85` 实测为「覆盖 **12 步**」；工作树版本为 13 步（含 `test:results`） |
+| X-04 提交纪律                        | 待授权          | **部分关闭**                             | `closeout` 的 8 个提交 + 本轮单一目的提交 `83ff5ae7`、`339c53ca`；`main` 的 11 个提交仍待处理                              |
+| X-02 冻结预算基线                    | 需授权（CHG-5） | 仍开放（P3）                             | 需工作区静止 + 授权                                                                                                        |
+| FE-19-8 i18n 单例失败缓存            | 需单独授权      | 仍开放（P2）                             | 重试语义变更，本轮未改                                                                                                     |
+| BE-G3 `ports/security` 迁移          | 需单独批准      | 仍开放（P2）                             | 架构迁移，本轮未改                                                                                                         |
+| X-05 重打 tag                        | 逐次授权        | 未执行                                   | 不可逆，默认不做                                                                                                           |
+| FE-19-5-C 生产压缩配置               | 需外部事实      | 仍开放                                   | 本机无生产访问                                                                                                             |
+| 交付分支推送与合并 `main`            | —               | **Blocked（需授权 + 凭据能力）**       | 见 §20.5                                                                                                                   |
 
 ### 20.5 仍未闭环项（如实登记）
 
@@ -1184,10 +1184,11 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 
 ### 22.5 EVID-8 数字更正（原值 → 新值）
 
-| 位置                      | 原值                          | 新值                                      | 根因与复现                                                                     |
-| ------------------------- | ----------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------ |
-| §21.1                     | `pnpm test:gates` = 41 个用例 | **46 个用例（34 必须失败）**              | `844c355c` 新增 5 个用例；复现 `cd frontend; pnpm test:gates`                  |
-| §21.3                     | （未记录阈值）                | `MIN_E2E_FILES = 6`、minPassed 10/7/7/5/5 | 棘轮对齐 (spec × project) 口径；见 `scripts/check-test-results.mjs` 常量与注释 |
-| 历史记录中的 E2E 门禁输出 | 文件 5 个 / 用例 21 个        | **文件 6 个 / 用例 35 个**                | 移动 project 加入后的口径；由 `844c355c` 对齐                                  |
-| §20.3                     | REV-3 作用域 5475             | 5475（不变）                              | `cd backend; go run ./tools/structurecheck`                                    |
-| §19.8                     | 前端 REV-3 作用域 2524        | **2525**                                  | 修复后的工具口径；复现 `cd frontend; node scripts/check-structure.mjs`         |
+| 位置                      | 原值                                     | 新值                                      | 根因与复现                                                                                                       |
+| ------------------------- | ---------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| §21.1                     | `pnpm test:gates` = 41 个用例            | **46 个用例（34 必须失败）**              | `844c355c` 新增 5 个用例；复现 `cd frontend; pnpm test:gates`                                                    |
+| §21.3                     | （未记录阈值）                           | `MIN_E2E_FILES = 6`、minPassed 10/7/7/5/5 | 棘轮对齐 (spec × project) 口径；见 `scripts/check-test-results.mjs` 常量与注释                                   |
+| 历史记录中的 E2E 门禁输出 | 文件 5 个 / 用例 21 个                   | **文件 6 个 / 用例 35 个**                | 移动 project 加入后的口径；由 `844c355c` 对齐                                                                    |
+| §20.3                     | REV-3 作用域 5475                        | 5475（不变）                              | `cd backend; go run ./tools/structurecheck`                                                                      |
+| §19.8                     | 前端 REV-3 作用域 2524                   | **2525**                                  | 修复后的工具口径；复现 `cd frontend; node scripts/check-structure.mjs`                                           |
+| §20.4                     | 「FE-19-6 已不成立（主检出已是 13 步）」 | **仍成立**：主检出 `AGENTS.md:85` = 12 步 | 上一版自我更正反向失真（EVID-8：记录更正之更正）；复现 `Select-String E:\grok2api\AGENTS.md -Pattern '覆盖.*步'` |
