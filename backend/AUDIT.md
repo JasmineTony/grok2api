@@ -1532,3 +1532,58 @@ go test ./internal/transport/http/ -run 'TestFrontendStaticExposure|TestFrontend
 | **F5（P3）** | §32.1 的回归命令未含本批新增用例；§25.3①「穿越/编码别名（httptest + 哨兵文件，删守卫必失败）」的预期**需更正**——该测试缺口已由 `98cc6f06` 的 `TestFrontendStaticExposureRejectsDirectoryTraversal`（哨兵文件在静态根外、断言 404）在 **Windows** 上覆盖；Linux 侧因 F1 的不可达性，仍需谓词单测补足。 | **待并入**。文档更正与 F1 同属 `b1d38714` 所在分支，但该分支当前**只含 `frontend.go` 与 `server_test.go` 两个文件**（无 AUDIT 改动）⇒ §32.1 / §25.3① 的文本更正**尚未落地**。本节按 META-3 只登记事实与并入状态，不改写 §32.1 / §25.3 原文。 |
 
 **未执行（如实登记）**：本节**未重跑**变异注入验证 F1/F5 的判别力归属（该结论引用 R20 复核，见会话 scratch `plan-progress.md` 的 R20 结论）；`go test ./... -count=1`、`bash scripts/verify.sh`、`-race` 与隔离 PG/Redis 均未在本节范围内重跑（其最新证据见 §31.4、§32.4 与 `frontend/AUDIT.md` §28.4）。
+
+## 34. 2026-10-12（续三）静态托管表征测试、守卫可测化与回归同步
+
+> 分支 `maint/acceptance-audit-20261012-registration-2`（基点 `77d4aa65`）。按 META-3 只追加，§1–§33 既有数字不改写（含 §33.3 对同一提交的先行登记，本节只补其未覆盖项并加指针）。本节登记第五批（2026-10-12 续）后端侧的**测试/生产改动**；标注「引用既有实测」的数字来自各提交验证段或会话 scratch 日志，「本工作树实跑」的仅为 `git show --numstat`/`git log`/`git merge-base --is-ancestor`、文件实读与字节级行数统计（本工作树无 Go 全量运行、无 Docker、`CGO_ENABLED=0`）。
+
+### 34.1 静态托管表征测试（提交 `98cc6f06`，分支 `maint/acceptance-audit-20261012-static-exposure-test`，合并 `0e8c02b7`）
+
+- **`--numstat`（本工作树实跑）**：`backend/internal/transport/http/frontend_exposure_test.go` **+202 / −0**，**仅此一个文件** ⇒ **未改生产代码**（该提交只加测试）。
+- **5 个顶层用例**（行号为**当前 HEAD** 实测；该提交当时的行号见 §33.3 的 `75/105/125/151/189`，其后 `186a7500` 在文件上方新增三个 helper 使用例整体下移）：
+
+| 用例                                                        | 当前行号 |
+| ----------------------------------------------------------- | -------- |
+| `TestFrontendStaticExposureServesSensitiveFilesFromConfiguredRoot` | `:82`    |
+| `TestFrontendStaticExposureRejectsRootLevelDotfiles`        | `:116`   |
+| `TestFrontendStaticExposureNotRegisteredWithoutIndexHTML`   | `:149`   |
+| `TestFrontendStaticExposureRejectsDirectoryTraversal`       | `:175`   |
+| `TestFrontendFileRejectsResolvedPathsOutsideRoot`           | `:213`   |
+
+- **回归命令与证据不重复**：`go test ./internal/transport/http/ -run 'TestFrontendStaticExposure|TestFrontendFileRejectsResolvedPathsOutsideRoot' -count=1` **exit 0**（`ok … 3.827s`，5 个顶层用例全 PASS）已登记在 §33.3；本节只加指针，不重复该数字。
+- **R20 独立复核结论（本节首次登记 F2/F3，F1/F5 的收口见 §34.2）**：
+  - **P2 F1**：`frontend.go` 的 `filepath.Rel` 包含性守卫在 HTTP 层**不可观测**（`http.FileServer` 把别名路径归一化回 root 内），其唯一触发形态（含 `filepath.Separator` 的别名路径）在 Linux 上不可达（`os.Stat` 先失败）⇒ 删掉整个守卫时 CI（Linux）仍为绿。**收口见 §34.2**（已并入最终 tip）。
+  - **P3 F2**：`/dashboard` 子例在「`NoRoute` 未注册」与「`NoRoute` 已注册但 SPA 回退目标 `index.html` 缺失」两种形态下结果相同 ⇒ 原注释暗示的判别力不成立；标签 F2 由提交 `186a7500` 的改动说明标注，修复见 §34.2。
+  - **P3 F3**：`Cache-Control` 原先只判前缀 ⇒ 已由 `186a7500` 改为按 `frontend.go:31-35` 的实际取值断言完整字符串（`no-cache` / `public, max-age=31536000, immutable`）；F2/F3 同属 R20「另列 5 条可补语义」，对应 `186a7500` 的第 2、4 项。
+  - **P3 F5**：§32.1 的回归命令未含本批新增用例、§25.3① 的「删守卫必失败」是**预期**而非实测 ⇒ 已由 `0f0be18d` 以 EVID-8 更正（原值 → 新值及复现命令见该提交对 §25.3① 的补丁）；本节只加指针，不重写 §25.3/§32.1 原文。
+
+### 34.2 守卫可测化与覆盖补强（提交 `b1d38714`、`186a7500`、`0f0be18d`，分支 `maint/acceptance-audit-20261012-static-guard-testable`，合并 `e4e3dec7`）
+
+| 提交       | 标题                                                                   | `--numstat`（本工作树实跑）                                                                              |
+| ---------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `b1d38714` | `refactor(backend): 抽出静态托管根内判定谓词并补平台无关单测（F1）`     | `internal/transport/http/frontend.go` +10/−1；`internal/transport/http/server_test.go` +30/−0            |
+| `186a7500` | `test(backend): 补静态托管的子目录点文件、缓存头与方法维度固定（F2/P3）` | `internal/transport/http/frontend_exposure_test.go` +134/−5（**不改生产代码**）                          |
+| `0f0be18d` | `docs(audit): 同步静态托管回归命令与守卫可观测性更正（F5）`             | `backend/AUDIT.md` +4/−1                                                                                 |
+
+**`b1d38714`：CHG-2 标注「搬运」**
+
+- 包含性判定逐字等价抽出为具名纯函数 `isRelativePathWithinRoot`（本工作树实测：定义在 `frontend.go:92`，调用点 `frontend.go:77` 的 `if err != nil || !isRelativePathWithinRoot(relative)`；`err` 仍先判、求值顺序与 `filepath.Separator` 语义不变）。`filepath.Rel` 调用仍在 `:76`。
+- 新增**平台无关表驱动单测** `TestIsRelativePathWithinRoot`（`server_test.go:193`，本工作树实测），不经过 HTTP 与文件系统 ⇒ 关闭 F1 的「删守卫 CI 仍绿」缺口。
+- **变异判别力（引用既有实测）**：谓词体临时改成恒 `true` → `go test ./internal/transport/http/ -run TestIsRelativePathWithinRoot -count=1` **exit 1**（出处：`b1d38714` 提交信息）。
+
+**`186a7500`：HTTP 层覆盖补强（不改生产代码）**
+
+- 新增 3 个顶层用例：`TestFrontendStaticExposureCacheControlValues`（`:233`）、`TestFrontendStaticExposureMethodDimension`（`:264`）、`TestFrontendStaticExposureRootFailureMatrix`（`:292`）；文件现为 **332 行 / 8 个顶层用例**（本工作树字节级统计；`98cc6f06` 时 202 行 / 5 用例）。
+- 固定维度：夹具新增 `data/.env`（独有内容 `NESTED_JWT_SECRET=TEST-ONLY`）并断言 `GET /data/.env` → **200** 且体含该内容（`isHiddenArtifact` 只拦根级点文件，故子目录点文件被放行——「唯一守卫」的精确边界）；`Cache-Control` 精确值；`HEAD /config.yaml` → 200 + 空体、`POST /config.yaml` → 404 + 空体（按 `frontend.go:22-25` 实测固定）；`frontendRoot` 失败矩阵 4 组（`staticPath` 为空 / 目录不存在 / 路径是普通文件 / `index.html` 是目录）并以正常根作对照；F2 的 `/dashboard` 子例注释修正。
+- 复用：抽出 `staticExposureRequest`（`:65`，返回 recorder）供响应头与非 GET 方法复用，`staticExposureGet`（`:72`）委托给它，行为不变。
+- **回归（引用既有实测）**：`go test ./internal/transport/http/ -count=1` **exit 0**；`gofmt -l` 无输出；`structurecheck` / `apicheck` **exit 0** 且基线未变（出处：`186a7500` 提交信息）。
+
+**变异判别力第二次实测（B，证实 F1 的归属）**：把调用点改为只判 `err`（`frontend.go:77` 去掉谓词调用）后——`TestFrontendFileRejectsResolvedPathsOutsideRoot` **FAIL（exit 1）**，而 HTTP 层的 `TestFrontendStaticExposureRejectsDirectoryTraversal` 仍 **PASS**（`ok … 3.514s`，含四条 404 子用例与一条 200 正对照）⇒ 直接单测才是该守卫的判别力来源，HTTP 层用例在 Linux 上不可达。出处（引用既有实测）：会话 scratch `mut-TestFrontendStaticExposureRejectsDirectoryTraversal.log` 与 `0f0be18d` 对 §25.3① 的 EVID-8 更正段。
+
+**`0f0be18d` 的文档更正（只加指针）**：修正 §32.1 的回归命令为 `go test ./internal/transport/http/ -run 'TestFrontendStaticFilesAndSPAFallback|TestFrontendStaticExposure|TestFrontendFileRejectsResolvedPathsOutsideRoot|TestIsRelativePathWithinRoot' -count=1` 并逐项标注用例位置；对 §25.3① 做 EVID-8 更正（原值「删 `filepath.Rel` 守卫 ⇒ ① 的 HTTP 用例失败」→ 新值「删守卫 ⇒ HTTP 层用例仍全绿（覆盖洞 P2）」）。该提交已并入最终 tip，本节不重复其文本。
+
+### 34.3 装配与未执行项
+
+- **装配（本工作树实跑）**：`git merge-base --is-ancestor <sha> HEAD` 对 `98cc6f06`、`b1d38714`、`186a7500`、`0f0be18d` **均 exit 0**；合并提交为 `0e8c02b7`（静态暴露测试）与 `e4e3dec7`（守卫可测化），最终 tip `77d4aa65`。`backend/api-baseline.txt` 与 `backend/structure-baseline.json` 相对基点 `0c23f902` **逐 blob 相同**（本工作树实跑，见 `frontend/AUDIT.md` §30.4 表），符合 CHG-8。
+- **未执行（如实登记，不得记为 `Passed`）**：`go test ./... -count=1` 全量、`bash scripts/verify.sh`、`go test -race ./...`（本机 `CGO_ENABLED=0`）、Linux 侧行为（含 F1「守卫在 Linux 不可达」的独立验证与 `-race` 下的并发语义）**均未在最终 tip `77d4aa65` 上复跑**；本节所有 `go test` 结论均为**引用既有实测**（出处见 §34.1/§34.2 各条）。既有参考：会话 scratch `t2-verify.out.log` 为一次 `bash scripts/verify.sh` 全通过（`全部通过`，170.167s，`参与判定的作用域（REV-3）：5536 个`），但其 tip 早于本批后端改动，**不作为最终 tip 的证据**；最终 tip 的 `verify.sh` 结果以主代理为准（会话 scratch `t5-verify.out.log`，本节登记时尚未收敛）。
+- **未验证项**：`0f0be18d` 的 AUDIT 文本更正未逐字复核（只核对 `--numstat` +4/−1 与其改动摘要）；R20 的 F2/F3 编号取自提交 `186a7500` 的改动说明，未取得 R20 原始报告全文（该报告不在本会话 scratch 内）⇒ 编号映射按提交说明登记，未独立复核。
