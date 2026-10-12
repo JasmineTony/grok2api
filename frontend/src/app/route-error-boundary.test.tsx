@@ -27,6 +27,11 @@ function DashboardProbe(): ReactElement {
   return <div data-testid="page-dashboard">仪表盘已就绪</div>;
 }
 
+/** 渲染即抛错的探针：用于验证通配路由的 errorElement 真的会接住渲染期错误。 */
+function ExplodingProbe(): ReactElement {
+  throw new Error("通配路由元素渲染失败");
+}
+
 /**
  * vitest 的 `vi.doMock` 工厂抛错时会用 `cause` 包一层帮助信息，
  * 这里沿 cause 链比对，确认被记录的就是原始模块加载失败。
@@ -126,11 +131,35 @@ function captureConsoleError(): unknown[][] {
   return calls;
 }
 
-afterEach(() => {
-  vi.doUnmock(PAGE_MODULE);
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
+/**
+ * 通配路由（`{ path: "*" }`）必须与兄弟路由一样自带 errorElement：未知路径上的元素抛错时也要落到
+ * 同一可恢复界面，而不是 React Router 自带的英文默认错误页。`*` 的 element 是固定的 `<Navigate>`
+ * （自身不会抛错），所以这里用真实路由表、只把该路由的 element 换成抛错组件来构造场景：
+ * 断言对象仍是真实路由表里那个 `*` 路由的 errorElement。
+ */
+it("未知路径上的元素抛错时展示同一错误界面（通配路由也带 errorElement）", async () => {
+  captureConsoleError();
   vi.resetModules();
+  const [{ router }, { i18n }] = await Promise.all([import("@/app/router"), import("@/shared/i18n")]);
+  await i18n.changeLanguage("zh-CN");
+
+  const routes = router.routes.map((route) => (route.path === "*" ? { ...route, element: <ExplodingProbe /> } : route));
+  const wildcard = routes.find((route) => route.path === "*");
+  expect(wildcard?.errorElement, "通配路由必须声明 errorElement").toBeDefined();
+
+  const memoryRouter = createMemoryRouter(routes, { initialEntries: ["/no-such-route"] });
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+  render(
+    <I18nextProvider i18n={i18n}>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={memoryRouter} />
+      </QueryClientProvider>
+    </I18nextProvider>,
+  );
+
+  const fallback = await screen.findByTestId("route-error-fallback");
+  expect(fallback).toBeVisible();
+  expect(screen.getByRole("button", { name: i18n.t("common.reloadPage") })).toBeVisible();
 });
 
 describe("路由级错误边界（懒加载 chunk 失败）", () => {
