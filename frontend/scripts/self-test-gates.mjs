@@ -350,13 +350,65 @@ const e2eProbe = withInstanceTotals([
   },
 ]);
 /**
- * 夹具（F1）：project 矩阵被削回桌面（删除 mobile-chromium project，或把它的 grepInvert 收窄成 /./）后的报告——
- * 5 个文件 / 21 个实例，恰好满足旧口径的 5 文件与 6/4/5/3/3 阈值，因此旧实现放行（假通过）；
- * 当前棘轮为 6 文件与 12/8/9/6/6，本夹具必须失败。
+ * E2E 报告的 project 形态：与被测脚本 REQUIRED_E2E_PROJECTS 及 playwright.config.ts:40-44 一致，
+ * `key` 指向探针条目里的实例数列（desktop ← chromium、mobile ← mobile-chromium）。
+ */
+const E2E_PROJECTS = [
+  { name: "chromium", key: "desktop" },
+  { name: "mobile-chromium", key: "mobile" },
+];
+/** 只保留桌面 project（等价于 playwright.config.ts 删掉 mobile-chromium 后的报告）。 */
+const E2E_DESKTOP_ONLY_PROJECTS = E2E_PROJECTS.filter((project) => project.key === "desktop");
+/** 未登记 project 形态：mobile 列改名为 webkit → 必须 fail-closed（未登记 + 缺 mobile-chromium）。 */
+const E2E_UNKNOWN_PROJECTS = [
+  { name: "chromium", key: "desktop" },
+  { name: "webkit", key: "mobile" },
+];
+/** 缺 project 维度形态（旧版 reporter 或手改报告）：tests 不带 projectName → 必须 fail-closed。 */
+const E2E_PROJECTLESS = [
+  { name: undefined, key: "desktop" },
+  { name: undefined, key: "mobile" },
+];
+/**
+ * 夹具判别力前提（TEST-7）：只按「文件 → 通过数」聚合的旧实现只要求清单文件齐、通过数 ≥ 文件棘轮、
+ * 必填标题通过、无失败 / 跳过 / flaky、文件数 ≥ 6。F4 组合反例必须在构造时满足全部五条，否则它只能
+ * 证明「本来就会失败」，证明不了新门禁补上了 project 维度盲区（旧实现实测放行，见 AUDIT.md §24.2 P2-1）。
+ */
+function assertE2eFileLevelClean(label, entries) {
+  const fileRatchet = {
+    "e2e/auth.e2e.ts": 12,
+    "e2e/client-keys.e2e.ts": 8,
+    "e2e/navigation.e2e.ts": 9,
+    "e2e/request-audits.e2e.ts": 6,
+    "e2e/settings.e2e.ts": 6,
+    "e2e/mobile-device.e2e.ts": 1,
+  };
+  const dirty = entries.filter((entry) => {
+    const instances = (entry.desktop ?? 0) + (entry.mobile ?? 0) + (entry.flaky ?? 0) + (entry.skipped ?? 0);
+    const ratchet = fileRatchet[entry.file] ?? 0;
+    return instances < ratchet || (entry.expectedFailure ?? 0) > 0 || (entry.unknownStatus ?? 0) > 0;
+  });
+  if (dirty.length > 0) {
+    throw new Error(`夹具 ${label} 文件维度不干净（旧实现会失败）：${dirty.map((entry) => entry.file).join("、")}`);
+  }
+}
+/**
+ * 夹具（F1）：project 矩阵被削回桌面（删除 mobile-chromium project）后的报告——5 个文件 / 21 个实例，
+ * 恰好满足移动矩阵加入前的旧口径（5 文件 + 6/4/5/3/3 通过数），因此旧实现放行（假通过）；
+ * 当前棘轮为 6 文件 + 12/8/9/6/6 + 逐 project 下限，本夹具必须失败。
  */
 const e2eDesktopOnlyProbe = e2eProbe
   .filter((entry) => entry.desktop > 0)
-  .map((entry) => ({ ...entry, passed: entry.desktop }));
+  .map((entry) => ({ ...entry, mobile: 0, passed: entry.desktop }));
+/**
+ * 夹具（F4）：§24.2 P2-1 的组合反例——`e2e/auth.e2e.ts` 把 2 个跨端用例改标 `@desktop`（mobile −2）
+ * 并新增 1 个无标签用例（两个 project 各 +1）：该文件 6+6 变成 7+5 仍是 12，总实例仍是 42，
+ * 文件维度与旧实现全部放行，只有 project 维度会失败。
+ */
+const e2eProjectDilutedProbe = e2eProbe.map((entry) =>
+  entry.file === "e2e/auth.e2e.ts" ? { ...entry, desktop: entry.desktop + 1, mobile: entry.mobile - 1 } : entry,
+);
+assertE2eFileLevelClean("e2e-project-diluted", e2eProjectDilutedProbe);
 /** 被测脚本的必需文件总数棘轮；用只含 1 个通过用例的填充文件补足，正样本在真实下限上通过。 */
 const MIN_VITEST_PROBE_FILES = 123;
 function padVitestEntries(entries, target = MIN_VITEST_PROBE_FILES) {
@@ -422,38 +474,49 @@ function vitestJson(rootDir, entries, startMs) {
 
 /**
  * Playwright JSON：与真实产物一致——`config.rootDir` 指向 e2e 目录，suite/spec 的 `file` 是相对 rootDir 的
- * 纯文件名（`auth.e2e.ts`）；`shape` 用于构造绝对路径形态与缺 rootDir 形态。
+ * 纯文件名（`auth.e2e.ts`）；`shape` 用于构造绝对路径形态、缺 rootDir 形态与 project 形态。
+ * 每个 project 各产出一份 spec（真实产物即此形态：2026-10-12 的 42 实例报告），`tests[].projectName` 是被测
+ * 脚本判定 project 覆盖的唯一来源；`shape.projects[].name` 为 undefined 时刻意省略该字段，用于构造
+ * 「报告缺 project 维度」的 fail-closed 夹具。
  */
 function playwrightJson(entries, startMs, shape) {
-  const specOf = (file, status, index, expectedStatus = "passed") => ({
-    title: `${file} ${status} #${index + 1}`,
+  const spec = (title, file, status, projectName, expectedStatus = "passed") => ({
+    title,
     file,
-    tests: [{ status, expectedStatus }],
+    tests: [{ status, expectedStatus, projectName }],
   });
-  const suitesOf = (entry) => {
+  const filler = (file, status, count, projectName, expectedStatus = "passed") =>
+    Array.from({ length: Math.max(count, 0) }, (_, index) =>
+      spec(`${file} ${status} #${index + 1}`, file, status, projectName, expectedStatus),
+    );
+  /**
+   * 必填标题与异常用例（预期失败 / 未知状态 / flaky / skipped）都落在实例数够用的那个 project 上，其余
+   * project 只补该文件在该 project 下的实例数——与真实产物的分布一致，也保证文件实例总数不受影响。
+   */
+  const specsOf = (entry) => {
     const file = shape.fileOf(entry.file);
-    const named = (entry.titles ?? []).length;
-    const expectedFailure = entry.expectedFailure ?? 0;
-    const unknownStatus = entry.unknownStatus ?? 0;
-    return {
-      title: entry.file,
-      file,
-      suites: [],
-      specs: [
-        ...(entry.titles ?? []).map((title) => ({
-          title,
-          file,
-          tests: [{ status: "expected", expectedStatus: "passed" }],
-        })),
-        ...Array.from({ length: Math.max(entry.passed - named - expectedFailure - unknownStatus, 0) }, (_, index) =>
-          specOf(file, "expected", index),
-        ),
-        ...Array.from({ length: expectedFailure }, (_, index) => specOf(file, "expected", index, "failed")),
-        ...Array.from({ length: unknownStatus }, (_, index) => specOf(file, "weird", index)),
-        ...Array.from({ length: entry.flaky ?? 0 }, (_, index) => specOf(file, "flaky", index)),
-        ...Array.from({ length: entry.skipped ?? 0 }, (_, index) => specOf(file, "skipped", index)),
-      ],
-    };
+    const primary =
+      shape.projects.find((project) => (entry[project.key] ?? 0) >= (entry.titles ?? []).length) ?? shape.projects[0];
+    const specs = [];
+    for (const project of shape.projects) {
+      const total = entry[project.key] ?? 0;
+      if (project !== primary) {
+        specs.push(...filler(file, "expected", total, project.name));
+        continue;
+      }
+      const expectedFailure = entry.expectedFailure ?? 0;
+      const unknownStatus = entry.unknownStatus ?? 0;
+      const filled = total - (entry.titles ?? []).length - expectedFailure - unknownStatus;
+      specs.push(
+        ...(entry.titles ?? []).map((title) => spec(title, file, "expected", project.name)),
+        ...filler(file, "expected", filled, project.name),
+        ...filler(file, "expected", expectedFailure, project.name, "failed"),
+        ...filler(file, "weird", unknownStatus, project.name),
+        ...filler(file, "flaky", entry.flaky ?? 0, project.name),
+        ...filler(file, "skipped", entry.skipped ?? 0, project.name),
+      );
+    }
+    return { title: entry.file, file, suites: [], specs };
   };
   return `${JSON.stringify({
     config: shape.rootDir === null ? {} : { rootDir: shape.rootDir },
@@ -466,7 +529,7 @@ function playwrightJson(entries, startMs, shape) {
       flaky: 0,
       skipped: 0,
     },
-    suites: entries.map(suitesOf),
+    suites: entries.map(specsOf),
   })}\n`;
 }
 
@@ -495,13 +558,15 @@ function buildReportRoot(name, options) {
 }
 
 /**
- * E2E 报告的 file 形态：默认与真实产物一致（file 是纯文件名 + `config.rootDir` 指向 <dir>/e2e）；
- * e2eAbsoluteShape 构造绝对路径形态，e2eWithoutRootDir 构造缺 `config.rootDir` 的形态。
+/**
+ * E2E 报告的形态：默认与真实产物一致（file 是纯文件名 + `config.rootDir` 指向 <dir>/e2e）；e2eAbsoluteShape
+ * 构造绝对路径形态，e2eWithoutRootDir 构造缺 `config.rootDir` 形态，e2eProjects 覆盖 project 形态。
  */
 function e2eShapeOf(dir, options) {
-  if (options.e2eAbsoluteShape) return { rootDir: null, fileOf: (file) => path.join(dir, file) };
-  if (options.e2eWithoutRootDir) return { rootDir: null, fileOf: (file) => path.basename(file) };
-  return { rootDir: path.join(dir, "e2e"), fileOf: (file) => path.basename(file) };
+  const projects = options.e2eProjects ?? E2E_PROJECTS;
+  if (options.e2eAbsoluteShape) return { rootDir: null, fileOf: (file) => path.join(dir, file), projects };
+  if (options.e2eWithoutRootDir) return { rootDir: null, fileOf: (file) => path.basename(file), projects };
+  return { rootDir: path.join(dir, "e2e"), fileOf: (file) => path.basename(file), projects };
 }
 
 const healthyReportRoot = buildReportRoot("report-healthy", {
@@ -580,7 +645,7 @@ const noRootDirE2eReportRoot = buildReportRoot("report-no-rootdir-e2e", {
 });
 /** 夹具：首个 E2E 文件含一个 test.fail() 预期失败用例（status="expected" + expectedStatus="failed"）。 */
 const expectedFailureE2eEntries = e2eProbe.map((entry, index) =>
-  index === 0 ? { ...entry, passed: entry.passed - 1, expectedFailure: 1 } : entry,
+  index === 0 ? { ...entry, desktop: entry.desktop - 1, expectedFailure: 1 } : entry,
 );
 const expectedFailureE2eReportRoot = buildReportRoot("report-e2e-expected-failure", {
   vitest: vitestHealthyEntries,
@@ -590,7 +655,7 @@ const expectedFailureE2eReportRoot = buildReportRoot("report-e2e-expected-failur
 });
 /** 夹具：首个 E2E 文件含一个未知状态用例（既非 expected/unexpected/flaky/skipped）。 */
 const unknownStatusE2eEntries = e2eProbe.map((entry, index) =>
-  index === 0 ? { ...entry, passed: entry.passed - 1, unknownStatus: 1 } : entry,
+  index === 0 ? { ...entry, desktop: entry.desktop - 1, unknownStatus: 1 } : entry,
 );
 const unknownStatusE2eReportRoot = buildReportRoot("report-e2e-unknown-status", {
   vitest: vitestHealthyEntries,
@@ -607,14 +672,43 @@ writeProbeFile(
 );
 const missingReportRoot = path.join(root, "report-missing");
 /**
- * 夹具（F1）：project 矩阵被削回桌面后的 E2E 报告——5 个文件 / 21 个实例，只满足移动矩阵加入前的旧口径
- * （5 文件 + 6/4/5/3/3 通过数），在当前棘轮（6 文件 + 12/8/9/6/6）下必须失败：移动覆盖丧失不得静默通过。
+ * 夹具（F1）：project 矩阵被削回桌面（等价于 playwright.config.ts 删掉 mobile-chromium）后的 E2E 报告——
+ * 5 个文件 / 21 个实例，只满足移动矩阵加入前的旧口径（5 文件 + 6/4/5/3/3 通过数）；在当前棘轮
+ * （6 文件 + 12/8/9/6/6 + 逐 project 下限）下必须失败：移动覆盖丧失不得静默通过。
  */
 const e2eDesktopOnlyReportRoot = buildReportRoot("report-e2e-desktop-only", {
   vitest: vitestHealthyEntries,
   vitestStartMs: probeNow,
   e2e: e2eDesktopOnlyProbe,
   e2eStartMs: probeNow,
+  e2eProjects: E2E_DESKTOP_ONLY_PROJECTS,
+});
+/**
+ * 夹具（F4）：§24.2 P2-1 的组合反例报告——`e2e/auth.e2e.ts` 把 2 个跨端用例改标 `@desktop`（mobile −2）
+ * 并新增 1 个无标签用例（两个 project 各 +1）：文件 6+6 变成 7+5 仍是 12，总实例仍是 42，文件维度与旧实现
+ * 全部放行，只有 project 维度（mobile-chromium 20 < 21、auth 的 mobile 5 < 6）会失败。
+ */
+const e2eProjectDilutedReportRoot = buildReportRoot("report-e2e-project-diluted", {
+  vitest: vitestHealthyEntries,
+  vitestStartMs: probeNow,
+  e2e: e2eProjectDilutedProbe,
+  e2eStartMs: probeNow,
+});
+/** 夹具（F5）：报告缺 project 维度（tests 无 projectName，旧版 reporter 或手改报告）→ fail-closed。 */
+const e2eProjectlessReportRoot = buildReportRoot("report-e2e-projectless", {
+  vitest: vitestHealthyEntries,
+  vitestStartMs: probeNow,
+  e2e: e2eProbe,
+  e2eStartMs: probeNow,
+  e2eProjects: E2E_PROJECTLESS,
+});
+/** 夹具（F6）：报告出现未登记 project（webkit）且缺 mobile-chromium → fail-closed。 */
+const e2eUnknownProjectReportRoot = buildReportRoot("report-e2e-unknown-project", {
+  vitest: vitestHealthyEntries,
+  vitestStartMs: probeNow,
+  e2e: e2eProbe,
+  e2eStartMs: probeNow,
+  e2eProjects: E2E_UNKNOWN_PROJECTS,
 });
 /**
  * 夹具（F2）：报告本身完整通过，但清单里的一个测试文件已从磁盘删除——新鲜度只按剩余文件核对，
@@ -1038,7 +1132,10 @@ const cases = [
   {
     name: "测试执行：E2E 健康报告应通过（ISO 时间戳 + 清单齐）",
     expect: 0,
-    contains: [`E2E 报告：参与判定的文件 ${E2E_EXPECTED_FILES} 个、用例 ${E2E_EXPECTED_CASES} 个`],
+    contains: [
+      `E2E 报告：参与判定的文件 ${E2E_EXPECTED_FILES} 个、用例 ${E2E_EXPECTED_CASES} 个`,
+      "E2E project 报告：2 个 project（chromium 通过 21 个、mobile-chromium 通过 21 个）",
+    ],
     run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: healthyReportRoot }, ["--e2e"]),
   },
   {
@@ -1130,8 +1227,40 @@ const cases = [
       "E2E：报告只含 5 个文件，少于要求的 6 个（测试文件被删除或未运行）",
       "E2E：e2e/auth.e2e.ts 通过 6 个，少于要求的 12 个",
       "E2E：e2e/navigation.e2e.ts 通过 5 个，少于要求的 9 个",
+      "E2E：报告未出现配置声明的 project mobile-chromium（project 被删除或改名，移动覆盖丧失不得静默通过）",
+      "E2E：e2e/auth.e2e.ts（mobile-chromium）通过 0 个，少于要求的 6 个",
     ],
     run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: e2eDesktopOnlyReportRoot }, ["--e2e"]),
+  },
+  {
+    name: "测试执行：E2E 组合改动稀释 project 覆盖应失败（文件与总通过数不变、旧实现放行）",
+    expect: 1,
+    contains: [
+      "E2E 报告：参与判定的文件 6 个、用例 42 个",
+      "E2E：project mobile-chromium 通过 20 个实例，少于棘轮 21 个",
+      "E2E：e2e/auth.e2e.ts（mobile-chromium）通过 5 个，少于要求的 6 个",
+    ],
+    absent: ["少于要求的 12 个", "必需文件未出现在报告中", "整文件跳过"],
+    run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: e2eProjectDilutedReportRoot }, ["--e2e"]),
+  },
+  {
+    name: "测试执行：E2E 报告缺 project 维度应失败（fail-closed）",
+    expect: 1,
+    contains: [
+      "报告缺少 project 维度（test.projectName），不得放行",
+      "E2E：报告未出现配置声明的 project chromium（project 被删除或改名，移动覆盖丧失不得静默通过）",
+      "E2E：e2e/auth.e2e.ts（chromium）通过 0 个，少于要求的 6 个",
+    ],
+    run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: e2eProjectlessReportRoot }, ["--e2e"]),
+  },
+  {
+    name: "测试执行：E2E 报告出现未登记 project 应失败（fail-closed）",
+    expect: 1,
+    contains: [
+      "E2E：报告出现未登记的 project webkit（新增 project 必须先在此登记）",
+      "E2E：报告未出现配置声明的 project mobile-chromium",
+    ],
+    run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: e2eUnknownProjectReportRoot }, ["--e2e"]),
   },
   {
     name: "测试执行：清单中的单个测试文件被删除应失败（不得只告警）",
