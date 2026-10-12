@@ -1775,3 +1775,14 @@ git ls-files --eol <抽查文件>                      # 全部 i/lf w/lf attr/t
 
 - `git diff --check` **exit 0**（本工作树实跑）；本工作树**只改** `frontend/AUDIT.md` 与 `backend/AUDIT.md`，两次提交后 `git status --porcelain` 为空（实跑，见下）。
 - **格式（CI 同口径，整目录）**：`cd frontend && node E:\grok2api\.pi\worktrees\acceptance-audit-20261011\frontend\node_modules\prettier\bin\prettier.cjs --check .` → **exit 0**（本工作树实跑；不传 `--config`、不传显式文件路径，避免上一批 §28.5 的漏检形态）。
+
+### 30.5 R21 复审发现的修复（分支 `maint/acceptance-audit-20261012-review-fixes`，合并 `c250eb75`）
+
+| 提交       | 内容                                                                                                                                                                                                                                                                                                                                                    |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `d0c61166` | **P2-1**：`e2e/accounts.e2e.ts` 的清理移入 `finally`——`server` fixture 是 worker 作用域，原实现下任一断言失败会让导入的账号残留该 worker 的库，污染同 worker 后续 `e2e/auth.e2e.ts` 的必填用例「空账号池下推理未就绪…」（一次失败变两次且带顺序依赖）；现断言失败也恢复空号池并显式断言读回为空                                                         |
+| `66d2700c` | **P2-2**：`self-test-gates.mjs` 的 `runGate` 为子进程补 `--experimental-strip-types`——`check-bundle-budget.mjs` 现已 `import` `.ts` 模块，而 `engines.node: >=22` 早于 22.18 时类型剥离默认关闭，会让 `test:gates` 在 Node 22.6–22.17 上以 `ERR_UNKNOWN_FILE_EXTENSION` 变红                                                                            |
+| `7bcc503e` | **P3-1/P3-2/P3-3**：预算入口解析取**首个**属性（对齐 HTML 语义；原「后者覆盖前者」会让 `<script src="real" src="x">` 静默漏算真实入口）；`<link>` 只接受白名单 `rel`（`prefetch`/`preconnect` 等不再计入首屏闭包）；`BUDGET_DIST_DIR`/`BUDGET_CONFIG_PATH` 限定 `os.tmpdir()` 之下（越界 exit 2，与 `TEST_REPORT_ROOT`/`NODE_TEST_REPORT_ROOT` 同口径） |
+| `b98b53fe` | **P3-4/P3-5**：`router.tsx` 的 `{ path: "*" }` 路由补 `errorElement`（与两个顶层路由一致）；删除 `route-error-boundary.test.tsx` 里重复的 `afterEach`                                                                                                                                                                                                   |
+
+**主代理实测（工作树 A，detached `c250eb75`）**：`pnpm format:check` / `oxlint` / `lint` / `typecheck` / `check:structure`（REV-3 **2527**）/ `test:gates` / `build` / `check:budget`（`体积预算门禁通过`）**均 exit 0**。E2E 与覆盖率的最终 tip 证据见 §30.6。
