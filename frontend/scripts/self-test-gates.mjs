@@ -289,6 +289,19 @@ const vitestProbe = [
     passed: 7,
     titles: ["StrictMode 首次挂载、重渲染及重新挂载均复用加载结果，卸载不残留页面"],
   },
+  {
+    file: "src/shared/i18n/deferred-resources-retry.test.tsx",
+    passed: 3,
+    titles: [
+      "首次加载失败后再次调用会重新请求并成功，不再复用失败态",
+      "成功路径连调两次只加载一次资源模块（失败重置不得退化成每次重置）",
+    ],
+  },
+  {
+    file: "src/app/deferred-resources-failure.test.tsx",
+    passed: 1,
+    titles: ["另一条懒加载路由仍能解析并渲染，失败态不被单例永久缓存"],
+  },
 ];
 /**
  * 必填标题逐字取自真实 spec，与被测脚本的 REQUIRED_E2E.requiredTitles 保持一致。
@@ -353,7 +366,7 @@ const e2eDesktopOnlyProbe = e2eProbe
   .filter((entry) => entry.desktop > 0)
   .map((entry) => ({ ...entry, passed: entry.desktop }));
 /** 被测脚本的必需文件总数棘轮；用只含 1 个通过用例的填充文件补足，正样本在真实下限上通过。 */
-const MIN_VITEST_PROBE_FILES = 123;
+const MIN_VITEST_PROBE_FILES = 125;
 function padVitestEntries(entries, target = MIN_VITEST_PROBE_FILES) {
   const padded = entries.map((entry) => entry);
   for (let index = padded.length; index < target; index += 1) {
@@ -857,7 +870,7 @@ const cases = [
   {
     name: "测试执行：报告文件总数低于棘轮应失败（防删文件绕过）",
     expect: 1,
-    contains: ["Vitest：报告只含 122 个文件，少于要求的 123 个（测试文件被删除或未运行）"],
+    contains: ["Vitest：报告只含 124 个文件，少于要求的 125 个（测试文件被删除或未运行）"],
     absent: ["必需文件未出现在报告中"],
     run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: belowMinFilesReportRoot }),
   },

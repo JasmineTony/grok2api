@@ -75,20 +75,21 @@ const reportRoot = resolveReportRoot();
 /**
  * 报告内必需文件最小总数（棘轮，防止整体删除测试文件绕过清单 / 标题检查）。
  * 实测值（2026-10-12，本工作树；复现：`pnpm test:ui:coverage && node scripts/check-test-results.mjs`
- * 输出「参与判定的文件 123 个」）：Vitest 123 个。
+ * 输出「参与判定的文件 125 个」）：Vitest 125 个（原 123 + 本轮 FE-19-8 新增的 2 个用例文件）。
  * E2E 的计数口径是 **(spec × project) 实例**，不是 spec 文件数：Playwright JSON 把每个 project 各展开一遍，
  * 复现 `pnpm test:e2e && node scripts/check-test-results.mjs --e2e` 输出「参与判定的文件 6 个、用例 42 个」
  * （chromium 21 + mobile-chromium 21；仅断言桌面布局本身成立的用例保留 `@desktop`）。删掉 `mobile-chromium` project
  * 或把它的 `grepInvert` 收窄成 `/./` 后，文件数回落 5、实例数回落 21，必须在这里失败——移动覆盖丧失不得静默通过。
  * 只增不减；确实需要下调时必须是可见改动并说明理由。
  */
-const MIN_VITEST_FILES = 123;
+const MIN_VITEST_FILES = 125;
 const MIN_E2E_FILES = 6;
 
 /**
  * Vitest 组件/集成报告：文件 → 最少通过用例数 + 必填用例标题。新增必需场景必须在此登记。
  * minPassed 是棘轮（ratchet），取实测通过数（2026-10-11 的 .artifacts/vitest/results.json：
- * login 11 / deferred-pages 13 / deferred-pages-loading 7），只增不减。
+ * login 11 / deferred-pages 13 / deferred-pages-loading 7；2026-10-12 新增：
+ * i18n/deferred-resources-retry 3 / app/deferred-resources-failure 1），只增不减。
  * requiredTitles 逐字取自对应测试文件的 it() 名称（按包含匹配），必须出现在报告中且为 passed；
  * 用例被删减、改名或跳过时，「少跑用例」是可见改动，而不是静默通过。
  */
@@ -112,6 +113,19 @@ const REQUIRED_VITEST = [
     file: "src/app/deferred-pages-loading.test.tsx",
     minPassed: 7,
     requiredTitles: ["StrictMode 首次挂载、重渲染及重新挂载均复用加载结果，卸载不残留页面"],
+  },
+  {
+    file: "src/shared/i18n/deferred-resources-retry.test.tsx",
+    minPassed: 3,
+    requiredTitles: [
+      "首次加载失败后再次调用会重新请求并成功，不再复用失败态",
+      "成功路径连调两次只加载一次资源模块（失败重置不得退化成每次重置）",
+    ],
+  },
+  {
+    file: "src/app/deferred-resources-failure.test.tsx",
+    minPassed: 1,
+    requiredTitles: ["另一条懒加载路由仍能解析并渲染，失败态不被单例永久缓存"],
   },
 ];
 
