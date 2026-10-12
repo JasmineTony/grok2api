@@ -1133,3 +1133,60 @@ pnpm test:e2e --list           → exit 0；Total: 35 tests in 6 files（新增 
 4. 缓存语义与预期一致：软导航档 shell 重取 0/26，`/accounts` 增量只差 2 个已缓存文件。
 
 **限制（不得当作门禁依据）**：loopback 无 RTT/TLS、未做 CPU 节流与移动视口、每档仅 2 次；测量窗口内有其它并行任务（8 逻辑核）。未验证生产反向代理/CDN 的压缩配置。
+
+## 22. 2026-10-12 最终验收、CI 双轮闭环与容器构建修复（FE-16）
+
+工作分支 `maint/acceptance-audit-20261011-residual`；本节所有结论附命令原文 + 退出码 + 关键输出。
+
+### 22.1 本机最终验收（`pnpm verify:full`，exit 0）
+
+执行方式：`powershell -NoProfile -ExecutionPolicy Bypass -File runner-r6.ps1`（内部 `cd frontend; pnpm verify:full *> verifyfull-r6.out.log`，并把 `$LASTEXITCODE` 写入 `verifyfull-r6.exit.txt`），起始 `2026-10-12T09:25:44`。
+
+- **`verifyfull-r6.exit.txt` = `0`**；日志中 `ELIFECYCLE` 计数 = **0**；
+- `Test Files  123 passed (123)`；
+- `test:results`：`Vitest 报告：参与判定的文件 123 个、用例 1488 个（通过 1488、失败 0、跳过 0、flaky 0）`；
+- `pnpm test:gates`：`门禁自测通过：46 个用例（含 34 个必须失败的用例）`；
+- `pnpm build`：`built in 1.78s`（`index-BLBEuSix.js` 468.71 kB / gzip 144.73 kB，与 §19.8 的产物一致）；`check:budget` 通过（阈值未变）；
+- `pnpm test:e2e`：**`35 passed (1.8m)`**（桌面 `chromium` + `mobile-chromium` 两个 project）；
+- 最后一步 `node scripts/check-test-results.mjs --e2e`：`E2E 报告：参与判定的文件 6 个、用例 35 个（通过 35、失败 0、跳过 0、flaky 0）`、`必需前端场景执行门禁通过`。
+
+更早一次同命令（r5，`verifyfull-r5.out.log`）日志以同一成功行结尾、`ELIFECYCLE` 计数 0，但**退出码未被可靠捕获**（`cmd` 的 `%ERRORLEVEL%` 是解析期展开），故不作为退出码证据。
+
+### 22.2 后端最终验收（`bash scripts/verify.sh`，exit 0）
+
+`powershell -NoProfile -File runner-be.ps1`（`cd backend; bash scripts/verify.sh`）→ **`be-verify-r1.exit.txt` = `0`**，耗时 **242.35s**：`结构门禁通过`、`参与判定的作用域（REV-3）：5475 个`、`基线条目 2062 条，当前 2062 条。导出 API 面与基线逐条一致。`、`go test ./...` 全部 ok、尾行 `全部通过`。
+
+### 22.3 CI 双轮闭环（含一次真实交付缺陷的发现与修复）
+
+| run           | sha        | 结论        | 说明                                                                                                                                                                                                                                                               |
+| ------------- | ---------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `38147560751` | `b59e5ff6` | success     | 上一轮探针（§20.2）                                                                                                                                                                                                                                                |
+| `38189282094` | `118a6ba0` | **failure** | **Verify job 全 step `success`**（含 `Test backend`、`Assert required integration tests ran`、`Race backend`、`Vet backend`、`Verify Swagger document`、`Verify frontend`、`Run full-stack E2E`），但 `Build image (amd64)` 与 `(arm64)` 的 `Build` step `failure` |
+| `38191324186` | `a59e0d43` | **success** | 容器构建修复后的复跑（本轮 R2）；`38191324190`（CodeQL Advanced）同为 success                                                                                                                                                                                      |
+
+**交付缺陷（P1，由 CI 捕获，本机无法复现）**——`Build image` 失败原始日志（`ci-build-amd64.log`）：
+
+```
+vite.config.ts(7,37): error TS2307: Cannot find module './scripts/build-manifest-plugin.ts' or its corresponding type declarations.
+ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not complete successfully: exit code: 2
+```
+
+根因：`Dockerfile:20` 只 COPY `frontend/scripts/build-inputs.ts`，而 `f8145ff9` 把 `buildManifestPlugin` 抽到 `scripts/build-manifest-plugin.ts` 且 `vite.config.ts` 直接 import。修复提交 `05c616bd`（`COPY frontend/scripts ./scripts`；`.dockerignore` 白名单改为 `!frontend/scripts/**` 并排除 `frontend/scripts/**/*.test.ts`）→ R2 复跑整轮 success。
+
+### 22.4 报告门禁棘轮与弱化修复（F1/F2/F3）
+
+提交 `844c355c`：
+
+- **F1（P1）**：E2E 棘轮原为移动 project 加入之前的（5 文件、minPassed 6/4/5/3/3），删掉 `mobile-chromium` 后计数回落 5/21 仍满足阈值 → 现为 **6 文件**、minPassed **10/7/7/5/5**，并把 `e2e/mobile-device.e2e.ts` 登记进 `REQUIRED_E2E`；
+- **F2（P2）**：清单文件「部分缺失」由告警改为失败；
+- **F3（P2）**：Vitest 收集期失败与非清单文件整文件跳过由「不可见/仅告警」改为失败（部分跳过维持告警）；
+- 判别力（EVID-3）：对修复前实现实跑，4 个新夹具全部「期望 exit 1、实际 0」。
+
+### 22.5 EVID-8 数字更正（原值 → 新值）
+
+| 位置                      | 原值                          | 新值                                      | 根因与复现                                                                     |
+| ------------------------- | ----------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------ |
+| §21.1                     | `pnpm test:gates` = 41 个用例 | **46 个用例（34 必须失败）**              | `844c355c` 新增 5 个用例；复现 `cd frontend; pnpm test:gates`                  |
+| §21.3                     | （未记录阈值）                | `MIN_E2E_FILES = 6`、minPassed 10/7/7/5/5 | 棘轮对齐 (spec × project) 口径；见 `scripts/check-test-results.mjs` 常量与注释 |
+| 历史记录中的 E2E 门禁输出 | 文件 5 个 / 用例 21 个        | **文件 6 个 / 用例 35 个**                | 移动 project 加入后的口径；由 `844c355c` 对齐                                  |
+| §20.3                     | REV-3 作用域 5475             | 5475（不变）                              | `cd backend; go run ./tools/structurecheck`                                    |

@@ -1133,3 +1133,47 @@ PR #1（head `ci-probe/acceptance-audit-20261011`，`b59e5ff6`）上名为「Cod
 **更正（EVID-8）**：`backend/AUDIT.md:849` 引用 `isHiddenArtifact` 为 `frontend.go:94-99` → 现文件实际为 **`:99-101`**（行号漂移 3 行，由本轮前端改动引入，结论不变）。
 
 **未执行**：真实 Docker/Linux 镜像内探测（本机无 Docker）、反代/CDN 场景、浏览器对 `immutable` 的真实复用行为。
+
+## 26. 2026-10-12 后端最终验收与容器构建修复（BE-25）
+
+### 26.1 本机最终验收（`bash scripts/verify.sh`，exit 0）
+
+执行方式：`powershell -NoProfile -ExecutionPolicy Bypass -File runner-be.ps1`（内部 `cd backend; bash scripts/verify.sh *> be-verify-r1.out.log`，退出码写 `be-verify-r1.exit.txt`）→ **`be-verify-r1.exit.txt` = `0`**，耗时 **242.35s**。关键输出：
+
+```
+==> go build ./...
+==> go vet ./...
+==> go run ./tools/structurecheck
+扫描生产 Go 文件：478 个
+超限文件（> 600 行）：当前 0 个，基线 0 个
+超限函数（> 50 行）：当前 0 个，基线 0 个
+越限嵌套（> 3 层）：当前 0 个，基线 0 个
+参与判定的作用域（REV-3）：5475 个（0 越限时据此判断不是漏报）
+结构门禁通过：未新增超限文件、超限函数或越限嵌套。
+==> go run ./tools/apicheck
+基线条目 2062 条，当前 2062 条。
+导出 API 面与基线逐条一致。
+==> go test ./... -count=1
+（全部 ok，含 backend/tools/structurecheck、backend/tools/apicheck）
+全部通过
+```
+
+### 26.2 CI 上的后端门禁（两轮）
+
+| run | sha | 后端相关 step | 结论 |
+| --- | --- | --- | --- |
+| `38189282094` | `118a6ba0` | `Test backend`、`Assert required integration tests ran`、`Race backend`、`Vet backend`、`Verify Swagger document` | 全部 `success`——**Linux `go test -race` 与隔离 PostgreSQL/Redis「0 跳过」在 CI 上闭环**（本机无 cgo 工具链与隔离服务，仅能标记 Blocked） |
+| `38191324186` | `a59e0d43` | 同上 | 全部 `success`（容器构建修复后的复跑，整轮 success） |
+
+### 26.3 容器构建缺陷（P1，已修，只有 CI 能发现）
+
+失败现象与原始日志见 `frontend/AUDIT.md` §22.3：`Dockerfile:20` 只 COPY `frontend/scripts/build-inputs.ts`，而 `f8145ff9` 抽出的 `scripts/build-manifest-plugin.ts` 被 `vite.config.ts` 直接 import → 容器内 `pnpm build` 报 `TS2307` 并退出 2。修复提交 `05c616bd`（`COPY frontend/scripts ./scripts`；`.dockerignore` 白名单改为 `!frontend/scripts/**` 并排除测试文件）→ CI R2 整轮 success。本机无 Docker，**该缺陷只能由 CI 的镜像构建覆盖**。
+
+### 26.4 仍未闭环项（后端相关）
+
+| 项 | 状态 | 说明 |
+| --- | --- | --- |
+| `Verify backend structure and API contract` 的 **CI 侧** | 未闭环（登记） | 该 step 只存在于维护线工作流；探针分支必须保留 `origin/main` 工作流定义（本机凭据缺工作流作用域），故不在 run 中。本机侧已闭环（§26.1） |
+| BE-G3 `ports/security` 迁移 | 需单独批准 | 本轮未执行 |
+| BE-B4 benchmark 统计检验 | 仍开放（P3） | `benchstat` 未安装，维持「中位数 + 可比性限制」登记 |
+| 交付分支推送（含 `.github/workflows/**`） | Blocked（需凭据 scope） | 实测 `git push` exit 1；解除条件见 `frontend/AUDIT.md` §20.5 |
