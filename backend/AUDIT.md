@@ -867,7 +867,7 @@ R8 缺口登记（P2，未改代码）：**G-1** `layerBoundaries` 硬编码 dom
 
 | 编号 | 项 | 状态与恢复条件 |
 | --- | --- | --- |
-| BE-G1 | `internal/transport`、`internal/infra`、`internal/app` 无边界规则；`middleware/request.go:11` 的 transport→infra 直连未登记例外 | P2；扩展 `layerBoundaries` 或登记豁免后复跑 `go test ./internal/ports/provider/ -count=1` |
+| BE-G1 | `internal/transport`、`internal/infra`、`internal/app` 无边界规则；`middleware/request.go:11` 的 transport→infra 直连未登记例外 | **已关闭（§29.1）**：transport 规则与例外在 `94caa642`（BE-21）落地；`infra` 规则与 8 条 `infra/egress` 存量例外本轮补齐；`app` 保持带理由的豁免（唯一装配入口） |
 | BE-G2 | R8 新目录覆盖缺口（M-R8d exit 0） | P2；补「所有 `internal/*` 目录均被覆盖」断言或目录清单守卫 |
 | BE-G3 | BA-02 `ports/security` 迁移未执行 | P2/需单独批准；执行时按 20.6 清单 + `apicheck --update` + §8 证据 |
 | BE-B1 | `go test -race` 本机不可执行 | Blocked（`CGO_ENABLED=0`）；由 CI `Race backend` 覆盖 |
@@ -1043,7 +1043,7 @@ cd backend && go run ./tools/structurecheck                                     
 
 ### 22.4 未覆盖与存量缺口（如实登记）
 
-- BE-G1 只收口 transport→infra 方向；`infra` 目录的豁免理由中已登记存量缺口：`infra/egress` 8 个生产文件依赖 `application/egress`，加规则前需先冻结这 8 条例外（不扩大本轮范围）。
+- BE-G1 在 `94caa642` 只收口 transport→infra 方向；当时 `infra` 的存量缺口（`infra/egress` 8 个生产文件依赖 `application/egress`）已在本轮按该计划冻结为 8 条精确例外，并加上 `infra 生产文件不反向依赖上层` 规则（§29.1）。
 - `app`（唯一装配入口）保持无自动规则、仅豁免（评审准则）。
 - 本包改动后未重跑 `go test ./...`、`bash scripts/verify.sh` 与 `-race`（改动仅 `_test.go`；相关包测试 + `vet` + `structurecheck` 已闭环）；CI 侧由探针分支覆盖（见 §21.2）。
 
@@ -1220,3 +1220,20 @@ BenchmarkDashboardUsageAggregate/performance-8      1   167337300 ns/op   23768 
 | 隔离 PostgreSQL/Redis 上的基准 | 未执行 | 本机无隔离服务 |
 | 其余 16 个 leaf | 未执行 | 超出本轮范围 |
 | 「无性能回退」结论 | **不可声称** | 26.7% 假阳性率与 ±36% CI 中位宽度不支持该结论（与 §20.10 的自我声明一致） |
+
+## 29. 2026-10-12 关闭 BE-G1 / BE-G2（后端边界门禁补齐与自证）
+
+### 29.1 BE-G1：`internal/infra` 分层规则 + 8 条存量例外
+
+**缺口**：`94caa642`（BE-21）只落地 transport 规则与 `middleware/request.go` 例外；`internal/infra` 无任何规则（`internalDirectoryCoverageEntries` 的 `infra` 条目只是带理由的豁免）⇒ 新增 `infra` 生产文件直连 `application`/`app`/`transport` 不会被发现。
+
+**改动**：
+
+- 新增规则 `infra 生产文件不反向依赖上层`（`directory: "infra"`、`forbidden: {app, application, transport}`、`includeTests=false`：infra 的装配/集成测试用真实 application 类型）；允许 `infra → domain/ports/repository`（实现契约方向）。
+- 新增 `infraApplicationExceptions`，冻结 8 个 `infra/egress` 生产文件 → `application/egress` 的存量依赖，命中行：`clearance.go:11`、`clearance_refresh.go:11`、`fallback.go:10`、`flaresolverr.go:16`、`lease.go:15`、`manager.go:12`、`node_select.go:13`、`probe.go:17`。例外按 (文件, 包) 精确匹配并受 `unusedImportExceptions` 棘轮约束：8 条全部命中（扫描输出 `存量依赖=8`），文件移除依赖时必须同步删除例外。
+- `internalDirectoryCoverageEntries` 的 `infra` 由豁免登记改为规则（`规则=6、豁免=5、参与判定=11`）。
+- 夹具：`TestImportBoundaryInfraRule`（5 个未登记方向必须报违规 + 5 条例外精确性用例）、`TestImportBoundaryInfraTestFilesExempt`（`_test.go` 豁免）。
+
+**同类扫描范围（CHG-6）**：`internal/infra/**/*.go` 全量扫描（224 文件 / 1578 条 import），对 `app`、`application`、`transport` 三个禁止方向逐一检索，命中 **15 文件 / 16 处**：**8 处生产文件**（本轮冻结）+ **7 处 `_test.go`**（`includeTests=false` 已豁免：`provider/web/security_test.go`、`provider/cli/oauth_test.go`、`persistence/relational/{selector_segmented_integration,postgres_integration,egress_proxy_profile_repository,egress_operations}_test.go`、`egress/buildclient_test.go`）。**未处理项 0**。
+
+**负样本（先证明旧实现通过、新实现失败）**：临时新增 `internal/infra/zz_be_g1_probe/probe.go`（`import _ …/internal/application/egress`）后运行 `go test ./internal/ports/provider/ -run TestLayerImportBoundaries -count=1`：改动前 `ok … 2.607s`（**exit 0**，漏判）；改动后 `--- FAIL: TestLayerImportBoundaries/infra_生产文件不反向依赖上层` + `internal/infra/zz_be_g1_probe/probe.go:3 -> …/internal/application/egress`（**exit 1**）；删除探针后恢复 `ok … 4.068s`（exit 0）。探针目录已删除，工作树无残留。

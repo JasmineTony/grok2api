@@ -271,6 +271,49 @@ func TestImportBoundaryTransportTestFilesExempt(t *testing.T) {
 	checkImportBoundaryFixture(t, boundary, map[string]string{relative: source}, importBoundaryScan{skippedTests: 1})
 }
 
+func TestImportBoundaryInfraRule(t *testing.T) {
+	boundary := importBoundaryFor(t, "infra")
+	for _, target := range []string{"app", "application", "application/egress", "transport", "transport/http"} {
+		t.Run("unregistered_"+target, func(t *testing.T) {
+			file := "internal/infra/egress/fixture.go"
+			imported := internalModulePrefix + target
+			checkImportBoundaryFixture(t, boundary, map[string]string{file: importFixtureSource(imported)}, importBoundaryScan{
+				files: 1, imports: 1, violations: []string{file + ":3 -> " + imported},
+			})
+		})
+	}
+	cases := []struct {
+		name, file, target string
+		allowed            bool
+	}{
+		{"frozen_exception", "internal/infra/egress/manager.go", "application/egress", true},
+		{"same_package_other_file", "internal/infra/egress/egress_manager.go", "application/egress", false},
+		{"same_basename_other_directory", "internal/infra/other/manager.go", "application/egress", false},
+		{"frozen_file_other_package", "internal/infra/egress/manager.go", "application/gateway", false},
+		{"frozen_file_subpackage", "internal/infra/egress/manager.go", "application/egress/nested", false},
+	}
+	for _, fixture := range cases {
+		t.Run(fixture.name, func(t *testing.T) {
+			imported := internalModulePrefix + fixture.target
+			want := importBoundaryScan{files: 1, imports: 1}
+			if fixture.allowed {
+				want.exceptions = []string{fixture.file + " -> " + imported}
+			} else {
+				want.violations = []string{fixture.file + ":3 -> " + imported}
+			}
+			checkImportBoundaryFixture(t, boundary, map[string]string{fixture.file: importFixtureSource(imported)}, want)
+		})
+	}
+}
+
+func TestImportBoundaryInfraTestFilesExempt(t *testing.T) {
+	boundary := importBoundaryFor(t, "infra")
+	// includeTests=false：infra 的装配/集成测试用真实 application 类型，只有生产文件受约束。
+	relative := "internal/infra/egress/fixture_test.go"
+	source := strings.Replace(importFixtureSource(internalModulePrefix+"application/egress"), "package fixture", "package fixture_test", 1)
+	checkImportBoundaryFixture(t, boundary, map[string]string{relative: source}, importBoundaryScan{skippedTests: 1})
+}
+
 func importBoundaryFor(t *testing.T, directory string) layerBoundary {
 	t.Helper()
 	for _, boundary := range layerBoundaries {

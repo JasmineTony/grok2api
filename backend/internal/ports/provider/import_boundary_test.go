@@ -65,6 +65,23 @@ var transportInfraExceptions = map[string][]string{
 	"internal/transport/http/middleware/request.go": {internalModulePrefix + "infra/security"},
 }
 
+// infraApplicationExceptions 冻结现有 infra → application 生产依赖，只能保留或删除，不能新增。
+// 8 个 infra/egress 生产文件依赖 application/egress 的出口领域模型（FallbackPlan、NodeProfile、Lease 等），
+// 反向迁移属独立批准的改动，本轮只登记例外、不改生产代码（BE-G1）。命中位置为各文件首行的
+// application/egress import：clearance.go:11、clearance_refresh.go:11、fallback.go:10、
+// flaresolverr.go:16、lease.go:15、manager.go:12、node_select.go:13、probe.go:17。
+// 文件移除依赖时必须同步删除例外，避免遗留授权被重新使用。
+var infraApplicationExceptions = map[string][]string{
+	"internal/infra/egress/clearance.go":         {internalModulePrefix + "application/egress"},
+	"internal/infra/egress/clearance_refresh.go": {internalModulePrefix + "application/egress"},
+	"internal/infra/egress/fallback.go":          {internalModulePrefix + "application/egress"},
+	"internal/infra/egress/flaresolverr.go":      {internalModulePrefix + "application/egress"},
+	"internal/infra/egress/lease.go":             {internalModulePrefix + "application/egress"},
+	"internal/infra/egress/manager.go":           {internalModulePrefix + "application/egress"},
+	"internal/infra/egress/node_select.go":       {internalModulePrefix + "application/egress"},
+	"internal/infra/egress/probe.go":             {internalModulePrefix + "application/egress"},
+}
+
 var layerBoundaries = []layerBoundary{
 	{
 		name: "domain 不反向依赖上层或 infra", directory: "domain",
@@ -89,6 +106,12 @@ var layerBoundaries = []layerBoundary{
 		// transport → app 会形成 import cycle，由编译器兜底；编译器看不到的可判定方向是 infra。
 		name: "transport 生产文件不直连 infra", directory: "transport",
 		forbidden: []string{"infra"}, exceptions: transportInfraExceptions,
+	},
+	{
+		// infra 只约束生产文件：infra 的装配/集成测试用真实 application 类型，属装配验证。
+		// 允许 infra → domain/ports/repository（实现契约），只禁止反向依赖上层 app/application/transport。
+		name: "infra 生产文件不反向依赖上层", directory: "infra",
+		forbidden: []string{"app", "application", "transport"}, exceptions: infraApplicationExceptions,
 	},
 }
 
@@ -245,11 +268,11 @@ var internalDirectoryCoverageEntries = map[string]internalDirectoryCoverage{
 	"buildinfo":   {reason: "只暴露版本常量，无任何 internal 依赖"},
 	"cli":         {reason: "进程入口，装配序列按需调用 app 与 infra/config、infra/observability"},
 	"domain":      {rule: "domain 不反向依赖上层或 infra"},
-	"infra":       {reason: "BE-G1 未收口部分：infra/egress 8 个生产文件依赖 application/egress，加规则前需先冻结这 8 条存量"},
 	"pkg":         {reason: "通用工具包；生产代码只依赖 repository 契约（reasoningreplay），其余 internal 引用在测试内"},
 	"ports":       {rule: "ports 不反向依赖上层或 infra"},
 	"repository":  {rule: "repository 不反向依赖上层或 infra"},
 	"shared":      {reason: "纯值类型，无任何 internal 依赖"},
+	"infra":       {rule: "infra 生产文件不反向依赖上层"},
 	"transport":   {rule: "transport 生产文件不直连 infra"},
 }
 
