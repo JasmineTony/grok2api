@@ -1181,3 +1181,40 @@ PR #1（head `ci-probe/acceptance-audit-20261011`，`b59e5ff6`）上名为「Cod
 ## 27. CodeQL 告警存量判定补充证据（BE-26）
 
 **补充证据（2026-10-12，CI 双轮核对）**：仓库 `/code-scanning/alerts?state=open` 的 5 条告警 `created=2026-10-11`、`ref=refs/heads/main`（`go/clear-text-logging` × 4 → `service_request.go:635/637/647/789`；`go/path-injection` × 1 → `transport/http/frontend.go:76`）⇒ 属**存量**告警；名为「CodeQL」的 check-run 在 `b59e5ff6`、`118a6ba0`、`a59e0d43` 三个 sha 上均为 `failure` 且 annotations 完全相同；PR #1/#2 的 `mergeable_state=unstable`（非 `blocked`）⇒ 该 check 不是阻塞合并的必需检查。「同一批告警因重命名/指纹变化被计为 PR 新增」仍为**推断**（未取到 fingerprint 级证据）。
+
+## 28. 2026-10-12 benchmark 统计检验与基准缺陷修复（BE-27）
+
+### 28.1 benchstat 可得性与实际检验（关闭 BE-B4 的「工具未装」登记）
+
+`go install golang.org/x/perf/cmd/benchstat@latest` → exit 0（网络可达；工具装在会话 scratch，未入工作树）。执行 `go test <pkg> -run '^$' -bench . -benchmem -count=10` 两轮（R1/R2），4 包 / 15 个可比 leaf，全部 exit 0。基准实际所在包与 §20.10 一致；注意 `./internal/application/egress/` **不含**基准，egress 基准在 `internal/infra/egress/manager_test.go`。
+
+**结论：本机不具备判定 ns/op 变化的判别力（负面结论，如实登记）。** 同代码 R1 vs R2 的 45 个比较行中 **12 行被判显著（26.7%）**，α=0.05 名义期望仅 2.25 行；sec/op 的 95% CI 半宽（n=30）中位 **±36%**、最大 ±167%，**28/30 > ±10%**。测量窗口内 ambient 负载 2.34–6.14 CPU·s/s（8 核；来源为并发的 Playwright `chrome-headless-shell` 等），说明本轮**未能取得安静窗口**。
+
+**唯一稳定的量是分配指纹**（三轮逐字一致）：`Seg/3000/as64` 160/160/160 allocs、`SelectedCredentialHydration` 155/155/155、`RoutingAccountBaseProjection` 62,257/62,255/62,254 等；§20.10 记录的「legacy 首样本预热离群点」也获独立复现。
+
+### 28.2 发现并修复的基准缺陷（P2）
+
+`BenchmarkDashboardUsageAggregate`（`internal/infra/persistence/relational/dashboard_repository_test.go:143-185`）在建表并插入 50,000 行后**没有 `b.ResetTimer()`** ⇒ 负载下校准退化到 `b.N=1`，一次性初始化被摊进 ns/op（离群样本 1.02s–5.53s，benchstat 曾报 +1213.59%，p=0.000）。修复：在插入完成后加 `b.ResetTimer()`（并在注释里写明该陷阱）。
+
+**修复验证（本机实测）**：
+
+```
+cd backend && gofmt -l internal/infra/persistence/relational/dashboard_repository_test.go   # 无输出，exit 0
+cd backend && go vet ./internal/infra/persistence/relational/                                # exit 0
+cd backend && go test ./internal/infra/persistence/relational/ -run '^$' \
+    -bench BenchmarkDashboardUsageAggregate -benchtime=1x -benchmem                           # exit 0
+BenchmarkDashboardUsageAggregate/legacy-8           1   129555100 ns/op   70376 B/op   449 allocs/op
+BenchmarkDashboardUsageAggregate/performance-8      1   167337300 ns/op   23768 B/op   143 allocs/op
+```
+
+数字回到**百毫秒量级**（不再是秒级离群），说明修复直接消除了该异常来源；`-benchtime=1x` 下 n=1 仍不足以做分布结论，故**不声称**修复前后有性能差异。
+
+### 28.3 仍未执行与不可声称
+
+| 项 | 状态 | 说明 |
+| --- | --- | --- |
+| 跨 commit「旧 vs 新」A/B | 未执行 | 被基准覆盖的 Go 代码在测量窗口内**逐字节未变**（`git diff --name-only` 对 `backend/*.go`、`backend/internal/**`、`go.mod`、`go.sum` 为空），等价于空对照 |
+| `-race` 下的基准 | 未执行 | 本机 `CGO_ENABLED=0`（无 C 编译器） |
+| 隔离 PostgreSQL/Redis 上的基准 | 未执行 | 本机无隔离服务 |
+| 其余 16 个 leaf | 未执行 | 超出本轮范围 |
+| 「无性能回退」结论 | **不可声称** | 26.7% 假阳性率与 ±36% CI 中位宽度不支持该结论（与 §20.10 的自我声明一致） |
