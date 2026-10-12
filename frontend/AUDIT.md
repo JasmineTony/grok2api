@@ -1264,3 +1264,34 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 | `38195708323`「CodeQL Advanced」 | `3714cd39` | **success** | 三个 Analyze job（actions / go / javascript-typescript）                                                                                                                                                |
 
 探针分支 `ci-probe/acceptance-audit-20261011-r1` 的 tip `3714cd39` 内容等同 `maint/acceptance-audit-20261011-residual` 的当前 tip（唯一差异是 `.github/workflows/**` 保持 `origin/main` 版本，`git diff --name-only origin/main -- .github/workflows` 为空）。**注意**：该 run 仍未包含维护线工作流新增的两步（`Verify backend structure and API contract`、`Assert required frontend tests ran`），原因与后果见 §23.2 第 3 条。
+
+## 24. 2026-10-12（续三）main↔residual 合并影响评估与 F5 审查结论（FE-19）
+
+### 24.1 main↔residual 合并影响（只读实测）
+
+| 维度              | 实测结果                                                                                                                                                                                                                                                       |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| main 独有提交     | `origin/main..main` 共 11 个；其中 **9 个已是 residual 的祖先**（merge-base = `12e03be9`），只有 `57510159`、`13626e6c` 为 main 独有，且两者内容已被 residual 搬运（`83ff5ae7` 的 7 个 `backend/tools/**` 文件逐 blob 相同；`339c53ca` 的 AGENTS.md 4 处一致） |
+| 真实冲突面        | `git merge-tree 12e03be9 main residual` → **仅 3 个文件 / 13 个冲突区**（`AGENTS.md` 11 区、`backend/AUDIT.md` 1 区、`frontend/AUDIT.md` 1 区）；**零代码冲突**                                                                                                |
+| 生成物            | `frontend/structure-baseline.json`、`backend/structure-baseline.json`、`frontend/bundle-budget.json`、`backend/api-baseline.txt`、`VERSION` 两侧**同一 blob** → 不触发 CHG-8                                                                                   |
+| 章节撞号          | main 的 `backend §20(BE-18)/§21(BE-19)` 与 residual `§20…§28` 撞号；main 的 `frontend §19(FE-12)` 与 residual `§19(FE-12)…§23(FE-18)` 撞号 → 合并后须重编号并修交叉引用                                                                                        |
+| main 侧文档过期项 | `Dockerfile:66`（实际 `:67`）、DEV-4「12 步」（residual 为 13 步）、`uses:` 未固定 SHA（实测 22/22 已固定）                                                                                                                                                    |
+
+三条路径对比（冲突数为实测，工作量为估算）：
+
+- **a. residual → main**：解 3 文件 13 区 + 重编号 ≈ 200 行文档手术；风险：首次把维护线两条从未在 CI 执行过的 step 带进 main 的 CI。
+- **b. main → residual**（评估倾向）：冲突量相同，解冲突时「以 residual 为底 + 追加 main 的两章并重编号」更自然；解完 main 可 **fast-forward** 到该 merge commit（不重写历史），CI 证据天然覆盖 main 的 11 个提交。
+- **c. 两线独立 + 探针取证**：0 冲突、立即可行；但两条 CI step 仍无 run 证据，且每轮 `AGENTS.md`/两个 `AUDIT.md` 的冲突区会线性增长（当前 13 区）。
+
+**本轮对路径 b 的前置修复（已做）**：residual 的 `AGENTS.md` 补回 main 独有的两条语义——EVID-1 的 `Failed/Skipped/Blocked` 三态定义（此前形成悬空引用）与 §8 的 ghcr 容器包绑定事实，提交 `b19ae050`。
+
+> 合并 `main` 属 §8 不可逆操作，本轮**未执行**（仅只读评估）。
+
+### 24.2 F5 改动的稳定性与覆盖回归审查（只读）
+
+审查对象：`571a16fd`（F5）与 `f8145ff9`（移动 project 引入）。结论：**无 P1**；覆盖净增且无空洞。
+
+- **已核实无问题**：`isDrawerLayout` 两分支竞速在都不可见时**显式抛错**（15s 超时；调用点均在壳层挂载之后）；`accountControlScope` / `expectVisibleUsername` 正确限定到 Radix Sheet dialog（`getByRole` 过滤隐藏元素，而 `getByTestId`/`getByText` 不过滤）；唯一 `@desktop` 用例确为「断言桌面布局本身」，`grepInvert` 语义经 `--list` 实证；22 个 `test()` = chromium 21 + mobile 21 = 42，**不存在两个 project 都不跑的用例**；共享助手只依赖 `page`，桌面调用不会失误。
+- **P2-1（登记，待修）**：门禁无 project 维度——把 1 个跨端用例改标 `@desktop` 并新增 1 个无标签用例，同文件通过数不变而移动覆盖静默下降（单步改动会被现行 `minPassed` 抓到，组合改动不会）。
+- **P2-2**：该棘轮在 CI 未被执行（见 §23.2 第 3 条）。
+- **P3 清单**：`@desktop` 拼写漂移无门禁（改成 `@desk` 会让移动多跑 1 个实例，方向是多测而非少测）；`isDrawerLayout` 顶层错误信息未含 selector/URL；移动 project 缺「侧栏在移动布局应隐藏」的直接断言；实例翻倍使 worker 与后端并发翻倍；`mobile-device.e2e.ts` 仍会拉起 worker 后端。
