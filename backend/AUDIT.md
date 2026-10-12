@@ -927,6 +927,7 @@ go test <pkg> -run '^$' -bench '<正则>' -benchmem -count=5
 - **后续更新（2026-10-12，见 §28）**：本节「本机无 `benchstat`，未做统计检验」已被取代——`benchstat` 已装并实际执行：§28.1 给出同代码 R1 vs R2 的空对照（45 个比较行中 12 行被判显著 = 26.7%，95% CI 半宽中位 ±36%），结论是**本机不具备 ns/op 判别力**，唯一稳定的是分配指纹；本节提到的 legacy 子基准「首样本预热离群点」也已定位为**基准缺陷**（`dashboard_repository_test.go` 缺 `b.ResetTimer()`，§28.2 已修）。本节数字保留为历史快照，引用时以 §28 为准。
 ### 20.11 回滚
 
+- **后续更新（2026-10-12，见 §26.3）**：本行「`.dockerignore` 三行白名单回退不影响本机验证」在 `05c616bd` 之后已不成立——`.dockerignore` 现为 `!frontend/scripts/**` + 排除 `frontend/scripts/**/*.test.ts`（共 4 行），且 `!frontend/scripts/**` 是镜像构建**必需**（回退会让容器内 `pnpm build` 报 `TS2307` 失败）。回退方案以 §26.3 为准。
 按类别独立回滚：边界测试与夹具回退 `import_boundary_test.go` 并删除 `import_boundary_fixtures_test.go`；静态托管收口回退 `frontend.go` +6/−1 与 `server_test.go` +4/−0（回退后 `/.build-manifest.json` 会重新 200 公开返回，不建议）；`.dockerignore` 三行白名单回退不影响本机验证（真实容器判定仍以 CI `check_ghcr_image` 为准）。本轮无数据、协议、配置（除 `.dockerignore`）或依赖迁移。
 
 ### 20.12 收口轮登记：分支、提交与 Swagger 复现（2026-10-11 22:15–22:50）
