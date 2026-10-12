@@ -13,10 +13,10 @@
  * 断言：
  * ① 报告新鲜度：报告开始时间不早于清单文件最新 mtime（报告缺时间戳时改用报告文件 mtime 兜底并打印依据），
  *    且清单文件必须仍存在于磁盘——文件被删除或改名时旧报告不得放行；
- * ② 清单内文件逐个出现在报告中，且 0 失败、0 取消、0 未登记跳过，通过数不少于棘轮 minPassed；
- * ③ 报告内文件总数与用例总数不少于实测棘轮（防止整体删除测试文件绕过）；
- * ④ 任何文件「整文件跳过」（用例数 > 0 且全部跳过）或「收集失败」（Node 在文件级失败时合成的
- *    file-root 用例）→ 失败，清单内外一视同仁；
+ * ② 清单内文件逐个出现在报告中，通过数不少于棘轮 minPassed，且无未登记跳过；
+ * ③ 报告内任何文件（清单内外一视同仁）的失败 / 被取消用例，任何 `cases` 为空的文件（收集失败 /
+ *    describe.skip / 用例被删除）、整文件跳过（用例数 > 0 且全部跳过）与「收集失败」（Node 在文件级
+ *    失败时合成的 file-root 用例）→ 失败；
  * ⑤ 报告自洽性：按用例记录统计出的通过/失败/跳过/取消数与 Node 自己的 run 级汇总（test:summary）
  *    必须一致；不一致说明 reporter 的解析口径与真实运行不符，fail-closed。
  * 清单外的文件部分跳过、存在 test.todo → 只告警（test.todo 由 minPassed 棘轮挡住用例被掏空）。
@@ -223,6 +223,8 @@ function emptyTally() {
     cancelledTitles: [],
     todoTitles: [],
     collectionFailures: [],
+    /** 报告里该文件原始 cases 条目数（含 file-root 收集失败条目），用于识别「0 用例」的文件。 */
+    caseEntries: 0,
   };
 }
 
@@ -272,7 +274,9 @@ function summarize(report) {
   for (const entry of report.files) {
     const file = normalizeReportPath(entry.file);
     const tally = files.get(file) ?? emptyTally();
-    for (const item of entry.cases ?? []) tallyCase(tally, item);
+    const cases = entry.cases ?? [];
+    tally.caseEntries += cases.length;
+    for (const item of cases) tallyCase(tally, item);
     files.set(file, tally);
   }
   return files;
@@ -287,7 +291,7 @@ function caseCount(tally) {
   return tally.passed + tally.failed + tally.skipped + tally.cancelled + tally.todo;
 }
 
-/** 逐清单文件断言：存在、通过数达棘轮、无失败/取消/未登记跳过/收集失败。 */
+/** 逐清单文件断言：出现在报告中、通过数达棘轮、无未登记跳过。失败/取消/零用例由 checkFileFailures 统一判定。 */
 function checkRequired(label, files, required) {
   const failures = [];
   for (const { file, minPassed } of required) {
@@ -299,12 +303,6 @@ function checkRequired(label, files, required) {
     if (tally.passed < minPassed) {
       failures.push(`${label}：${file} 通过 ${tally.passed} 个，少于要求的 ${minPassed} 个`);
     }
-    if (tally.failed > 0) {
-      failures.push(`${label}：${file} 有 ${tally.failed} 个失败用例：${tally.failedTitles.join("、")}`);
-    }
-    if (tally.cancelled > 0) {
-      failures.push(`${label}：${file} 有 ${tally.cancelled} 个被取消用例：${tally.cancelledTitles.join("、")}`);
-    }
     const unregistered = tally.skippedTitles.filter((title) => !isAllowedSkip(file, title));
     if (unregistered.length > 0) {
       failures.push(`${label}：${file} 存在未登记跳过用例 ${unregistered.join("、")}`);
@@ -313,13 +311,26 @@ function checkRequired(label, files, required) {
   return failures;
 }
 
-/** 文件级失效判定（清单内外一视同仁）与部分跳过告警。 */
+/**
+ * 文件级失效判定（清单内外一视同仁）：收集失败、失败用例、被取消用例、整文件跳过、报告里 0 用例。
+ * 只按清单文件判定会让清单外文件成为逃生口：14 个清单文件刚好达标时，清单外文件的 failed 用例
+ * 既不算失败也不告警（旧实现 exit 0），`describe.skip` 让清单外文件 `cases: []` 时同样静默。
+ */
 function checkFileFailures(label, files, required) {
   const failures = [];
   const warnings = [];
   for (const [file, tally] of files) {
     for (const reason of tally.collectionFailures) {
       failures.push(`${label}：${file} 收集失败（文件级用例未执行：${reason}），断言结果不可信`);
+    }
+    if (tally.failed > 0) {
+      failures.push(`${label}：${file} 有 ${tally.failed} 个失败用例：${tally.failedTitles.join("、")}`);
+    }
+    if (tally.cancelled > 0) {
+      failures.push(`${label}：${file} 有 ${tally.cancelled} 个被取消用例：${tally.cancelledTitles.join("、")}`);
+    }
+    if (tally.caseEntries === 0) {
+      failures.push(`${label}：${file} 在报告中 0 个用例（收集失败 / 整文件跳过 / 用例被删除），不得放行`);
     }
     const total = caseCount(tally);
     const wholeFileSkipped = total > 0 && tally.skipped === total;
