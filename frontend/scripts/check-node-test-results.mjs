@@ -21,19 +21,52 @@
  *    必须一致；不一致说明 reporter 的解析口径与真实运行不符，fail-closed。
  * 清单外的文件部分跳过、存在 test.todo → 只告警（test.todo 由 minPassed 棘轮挡住用例被掏空）。
  *
- * 环境变量：NODE_TEST_REPORT_ROOT 覆盖报告根目录，**仅供 scripts/self-test-gates.mjs 的临时装置使用**。
- * 本地门禁与 CI 都不设置它（默认 frontend/），它不是绕过门禁的开关。
+ * 环境变量：NODE_TEST_REPORT_ROOT 覆盖报告根目录，**只允许指向系统临时目录（os.tmpdir()）之下**，仅供
+ * scripts/self-test-gates.mjs 的临时装置使用。本地门禁与 CI 都不设置它；指向 tmp 之外时打印原因并以
+ * 退出码 2 拒绝：任何可见的 CI / 包装层改动都不得把门禁重定向到伪造的健康报告。
  *
  * 退出码：0 = 通过；1 = 断言失败（缺失/跳过/取消/失败/数量不足/报告过期/报告不自洽）；
- * 2 = 报告缺失、不可解析、形状或版本不匹配、缺少 run 级汇总。
+ * 2 = 报告缺失、不可解析、形状或版本不匹配、缺少 run 级汇总，或 NODE_TEST_REPORT_ROOT 越界被拒绝。
  */
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const frontendDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-/** 报告与清单文件的根目录；默认 frontend/，NODE_TEST_REPORT_ROOT 只供 self-test-gates.mjs 的临时装置注入。 */
-const reportRoot = process.env.NODE_TEST_REPORT_ROOT ? path.resolve(process.env.NODE_TEST_REPORT_ROOT) : frontendDir;
+
+/** 已存在路径取 realpath（消除 Windows 短名与符号链接差异）；不存在时原样返回，交由报告读取失败处理。 */
+function realPathOrSelf(target) {
+  try {
+    return fs.realpathSync(target);
+  } catch {
+    return target;
+  }
+}
+
+/**
+ * 报告与清单文件的根目录：默认 frontend/；NODE_TEST_REPORT_ROOT 只允许指向系统临时目录（os.tmpdir()）之下。
+ * 限制理由与 scripts/check-test-results.mjs 的 TEST_REPORT_ROOT 同一口径：该覆盖只为
+ * scripts/self-test-gates.mjs 的临时装置存在（根目录来自 fs.mkdtempSync(path.join(os.tmpdir(), ...))），
+ * 本地门禁与 CI 都不设置它。若允许任意路径，一次可见的 CI / 包装层改动就能把门禁指向伪造的健康报告并拿到
+ * exit 0，门禁形同虚设（AGENTS.md EVID-1：未运行不得称通过）。
+ * 判定：覆盖路径（realpath 归一后）不在 tmp 之下 → 打印原因并返回 null，main() 以退出码 2 拒绝、绝不放行。
+ */
+function resolveReportRoot() {
+  const override = process.env.NODE_TEST_REPORT_ROOT;
+  if (!override) return frontendDir;
+  const resolved = realPathOrSelf(path.resolve(override));
+  const tempRoot = realPathOrSelf(os.tmpdir());
+  const relative = path.relative(tempRoot, resolved);
+  if (!relative.startsWith("..") && !path.isAbsolute(relative)) return resolved;
+  console.error(
+    `拒绝 NODE_TEST_REPORT_ROOT=${override}：该覆盖只允许指向系统临时目录 ${tempRoot} 之下（仅供 self-test-gates.mjs 的临时装置）；` +
+      "门禁不得被外部环境重定向到伪造报告。",
+  );
+  return null;
+}
+
+const reportRoot = resolveReportRoot();
 const REPORT_PATH = ".artifacts/node-test/results.json";
 const RERUN_COMMAND = "pnpm test";
 
@@ -383,6 +416,8 @@ function logReport({ label, fileCount, totals, cases, startMs }) {
 }
 
 function main() {
+  // 越界的 NODE_TEST_REPORT_ROOT 已在 resolveReportRoot 打印原因；这里绝不放行（EVID-1）。
+  if (reportRoot === null) return 2;
   const run = readReport(REPORT_PATH);
   if (run === null) return 2;
   const files = summarize(run.report);

@@ -16,9 +16,10 @@
  *    确认门禁既不是无条件失败，也不会静默跳过新鲜度检查。
  *  - check-node-test-results：node:test 报告缺失 / 清单文件被删除 / 必需文件未出现在报告中 / 整文件跳过
  *    （test.skip 与 describe.skip 两种形态）/ 清单文件部分跳过 / 用例失败 / 收集失败 / 清单外文件整文件跳过 /
- *    报告早于清单文件 mtime / 缺 startedAt 走报告文件 mtime 兜底 / 报告形状不可用 / 报告与 Node 汇总不自洽 /
- *    用例总数低于棘轮 → 非零退出；并以健康报告、「清单外文件部分跳过只告警」两组反例确认门禁不是无条件失败，
- *    且每个负样本都按「只依赖退出码的旧判定会通过」构造（见 assertNodeTestExitCodeClean）。
+ *    NODE_TEST_REPORT_ROOT 指向 tmp 之外（exit 2）/ 报告早于清单文件 mtime / 缺 startedAt 走报告文件 mtime
+ *    兜底 / 报告形状不可用 / 报告与 Node 汇总不自洽 / 用例总数低于棘轮 → 非零退出；并以健康报告、
+ *    「清单外文件部分跳过只告警」两组反例确认门禁不是无条件失败，且每个负样本都按「只依赖退出码的旧判定会
+ *    通过」构造（见 assertNodeTestExitCodeClean）。
  *
  * 装置全部建立在系统临时目录，不写入仓库；路径通过环境变量注入被测脚本。
  */
@@ -936,6 +937,11 @@ assertNodeTestExitCodeClean("node-test-partial-skip-filler", [
   ...nodeTestProbe,
   { ...nodeTestFiller, passed: 1, skipped: 1 },
 ]);
+/**
+ * 夹具（F10）：NODE_TEST_REPORT_ROOT 指向仓库内路径（不在 os.tmpdir() 之下）——该覆盖只允许指向系统临时
+ * 目录，越界必须 exit 2 拒绝，否则一次可见的包装层改动就能把门禁重定向到伪造的健康报告。
+ */
+const nodeTestEscapeRoot = path.join(frontendDir, "scripts");
 /** 夹具：报告比清单文件旧（沿用上一次运行的结果）→ 必须失败。 */
 const nodeTestStaleRoot = buildNodeTestRoot("node-test-stale", { startMs: staleMs });
 assertNodeTestExitCodeClean("node-test-stale", nodeTestProbe);
@@ -1380,6 +1386,13 @@ const cases = [
     contains: ["告警（清单外，不影响退出码）", "src/shared/gate-fixture-node.test.ts 部分跳过"],
     absent: ["整文件跳过"],
     run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestPartialSkipFillerRoot }),
+  },
+  {
+    name: "node:test：NODE_TEST_REPORT_ROOT 指向仓库内路径应被拒绝（exit 2，不得重定向门禁）",
+    expect: 2,
+    contains: ["拒绝 NODE_TEST_REPORT_ROOT", "只允许指向系统临时目录"],
+    absent: ["缺少 node:test 报告"],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestEscapeRoot }),
   },
   {
     name: "node:test：报告早于清单文件 mtime 应失败（过期报告）",
