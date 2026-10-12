@@ -19,6 +19,9 @@
  *
  * dist 新鲜度：读取 dist 之前先复用 scripts/build-inputs.ts 的 isBuildFresh（输入指纹 + 产物指纹），
  * 陈旧或缺失的 dist 一律退出 2——否则 `--update` 会把陈旧数字冻结进基线，校验也会在错误产物上通过。
+ * 环境变量：BUDGET_DIST_DIR / BUDGET_CONFIG_PATH 覆盖被校验的 dist 与配置路径，**只允许指向系统临时目录
+ * （os.tmpdir()）之下**，仅供 scripts/self-test-gates.mjs 的临时装置使用；本地门禁与 CI 都不设置它们，
+ * 越界时打印原因并以退出码 2 拒绝（与 TEST_REPORT_ROOT / NODE_TEST_REPORT_ROOT 同一口径）。
  *
  * 用法：
  *   node scripts/check-bundle-budget.mjs            # 校验（需先 pnpm build）
@@ -27,6 +30,7 @@
  * 退出码：0 = 通过；1 = 阈值或增长超限；2 = dist 缺失/陈旧、index.html 无 JS 入口、配置不可读。
  */
 import { createRequire } from "node:module";
+import os from "node:os";
 import { brotliCompressSync, gzipSync } from "node:zlib";
 import fs from "node:fs";
 import path from "node:path";
@@ -41,9 +45,42 @@ const require = createRequire(import.meta.url);
 const ts = require("typescript");
 
 const frontendDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-// 允许通过环境变量注入路径，仅供 scripts/self-test-gates.mjs 用固定装置验证门禁会失败。
-const distDir = process.env.BUDGET_DIST_DIR ?? path.join(frontendDir, "dist");
-const configPath = process.env.BUDGET_CONFIG_PATH ?? path.join(frontendDir, "bundle-budget.json");
+
+/** 已存在路径取 realpath（消除 Windows 短名与符号链接差异）；不存在时原样返回，交由后续读取失败处理。 */
+function realPathOrSelf(target) {
+  try {
+    return fs.realpathSync(target);
+  } catch {
+    return target;
+  }
+}
+
+/**
+ * 路径覆盖（BUDGET_DIST_DIR / BUDGET_CONFIG_PATH）只允许指向系统临时目录（os.tmpdir()）之下，与
+ * scripts/check-test-results.mjs 的 TEST_REPORT_ROOT、scripts/check-node-test-results.mjs 的
+ * NODE_TEST_REPORT_ROOT 同一口径：该覆盖只为 scripts/self-test-gates.mjs 的临时装置存在（装置根目录来自
+ * fs.mkdtempSync(path.join(os.tmpdir(), ...))），本地门禁与 CI 都不设置它。若允许任意路径，一次可见的
+ * 包装层改动就能把门禁指向伪造的 dist 或放宽的预算配置并拿到 exit 0（AGENTS.md EVID-1：未运行不得称通过）。
+ * 判定：覆盖路径（realpath 归一后）不在 tmp 之下 → 打印原因并返回 null，调用点以退出码 2 拒绝、绝不放行。
+ */
+function resolveTempOverride(name, fallback) {
+  const override = process.env[name];
+  if (!override) return fallback;
+  const resolved = realPathOrSelf(path.resolve(override));
+  const tempRoot = realPathOrSelf(os.tmpdir());
+  const relative = path.relative(tempRoot, resolved);
+  if (!relative.startsWith("..") && !path.isAbsolute(relative)) return resolved;
+  console.error(
+    `拒绝 ${name}=${override}：该覆盖只允许指向系统临时目录 ${tempRoot} 之下（仅供 self-test-gates.mjs 的临时装置）；` +
+      "门禁不得被外部环境重定向到伪造的 dist 或预算配置。",
+  );
+  return null;
+}
+
+const distDir = resolveTempOverride("BUDGET_DIST_DIR", path.join(frontendDir, "dist"));
+const configPath = resolveTempOverride("BUDGET_CONFIG_PATH", path.join(frontendDir, "bundle-budget.json"));
+// 越界覆盖必须立即以退出码 2 失败：不得退回默认路径继续跑，否则一次可见的环境改动会静默失效。
+if (distDir === null || configPath === null) process.exit(2);
 const KiB = 1024;
 const shouldUpdate = process.argv.includes("--update");
 
@@ -256,12 +293,17 @@ function stripHtmlComments(html) {
   return html.replace(/<!--[\s\S]*?(?:-->|$)/g, "");
 }
 
-/** 单标签自身的属性表：兼容双引号、单引号与无引号写法，引号内的 `>` 不会截断标签。 */
+/**
+ * 单标签自身的属性表：兼容双引号、单引号与无引号写法，引号内的 `>` 不会截断标签。
+ * 重复属性取**首个**：HTML 规范里同一属性出现多次时首个生效，后写覆盖先写会让
+ * `<script src="/assets/real.js" src="x">` 把真实入口从首屏闭包中抹掉并静默通过。
+ */
 function attributesOf(tag) {
   const attributes = new Map();
   const pattern = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
   for (const match of tag.matchAll(pattern)) {
-    attributes.set(match[1].toLowerCase(), match[2] ?? match[3] ?? match[4] ?? "");
+    const name = match[1].toLowerCase();
+    if (!attributes.has(name)) attributes.set(name, match[2] ?? match[3] ?? match[4] ?? "");
   }
   return attributes;
 }
@@ -282,6 +324,20 @@ function resolveEntryReference(reference) {
 }
 
 /**
+ * `<link>` 只有这些 rel 的引用会在首屏被请求；其余（`prefetch` 空闲预取、`preconnect` / `dns-prefetch`
+ * 只建连接、`icon` / `manifest` 非首屏资源）一律不计入，`rel` 缺省时也不计入。
+ */
+const INITIAL_LINK_RELATIONS = new Set(["modulepreload", "preload", "stylesheet"]);
+
+/** 单个标签计入首屏的引用：`<script>` 取 src/href；`<link>` 仅当 rel 在白名单内。 */
+function tagEntryReferences(tag) {
+  const attributes = attributesOf(tag);
+  const rel = (attributes.get("rel") ?? "").trim().toLowerCase();
+  if (/^<link\b/i.test(tag) && !INITIAL_LINK_RELATIONS.has(rel)) return [];
+  return [attributes.get("src"), attributes.get("href")];
+}
+
+/**
  * 首屏入口 = dist/index.html 里静态声明的脚本/样式引用，**不限 `/assets/` 前缀**：
  * Vite 之外还有 `public/` 原样拷贝的脚本（如 `/runtime-config.js`），只认 `/assets/` 会静默漏算
  * 首屏真实字节。defer/async 标记的静态引用仍计入——浏览器解析 index.html 时即会请求它们；
@@ -291,8 +347,7 @@ function indexEntryFiles() {
   const html = stripHtmlComments(fs.readFileSync(path.join(distDir, "index.html"), "utf8"));
   const files = [];
   for (const match of html.matchAll(/<(?:script|link)\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi)) {
-    const attributes = attributesOf(match[0]);
-    for (const reference of [attributes.get("src"), attributes.get("href")]) {
+    for (const reference of tagEntryReferences(match[0])) {
       const candidate = resolveEntryReference(reference);
       if (candidate !== null) files.push(candidate);
     }
