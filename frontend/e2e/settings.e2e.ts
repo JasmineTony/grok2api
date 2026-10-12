@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 
-import { expect, signIn, test } from "./fixtures";
+import { accountControlScope, expect, signIn, test } from "./fixtures";
 
 // 界面文案默认语言为 zh-CN，英文仅作为语言切换后的兜底匹配；断言对象始终是用户可见结果。
 const settingsName = /^(运行设置|Runtime settings)$/;
@@ -9,7 +9,7 @@ const clientVersionLabel = /^(客户端版本|Client version)$/;
 const buildTabName = /Grok Build/;
 const webTabName = /^(Grok Web)$/;
 
-/** 通过侧边栏或下拉菜单进入设置页。 */
+/** 直连真实路由进入设置页：该入口在桌面与移动布局下都可达，不依赖侧栏链接。 */
 async function openSettingsPage(page: Page, baseURL: string): Promise<void> {
   await page.goto(`${baseURL}/settings`);
   await expect(page.getByRole("heading", { name: settingsName })).toBeVisible();
@@ -52,8 +52,8 @@ test("设置页未修改时保存与重置禁用，字段修改后保存启用�
   await expect(reset).toBeDisabled();
 });
 
-// @desktop：末段断言依赖侧栏设置链接可见（移动 project 下侧栏 display:none，元素不可见）。
-test("设置页分页可切换：Grok Build 与 Grok Web 面板按标签显隐", { tag: "@desktop" }, async ({ page, server }) => {
+// 末段断言改用当前布局的账号控制区（桌面常驻侧栏 / 移动抽屉），设置入口可见性不做放宽。
+test("设置页分页可切换：Grok Build 与 Grok Web 面板按标签显隐", async ({ page, server }) => {
   await signIn(page, server);
   await openSettingsPage(page, server.baseURL);
 
@@ -79,5 +79,6 @@ test("设置页分页可切换：Grok Build 与 Grok Web 面板按标签显隐",
   await expect(webPane).toBeHidden();
   await expect(page.getByTestId("settings-save")).toBeDisabled();
   await expect(page.getByTestId("settings-reset")).toBeDisabled();
-  await expect(page.getByRole("link", { name: settingsNavName }).first()).toBeVisible();
+  const account = await accountControlScope(page);
+  await expect(account.getByRole("link", { name: settingsNavName }).first()).toBeVisible();
 });

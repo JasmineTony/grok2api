@@ -1,4 +1,4 @@
-import { apiLogin, expect, signIn, test } from "./fixtures";
+import { accountControlScope, apiLogin, expect, expectVisibleUsername, signIn, test } from "./fixtures";
 
 // 界面文案默认语言为 zh-CN，英文仅作为语言切换后的兜底匹配；断言对象始终是用户可见结果。
 const loginHeadingName = /管理员登录|Admin sign in/;
@@ -30,26 +30,27 @@ test("错误密码登录失败并显示用户可见错误提示", async ({ page,
   await expect(page.getByRole("button", { name: submitButtonName })).toBeEnabled();
 });
 
-// @desktop：断言依赖桌面侧栏里的账号名可见（移动 project 下侧栏 display:none，实测 Received: hidden）。
-test("正确凭据登录成功、进入受保护页面并在刷新后保持登录", { tag: "@desktop" }, async ({ page, server }) => {
+// 账号名校验按当前布局取载体（桌面常驻侧栏 / 移动抽屉），登录与「刷新后保持会话」的断言不变。
+test("正确凭据登录成功、进入受保护页面并在刷新后保持登录", async ({ page, server }) => {
   await signIn(page, server, { fresh: true });
 
   await expect(page.getByRole("heading", { name: dashboardHeadingName })).toBeVisible();
-  await expect(page.getByText(server.username, { exact: true })).toBeVisible();
+  await expectVisibleUsername(page, server.username);
 
   await page.reload();
 
   await expect(page).toHaveURL(protectedPath);
   await expect(page.getByRole("heading", { name: dashboardHeadingName })).toBeVisible();
-  await expect(page.getByText(server.username, { exact: true })).toBeVisible();
+  await expectVisibleUsername(page, server.username);
 });
 
-// @desktop：注销入口是侧栏常驻的账号菜单按钮（移动 project 需先开抽屉，导航路径不同）。
-test("注销后再次访问受保护路由会被重定向到登录页", { tag: "@desktop" }, async ({ page, server }) => {
+// 注销入口在桌面侧栏与移动抽屉的账号控制区中都存在；作用域按当前布局选择，断言不放宽。
+test("注销后再次访问受保护路由会被重定向到登录页", async ({ page, server }) => {
   await signIn(page, server, { fresh: true });
   await expect(page.getByRole("heading", { name: dashboardHeadingName })).toBeVisible();
 
-  await page.getByRole("button", { name: actionsButtonName }).click();
+  const account = await accountControlScope(page);
+  await account.getByRole("button", { name: actionsButtonName }).click();
   await page.getByRole("menuitem", { name: signOutItemName }).click();
   await expect(page).toHaveURL(loginPath);
 

@@ -1,6 +1,14 @@
-import type { Locator, Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
-import { expect, signIn, test } from "./fixtures";
+import {
+  accountControlScope,
+  closeMobileNavigation,
+  expect,
+  openMobileNavigation,
+  openNavigation,
+  signIn,
+  test,
+} from "./fixtures";
 
 const dashboardHeadingName = /^(仪表盘|Dashboard)$/;
 const accountsHeadingName = /^(上游账号|Upstream accounts)$/;
@@ -13,9 +21,13 @@ const languageName = /^(语言|Language)$/;
 const portrait = { width: 375, height: 812 };
 const landscape = { width: 812, height: 375 };
 
-/** 使用真实菜单的键盘事件选择偏好，不直接注入 localStorage 或应用状态。 */
+/**
+ * 使用真实菜单的键盘事件选择偏好，不直接注入 localStorage 或应用状态。
+ * 菜单入口按当前布局取：桌面常驻侧栏，移动端在抽屉内（作用域由 accountControlScope 决定）。
+ */
 async function chooseAccountOption(page: Page, submenuName: RegExp, optionName: string | RegExp): Promise<void> {
-  const trigger = page.getByRole("button", { name: actionsName });
+  const scope = await accountControlScope(page);
+  const trigger = scope.getByRole("button", { name: actionsName });
   await expect(trigger).toHaveAttribute("data-testid", "shell-account-menu");
   await trigger.press("Enter");
   await page.getByRole("menuitem", { name: submenuName }).press("ArrowRight");
@@ -49,19 +61,6 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
     .toBeLessThanOrEqual(0);
 }
 
-async function openMobileNavigation(page: Page): Promise<Locator> {
-  const trigger = page.getByRole("button", { name: openNavigationName });
-  await expect(trigger).toBeVisible();
-  await expect(trigger).toHaveAttribute("aria-expanded", "false");
-  await trigger.focus();
-  await trigger.press("Enter");
-  const dialog = page.getByRole("dialog", { name: "Grok2API", exact: true });
-  await expect(dialog).toBeVisible();
-  await expect(dialog).toHaveAccessibleDescription(navigationName);
-  await expect(dialog.getByRole("navigation", { name: navigationName })).toBeVisible();
-  return dialog;
-}
-
 /** 分别验证菜单与抽屉的 Escape 层级、焦点归还和关闭按钮键盘操作。 */
 async function expectMobileNavigationKeyboard(page: Page): Promise<void> {
   const dialog = await openMobileNavigation(page);
@@ -88,10 +87,10 @@ async function expectMobileNavigationKeyboard(page: Page): Promise<void> {
   await expect(trigger).toBeFocused();
 }
 
-// 每个用例复用 worker 隔离的真实 Go 服务；视口只在本文件内设置，不扩大项目矩阵。
-// `@desktop`：本组断言依赖桌面布局本身（侧栏可见、移动端抽屉触发按钮隐藏），
-// 移动 project（Pixel 5）由 playwright.config.ts 的 grepInvert 明确排除，断言不做任何放宽。
-test.describe("桌面导航与偏好持久化", { tag: "@desktop" }, () => {
+// 本组断言依赖桌面布局本身：常驻侧栏可见、移动端抽屉触发按钮隐藏（display:none），
+// 移动 project（Pixel 5）由 playwright.config.ts 的 grepInvert 明确排除，两条断言不做任何放宽。
+// 其余导航与偏好用例改用与 project 无关的入口（openNavigation / accountControlScope），两个 project 都运行。
+test.describe("桌面导航布局", { tag: "@desktop" }, () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   test("侧栏导航到账号和设置，深链接刷新后保持页面与当前导航状态", async ({ page, server }) => {
@@ -125,7 +124,10 @@ test.describe("桌面导航与偏好持久化", { tag: "@desktop" }, () => {
     await expect(page).toHaveURL(/\/dashboard$/);
     await expect(page.getByRole("heading", { name: dashboardHeadingName })).toBeVisible();
   });
+});
 
+// 偏好持久化语义与 project 无关：入口按当前布局取（桌面侧栏 / 移动抽屉），断言不放宽。
+test.describe("导航与偏好持久化", () => {
   test("账号菜单切换英文和中文，导航与刷新后仍使用所选语言", async ({ page, server }) => {
     await signIn(page, server);
     const languages = [
@@ -150,17 +152,24 @@ test.describe("桌面导航与偏好持久化", { tag: "@desktop" }, () => {
     ];
     for (const language of languages) {
       await chooseAccountOption(page, languageName, language.option);
+      // 抽屉只在移动布局存在：收起后页面内容不再被 aria-hidden，页面级 role 断言才有效。
+      await closeMobileNavigation(page);
       await expect(page.locator("html")).toHaveAttribute("lang", language.language);
       await expect(page.getByRole("heading", { name: language.dashboard, exact: true })).toBeVisible();
-      await page.getByRole("link", { name: language.settings, exact: true }).click();
+      // 设置入口在账号控制区内：桌面侧栏常驻，移动端重新打开抽屉。
+      const account = await accountControlScope(page);
+      await account.getByRole("link", { name: language.settings, exact: true }).click();
       await expect(page.getByRole("heading", { name: language.heading, exact: true })).toBeVisible();
       await page.reload();
       await expect(page).toHaveURL(/\/settings$/);
       await expect(page.getByRole("heading", { name: language.heading, exact: true })).toBeVisible();
       await expect(page.locator("html")).toHaveAttribute("lang", language.language);
-      await expect(page.getByTestId("shell-account-menu")).toHaveAccessibleName(language.actions);
+      const restored = await accountControlScope(page);
+      await expect(restored.getByTestId("shell-account-menu")).toHaveAccessibleName(language.actions);
       await expect.poll(() => page.evaluate(() => localStorage.getItem("grok2api:language"))).toBe(language.language);
-      const navigation = page.getByRole("navigation", { name: language.navigation, exact: true });
+      // 抽屉已打开时 openNavigation 直接复用，不重复触发抽屉按钮。
+      const navigation = await openNavigation(page);
+      await expect(navigation).toHaveAccessibleName(language.navigation);
       await navigation.getByRole("link", { name: language.dashboard, exact: true }).click();
       await expect(page.getByRole("heading", { name: language.dashboard, exact: true })).toBeVisible();
     }
