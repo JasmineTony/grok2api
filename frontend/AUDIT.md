@@ -1206,3 +1206,50 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 - 判别力：把真实报告裁剪为**仅桌面 project** 后用 `TEST_REPORT_ROOT` 指向副本 → 新阈值 **exit 1**，7 项失败全部指向移动覆盖丧失（auth 6<12 等 + `mobile-device.e2e.ts` 缺失 + 5<6 文件）；同一场景已固化为 `self-test-gates.mjs` 的 F1 用例。
 - 无断言弱化：`expect(` 净 **+2**、`test(` 净 **0**（22 个场景全保留）；负 delta 仅来自把断言搬入 fixtures 共享助手（每次调用仍执行，且现在两个 project 都跑）。
 - 未覆盖：本轮未跑 `pnpm verify:full` 全量（其余 12 步中受影响项已单独 exit 0）；全量验收由 §23 覆盖。
+
+## 23. 2026-10-12（续二）F5 之后的最终全量验收、门禁差异清单与未闭环项（FE-18）
+
+### 23.1 最终全量验收（`pnpm verify:full`，在 F5 提交 `571a16fd` 与基准修复之后的快照上）
+
+执行：`powershell -NoProfile -ExecutionPolicy Bypass -File runner-r7.ps1`（内部 `cd frontend; pnpm verify:full *> verifyfull-r7.out.log`，退出码写 `verifyfull-r7.exit.txt`），起始 `2026-10-12T10:07:12`。
+
+- **`verifyfull-r7.exit.txt` = `0`**；
+- `Test Files  123 passed (123)`；`pnpm build`：`built in 1.64s`；
+- `test:results`：`Vitest 报告：参与判定的文件 123 个、用例 1488 个（通过 1488、失败 0、跳过 0、flaky 0）`；
+- `pnpm test:e2e`：**42 passed**（桌面 `chromium` + `mobile-chromium` 两个 project）；
+- `node scripts/check-test-results.mjs --e2e`：`E2E 报告：参与判定的文件 6 个、用例 42 个（通过 42、失败 0、跳过 0、flaky 0）`、`必需前端场景执行门禁通过`。
+
+至此：本分支在**当前快照**上满足 13 步门禁 + 全栈 E2E + 报告门禁；后端在同一快照上已由 `bash scripts/verify.sh` exit 0 覆盖（§22.2），其后仅新增基准 `b.ResetTimer()`，受影响门禁已重跑（`backend/AUDIT.md` §28.2）。
+
+### 23.2 门禁「本地 / CI」差异清单（交付核对用）
+
+**只有 CI 能跑**（本机物理不可行）：
+
+| 检查                                     | CI 步骤（工作区 workflow 行号）                                              | 本机缺失原因                                   |
+| ---------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------- |
+| Linux `go test -race ./...`              | `Race backend`（`ghcr-image.yml:109-111`）                                   | `CGO_ENABLED=0` 且无 C 编译器（`gcc` MISSING） |
+| 隔离 PostgreSQL/Redis「集成用例 0 跳过」 | `Assert required integration tests ran`（`:86-107`，依赖 services `:31-59`） | 无隔离服务；断言还依赖 `jq`                    |
+| 镜像构建 amd64/arm64                     | `Build image (amd64)/(arm64)`（`:197-230`，PR/dispatch 专用）                | 本机无 Docker；arm64 需 arm runner             |
+| Publish / Merge（多架构清单）            | `build_ghcr_image`（`:232-297`）、`merge`（`:299-370`），均仅 push 事件      | 同上，且属不可逆发布动作                       |
+| CodeQL（actions/go/js-ts）               | `codeql.yml:17-49`                                                           | 需 GitHub code scanning 后端                   |
+
+**只有本地跑**：`go build ./...`（CI 有意省略，由 `go test` / `-race` 隐式覆盖）、Husky `pre-commit`、仓库根 `git diff --check` / `--numstat` / `git remote -v`、`backend/scripts/verify.sh` 的 cwd 自检与退出码透传语义。
+
+**两侧都可能遗漏（登记为 P3 / 待决策）**：
+
+1. `pnpm test`（node:test）没有「必需用例确实执行」的报告门禁——`check-test-results.mjs` 只解析 Vitest 与 Playwright 报告；两侧都只依赖退出码，**整文件 `it.skip` 或删除文件不会被该门禁发现**。
+2. 仓库根级文件（`AGENTS.md`、`Makefile`、`Dockerfile`、`VERSION`、`.dockerignore`、`.github/**`）无 prettier/eslint/oxlint 覆盖（`format:check` 的 cwd 是 `frontend/`）。
+3. 维护线工作流新增的两步（`Verify backend structure and API contract`、`Assert required frontend tests ran`）在 CI 侧**从未执行**（探针分支必须保留 `origin/main` 工作流定义，否则推送被拒）；本机等价证据存在，但发布前置要求的「CI 真实跑完」对这两步尚无 run 证据。
+4. 维护分支推送不触发任何 CI（`on.push.branches: [main]` 等）——这正是上一条长期存在的原因。
+5. `Verify version carriers are aligned` 无本地自动接线（本地只能手工比对）。
+
+### 23.3 未闭环项（本机不可完成 / 需授权）
+
+| 项                                                               | 状态            | 解除条件                                                  |
+| ---------------------------------------------------------------- | --------------- | --------------------------------------------------------- |
+| 交付分支 `maint/acceptance-audit-20261011-residual` 推送         | **Blocked**     | 需具备工作流作用域的推送凭据（实测 `git push` exit 1） |
+| 合并 `main` / tag / Release / 镜像推送                           | 需授权          | §8 不可逆操作，逐次单独授权                               |
+| 冻结预算基线 `--update`                                          | 需授权（CHG-5） | 工作区静止 + 记录 `git rev-parse HEAD`                    |
+| REV-5 预算口径（认证后首屏 282.30 KiB > 260 KiB）                | 需授权          | 改阈值或口径，依据见 §21.4                                |
+| FE-19-8（i18n 单例失败重试语义）、BE-G3（`ports/security` 迁移） | 需授权          | 本轮未改                                                  |
+| `main` 的 11 个未推送提交                                        | 待决策          | 本轮未改写其引用                                          |
