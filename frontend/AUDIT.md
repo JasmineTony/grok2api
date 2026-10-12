@@ -71,7 +71,7 @@
 | 只清理自有资源     | 结束只杀自己启动的进程、删除自己的临时目录                                                           | 运行后 0 残留进程、0 残留临时目录                                                                                    |
 | 测的是当前代码     | globalSetup 在 dist 缺失**或早于任一构建输入**时重建前端；后端二进制每次重建                         | 把 `dist/index.html` mtime 置为 2000-01-01 后运行：触发重建（6 passed）；随后再运行：零构建（6 passed）              |
 
-当前覆盖（阶段 6 收尾后共 **4 个 spec / 16 用例**，实测 `npx playwright test` **16 passed / 0 failed**，37.4s、4 workers、`retries: 0`）：
+当前覆盖（阶段 6 收尾后共 **4 个 spec / 16 用例**，实测 `npx playwright test` **16 passed / 0 failed**，37.4s、4 workers、`retries: 0`）——**（EVID-8 指针）本行与下表为阶段 6 的历史快照，已过期**：E2E 现状以 §21.3 / §22.6 / §28.2 为准（`e2e/**` 共 22 个 `test()`，两个 project 合计 **42 实例** = chromium 21 + mobile-chromium 21）：
 
 | spec                        | 用例数 | 覆盖内容                                                                                                                                  |
 | --------------------------- | -----: | ----------------------------------------------------------------------------------------------------------------------------------------- |
@@ -83,6 +83,7 @@
 空账号池下 `/readyz` 返回 503 `not_ready` 属预期生产语义，管理面可用性单独断言，未放宽生产门槛。
 
 - **E2E 层面**尚未覆盖（非验收阻塞：`FE-A13` 的判据是 `pnpm test:e2e` 门禁存在且 16/16 通过，不声称流程覆盖完整）：账号导入与列表、设置保存的版本冲突、模型/出口页面、Quality Guard 未启用状态、创作台与媒体流程、语言主题与移动视口。其中前 5 类**已在 Vitest 组件/集成层覆盖**——账号导入 `src/features/accounts/accounts-page.test.tsx:256`、`use-accounts-task-flows.test.tsx:530`；设置版本冲突 `src/features/settings/settings-page.test.tsx:277`（注入 `ApiError(409, "revisionConflict")` 并断言错误文案与草稿保留）、`use-settings.test.tsx:215`；模型 `src/features/models/*.test.tsx` 9 个、出口 `src/features/settings/egress-*.test.tsx` 9 个；Quality Guard 未启用 `src/features/quality-guard/quality-guard-page.test.tsx:76`；创作台与媒体 `src/features/creative-console/*.test.tsx`、`src/features/media/*.test.tsx`；语言/主题 `src/shared/i18n/language-memory.test.tsx:51`、`src/app/shell-account-control.test.tsx:113`。**只有「移动视口」在任何层都无覆盖**：`playwright.config.ts:25` 仅有 `chromium` + `Devices["Desktop Chrome"]`，无移动 project，spec 内也无 `setViewportSize`。
+- **（EVID-8 指针）本段已过期**：文中「只有『移动视口』在任何层都无覆盖」与「`playwright.config.ts:25` 仅有 `chromium`、无移动 project」的判定，已在 §21.3 引入真实移动 project 后失效（现为 `playwright.config.ts:42-43` 的两个 project）；E2E 覆盖现状以 §21.3 / §22.6 / §28.2 为准，其中 §28.2 另新增了 project 维度棘轮。
 
 ## 3. 生产产物与体积预算
 
@@ -1017,7 +1018,7 @@ main 线的 AUDIT 章节（`backend/AUDIT.md` §20/§21（BE-18/BE-19）、`fron
 | X-07 镜像与 `.dockerignore` 纳入判定 | 仅 CI           | **已关闭**                               | `Build image (amd64)` 与 `(arm64)` = `success`                                                                             |
 | X-09 前端报告门禁 CI 侧              | 仅 CI           | **已关闭**                               | step `Run full-stack E2E` 与 `Verify frontend` = `success`                                                                 |
 | X-08 Swagger 精确 diff               | P1 发布前置     | **本机与 CI 双侧闭环**                   | §19.11 本机字节一致 + step `Verify Swagger document` = `success`                                                           |
-| FE-19-6 父检出 AGENTS 旧 12 步       | 需主人同步      | **仍成立**（原判定被本轮更正，见 §22.5） | 主检出 `E:\grok2api`（`main`，`13626e6c`）`AGENTS.md:85` 实测为「覆盖 **12 步**」；工作树版本为 13 步（含 `test:results`） |
+| FE-19-6 父检出 AGENTS 旧 12 步       | 需主人同步      | **仍成立**（原判定被本轮更正，见 §22.5） | 主检出 `E:\grok2api`（`main`，`13626e6c`）`AGENTS.md:85` 实测为「覆盖 **12 步**」；工作树版本为 13 步（含 `test:results`）；**已由 §28.5 关闭**（原判定成立 → 本批 `main` → 交付线合并解决） |
 | X-04 提交纪律                        | 待授权          | **部分关闭**                             | `closeout` 的 8 个提交 + 本轮单一目的提交 `83ff5ae7`、`339c53ca`；`main` 的 11 个提交仍待处理                              |
 | X-02 冻结预算基线                    | 需授权（CHG-5） | 仍开放（P3）                             | 需工作区静止 + 授权                                                                                                        |
 | FE-19-8 i18n 单例失败缓存            | 需单独授权      | 仍开放（P2）                             | 重试语义变更，本轮未改                                                                                                     |
@@ -1368,3 +1369,97 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 | 修正（§11 CHG-10） | 补 `-w` 类批量改写器（`gofmt -w` / `prettier --write` / `oxlint --fix`）同受约束                 | L85985：`gofmt -w` 因 `core.autocrlf` 把包内全部文件重写，需 `git checkout -- <非目标文件>` 复原；同会话 L25150 / L58571 记录 `gofmt -l` 在 CRLF 工作区误报                                                                                                            |
 
 **未采纳的取证条目（避免规则膨胀，如实登记）**：`report-S1.md` §4 与 `report-S6S7.md` §4 单列的薄弱/被证伪项不进入规则——「子代理 45–120 分钟」无法核实（`Task dur` 恒为 `0s`，仅可证实「约 28 分钟」）；「忘记 push/merge」动机证据不足；自写 `funclen/main.go` 未与门禁对账但**未证明其数字有误**；未发现手改生成物/锁文件的证据；「压缩丢上下文」在本批数据中不成立。这些按 §6 只作观察项，不写成规则。
+
+## 28. 2026-10-12（续四）验收门禁接线与硬化、E2E project 棘轮、i18n 失败缓存修复
+
+> 装配分支：`maint/acceptance-audit-20261012-final`（本文件写入时 HEAD `580fd9e7`，含 `main` 合并与本批全部分支）。本章按 META-5 从 §28 起编号（§25/§26/§27 已被 `main` 合并章占用，不重编号、不改写）。
+>
+> **证据归属（EVID-2/EVID-7）**：标注「主代理实测」的「命令 + 退出码」为交付线实测回填；标注「本工作树只读核对」的为**本文件所在工作树内**的静态复核（该工作树未安装 `node_modules`，无法重跑 `pnpm` 与 `node scripts/*`，故未独立复跑任何门禁命令）。
+
+### 28.1 node:test 报告门禁接线与硬化（关闭：门禁未接线 P1 + 4 项 P2 + P3 夹具）
+
+**缺口**：`test:results:node`（提交 `3ca16d40` 引入）**未接入** `verify`/`verify:full`，而 CI 只跑 `pnpm verify`（`.github/workflows/ghcr-image.yml:161`）⇒ 该门禁在 CI 与本机聚合门禁中从未执行。按 EVID-1，脚本已写好但未接线只能记 `Pending`，不得记 `Passed`。
+
+**修复提交（分支 `maint/acceptance-audit-20261012-node-gate-hardening`，基点 `d109130c`）**：
+
+| 提交       | 改动                                                                                                                                                                                             |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ae735724` | 接线：`pnpm verify` 第 7 步 `test:results:node`，紧跟产生报告的第 6 步 `test`；`AGENTS.md:87` 的 DEV-4 由 13 步改 **14 步**                                                                       |
+| `6b3eb402` | `NODE_TEST_REPORT_ROOT` 限制到 `os.tmpdir()` 之下，越界 **exit 2**（关闭「把报告根重定向到任意目录」的逃生口）                                                                                    |
+| `9641e824` | 清单外文件出现 `failed`、以及任何文件 `cases.length === 0`，一律失败；reporter 的 suite 状态不再把跳过写成 passed                                                                                 |
+| `017b020f` | 要求磁盘 `src/**/*.test.ts` + `scripts/**/*.test.ts` 集合与 `REQUIRED_NODE_TESTS` **完全相等**；删除由清单派生的 `MIN_NODE_TEST_FILES` / `MIN_NODE_TEST_CASES`（关闭「新增后再删除」静默绕过棘轮） |
+| `e9e7a67b` | 补 5 个 fail-closed 分支负样本（`kind` / `version` / `files` 非数组 / JSON 不可解析 / `present.length === 0`），满足 EVID-3                                                                       |
+
+**夹具计数**：`pnpm test:gates` 由 63 → **75** 用例（必须失败 49 → **61**）。
+
+**判别力实证（接线生效，主代理实测）**：临时把 `src/shared/lib/usd.test.ts` 改名为 `.bak` → `pnpm test` **exit 0**（node 的退出码看不见「文件消失」），紧接的 `node scripts/check-node-test-results.mjs` **exit 1**，失败原因 3 条：必需文件未出现在报告 / 清单文件不在磁盘上 / 必需清单文件不在磁盘上（磁盘与清单必须完全相等）；恢复后两者均 exit 0。
+
+**验证（cwd=`frontend/`，主代理实测）**：
+
+| 命令                                                                     | 退出码 | 关键输出                                 |
+| ------------------------------------------------------------------------ | ------ | ---------------------------------------- |
+| `node scripts/check-node-test-results.mjs`                               | 0      | 14 文件 / 126 用例；磁盘文件 14 = 清单 14 |
+| `pnpm test:gates`                                                        | 0      | 75 用例（含 61 必须失败）                |
+| `pnpm format:check` / `oxlint` / `lint` / `typecheck` / `check:structure` | 0      | 逐条单独执行，全部通过                   |
+
+**本工作树只读核对（静态，可复现）**：`frontend/package.json:31` 的 `verify` 共 14 步、第 7 步为 `test:results:node`；`scripts/check-node-test-results.mjs:89-103` 的 `REQUIRED_NODE_TESTS` 为 14 条、`minPassed` 合计 **126**（与上表「14 文件 / 126 用例」一致）；`NODE_TEST_REPORT_ROOT` 的 `os.tmpdir()` 限制见同文件 `:50-65`。
+
+### 28.2 E2E 报告门禁新增 project 维度棘轮（关闭 §24.2 P2-1）
+
+**缺口**：门禁只按文件聚合，不读 `projectName` ⇒「同文件内把 1 个跨端用例改标 `@desktop` + 新增 1 个无标签用例」保持文件通过数不变，而移动覆盖静默下降（单步改动会被 `minPassed` 抓到，组合改动不会）。
+
+**修复**：提交 `d109130c`（`scripts/check-test-results.mjs` +148/−…、`scripts/self-test-gates.mjs` +213/−…）：按 `spec.tests[].projectName` 断言 `chromium` / `mobile-chromium` 的**实例数棘轮**与逐文件 × project 下限；缺失或未知 project **fail-closed**；夹具 +3 用例。
+
+**独立核实（本工作树只读，与 §24.2 的 42 实例逐项对账）**：
+
+- `scripts/check-test-results.mjs:143` 为 `MIN_E2E_PROJECT_PASSED = { chromium: 21, "mobile-chromium": 21 }` ⇒ **42 实例**；`:358`（按 `test.projectName` 归一）、`:386`（缺失即记失败）、`:410`（低于 project 下限即失败）为判定落点，`:335`/`:353` 注释给出判据来源与 `expected`/缺失语义。
+- 实例构成：`e2e/**` 共 22 个 `test()`；`chromium` 含 1 个仅桌面用例（`e2e/navigation.e2e.ts:93` 的 `describe(…, { tag: "@desktop" })`，用例在 `:96`；`playwright.config.ts:43` 以 `grepInvert` 排除），`mobile-chromium` 含 1 个仅移动用例（`e2e/mobile-device.e2e.ts:22`；`playwright.config.ts:42` 以 `testIgnore` 排除）⇒ **42 = 20 × 2 + 1 仅桌面 + 1 仅移动**；无「两个 project 都不跑」的用例；无 `.only`/`.skip`。
+- 真实报告状态（主代理实测）：本机 `.artifacts/playwright/results.json` 是 `playwright test --list` 的产物（0 通过 / 42 跳过）⇒ `node scripts/check-test-results.mjs --e2e` **exit 1**，属 fail-closed 的正确行为，**不是缺陷**；真实 E2E 证据见 §28.4。装配工作树内 `.artifacts/` 未生成（该目录被 gitignore，随工作树状态而变），复现需先在该工作树跑一次 `pnpm test:e2e`。
+
+### 28.3 FE-19-8 i18n 单例失败缓存（关闭）
+
+**修复提交（分支 `maint/acceptance-audit-20261012-i18n`，基点 `0c23f902`）**：`874c4841`（新增用例）、`5b85f92d`（`src/shared/i18n/index.ts` 的 `.catch` 重置单例后**原样上抛**；成功路径仍只 import 一次）。
+
+**改动核对（本工作树只读）**：`src/shared/i18n/index.ts:47-58` —— `deferredResourcesPromise ??= import("./resources/deferred").then(…).catch((error: unknown) => { deferredResourcesPromise = null; throw error; })`，即失败时清空单例（`:55`）并 rethrow（`:56`）。
+
+**新增测试**：`src/shared/i18n/deferred-resources-retry.test.tsx`（3 用例）、`src/app/deferred-resources-failure.test.tsx`（1 用例）；已登记进 `scripts/check-test-results.mjs`（`MIN_VITEST_FILES` 123 → **125**，本工作树 `:86` 实测为 125）。
+
+**验证（cwd=`frontend/`，主代理实测）**：`pnpm test:ui:coverage` exit 0（**125 文件 / 1492 用例**，`src/shared/i18n/index.ts` 保持 100%）；`pnpm test:results` exit 0（125 文件 / 1492 用例）；`pnpm test` exit 0；`test:gates` / `format:check` / `oxlint` / `lint` / `typecheck` / `check:structure` 均 exit 0。
+
+**已知边界（如实登记，未收口）**：React 19 的 `lazy()` 永久缓存 rejection（工厂只调用一次）⇒ **同一路由**仍不可重试，只有尚未尝试过的其它路由能在下次导航恢复；且生产 `src/app/router.tsx` **无 ErrorBoundary**（本工作树全仓检索 `getDerivedStateFromError` 只命中 2 个测试文件：`src/app/deferred-pages-loading.test.tsx:36`、`src/app/deferred-resources-failure.test.tsx:38`）⇒ 一次 chunk 失败会卸载整棵树，用户只能刷新。登记为新候选 **FE-19-13（P1 候选，需 UI 决策）**——主代理原拟编号 `FE-19-9` 已被 §21.2 的「`build-inputs.ts` 软链语义」占用，按 META-5「条目废弃保留编号、不复用」顺延；最小修复方向：路由级 `errorElement` + 失败提示与重试入口。
+
+### 28.4 最终验收（装配分支 `maint/acceptance-audit-20261012-final`）
+
+下表命令与退出码**留空，由主代理回填**；**回填前不得记为 `Passed`（EVID-1）**。
+
+| 命令                     | 执行目录    | 退出码 | 关键输出 |
+| ------------------------ | ----------- | ------ | -------- |
+| `pnpm verify:full`       | `frontend/` |        |          |
+| `bash scripts/verify.sh` | `backend/`  |        |          |
+
+- `pnpm verify:full` 的预期链路 = 14 步（§28.1）+ `test:e2e` + `test:results:e2e`。
+- 装配分支 HEAD 为 `580fd9e7`；`git merge-base --is-ancestor 13626e6c maint/acceptance-audit-20261012-final` 在本工作树实测 **exit 0**（即 `main` 可 fast-forward）。
+
+### 28.5 本批新增登记项（未实施，附最小修复设计）
+
+| 项                                  | 现状证据                                                                                                                       | 定级        | 最小修复设计                                                                                          |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------- | ----------------------------------------------------------------------------------------------------- |
+| 体积门禁缺 dist 新鲜度校验          | `scripts/check-bundle-budget.mjs` 内**无** `isBuildFresh`/`inputHash` 命中（本工作树只读核对）⇒ `--update` 可把陈旧 dist 冻结进基线；当前 `isBuildFresh=false` | P2（口径）  | 复用 `scripts/build-inputs.ts:160` 的 `isBuildFresh`，dist 陈旧时非 0 退出 + 负样本；验证 `pnpm test:gates`、`pnpm verify` |
+| `/runtime-config.js` 未被首屏采集   | 首屏入口正则只采 `/assets/**`；实测 193.58 → **193.67 KiB**（差额即该文件）                                                     | P2（口径）  | 入口采集同时纳入 HTML 同步脚本 + 负样本                                                               |
+| 静态托管暴露面（backend §25.2 第 3 项的定级） | `frontend.go` 的静态托管除「根级点文件」外无白名单，`staticPath: "."`/`".."` 且 root 含 `index.html` 时可 200 读取同目录 `config.yaml`、`data/*.db`；默认 `./frontend/dist` 与镜像布局不可触发 | **P2**（该形态为 P1） | 启动期 fail-fast（root 含 `config.yaml`/`.env`/`*.db`/可执行文件即拒绝启动）或托管白名单；回归 `go test ./internal/transport/http/ -run TestFrontendStaticFilesAndSPAFallback -count=1`（用例在 `backend/internal/transport/http/server_test.go:96`，本工作树只读核对） |
+| E2E 覆盖缺口（P1）                  | 设置**真实保存 + 409 版本冲突**、账号**导入（含失败路径）** 仍无 E2E 覆盖                                                      | P1          | 逐项登记，待后续批次                                                                                  |
+| E2E 覆盖缺口（P2）                  | 移动布局「侧栏应隐藏」的直接断言、修改密码流程、模型封锁                                                                       | P2          | 逐项登记，待后续批次                                                                                  |
+| `backend/tools/structurecheck/main.go` 体量 | 本工作树字节级实测 **597 行**（口径 = 该文件 `:249-259` 的 `countLines`，`bytes.Count("\n")`；主代理记为 598 行，差异 1 行，以本工作树实测为准，EVID-8）⇒ 距 REV-1 的 600 仅 **3** 行余量 | P3          | 该文件为门禁工具本体，不在 `structurecheck` 的扫描范围（只扫生产 Go 文件）；如需收紧可把夹具/输出拆到独立文件 |
+| 后端 `gofmt -l` 存量                | 5 个未格式化文件（明细见 `backend/AUDIT.md` §31.4）；`verify.sh` 无 gofmt 步骤，不影响门禁                                      | P3          | 已登记，未处理                                                                                        |
+
+**FE-19-6 关闭**：主检出 `E:\grok2api` 的 `AGENTS.md` 旧「12 步」由本批 `main` → 交付线合并解决（合并后 main 内容 = 交付线内容，含 14 步口径）。§20.4 与 §2 的对应行已加指针，历史数字按 META-3 保留原值。
+
+### 28.6 未闭环 / 需授权（更新）
+
+| 项                                                              | 状态                                                                                                     |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| 交付线推送、合并 `main`、tag/Release、镜像推送                   | **需授权**；本批只做**本地**合并（`git merge-base --is-ancestor 13626e6c <final tip>` = exit 0），未推送 |
+| `frontend/bundle-budget.json` 的 `--update`                     | 需授权且须工作区静止（CHG-5）；当前 `isBuildFresh=false`，现在更新会把陈旧 dist 冻结进基线                |
+| REV-5「认证后首屏 282.30 KiB」                                   | 属口径外（门禁只保护未认证首屏）；**不可**调高 `initialJsGzipKiB`（同 §21.4 / FE-19-5）                   |
+| BE-G3 `ports/security` 迁移                                      | 设计已出（会话 scratch `BA-02-ports-security-migration-design.md`）；需单独批准 + `apicheck --update` 批准 |
+| CI 侧维护线新增步骤（`Assert required frontend tests ran` 等）   | 仍无 run 证据 → 需合并/推送 `main` 才能取证（同 §23.2 第 3 条）                                           |

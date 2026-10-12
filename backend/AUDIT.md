@@ -1414,3 +1414,35 @@ BenchmarkDashboardUsageAggregate/performance-8      1   167337300 ns/op   23768 
 **存量观察（未触碰）**：`gofmt -l ./cmd ./internal ./tools` 报 5 个未格式化文件（`internal/application/gateway/selector_test.go`、`internal/infra/provider/web/account_settings.go`、`internal/infra/provider/web/sso_build_test.go`、`internal/ports/provider/video_error.go`、`internal/transport/http/swagger_annotations.go`）；`verify.sh` 无 gofmt 步骤，不影响门禁，登记为 P3。
 
 **回滚**：`git revert 93954469`（仅测试文件与文档，无生产代码、无生成物）。
+
+## 32. 2026-10-12（续）静态托管暴露面定级与本批后端侧登记
+
+> 装配分支：`maint/acceptance-audit-20261012-final`（本文件写入时 HEAD `580fd9e7`）。§29/§30 为 `main` 合并章、§31 为本批后端章，按 META-3 历史章节不改写，新内容追加为 §32。本章只登记**后端侧**的定级与未实施项；前端侧同批登记见 `frontend/AUDIT.md` §28（其 §28.5 的「静态托管暴露面」行即本节 32.1 的前端视角）。
+
+### 32.1 静态托管暴露面定级（§25.2 第 3 项的定级）
+
+§25.2 第 3 项已实测「`staticPath` 指到父目录即公开 config/二进制/数据库」。本批补定级与触发条件：
+
+- **机制**：`frontend.go` 的静态托管除「根级点文件」外**无白名单**；当 `staticPath` 为 `.` 或 `..` 且静态根内存在 `index.html` 时，`GET /config.yaml`、`GET /data/*.db` 返回 200。
+- **定级 P2**：默认配置 `./frontend/dist`（`config_defaults.go`）与镜像布局（静态根与二进制/`VERSION` 分离）**不可触发**，需误配置才成立 ⇒ 现存形态记 **P2**。
+- **升级条件（P1）**：一旦以该形态部署，泄露面含 `jwtSecret` / `credentialEncryptionKey` / 管理员口令 ⇒ **该形态为 P1**。
+- **最小修复方向**：启动期 fail-fast（静态根含 `config.yaml`/`.env`/`*.db`/可执行文件即拒绝启动）或托管白名单。
+- **回归命令**：`go test ./internal/transport/http/ -run TestFrontendStaticFilesAndSPAFallback -count=1`（用例位于 `internal/transport/http/server_test.go:96`）。
+- **未执行**：真实 Docker/Linux 镜像内探测（本机无 Docker，同 §25.2 的登记）。
+
+### 32.2 本批后端侧未实施登记（P3）
+
+| 项                                                        | 证据                                                                                                                                                                                                                          | 定级 | 处置                                                                                                            |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | --------------------------------------------------------------------------------------------------------------- |
+| `backend/tools/structurecheck/main.go` 距 REV-1 阈值仅 3 行 | 字节级实测 **597 行**（口径 = 该文件 `:249-259` 的 `countLines`，即 `bytes.Count("\n")`，结尾换行不额外计一行）；主代理记为 598 行，差 1 行，以本节实测为准（EVID-8）⇒ 距 600 仅 3 行余量                                       | P3   | 该文件为门禁工具本体，不在 `structurecheck` 的扫描范围（只扫生产 Go 文件）；如需收紧可把夹具/输出拆到独立文件     |
+| `gofmt -l ./cmd ./internal ./tools` 存量 5 个未格式化文件   | 明细见 §31.4；`verify.sh` 无 gofmt 步骤，不影响门禁                                                                                                                                                                           | P3   | 已登记，未处理                                                                                                  |
+
+### 32.3 本批后端新增门禁（BE-28，运行证据待回填）
+
+提交 `0c23f902`（`feat(backend): 新增 Dockerfile 构建输入静态守卫并接入 verify.sh（BE-28）`）新增 `backend/tools/dockerfilecheck/`（`main.go`、`backend.go`、`dockerfile.go`、`dockerignore.go`、`frontend.go`、`main_test.go` 与 `testdata/repo/**` 夹具）并在 `backend/scripts/verify.sh` 增加一步。**本章只登记事实**：该步的运行证据（命令 + 退出码 + 关键输出）由 `frontend/AUDIT.md` §28.4 的 `bash scripts/verify.sh` 回填，**回填前不得记为 `Passed`（EVID-1）**。
+
+### 32.4 未执行 / 未验证（如实登记）
+
+- `bash scripts/verify.sh`、`go test ./... -count=1`、`go test -race ./...`、隔离 PostgreSQL/Redis 集成用例：本批未在装配分支上重跑；最终验收由 `frontend/AUDIT.md` §28.4 的表格回填，**回填前不得记为 `Passed`**。
+- BE-G3（`ports/security` 迁移）与 `apicheck --update`：需单独授权，未实施（同 `frontend/AUDIT.md` §28.6）。
+- 本工作树未安装 Go 工具链依赖之外的前端 `node_modules`，本章不含任何本机复跑的前端命令结论。
