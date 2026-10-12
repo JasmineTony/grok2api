@@ -314,7 +314,7 @@ const vitestProbe = [
 ];
 /**
  * 必填标题逐字取自真实 spec，与被测脚本的 REQUIRED_E2E.requiredTitles 保持一致。
- * `desktop` / `mobile` 是 project 展开后的 (spec × project) 实例数（2026-10-12 实测 23 + 23 = 46，6 个文件），
+ * `desktop` / `mobile` 是 project 展开后的 (spec × project) 实例数（2026-10-12 实测 25 + 25 = 50，7 个文件），
  * `passed` = desktop + mobile，即被测脚本的实例口径棘轮值；矩阵削回桌面后报告会回落到 `desktop` 列数字。
  */
 function withInstanceTotals(entries) {
@@ -364,6 +364,15 @@ const e2eProbe = withInstanceTotals([
     ],
   },
   {
+    file: "e2e/accounts.e2e.ts",
+    desktop: 2,
+    mobile: 2,
+    titles: [
+      "导入非法账号文件：提示导入失败且真实服务端账号数不变",
+      "导入合法账号文件：列表出现新账号且服务端可读回，随后清理恢复空号池",
+    ],
+  },
+  {
     file: "e2e/mobile-device.e2e.ts",
     desktop: 0,
     mobile: 1,
@@ -402,6 +411,7 @@ function assertE2eFileLevelClean(label, entries) {
     "e2e/navigation.e2e.ts": 9,
     "e2e/request-audits.e2e.ts": 6,
     "e2e/settings.e2e.ts": 10,
+    "e2e/accounts.e2e.ts": 4,
     "e2e/mobile-device.e2e.ts": 1,
   };
   const dirty = entries.filter((entry) => {
@@ -414,16 +424,16 @@ function assertE2eFileLevelClean(label, entries) {
   }
 }
 /**
- * 夹具（F1）：project 矩阵被削回桌面（删除 mobile-chromium project）后的报告——5 个文件 / 23 个实例，
+ * 夹具（F1）：project 矩阵被削回桌面（删除 mobile-chromium project）后的报告——6 个文件 / 25 个实例，
  * 恰好满足移动矩阵加入前的旧口径（逐文件通过数不低于旧的 6/4/5/3/3），因此旧实现放行（假通过）；
- * 当前棘轮为 6 文件 + 12/8/9/6/10/1 + 逐 project 下限，本夹具必须失败。
+ * 当前棘轮为 7 文件 + 12/8/9/6/10/4/1 + 逐 project 下限，本夹具必须失败。
  */
 const e2eDesktopOnlyProbe = e2eProbe
   .filter((entry) => entry.desktop > 0)
   .map((entry) => ({ ...entry, mobile: 0, passed: entry.desktop }));
 /**
  * 夹具（F4）：§24.2 P2-1 的组合反例——`e2e/auth.e2e.ts` 把 2 个跨端用例改标 `@desktop`（mobile −2）
- * 并新增 1 个无标签用例（两个 project 各 +1）：该文件 6+6 变成 7+5 仍是 12，总实例仍是 46，
+ * 并新增 1 个无标签用例（两个 project 各 +1）：该文件 6+6 变成 7+5 仍是 12，总实例仍是 50，
  * 文件维度与旧实现全部放行，只有 project 维度会失败。
  */
 const e2eProjectDilutedProbe = e2eProbe.map((entry) =>
@@ -442,12 +452,12 @@ function padVitestEntries(entries, target = MIN_VITEST_PROBE_FILES) {
 const vitestHealthyEntries = padVitestEntries(vitestProbe);
 const vitestHealthyTotal = vitestHealthyEntries.reduce((total, entry) => total + entry.passed, 0);
 /**
- * 实例口径的固定期望（真实产物 2026-10-12：chromium 23 + mobile-chromium 23 = 46 个实例、6 个文件；
+ * 实例口径的固定期望（真实产物 2026-10-12：chromium 25 + mobile-chromium 25 = 50 个实例、7 个文件；
  * 仅断言桌面布局本身成立的用例保留 `@desktop`，其余用例在两个 project 都运行）。
  * 写死而不从 `e2eProbe` 推导：从探针推导的话，矩阵被削减时正样本会跟着缩水，等于没有棘轮。
  */
-const E2E_EXPECTED_FILES = 6;
-const E2E_EXPECTED_CASES = 46;
+const E2E_EXPECTED_FILES = 7;
+const E2E_EXPECTED_CASES = 50;
 /** 一支用例重试后才通过：其余计数不变，用于验证 flaky 不被计入通过。 */
 const e2eProbeFlaky = e2eProbe.map((entry, index) => (index === 0 ? { ...entry, flaky: 1 } : entry));
 const vitestBelowRatchet = vitestProbe.map((entry, index) =>
@@ -1272,7 +1282,7 @@ const cases = [
     expect: 0,
     contains: [
       `E2E 报告：参与判定的文件 ${E2E_EXPECTED_FILES} 个、用例 ${E2E_EXPECTED_CASES} 个`,
-      "E2E project 报告：2 个 project（chromium 通过 23 个、mobile-chromium 通过 23 个）",
+      "E2E project 报告：2 个 project（chromium 通过 25 个、mobile-chromium 通过 25 个）",
     ],
     run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: healthyReportRoot }, ["--e2e"]),
   },
@@ -1340,7 +1350,7 @@ const cases = [
     name: "测试执行：E2E 必需文件总数低于棘轮应失败",
     expect: 1,
     contains: [
-      "E2E：报告只含 5 个文件，少于要求的 6 个（测试文件被删除或未运行）",
+      "E2E：报告只含 6 个文件，少于要求的 7 个（测试文件被删除或未运行）",
       "E2E：必需文件未出现在报告中 e2e/settings.e2e.ts",
     ],
     run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: belowMinFilesE2eReportRoot }, ["--e2e"]),
@@ -1381,9 +1391,9 @@ const cases = [
     name: "测试执行：移动 project 被移除（报告回落到 5 文件 / 21 实例）应失败",
     expect: 1,
     contains: [
-      "E2E 报告：参与判定的文件 5 个、用例 23 个",
+      "E2E 报告：参与判定的文件 6 个、用例 25 个",
       "E2E：必需文件未出现在报告中 e2e/mobile-device.e2e.ts",
-      "E2E：报告只含 5 个文件，少于要求的 6 个（测试文件被删除或未运行）",
+      "E2E：报告只含 6 个文件，少于要求的 7 个（测试文件被删除或未运行）",
       "E2E：e2e/auth.e2e.ts 通过 6 个，少于要求的 12 个",
       "E2E：e2e/navigation.e2e.ts 通过 5 个，少于要求的 9 个",
       "E2E：报告未出现配置声明的 project mobile-chromium（project 被删除或改名，移动覆盖丧失不得静默通过）",
@@ -1395,8 +1405,8 @@ const cases = [
     name: "测试执行：E2E 组合改动稀释 project 覆盖应失败（文件与总通过数不变、旧实现放行）",
     expect: 1,
     contains: [
-      "E2E 报告：参与判定的文件 6 个、用例 46 个",
-      "E2E：project mobile-chromium 通过 22 个实例，少于棘轮 23 个",
+      "E2E 报告：参与判定的文件 7 个、用例 50 个",
+      "E2E：project mobile-chromium 通过 24 个实例，少于棘轮 25 个",
       "E2E：e2e/auth.e2e.ts（mobile-chromium）通过 5 个，少于要求的 6 个",
     ],
     absent: ["少于要求的 12 个", "必需文件未出现在报告中", "整文件跳过"],
