@@ -5,21 +5,24 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { i18n, loadDeferredResources } from "@/shared/i18n";
 
 /**
- * 拆分前基线：4150 行单文件 resources 在应用全部 Object.assign 补丁后的最终生效值。
+ * 资源快照基线：拆分前 4150 行单文件 resources 在应用全部 Object.assign 补丁后的最终生效值，
+ * 并随核心资源（initial 的 common / auth / api-errors）新增 key 同步重算——断言强度不变，仍是精确相等。
+ * 2026-10-12（FE-19-13）：新增 common.pageLoadFailedTitle / pageLoadFailedDescription / reloadPage
+ * （zh-CN 与 en 各 3 个），keyCount 1790→1793、1795→1798，两个摘要按同一扁平化规则重算。
  * keyCount 为叶子 key 总数；两个摘要均基于排序后的扁平化 key/值生成：
  * - keySetDigest：`key` 逐行拼接后取 SHA-256
  * - resourceDigest：`key\u0000value` 逐行拼接后取 SHA-256
  */
 const BASELINE = {
   "zh-CN": {
-    keyCount: 1790,
-    keySetDigest: "c3642e8bd94ba8d15f814aaa5ca8cc94b8e0d1b652957153585b3030397728a7",
-    resourceDigest: "95b1784268280c515c63cff7c36bfcf95813a58526a7c59d66de8cf2daa69fde",
+    keyCount: 1793,
+    keySetDigest: "a3e52e62b52f7c780891deffb93fff15b6fc43f7b9eae585873eb96f2815fe3d",
+    resourceDigest: "211ced637dfec41c84f58fda05b3f6b679288d336b154f5e6c7cba74566a6fdd",
   },
   en: {
-    keyCount: 1795,
-    keySetDigest: "8945bc1a1847380c99e718d688159338ea084eca49516cfc88e033823b981ebc",
-    resourceDigest: "e25bf8f4f750d1a603636dbb4967fdaf036e9e7b3c979398053eee285e36a944",
+    keyCount: 1798,
+    keySetDigest: "4d304d71ed126836f8a38ec3da7cd3cb6fb1b34b9aa4af83614b71b442f696bf",
+    resourceDigest: "83f44b3a4b13f735f08aa9ec361864a310f528b734e335f91bbf28e4713b378a",
   },
 } as const;
 

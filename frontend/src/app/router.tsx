@@ -15,15 +15,18 @@ import {
   DeferredSettingsPage,
   DeferredVideoGalleryPage,
 } from "@/app/deferred-pages";
+import { RouteErrorFallback } from "@/app/route-error-fallback";
 import { LoginPage } from "@/features/auth/login-page";
 
 export const router = createBrowserRouter([
   {
     element: <AnonymousBoundary />,
+    errorElement: <RouteErrorFallback />,
     children: [{ path: "/login", element: <LoginPage /> }],
   },
   {
     element: <AuthBoundary />,
+    errorElement: <RouteErrorFallback />,
     children: [
       {
         element: <DeferredAppShell />,
