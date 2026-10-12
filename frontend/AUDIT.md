@@ -1615,7 +1615,9 @@ git diff --numstat 0c23f902..HEAD | tail          # 见下表
 git ls-files --eol <抽查文件>                      # 全部 i/lf w/lf attr/text eol=lf
 ```
 
-`git diff --numstat 0c23f902..HEAD` 的 16 条记录（末 15 条如下，最前一条为 `AGENTS.md` 9/7）：
+**口径说明（避免自指失真）**：下表是**基线快照** `0c23f902..0e8c02b7`（本批代码与既有文档增量的收敛点，也是本注册工作树的基点）的真实输出；本次两条 `docs(audit)` 提交只**追加** `backend/AUDIT.md` 与 `frontend/AUDIT.md`，故最终 tip 上同一命令仅这两行数字变化（见本小节末的复跑）。
+
+`git diff --numstat 0c23f902..0e8c02b7` 的 16 条记录（末 15 条如下，最前一条为 `AGENTS.md` 9/7）：
 
 | 文件（相对工作树根）                                               | +   | −   |
 | ------------------------------------------------------------------ | --- | --- |
@@ -1636,9 +1638,11 @@ git ls-files --eol <抽查文件>                      # 全部 i/lf w/lf attr/t
 | `frontend/src/shared/i18n/deferred-resources-retry.test.tsx`       | 84  | 0   |
 | `frontend/src/shared/i18n/index.ts`                                | 14  | 7   |
 
+**最终 tip 复跑（`git diff --numstat 0c23f902..f1e2bd9f`，本机实跑）**：仍为 **16 条**记录，仅两行变化——`backend/AUDIT.md` 229/3 → **312/3**、`frontend/AUDIT.md` 259/18 → **386/18**；其余 14 行逐字相同。⇒ 本批写入只落在既列文件上，**未新增/删除任何被跟踪文件**（无重命名、无删除），也未触碰生成物。
+
 **编码核对**：`git ls-files --eol` 抽查 `AGENTS.md`、`backend/AUDIT.md`、`backend/internal/transport/http/frontend.go`、`frontend/AUDIT.md`、`frontend/vite.config.ts` 均为 `i/lf w/lf attr/text eol=lf`，索引与工作区换行一致、无 CRLF 混入（`.gitattributes` 统一为 LF）。
 
-**用户改动边界**：本批全部写入都发生在**隔离工作树**内（`.pi/worktrees/acceptance-audit-20261012-*`），未触碰主检出 `E:\grok2api` 的工作区文件，也未 `reset`/`restore` 任何工作树；`git status --porcelain` 在提交后为空（见 §29.6 末的提交核对）。按 §6「用户原有改动保留，最终 diff 与本任务文件清单一致」核对：上表文件集合与本批各提交的文件清单逐一对应，无夹带。
+**用户改动边界**：本批全部写入都发生在**隔离工作树**内（`.pi/worktrees/acceptance-audit-20261012-*`），未触碰主检出 `E:\grok2api` 的工作区文件，也未 `reset`/`restore` 任何工作树；`git status --porcelain` 在两次提交后为空（本机实跑 `STATUS_EXIT=0`）。按 §6「用户原有改动保留，最终 diff 与本任务文件清单一致」核对：上表文件集合与本批各提交的文件清单逐一对应，无夹带。
 
 ### 29.7 FB-02 四项状态
 
