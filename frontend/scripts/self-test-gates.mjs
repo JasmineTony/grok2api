@@ -80,10 +80,19 @@ function relativeKey(file) {
   return path.relative(frontendDir, file).replaceAll("\\", "/");
 }
 
+/**
+ * 子进程必须显式带上类型剥离 flag：被测门禁 scripts/check-bundle-budget.mjs 直接
+ * `import ... from "./build-inputs.ts"`，而 Node 的类型剥离在 22.6–22.17 默认关闭
+ * （package.json 的 engines 只声明 >=22，check:budget / test:gates 因此都在命令行上显式传该 flag）。
+ * CLI flag 不会被 spawnSync 子进程继承，缺了它这些版本上子进程会以 ERR_UNKNOWN_FILE_EXTENSION 退出 1，
+ * 让本脚本的断言假失败；已知 flag 的 Node 会照常接受，故对所有版本统一补上。
+ */
+const STRIP_TYPES_FLAG = "--experimental-strip-types";
+
 function runGate(script, env, args = []) {
   // script 为绝对路径时直接执行（ALLOWED_SKIPS 正样本用 tmp 内的改写副本），否则按 scripts/ 下的脚本名解析。
   const target = path.isAbsolute(script) ? script : path.join(scriptsDir, script);
-  const result = spawnSync(process.execPath, [target, ...args], {
+  const result = spawnSync(process.execPath, [STRIP_TYPES_FLAG, target, ...args], {
     env: { ...process.env, ...env },
     encoding: "utf8",
   });
@@ -294,6 +303,69 @@ fs.rmSync(path.join(distWithoutManifest, ".build-manifest.json"));
 const distTamperedOutput = path.join(root, "dist-tampered-output");
 fs.cpSync(distDir, distTamperedOutput, { recursive: true });
 fs.appendFileSync(path.join(distTamperedOutput, "assets", "shared.js"), "// 被改写的产物\n");
+
+/**
+ * 夹具（P3-1）：同一标签重复出现 `src` —— HTML 规范首个生效。真实入口 `/runtime-config.js` 写在前面，
+ * 后面跟一个真实存在的 decoy：`set()` 后写覆盖先写的旧实现只认 decoy，首屏闭包丢掉真实入口。
+ */
+const distDuplicateAttribute = path.join(root, "dist-duplicate-attribute");
+fs.cpSync(distDir, distDuplicateAttribute, { recursive: true });
+/**
+ * 确定性伪随机负载（LCG）：gzip 几乎压不动。decoy 必须大到能撑破首屏阈值（460 KiB 原始 → ≈297 KiB
+ * gzip > 260 KiB），判别力才不依赖「错误入口」与真实入口之间的字节小数位差异。
+ */
+function noisePayload(bytes) {
+  let state = 20261012;
+  let out = "";
+  while (out.length < bytes) {
+    state = (state * 1103515245 + 12345) % 2147483648;
+    out += state.toString(36);
+  }
+  return out.slice(0, bytes);
+}
+writeFile(
+  path.join(distDuplicateAttribute, "assets", "decoy.js"),
+  `export const decoy = "${noisePayload(460 * 1024)}";\n`,
+);
+writeFile(
+  path.join(distDuplicateAttribute, "index.html"),
+  budgetIndexHtml.replace(
+    '<script src="/runtime-config.js"></script>',
+    '<script src="/runtime-config.js" src="/assets/decoy.js"></script>',
+  ),
+);
+writeFreshManifest(distDuplicateAttribute);
+if (
+  !fs
+    .readFileSync(path.join(distDuplicateAttribute, "index.html"), "utf8")
+    .includes('<script src="/runtime-config.js" src="/assets/decoy.js"></script>')
+) {
+  throw new Error("自测装置失效：重复属性夹具未生成（index.html 锚点未命中）");
+}
+
+/**
+ * 夹具（P3-2）：`<link rel="prefetch" href="/assets/prefetch-only.js">` 是空闲预取，不属于首屏闭包。
+ * 目标文件真实存在且不被任何入口静态引用，且大到能撑破首屏阈值（460 KiB 原始 → ≈292 KiB gzip）：
+ * 只看 href 不看 rel 的旧实现会把它算进首屏闭包（3 → 4 个文件、292.39 KiB）并直接超限失败。
+ */
+const distPrefetchLink = path.join(root, "dist-prefetch-link");
+fs.cpSync(distDir, distPrefetchLink, { recursive: true });
+writeFile(
+  path.join(distPrefetchLink, "assets", "prefetch-only.js"),
+  `export const prefetched = "${noisePayload(460 * 1024)}";\n`,
+);
+writeFile(
+  path.join(distPrefetchLink, "index.html"),
+  budgetIndexHtml.replace(
+    '<script type="module" src="/assets/entry.js"></script>',
+    '<link rel="prefetch" href="/assets/prefetch-only.js">\n<script type="module" src="/assets/entry.js"></script>',
+  ),
+);
+writeFreshManifest(distPrefetchLink);
+/** 判别力前提：prefetch-only.js 只被该 `<link>` 引用，闭包计数差异只能来自 rel 判定。 */
+if (fs.readFileSync(path.join(distPrefetchLink, "assets", "entry.js"), "utf8").includes("prefetch-only")) {
+  throw new Error("自测装置失效：prefetch-only.js 不应被入口静态引用，否则闭包计数与 rel 无关");
+}
 
 /**
  * 夹具判别力前提（TEST-7，D3）：修复前的入口采集只认 `/assets/` 前缀。同一份合成 index.html 上，
@@ -1302,6 +1374,48 @@ const cases = [
         ...budgetEnv,
         BUDGET_DIST_DIR: distTamperedOutput,
         BUDGET_CONFIG_PATH: budgetOk,
+      }),
+  },
+  {
+    name: "预算：同一标签重复 src 时取首个，真实入口仍计入（旧实现后写覆盖先写）",
+    expect: 0,
+    contains: [expectedInitialClosure, "体积预算门禁通过。"],
+    run: () =>
+      runGate("check-bundle-budget.mjs", {
+        BUDGET_DIST_DIR: distDuplicateAttribute,
+        BUDGET_CONFIG_PATH: budgetOk,
+      }),
+  },
+  {
+    name: "预算：<link rel=prefetch> 不计入首屏闭包（旧实现只看 href 会多算）",
+    expect: 0,
+    contains: [expectedInitialClosure, "体积预算门禁通过。"],
+    run: () =>
+      runGate("check-bundle-budget.mjs", {
+        BUDGET_DIST_DIR: distPrefetchLink,
+        BUDGET_CONFIG_PATH: budgetOk,
+      }),
+  },
+  {
+    name: "预算：BUDGET_DIST_DIR 指向 tmp 之外应被拒绝（exit 2，不得重定向门禁）",
+    expect: 2,
+    contains: ["拒绝 BUDGET_DIST_DIR", "只允许指向系统临时目录"],
+    absent: ["体积预算门禁通过", "缺少 frontend/dist"],
+    run: () =>
+      runGate("check-bundle-budget.mjs", {
+        BUDGET_DIST_DIR: frontendDir,
+        BUDGET_CONFIG_PATH: budgetOk,
+      }),
+  },
+  {
+    name: "预算：BUDGET_CONFIG_PATH 指向 tmp 之外应被拒绝（exit 2，不得用伪造配置放宽阈值）",
+    expect: 2,
+    contains: ["拒绝 BUDGET_CONFIG_PATH", "只允许指向系统临时目录"],
+    absent: ["体积预算门禁通过"],
+    run: () =>
+      runGate("check-bundle-budget.mjs", {
+        ...budgetEnv,
+        BUDGET_CONFIG_PATH: path.join(frontendDir, "bundle-budget.json"),
       }),
   },
   {
