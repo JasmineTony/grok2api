@@ -1,8 +1,18 @@
+import type { ReactElement } from "react";
+
 import type { DegradeSummaryDTO } from "@/features/quality-guard/quality-guard-api";
 
 // 按出口节点聚合的降级分布：从 degrade-accounts-panel.tsx 拆出，条形比例与展示字段不变。
 
-export function NodeList({ nodes, empty, title }: { nodes: DegradeSummaryDTO["nodes"]; empty: string; title: string }) {
+export function NodeList({
+  nodes,
+  empty,
+  title,
+}: {
+  nodes: DegradeSummaryDTO["nodes"];
+  empty: string;
+  title: string;
+}): ReactElement {
   const max = Math.max(1, ...nodes.map((node) => node.hits));
   return (
     <section className="flex h-full min-h-64 flex-col overflow-hidden rounded-lg bg-card" data-testid="degrade-nodes">

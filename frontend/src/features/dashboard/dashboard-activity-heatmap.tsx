@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -18,7 +19,7 @@ type ActivityHeatmapProps = {
 };
 
 /** 180 天活动热力图：每列一周，未来日期以浅色占位。 */
-export function ActivityHeatmap({ weeks, maxRequests, generatedAt, locale }: ActivityHeatmapProps) {
+export function ActivityHeatmap({ weeks, maxRequests, generatedAt, locale }: ActivityHeatmapProps): ReactElement {
   const { t } = useTranslation();
   return (
     <div className="mt-4 w-full pb-1">
@@ -80,7 +81,7 @@ function ActivityDay({
 }
 
 /** 强度图例：少 → 多。 */
-export function ActivityLegend() {
+export function ActivityLegend(): ReactElement {
   const { t } = useTranslation();
   return (
     <div className="mt-3 flex items-center justify-end gap-1.5 text-[10px] text-muted-foreground">

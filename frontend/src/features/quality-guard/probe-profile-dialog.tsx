@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -101,7 +102,7 @@ function ProbeProfilePromptField({ draft, setDraft, readonly }: DraftFieldProps)
   );
 }
 
-export function ProbeProfileDialog({ controller }: { controller: ProbeProfilesController }) {
+export function ProbeProfileDialog({ controller }: { controller: ProbeProfilesController }): ReactElement {
   const { t } = useTranslation();
   const { editing, draft, setDraft, saving, closeEditor, save } = controller;
   const readonly = Boolean(editing?.built_in);

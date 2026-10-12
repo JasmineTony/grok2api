@@ -279,18 +279,27 @@ func flattenMessageContent(raw json.RawMessage) string {
 	}
 	var builder strings.Builder
 	for _, part := range parts {
-		var partType string
-		_ = json.Unmarshal(part["type"], &partType)
-		switch strings.TrimSpace(partType) {
-		case "", "text", "input_text", "output_text":
-			var text string
-			if json.Unmarshal(part["text"], &text) == nil && strings.TrimSpace(text) != "" {
-				if builder.Len() > 0 {
-					builder.WriteByte('\n')
-				}
-				builder.WriteString(strings.TrimSpace(text))
-			}
-		}
+		appendMessagePartText(&builder, part)
 	}
 	return builder.String()
+}
+
+// appendMessagePartText 把单个 content part 的文本按既有换行规则追加到 builder，忽略非文本 part。
+func appendMessagePartText(builder *strings.Builder, part map[string]json.RawMessage) {
+	var partType string
+	_ = json.Unmarshal(part["type"], &partType)
+	switch strings.TrimSpace(partType) {
+	case "", "text", "input_text", "output_text":
+		var text string
+		if json.Unmarshal(part["text"], &text) != nil {
+			return
+		}
+		if strings.TrimSpace(text) == "" {
+			return
+		}
+		if builder.Len() > 0 {
+			builder.WriteByte('\n')
+		}
+		builder.WriteString(strings.TrimSpace(text))
+	}
 }

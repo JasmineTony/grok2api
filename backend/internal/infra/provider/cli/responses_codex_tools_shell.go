@@ -46,54 +46,82 @@ func legacyShellCommand(action map[string]any, param string) (string, error) {
 	case string:
 		command = strings.TrimSpace(value)
 	case []any:
-		parts := make([]string, 0, len(value))
-		for index, raw := range value {
-			part, ok := raw.(string)
-			if !ok {
-				return "", &responsesRequestError{Message: "local_shell command 参数必须是字符串", Param: fmt.Sprintf("%s.command[%d]", param, index), Code: "invalid_parameter"}
-			}
-			parts = append(parts, quoteShellArgument(part))
+		quoted, err := legacyShellQuotedCommand(value, param)
+		if err != nil {
+			return "", err
 		}
-		command = strings.Join(parts, " ")
+		command = quoted
 	default:
 		if commands, ok := action["commands"].([]any); ok {
-			parts := make([]string, 0, len(commands))
-			for index, raw := range commands {
-				part, ok := raw.(string)
-				if !ok {
-					return "", &responsesRequestError{Message: "shell commands 必须是字符串", Param: fmt.Sprintf("%s.commands[%d]", param, index), Code: "invalid_parameter"}
-				}
-				parts = append(parts, part)
+			joined, err := legacyShellMultiCommand(commands, param)
+			if err != nil {
+				return "", err
 			}
-			command = strings.Join(parts, "\n")
+			command = joined
 		}
 	}
 	if command == "" {
 		return "", &responsesRequestError{Message: "local_shell_call.action.command 不能为空", Param: param + ".command", Code: "invalid_parameter"}
 	}
-	if environment, ok := action["env"].(map[string]any); ok && len(environment) > 0 {
-		keys := make([]string, 0, len(environment))
-		for key := range environment {
-			if !validEnvironmentName(key) {
-				return "", &responsesRequestError{Message: "local_shell env 名称无效", Param: param + ".env." + key, Code: "invalid_parameter"}
-			}
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		assignments := make([]string, 0, len(keys))
-		for _, key := range keys {
-			value, ok := environment[key].(string)
-			if !ok {
-				return "", &responsesRequestError{Message: "local_shell env 值必须是字符串", Param: param + ".env." + key, Code: "invalid_parameter"}
-			}
-			assignments = append(assignments, key+"="+quoteShellArgument(value))
-		}
-		command = "env " + strings.Join(assignments, " ") + " " + command
+	command, err := legacyShellEnvironmentPrefix(action, param, command)
+	if err != nil {
+		return "", err
 	}
 	if directory := strings.TrimSpace(stringField(action, "working_directory")); directory != "" {
 		command = "cd " + quoteShellArgument(directory) + " && " + command
 	}
 	return command, nil
+}
+
+// legacyShellQuotedCommand 拼接 command 数组，并按 shell 引用规则转义每个参数。
+func legacyShellQuotedCommand(parts []any, param string) (string, error) {
+	quoted := make([]string, 0, len(parts))
+	for index, raw := range parts {
+		part, ok := raw.(string)
+		if !ok {
+			return "", &responsesRequestError{Message: "local_shell command 参数必须是字符串", Param: fmt.Sprintf("%s.command[%d]", param, index), Code: "invalid_parameter"}
+		}
+		quoted = append(quoted, quoteShellArgument(part))
+	}
+	return strings.Join(quoted, " "), nil
+}
+
+// legacyShellMultiCommand 拼接 commands 数组，命令之间以换行分隔且不做引用转义。
+func legacyShellMultiCommand(commands []any, param string) (string, error) {
+	parts := make([]string, 0, len(commands))
+	for index, raw := range commands {
+		part, ok := raw.(string)
+		if !ok {
+			return "", &responsesRequestError{Message: "shell commands 必须是字符串", Param: fmt.Sprintf("%s.commands[%d]", param, index), Code: "invalid_parameter"}
+		}
+		parts = append(parts, part)
+	}
+	return strings.Join(parts, "\n"), nil
+}
+
+// legacyShellEnvironmentPrefix 按变量名排序后把 env 前置到命令，并校验变量名与取值类型。
+func legacyShellEnvironmentPrefix(action map[string]any, param, command string) (string, error) {
+	environment, ok := action["env"].(map[string]any)
+	if !ok || len(environment) == 0 {
+		return command, nil
+	}
+	keys := make([]string, 0, len(environment))
+	for key := range environment {
+		if !validEnvironmentName(key) {
+			return "", &responsesRequestError{Message: "local_shell env 名称无效", Param: param + ".env." + key, Code: "invalid_parameter"}
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	assignments := make([]string, 0, len(keys))
+	for _, key := range keys {
+		value, ok := environment[key].(string)
+		if !ok {
+			return "", &responsesRequestError{Message: "local_shell env 值必须是字符串", Param: param + ".env." + key, Code: "invalid_parameter"}
+		}
+		assignments = append(assignments, key+"="+quoteShellArgument(value))
+	}
+	return "env " + strings.Join(assignments, " ") + " " + command, nil
 }
 
 func normalizeLegacyLocalShellOutputInput(item map[string]any, param string) (map[string]any, error) {

@@ -1,4 +1,5 @@
 import { ChevronDown } from "lucide-react";
+import type { ReactElement } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -42,7 +43,7 @@ type ScopeDropdownProps = {
 };
 
 /** 多选范围下拉：摘要文本由调用方按业务语义拼装。 */
-export function ScopeDropdown(props: ScopeDropdownProps) {
+export function ScopeDropdown(props: ScopeDropdownProps): ReactElement {
   const { testId, ariaLabel, summary, allLabel, value, onChange, options, normalizeAllWhenComplete = false } = props;
   return (
     <DropdownMenu>

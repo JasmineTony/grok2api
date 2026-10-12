@@ -104,10 +104,30 @@ func TestFrontendStaticFilesAndSPAFallback(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "assets", "app.js"), []byte("console.log('app')"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(root, ".build-manifest.json"), []byte(`{"version":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	deps := testDependencies()
 	deps.Logger = slog.Default()
 	deps.FrontendStaticPath = root
 	router := New(deps)
+	// 隐藏产物的 404 判定链（frontend.go）：frontendFile(:70-85) 把请求路径解析为相对路径，
+	// isHiddenArtifact(:27-30) 拦截根级点文件；解析失败时由 path.Ext 兜底(:40-42) 对带扩展名的缺失路径返回 404。
+	// 别名路径被哪条分支拦下取决于 root 所在卷的路径归一化语义，两个平台覆盖的分支不同：
+	//   - 归一化平台（Windows/NTFS 等大小写不敏感卷）：os.Stat 命中 .build-manifest.json，404 来自 isHiddenArtifact；
+	//   - 非归一化平台（CI 的 Linux 大小写敏感卷）：os.Stat 直接失败，404 来自 path.Ext 兜底。
+	// 这里显式断言实际命中的分支，避免别名用例在 CI 上只覆盖兜底分支、却被读成同样覆盖了隐藏产物守卫。
+	for _, alias := range []string{"/.BUILD-MANIFEST.JSON", `/x\..\.build-manifest.json`} {
+		relative, resolved := frontendFile(root, alias)
+		switch {
+		case resolved && isHiddenArtifact(relative):
+			t.Logf("别名 %s 归一到 %q，404 由 isHiddenArtifact 拦截", alias, relative)
+		case !resolved:
+			t.Logf("别名 %s 未被 os.Stat 归一化，404 依赖 path.Ext 兜底（frontend.go:40-42）", alias)
+		default:
+			t.Fatalf("别名 %s 解析为 %q 却未被 isHiddenArtifact 拦截，隐藏产物守卫失效", alias, relative)
+		}
+	}
 
 	for _, test := range []struct {
 		path        string
@@ -116,6 +136,11 @@ func TestFrontendStaticFilesAndSPAFallback(t *testing.T) {
 		cachePrefix string
 	}{
 		{path: "/assets/app.js", status: http.StatusOK, body: "console.log('app')", cachePrefix: "public"},
+		// 别名用例断言的是平台无关结果：客户端无论大小写/路径写法如何都拿不到根级产物；
+		// 具体由哪条分支拦下随平台变化（见上方分支断言），CI(Linux) 命中 path.Ext 兜底，Windows 命中 isHiddenArtifact。
+		{path: "/.build-manifest.json", status: http.StatusNotFound},
+		{path: "/.BUILD-MANIFEST.JSON", status: http.StatusNotFound},
+		{path: "/x\\..\\.build-manifest.json", status: http.StatusNotFound},
 		{path: "/dashboard", status: http.StatusOK, body: "<html>app</html>", cachePrefix: "no-cache"},
 		{path: "/assets/missing.js", status: http.StatusNotFound},
 		{path: "/api/admin/v1/missing", status: http.StatusNotFound},
@@ -135,6 +160,26 @@ func TestFrontendStaticFilesAndSPAFallback(t *testing.T) {
 				t.Fatalf("cache-control = %q", recorder.Header().Get("Cache-Control"))
 			}
 		})
+	}
+}
+
+// TestIsHiddenArtifactOnResolvedAliases 固定 isHiddenArtifact 的平台无关语义（frontend.go:97-101）：
+// 判定输入是 os.Stat 解析后的相对路径，因此别名一旦被文件系统归一化（大小写变化、`x\..` 折叠），
+// 仍然必须按根级点文件拦截。Linux CI 上 os.Stat 对这类别名直接失败、HTTP 层覆盖不到该归一化结果，回归只能靠这里。
+func TestIsHiddenArtifactOnResolvedAliases(t *testing.T) {
+	for _, test := range []struct {
+		relative string
+		hidden   bool
+	}{
+		{relative: ".build-manifest.json", hidden: true},
+		{relative: ".BUILD-MANIFEST.JSON", hidden: true},
+		{relative: "build-manifest.json", hidden: false},
+		{relative: "assets/.build-manifest.json", hidden: false},
+		{relative: "assets/app.js", hidden: false},
+	} {
+		if got := isHiddenArtifact(test.relative); got != test.hidden {
+			t.Fatalf("isHiddenArtifact(%q) = %v, want %v", test.relative, got, test.hidden)
+		}
 	}
 }
 

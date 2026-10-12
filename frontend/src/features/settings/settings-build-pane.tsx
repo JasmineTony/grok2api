@@ -1,4 +1,5 @@
 import { Sparkles } from "lucide-react";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,7 @@ export function SettingsBuildPane({
   form: SettingsFormApi;
   disabled: boolean;
   recommended?: { clientVersion: string; userAgent: string };
-}) {
+}): ReactElement {
   const { t } = useTranslation();
   const clientVersion = form.watch("providerBuild.clientVersion");
   const userAgent = form.watch("providerBuild.userAgent");

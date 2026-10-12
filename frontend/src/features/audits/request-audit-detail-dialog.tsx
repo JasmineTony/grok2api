@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { FileText, Globe2, ListTree, Server } from "lucide-react";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Badge } from "@/components/ui/badge";
@@ -101,7 +102,7 @@ export function RequestAuditDetailDialog({
   audit: AuditDTO | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}) {
+}): ReactElement {
   const { t, i18n } = useTranslation();
   const detailQuery = useQuery({
     queryKey: ["request-audits", "detail", audit?.id],

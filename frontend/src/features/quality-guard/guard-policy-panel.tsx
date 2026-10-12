@@ -1,4 +1,5 @@
 import { Pencil, Zap } from "lucide-react";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -7,7 +8,7 @@ import type { QualityGuardStatus } from "@/features/quality-guard/quality-guard-
 
 // 当前策略摘要：从 quality-guard-page.tsx 拆出。展示行与顺序保持不变。
 
-export function Policy({ status, onEdit }: { status: QualityGuardStatus; onEdit: () => void }) {
+export function Policy({ status, onEdit }: { status: QualityGuardStatus; onEdit: () => void }): ReactElement | null {
   const { t } = useTranslation();
   const config = status.config;
   if (!config) return null;

@@ -73,25 +73,36 @@ func parseUpstreamStatusFromMessage(message string) int {
 	}
 	// Console/Web summaries commonly look like: "Console 媒体上游返回 429: ..."
 	for _, token := range []string{"返回 ", "status ", "Status ", "HTTP "} {
-		if idx := strings.Index(message, token); idx >= 0 {
-			rest := strings.TrimSpace(message[idx+len(token):])
-			n := 0
-			for i := 0; i < len(rest); i++ {
-				ch := rest[i]
-				if ch < '0' || ch > '9' {
-					break
-				}
-				n = n*10 + int(ch-'0')
-				if n > 599 {
-					return 0
-				}
-			}
-			if n >= 100 && n <= 599 {
-				return n
-			}
+		idx := strings.Index(message, token)
+		if idx < 0 {
+			continue
+		}
+		status, overflow := scanLeadingHTTPStatus(strings.TrimSpace(message[idx+len(token):]))
+		if overflow || status != 0 {
+			return status
 		}
 	}
 	return 0
+}
+
+// scanLeadingHTTPStatus 解析 rest 开头的十进制状态码：status 非 0 表示命中 100–599 的状态码；
+// overflow 为 true 表示数字已超过 599，调用方必须立即放弃整个解析。
+func scanLeadingHTTPStatus(rest string) (status int, overflow bool) {
+	n := 0
+	for i := 0; i < len(rest); i++ {
+		ch := rest[i]
+		if ch < '0' || ch > '9' {
+			break
+		}
+		n = n*10 + int(ch-'0')
+		if n > 599 {
+			return 0, true
+		}
+	}
+	if n >= 100 && n <= 599 {
+		return n, false
+	}
+	return 0, false
 }
 
 func captureVideoAttempt(recorder *failureAttemptRecorder, credential account.Credential, startedAt time.Time, err error) {

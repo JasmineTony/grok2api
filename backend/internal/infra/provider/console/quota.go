@@ -10,6 +10,7 @@ import (
 
 	"github.com/chenyme/grok2api/backend/internal/domain/account"
 	egressdomain "github.com/chenyme/grok2api/backend/internal/domain/egress"
+	infraegress "github.com/chenyme/grok2api/backend/internal/infra/egress"
 	"github.com/chenyme/grok2api/backend/internal/ports/provider"
 )
 
@@ -66,24 +67,36 @@ func (a *Adapter) syncConsoleQuotas(ctx context.Context, credential account.Cred
 		return nil, time.Time{}, readErr
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		if response.StatusCode == http.StatusUnauthorized ||
-			(response.StatusCode == http.StatusForbidden && provider.IsDefinitiveAccountBlockBody(data)) {
-			return nil, time.Time{}, fmt.Errorf("%w: Console usage rejected", provider.ErrUnauthorized)
-		}
-		dpopRequired := response.StatusCode == http.StatusForbidden && provider.IsDPoPProofRequiredBody(data)
-		if response.StatusCode == http.StatusForbidden && shouldInvalidateConsoleClearance(data) {
-			lease.InvalidateClearance()
-		}
-		if !dpopRequired {
-			a.egress.FeedbackForScope(context.WithoutCancel(ctx), egressdomain.ScopeConsole, lease.NodeID, response.StatusCode, nil)
-		}
-		suffix := ""
-		if truncated {
-			suffix = " (响应已截断)"
-		}
-		return nil, time.Time{}, fmt.Errorf("Console usage 接口返回 %d%s", response.StatusCode, suffix)
+		return nil, time.Time{}, a.consoleUsageStatusError(ctx, response, lease, data, truncated)
 	}
 	a.egress.FeedbackForScope(context.WithoutCancel(ctx), egressdomain.ScopeConsole, lease.NodeID, response.StatusCode, nil)
+	return parseConsoleQuotaWindows(data, credential.ID)
+}
+
+// consoleUsageStatusError classifies a failed Console usage response, keeping
+// the egress feedback and clearance bookkeeping identical to a success path.
+func (a *Adapter) consoleUsageStatusError(ctx context.Context, response *http.Response, lease *infraegress.Lease, data []byte, truncated bool) error {
+	if response.StatusCode == http.StatusUnauthorized ||
+		(response.StatusCode == http.StatusForbidden && provider.IsDefinitiveAccountBlockBody(data)) {
+		return fmt.Errorf("%w: Console usage rejected", provider.ErrUnauthorized)
+	}
+	dpopRequired := response.StatusCode == http.StatusForbidden && provider.IsDPoPProofRequiredBody(data)
+	if response.StatusCode == http.StatusForbidden && shouldInvalidateConsoleClearance(data) {
+		lease.InvalidateClearance()
+	}
+	if !dpopRequired {
+		a.egress.FeedbackForScope(context.WithoutCancel(ctx), egressdomain.ScopeConsole, lease.NodeID, response.StatusCode, nil)
+	}
+	suffix := ""
+	if truncated {
+		suffix = " (响应已截断)"
+	}
+	return fmt.Errorf("Console usage 接口返回 %d%s", response.StatusCode, suffix)
+}
+
+// parseConsoleQuotaWindows validates the Console usage payload and materializes
+// the chat/image/video windows in a stable order.
+func parseConsoleQuotaWindows(data []byte, credentialID uint64) ([]account.QuotaWindow, time.Time, error) {
 	var payload struct {
 		Quotas []struct {
 			Kind           string `json:"kind"`
@@ -99,44 +112,54 @@ func (a *Adapter) syncConsoleQuotas(ctx context.Context, credential account.Cred
 	now := time.Now().UTC()
 	byMode := make(map[string]account.QuotaWindow, 3)
 	for _, quota := range payload.Quotas {
-		mode := consoleQuotaMode(quota.Kind)
-		if mode == "" {
-			continue
+		window, err := consoleQuotaWindow(quota.Kind, quota.Limit, quota.Used, quota.Remaining, credentialID, &now)
+		if err != nil {
+			return nil, time.Time{}, err
 		}
-		if quota.Limit < 0 || quota.Used < 0 || quota.Remaining < 0 || quota.Remaining > quota.Limit {
-			return nil, time.Time{}, fmt.Errorf("Console %s 额度响应无效", consoleQuotaKind(mode))
-		}
-		usagePercent := 0.0
-		if quota.Limit > 0 {
-			usagePercent = float64(quota.Limit-quota.Remaining) / float64(quota.Limit) * 100
-		}
-		windowSeconds := 0
-		var resetAt *time.Time
-		if mode == QuotaMode {
-			windowSeconds = int(consolePredictedChatRecoveryWindow / time.Second)
-			if quota.Remaining == 0 {
-				predicted := now.Add(consolePredictedChatRecoveryWindow)
-				resetAt = &predicted
-			}
-		}
-		byMode[mode] = account.QuotaWindow{
-			AccountID: credential.ID, Mode: mode, Remaining: quota.Remaining, Total: quota.Limit,
-			UsagePercent: usagePercent, WindowSeconds: windowSeconds, ResetAt: resetAt,
-			SyncedAt: &now, Source: account.QuotaSourceUpstream, UpdatedAt: now,
-		}
-	}
-	for _, mode := range []string{QuotaMode, QuotaModeImage, QuotaModeVideo} {
-		if _, ok := byMode[mode]; !ok {
-			return nil, time.Time{}, fmt.Errorf("Console usage 响应缺少 %s 额度", consoleQuotaKind(mode))
+		if window != nil {
+			byMode[window.Mode] = *window
 		}
 	}
 	windows := make([]account.QuotaWindow, 0, 3)
 	for _, mode := range []string{QuotaMode, QuotaModeImage, QuotaModeVideo} {
-		if window, ok := byMode[mode]; ok {
-			windows = append(windows, window)
+		window, ok := byMode[mode]
+		if !ok {
+			return nil, time.Time{}, fmt.Errorf("Console usage 响应缺少 %s 额度", consoleQuotaKind(mode))
 		}
+		windows = append(windows, window)
 	}
 	return windows, now, nil
+}
+
+// consoleQuotaWindow converts one Console usage entry into a quota window; a
+// nil window means the quota kind is not tracked.
+func consoleQuotaWindow(kind string, limit, used, remaining int, credentialID uint64, now *time.Time) (*account.QuotaWindow, error) {
+	mode := consoleQuotaMode(kind)
+	if mode == "" {
+		return nil, nil
+	}
+	if limit < 0 || used < 0 || remaining < 0 || remaining > limit {
+		return nil, fmt.Errorf("Console %s 额度响应无效", consoleQuotaKind(mode))
+	}
+	usagePercent := 0.0
+	if limit > 0 {
+		usagePercent = float64(limit-remaining) / float64(limit) * 100
+	}
+	windowSeconds := 0
+	var resetAt *time.Time
+	if mode == QuotaMode {
+		windowSeconds = int(consolePredictedChatRecoveryWindow / time.Second)
+		if remaining == 0 {
+			predicted := now.Add(consolePredictedChatRecoveryWindow)
+			resetAt = &predicted
+		}
+	}
+	// 三窗口共享同一时刻地址，与拆分前一致：SyncedAt 全部指向 parseConsoleQuotaWindows 的 now。
+	return &account.QuotaWindow{
+		AccountID: credentialID, Mode: mode, Remaining: remaining, Total: limit,
+		UsagePercent: usagePercent, WindowSeconds: windowSeconds, ResetAt: resetAt,
+		SyncedAt: now, Source: account.QuotaSourceUpstream, UpdatedAt: *now,
+	}, nil
 }
 
 func isConsoleQuotaMode(mode string) bool {

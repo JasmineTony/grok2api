@@ -28,43 +28,55 @@ func (s *Service) resolvePublicModelRoutes(ctx context.Context, publicModel stri
 	if err == nil {
 		return routes, "", nil
 	}
-	if s.providers != nil {
-		if alias, ok := s.providers.ResolveModelAlias(publicModel); ok {
-			if alias.Provider != "" && alias.UpstreamModel != "" {
-				route, routeErr := s.models.GetByProviderUpstream(ctx, alias.Provider, alias.UpstreamModel)
-				if routeErr != nil {
-					return nil, "", routeErr
-				}
-				return []modeldomain.Route{route}, alias.ReasoningEffort, nil
-			}
-			routes, resolveErr := s.models.GetByPublicIDCandidates(ctx, alias.PublicModel)
-			return routes, alias.ReasoningEffort, resolveErr
-		}
+	if aliasRoutes, effort, handled, aliasErr := s.resolveRegisteredProviderAlias(ctx, publicModel); handled {
+		return aliasRoutes, effort, aliasErr
 	}
 	// Dynamic effort-suffix aliases (e.g. grok-4.5-low) for any Provider that
 	// exposes the base model. Fixed-reasoning Providers may compatibility-accept
 	// an alias while their wire normalizer drops the unsupported effort.
-	if base, effort, ok := modeldomain.ParseReasoningModelAlias(publicModel); ok {
-		if !allowModelAliases {
-			return nil, "", err
-		}
-		routes, resolveErr := s.models.GetByPublicIDCandidates(ctx, base)
-		if resolveErr != nil {
-			return nil, "", resolveErr
-		}
-		eligible := make([]modeldomain.Route, 0, len(routes))
-		for _, route := range routes {
-			if modeldomain.SupportsReasoningEffortForProvider(route.Provider, route.PublicID, effort) ||
-				modeldomain.IsFixedReasoningForProvider(route.Provider, route.PublicID) {
-				eligible = append(eligible, route)
-			}
-		}
-		if len(eligible) == 0 {
-			return nil, "", repository.ErrNotFound
-		}
-		return eligible, effort, nil
+	base, effort, ok := modeldomain.ParseReasoningModelAlias(publicModel)
+	if !ok {
+		return nil, "", err
 	}
-	return nil, "", err
+	if !allowModelAliases {
+		return nil, "", err
+	}
+	baseRoutes, resolveErr := s.models.GetByPublicIDCandidates(ctx, base)
+	if resolveErr != nil {
+		return nil, "", resolveErr
+	}
+	eligible := make([]modeldomain.Route, 0, len(baseRoutes))
+	for _, route := range baseRoutes {
+		if modeldomain.SupportsReasoningEffortForProvider(route.Provider, route.PublicID, effort) ||
+			modeldomain.IsFixedReasoningForProvider(route.Provider, route.PublicID) {
+			eligible = append(eligible, route)
+		}
+	}
+	if len(eligible) == 0 {
+		return nil, "", repository.ErrNotFound
+	}
+	return eligible, effort, nil
+}
+
+// resolveRegisteredProviderAlias 解析已注册 Provider 的兼容别名；handled 为 false 表示该模型名不是已注册别名，
+// 调用方应继续尝试动态 effort 后缀别名。
+func (s *Service) resolveRegisteredProviderAlias(ctx context.Context, publicModel string) ([]modeldomain.Route, string, bool, error) {
+	if s.providers == nil {
+		return nil, "", false, nil
+	}
+	alias, ok := s.providers.ResolveModelAlias(publicModel)
+	if !ok {
+		return nil, "", false, nil
+	}
+	if alias.Provider == "" || alias.UpstreamModel == "" {
+		routes, resolveErr := s.models.GetByPublicIDCandidates(ctx, alias.PublicModel)
+		return routes, alias.ReasoningEffort, true, resolveErr
+	}
+	route, routeErr := s.models.GetByProviderUpstream(ctx, alias.Provider, alias.UpstreamModel)
+	if routeErr != nil {
+		return nil, "", true, routeErr
+	}
+	return []modeldomain.Route{route}, alias.ReasoningEffort, true, nil
 }
 
 // conversationRouteSelection 汇总同名目标筛选的命中标记，用于区分失败原因并保留代表目标。

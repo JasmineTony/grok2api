@@ -74,7 +74,11 @@ func fetchProxySubscription(ctx context.Context, value string, viaProxy string) 
 	}
 	defer transport.CloseIdleConnections()
 	proxied := strings.TrimSpace(viaProxy) != ""
-	client := &http.Client{
+	return fetchSubscriptionBody(ctx, normalized, subscriptionHTTPClient(transport, proxied), proxied)
+}
+
+func subscriptionHTTPClient(transport *http.Transport, proxied bool) *http.Client {
+	return &http.Client{
 		Transport: transport,
 		CheckRedirect: func(request *http.Request, via []*http.Request) error {
 			if len(via) >= maxSubscriptionHops {
@@ -92,14 +96,17 @@ func fetchProxySubscription(ctx context.Context, value string, viaProxy string) 
 			return nil
 		},
 	}
+}
+
+func fetchSubscriptionBody(ctx context.Context, target string, client *http.Client, proxied bool) ([]byte, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, subscriptionFetchTimeout)
 	defer cancel()
-	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet, normalized, nil)
+	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet, target, nil)
 	if err != nil {
 		return nil, err
 	}
 	if proxied {
-		if err := validatePublicSubscriptionTarget(requestCtx, normalized); err != nil {
+		if err := validatePublicSubscriptionTarget(requestCtx, target); err != nil {
 			return nil, err
 		}
 	}

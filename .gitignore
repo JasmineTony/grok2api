@@ -30,6 +30,7 @@ Thumbs.db
 /.gocache/
 /.gocache-*/
 /backend/grok2api
+/backend/*.exe
 /backend/coverage.out
 *.coverprofile
 *.test

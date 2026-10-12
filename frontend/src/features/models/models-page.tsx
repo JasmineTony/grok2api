@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ModelBatchDeleteDialog, ModelDeleteDialog } from "@/features/models/model-delete-dialogs";
@@ -18,7 +19,7 @@ import { Pagination } from "@/shared/components/pagination";
 // 弹窗与表单（useModelDialogs + useModelForm）与 mutation（save/bulk）各自独立，
 // 渲染交给 models-toolbar / models-table / 两个弹窗组件。
 
-export function ModelsPage() {
+export function ModelsPage(): ReactElement {
   const { t } = useTranslation();
   const selection = useModelSelection();
   const list = useModelList(selection.clear);

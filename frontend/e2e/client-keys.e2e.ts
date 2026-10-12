@@ -72,7 +72,8 @@ test("未登录访问密钥页会被重定向到登录页", async ({ page, serve
   await expect(page.getByRole("heading", { name: /管理员登录|Admin sign in/ })).toBeVisible();
 });
 
-test("创建密钥：表单校验失败后成功创建并展示一次性明文", async ({ page, request, server }) => {
+// @desktop：用例经侧栏导航链接进入密钥页（移动 project 下侧栏 display:none，链接不可见）。
+test("创建密钥：表单校验失败后成功创建并展示一次性明文", { tag: "@desktop" }, async ({ page, request, server }) => {
   await signIn(page, server);
   const name = `e2e-创建-${Date.now().toString(36)}`;
   await page.getByRole("link", { name: keysNavName }).click();

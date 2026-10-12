@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { Controller } from "react-hook-form";
 
@@ -10,7 +11,7 @@ import {
   type SettingsFormApi,
 } from "@/features/settings/settings-form-layout";
 
-export function SettingsConsolePane({ form }: { form: SettingsFormApi }) {
+export function SettingsConsolePane({ form }: { form: SettingsFormApi }): ReactElement {
   const { t } = useTranslation();
   return (
     <SettingsPane value="console">

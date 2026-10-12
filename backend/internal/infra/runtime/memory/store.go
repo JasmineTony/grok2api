@@ -171,6 +171,12 @@ func (l *ConcurrencyLimiter) CurrentMany(_ context.Context, keys []string) (map[
 		grouped[cursors[shard]] = keyIndex
 		cursors[shard]++
 	}
+	l.collectShardCounts(keys, grouped, &offsets, values)
+	return values, nil
+}
+
+// collectShardCounts 按分片读取租约计数，只写入仍有活跃租约的键。
+func (l *ConcurrencyLimiter) collectShardCounts(keys []string, grouped []int, offsets *[shardCount + 1]int, values map[string]int) {
 	for shardIndex := range shardCount {
 		if offsets[shardIndex] == offsets[shardIndex+1] {
 			continue
@@ -185,7 +191,6 @@ func (l *ConcurrencyLimiter) CurrentMany(_ context.Context, keys []string) (map[
 		}
 		shard.mu.Unlock()
 	}
-	return values, nil
 }
 
 type stickyBinding struct {
@@ -256,24 +261,37 @@ func (s *StickyStore) Set(_ context.Context, affinityKey string, accountID uint6
 }
 
 func pruneStickyBindingsLocked(shard *stickyShard, now time.Time) {
-	if len(shard.bindings) > maxEntriesPerShard() {
-		for key, binding := range shard.bindings {
-			if !now.Before(binding.expiresAt) {
-				delete(shard.bindings, key)
-			}
-		}
-		for len(shard.bindings) > maxEntriesPerShard() {
-			var oldestKey string
-			var oldest time.Time
-			for key, binding := range shard.bindings {
-				if oldestKey == "" || binding.expiresAt.Before(oldest) {
-					oldestKey = key
-					oldest = binding.expiresAt
-				}
-			}
-			delete(shard.bindings, oldestKey)
+	if len(shard.bindings) <= maxEntriesPerShard() {
+		return
+	}
+	deleteExpiredStickyBindingsLocked(shard, now)
+	for len(shard.bindings) > maxEntriesPerShard() {
+		delete(shard.bindings, oldestStickyBindingKeyLocked(shard))
+	}
+}
+
+// deleteExpiredStickyBindingsLocked drops every binding that is already expired
+// at now. The caller must hold the shard lock.
+func deleteExpiredStickyBindingsLocked(shard *stickyShard, now time.Time) {
+	for key, binding := range shard.bindings {
+		if !now.Before(binding.expiresAt) {
+			delete(shard.bindings, key)
 		}
 	}
+}
+
+// oldestStickyBindingKeyLocked returns the key that expires first. The caller
+// must hold the shard lock.
+func oldestStickyBindingKeyLocked(shard *stickyShard) string {
+	var oldestKey string
+	var oldest time.Time
+	for key, binding := range shard.bindings {
+		if oldestKey == "" || binding.expiresAt.Before(oldest) {
+			oldestKey = key
+			oldest = binding.expiresAt
+		}
+	}
+	return oldestKey
 }
 
 func (s *StickyStore) DeleteByAccount(_ context.Context, accountID uint64) error {

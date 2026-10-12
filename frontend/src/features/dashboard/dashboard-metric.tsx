@@ -1,4 +1,5 @@
 import type { LucideIcon } from "lucide-react";
+import type { ReactElement } from "react";
 
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/shared/lib/cn";
@@ -12,7 +13,7 @@ export type DashboardMetricProps = {
 };
 
 /** 概览指标卡：标签、数值与补充说明；加载中显示 spinner 并隐藏说明。 */
-export function DashboardMetric({ icon: Icon, label, value, detail, loading }: DashboardMetricProps) {
+export function DashboardMetric({ icon: Icon, label, value, detail, loading }: DashboardMetricProps): ReactElement {
   return (
     <article className="min-h-28 rounded-lg bg-card p-4" aria-busy={loading}>
       <header className="flex min-h-5 items-center justify-between gap-3">

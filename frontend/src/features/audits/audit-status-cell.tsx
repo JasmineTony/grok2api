@@ -1,10 +1,11 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { auditErrorLabel, statusTone } from "@/features/audits/audit-format";
 import type { AuditDTO } from "@/features/audits/request-audits-api";
 import { cn } from "@/shared/lib/cn";
 
-export function StatusCode({ statusCode, hasError = false }: { statusCode: number; hasError?: boolean }) {
+export function StatusCode({ statusCode, hasError = false }: { statusCode: number; hasError?: boolean }): ReactElement {
   const tone = statusTone(statusCode, hasError);
   return (
     <span className={cn("inline-flex items-center gap-1 text-[10px] leading-4 tabular-nums", tone.text)}>
@@ -14,7 +15,7 @@ export function StatusCode({ statusCode, hasError = false }: { statusCode: numbe
   );
 }
 
-export function AuditStatus({ audit, onOpen }: { audit: AuditDTO; onOpen: () => void }) {
+export function AuditStatus({ audit, onOpen }: { audit: AuditDTO; onOpen: () => void }): ReactElement {
   const { t } = useTranslation();
   const mode =
     audit.operation === "compaction"

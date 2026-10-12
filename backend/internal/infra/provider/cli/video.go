@@ -156,25 +156,7 @@ func (a *Adapter) pollVideoJob(ctx context.Context, credential account.Credentia
 			return provider.VideoResult{}, provider.WrapVideoStage(provider.VideoStagePoll, 0, pollErr)
 		}
 		if done {
-			if assetID != "" {
-				issuer := a.uploadIssuerRef()
-				if issuer == nil {
-					return provider.VideoResult{}, provider.WrapVideoStage(provider.VideoStagePoll, 0, fmt.Errorf("XAI 视频需要媒体上传接收服务"))
-				}
-				contentType, waitErr := issuer.WaitVideoUpload(ctx, assetID)
-				if waitErr != nil {
-					// 上游 done 但本地未收到上传：若 status 带 CDN URL 仍可回退远程读取。
-					if result.URL != "" {
-						return result, nil
-					}
-					return provider.VideoResult{}, provider.WrapVideoStage(provider.VideoStagePoll, 0, waitErr)
-				}
-				if contentType == "" {
-					contentType = "video/mp4"
-				}
-				return provider.VideoResult{ContentType: contentType, AssetID: assetID}, nil
-			}
-			return result, nil
+			return a.finalizeCompletedVideoJob(ctx, assetID, result)
 		}
 		select {
 		case <-ctx.Done():
@@ -182,4 +164,28 @@ func (a *Adapter) pollVideoJob(ctx context.Context, credential account.Credentia
 		case <-ticker.C:
 		}
 	}
+}
+
+// finalizeCompletedVideoJob 处理上游 done 后的结果落地：无 assetID 时直接返回 status 结果，
+// 否则等待本地媒体上传完成；未收到上传且 status 带 CDN URL 时回退远程读取。
+func (a *Adapter) finalizeCompletedVideoJob(ctx context.Context, assetID string, result provider.VideoResult) (provider.VideoResult, error) {
+	if assetID == "" {
+		return result, nil
+	}
+	issuer := a.uploadIssuerRef()
+	if issuer == nil {
+		return provider.VideoResult{}, provider.WrapVideoStage(provider.VideoStagePoll, 0, fmt.Errorf("XAI 视频需要媒体上传接收服务"))
+	}
+	contentType, waitErr := issuer.WaitVideoUpload(ctx, assetID)
+	if waitErr != nil {
+		// 上游 done 但本地未收到上传：若 status 带 CDN URL 仍可回退远程读取。
+		if result.URL != "" {
+			return result, nil
+		}
+		return provider.VideoResult{}, provider.WrapVideoStage(provider.VideoStagePoll, 0, waitErr)
+	}
+	if contentType == "" {
+		contentType = "video/mp4"
+	}
+	return provider.VideoResult{ContentType: contentType, AssetID: assetID}, nil
 }

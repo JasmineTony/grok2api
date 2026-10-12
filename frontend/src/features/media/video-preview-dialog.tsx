@@ -1,5 +1,5 @@
 import { AlertCircle, RefreshCw } from "lucide-react";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import type { MediaJobDTO } from "@/features/media/types";
 import { cn } from "@/shared/lib/cn";
 
 /** 视频预览弹窗；关闭时内容卸载，视频元素随之销毁（无对象 URL 泄漏）。 */
-export function VideoPreviewDialog({ job, onClose }: { job: MediaJobDTO | null; onClose: () => void }) {
+export function VideoPreviewDialog({ job, onClose }: { job: MediaJobDTO | null; onClose: () => void }): ReactElement {
   const { t } = useTranslation();
   return (
     <Dialog open={Boolean(job)} onOpenChange={(open) => !open && onClose()}>

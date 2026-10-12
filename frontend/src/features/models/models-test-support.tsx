@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
-import { vi } from "vitest";
+import { vi, type Mock } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { ModelAccountOptionDTO } from "@/entities/model/model-api";
@@ -130,7 +130,10 @@ function createResponder(options: ApiStubOptions, groups: ModelRouteGroupDTO[], 
   };
 }
 
-export function installModelApi(options: ApiStubOptions = {}) {
+export function installModelApi(options: ApiStubOptions = {}): {
+  requests: RecordedRequest[];
+  fetchMock: Mock<typeof fetch>;
+} {
   const requests: RecordedRequest[] = [];
   const groups = options.groups ?? [modelGroup()];
   const respond = createResponder(options, groups, options.total ?? groups.length);

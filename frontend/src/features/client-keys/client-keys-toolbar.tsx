@@ -1,5 +1,6 @@
 import type { TFunction } from "i18next";
 import { Plus, Search } from "lucide-react";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -48,7 +49,7 @@ function modelScopeFilter(t: TFunction, value: string, onChange: (value: string)
 }
 
 /** 列表工具栏：搜索 + 筛选；存在选中项时切换为批量操作入口。 */
-export function ClientKeysToolbar(props: ClientKeysToolbarProps) {
+export function ClientKeysToolbar(props: ClientKeysToolbarProps): ReactElement {
   const { selectedCount, onCreate } = props;
   return (
     <>

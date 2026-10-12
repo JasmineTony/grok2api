@@ -99,40 +99,44 @@ func (r *EgressRepository) UpdateEgressProxyProfile(ctx context.Context, value e
 		if len(nodeIDs) == 0 {
 			return nil
 		}
-		now := time.Now().UTC()
-		return tx.Model(&egressNodeModel{}).Where("id IN ? AND proxy_profile_id = ?", nodeIDs, value.ID).Updates(map[string]any{
-			"encrypted_proxy_url":           value.EncryptedProxyURL,
-			"encrypted_cloudflare_cookie":   "",
-			"clearance_refreshed_at":        nil,
-			"clearance_fingerprint":         "",
-			"clearance_binding_fingerprint": "",
-			"health":                        1,
-			"failure_count":                 0,
-			"cooldown_until":                nil,
-			"last_error":                    "",
-			"probe_status":                  string(egress.ProbeStatusUnknown),
-			"last_probed_at":                nil,
-			"probe_latency_ms":              0,
-			"exit_ip":                       "",
-			"probe_error":                   "",
-			"probe_provider":                "",
-			"ipv4_probe_status":             string(egress.ProbeStatusUnknown),
-			"ipv4_last_probed_at":           nil,
-			"ipv4_probe_latency_ms":         0,
-			"ipv4_exit_ip":                  "",
-			"ipv4_probe_error":              "",
-			"ipv6_probe_status":             string(egress.ProbeStatusUnknown),
-			"ipv6_last_probed_at":           nil,
-			"ipv6_probe_latency_ms":         0,
-			"ipv6_exit_ip":                  "",
-			"ipv6_probe_error":              "",
-			"updated_at":                    now,
-		}).Error
+		return resetEgressNodesAfterProxyChange(tx, nodeIDs, value.ID, value.EncryptedProxyURL)
 	})
 	if err != nil {
 		return egress.ProxyProfile{}, nil, mapError(err)
 	}
 	return toEgressProxyProfileDomain(updated, int(boundNodeCount)), nodeIDs, nil
+}
+
+func resetEgressNodesAfterProxyChange(tx *gorm.DB, nodeIDs []uint64, profileID uint64, encryptedProxyURL string) error {
+	now := time.Now().UTC()
+	return tx.Model(&egressNodeModel{}).Where("id IN ? AND proxy_profile_id = ?", nodeIDs, profileID).Updates(map[string]any{
+		"encrypted_proxy_url":           encryptedProxyURL,
+		"encrypted_cloudflare_cookie":   "",
+		"clearance_refreshed_at":        nil,
+		"clearance_fingerprint":         "",
+		"clearance_binding_fingerprint": "",
+		"health":                        1,
+		"failure_count":                 0,
+		"cooldown_until":                nil,
+		"last_error":                    "",
+		"probe_status":                  string(egress.ProbeStatusUnknown),
+		"last_probed_at":                nil,
+		"probe_latency_ms":              0,
+		"exit_ip":                       "",
+		"probe_error":                   "",
+		"probe_provider":                "",
+		"ipv4_probe_status":             string(egress.ProbeStatusUnknown),
+		"ipv4_last_probed_at":           nil,
+		"ipv4_probe_latency_ms":         0,
+		"ipv4_exit_ip":                  "",
+		"ipv4_probe_error":              "",
+		"ipv6_probe_status":             string(egress.ProbeStatusUnknown),
+		"ipv6_last_probed_at":           nil,
+		"ipv6_probe_latency_ms":         0,
+		"ipv6_exit_ip":                  "",
+		"ipv6_probe_error":              "",
+		"updated_at":                    now,
+	}).Error
 }
 
 func (r *EgressRepository) DeleteEgressProxyProfile(ctx context.Context, id uint64) error {

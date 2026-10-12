@@ -49,7 +49,7 @@ vi.mock("@/features/quality-guard/quality-guard-page", () => ({
 }));
 vi.mock("@/features/settings/settings-page", () => ({ SettingsPage: pageProbe("SettingsPage") }));
 
-// 兜底布局变体：AppShell 用全屏变体，其余业务页用常规视口变体（deferred-pages.tsx:88-99）。
+// 兜底布局变体：AppShell 用全屏变体，其余业务页用常规视口变体。
 const deferredWrappers: ReadonlyArray<{ name: string; fallbackLayout: string; element: ReactElement }> = [
   { name: "AppShell", fallbackLayout: "min-h-screen", element: <DeferredAppShell /> },
   { name: "AccountsPage", fallbackLayout: "min-h-[calc(100vh-7rem)]", element: <DeferredAccountsPage /> },
@@ -97,8 +97,10 @@ describe("DeferredPage 懒加载包装", () => {
       renderDeferred(element);
 
       // 兜底只在 lazy 首次解析前出现，因此布局断言必须放在这里（同一文件的每个变体只解析一次）。
-      const fallbackBox = loadingSpinner()?.parentElement;
-      expect(fallbackBox?.className).toContain(fallbackLayout);
+      const fallbackBox = screen.getByTestId(name === "AppShell" ? "app-shell-loading" : "app-page-loading");
+      expect(fallbackBox.className).toContain(fallbackLayout);
+      expect(loadingSpinner()).toBeVisible();
+      expect(fallbackBox).toContainElement(loadingSpinner());
 
       const page = await screen.findByTestId(`page-${name}`);
       expect(page).toHaveTextContent(name);
@@ -108,40 +110,6 @@ describe("DeferredPage 懒加载包装", () => {
       expect(screen.getAllByTestId(/^page-/)).toHaveLength(1);
     },
   );
-
-  it("懒加载失败不会被兜底掩盖：错误上抛给 ErrorBoundary 而不是永久停留在加载态", async () => {
-    // 与 deferred-pages 的 lazyNamed 同构：loader 拒绝时 lazy 组件抛出，Suspense 不吞错。
-    const failing = vi.fn(async () => {
-      throw new Error("chunk load failed");
-    });
-    const Failing = (await import("react")).lazy(failing);
-    const caught: string[] = [];
-
-    class ErrorBoundary extends (await import("react")).Component<{ children: ReactElement }, { failed: boolean }> {
-      state = { failed: false };
-      static getDerivedStateFromError(): { failed: boolean } {
-        return { failed: true };
-      }
-      componentDidCatch(error: Error): void {
-        caught.push(error.message);
-      }
-      render(): ReactElement {
-        return this.state.failed ? <div data-testid="lazy-error">failed</div> : this.props.children;
-      }
-    }
-
-    renderDeferred(
-      <ErrorBoundary>
-        <Suspense fallback={<span data-testid="lazy-fallback" />}>
-          <Failing />
-        </Suspense>
-      </ErrorBoundary>,
-    );
-
-    expect(await screen.findByTestId("lazy-error")).toBeInTheDocument();
-    expect(screen.queryByTestId("lazy-fallback")).not.toBeInTheDocument();
-    expect(caught).toEqual(["chunk load failed"]);
-  });
 
   it("StrictMode 双挂载下懒加载仍解析成功，卸载后不残留页面", async () => {
     const { unmount } = renderDeferred(

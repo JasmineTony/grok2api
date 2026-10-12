@@ -1,5 +1,5 @@
 import type { TFunction } from "i18next";
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
@@ -21,7 +21,7 @@ type ProviderStripesProps = {
 };
 
 /** Provider 占比色带：指针命中的色带高亮，并通过 portal 显示明细。 */
-export function ProviderStripes({ stripes, totalRequests, locale }: ProviderStripesProps) {
+export function ProviderStripes({ stripes, totalRequests, locale }: ProviderStripesProps): ReactElement {
   const { t } = useTranslation();
   const [hover, setHover] = useState<StripeHover | null>(null);
 

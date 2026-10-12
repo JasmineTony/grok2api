@@ -1,7 +1,7 @@
 import { format } from "date-fns";
 import { enUS, zhCN } from "date-fns/locale";
 import { CalendarIcon } from "lucide-react";
-import { useRef } from "react";
+import { useRef, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { enUS as enUSDayPicker, zhCN as zhCNDayPicker } from "react-day-picker/locale";
 
@@ -19,7 +19,7 @@ type DateTimePickerProps = {
   disabled?: boolean;
 };
 
-export function DateTimePicker({ value, onChange, placeholder, disabled = false }: DateTimePickerProps) {
+export function DateTimePicker({ value, onChange, placeholder, disabled = false }: DateTimePickerProps): ReactElement {
   const { i18n } = useTranslation();
   const selected = parseLocalDateTime(value);
   const isChinese = i18n.language.toLowerCase().startsWith("zh");

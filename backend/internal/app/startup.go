@@ -10,6 +10,7 @@ import (
 	accountapp "github.com/chenyme/grok2api/backend/internal/application/account"
 	auditapp "github.com/chenyme/grok2api/backend/internal/application/audit"
 	accountdomain "github.com/chenyme/grok2api/backend/internal/domain/account"
+	modeldomain "github.com/chenyme/grok2api/backend/internal/domain/model"
 	providerregistry "github.com/chenyme/grok2api/backend/internal/infra/provider"
 	"github.com/chenyme/grok2api/backend/internal/repository"
 	httpserver "github.com/chenyme/grok2api/backend/internal/transport/http"
@@ -139,76 +140,119 @@ func readinessSnapshot(
 	if phase != "running" {
 		return snapshot
 	}
-	ledgerDegraded := false
+	ledgerDegraded, done := applyReadinessRuntime(ctx, runtimeHealth, ledger, &snapshot)
+	if done {
+		return snapshot
+	}
+	routes, routesDone := applyReadinessModelRoutes(ctx, models, &snapshot)
+	if routesDone {
+		return snapshot
+	}
+	now := time.Now().UTC()
+	required, usable, providerErrors := evaluateReadinessProviders(ctx, routes, accounts, providers, now)
+	readyProviders, unavailableProviders := applyReadinessProviders(&snapshot, required, usable, providerErrors, statsig)
+	if readyProviders == 0 {
+		snapshot.State = "not_ready"
+		return snapshot
+	}
+	snapshot.Ready = true
+	if unavailableProviders > 0 || ledgerDegraded {
+		snapshot.State = "degraded"
+	} else {
+		snapshot.State = "ready"
+	}
+	return snapshot
+}
+
+// applyReadinessRuntime 探测运行态存储与审计账本，返回账本是否降级以及就绪判定是否已结束。
+func applyReadinessRuntime(ctx context.Context, runtimeHealth func(context.Context) error, ledger *auditapp.Service, snapshot *httpserver.ReadinessSnapshot) (bool, bool) {
 	healthCtx, cancel := context.WithTimeout(ctx, time.Second)
 	err := runtimeHealth(healthCtx)
 	cancel()
 	if err != nil {
 		snapshot.State = "not_ready"
 		snapshot.Components["runtime_store"] = httpserver.ReadinessComponent{State: "unavailable", Detail: "运行态存储不可用"}
-		return snapshot
+		return false, true
 	}
 	snapshot.Components["runtime_store"] = httpserver.ReadinessComponent{State: "ready"}
-	if ledger != nil {
-		ledgerState := ledger.LedgerSnapshot()
-		if ledgerState.Ready {
-			snapshot.Components["billing_ledger"] = httpserver.ReadinessComponent{State: "ready"}
-		} else {
-			detail := fmt.Sprintf("审计账本不可用；连续失败 %d 次，丢失 %d 条，队列 %d/%d", ledgerState.ConsecutiveFailures, ledgerState.Dropped, ledgerState.QueueDepth, ledgerState.QueueCapacity)
-			snapshot.Components["billing_ledger"] = httpserver.ReadinessComponent{State: "degraded", Detail: detail}
-			if ledgerState.Irrecoverable || ledgerState.Mode == auditapp.LedgerModeEnforce {
-				snapshot.State = "not_ready"
-				return snapshot
-			}
-			ledgerDegraded = true
-		}
+	if ledger == nil {
+		return false, false
 	}
+	ledgerState := ledger.LedgerSnapshot()
+	if ledgerState.Ready {
+		snapshot.Components["billing_ledger"] = httpserver.ReadinessComponent{State: "ready"}
+		return false, false
+	}
+	detail := fmt.Sprintf("审计账本不可用；连续失败 %d 次，丢失 %d 条，队列 %d/%d", ledgerState.ConsecutiveFailures, ledgerState.Dropped, ledgerState.QueueDepth, ledgerState.QueueCapacity)
+	snapshot.Components["billing_ledger"] = httpserver.ReadinessComponent{State: "degraded", Detail: detail}
+	if ledgerState.Irrecoverable || ledgerState.Mode == auditapp.LedgerModeEnforce {
+		snapshot.State = "not_ready"
+		return false, true
+	}
+	return true, false
+}
 
+// applyReadinessModelRoutes 校验已启用的模型路由，返回路由列表以及就绪判定是否已结束。
+func applyReadinessModelRoutes(ctx context.Context, models repository.ModelRepository, snapshot *httpserver.ReadinessSnapshot) ([]modeldomain.Route, bool) {
 	routes, err := models.ListConfiguredEnabled(ctx)
 	if err != nil {
 		snapshot.State = "not_ready"
 		snapshot.Components["model_routes"] = httpserver.ReadinessComponent{State: "unavailable", Detail: "模型路由读取失败"}
-		return snapshot
+		return nil, true
 	}
 	if len(routes) == 0 {
 		snapshot.State = "not_ready"
 		snapshot.Components["model_routes"] = httpserver.ReadinessComponent{State: "unavailable", Detail: "没有启用的模型路由"}
-		return snapshot
+		return nil, true
 	}
 	snapshot.Components["model_routes"] = httpserver.ReadinessComponent{State: "ready", Detail: fmt.Sprintf("%d 条已启用路由", len(routes))}
+	return routes, false
+}
 
+// evaluateReadinessProviders 按已启用路由判断每个 Provider 是否有可用账号。
+func evaluateReadinessProviders(ctx context.Context, routes []modeldomain.Route, accounts repository.AccountRepository, providers *providerregistry.Registry, now time.Time) (map[accountdomain.Provider]bool, map[accountdomain.Provider]bool, map[accountdomain.Provider]bool) {
 	required := make(map[accountdomain.Provider]bool, 3)
 	usable := make(map[accountdomain.Provider]bool, 3)
 	providerErrors := make(map[accountdomain.Provider]bool, 3)
-	now := time.Now().UTC()
 	for _, route := range routes {
 		required[route.Provider] = true
 		if usable[route.Provider] || route.SupportedAccounts == 0 {
 			continue
 		}
-		candidates, listErr := accounts.ListRoutingCandidates(ctx, route.Provider, route.ID, route.UpstreamModel, providers.QuotaMode(route.Provider, route.UpstreamModel))
-		if listErr != nil {
-			providerErrors[route.Provider] = true
-			continue
-		}
-		for _, candidate := range candidates {
-			if !startupCandidateUsable(candidate, now, providers) {
-				continue
-			}
-			material, materialErr := accounts.GetCredentialMaterial(ctx, candidate.Credential.ID, candidate.Credential.Provider)
-			if materialErr != nil {
-				if !errors.Is(materialErr, repository.ErrNotFound) {
-					providerErrors[route.Provider] = true
-				}
-				continue
-			}
-			if material.EncryptedAccessToken != "" {
-				usable[route.Provider] = true
-				break
-			}
+		if readinessProviderUsable(ctx, route, accounts, providers, now, providerErrors) {
+			usable[route.Provider] = true
 		}
 	}
+	return required, usable, providerErrors
+}
 
+// readinessProviderUsable 检查单个路由的候选账号，返回是否找到可用凭据；读取失败记录到 providerErrors。
+func readinessProviderUsable(ctx context.Context, route modeldomain.Route, accounts repository.AccountRepository, providers *providerregistry.Registry, now time.Time, providerErrors map[accountdomain.Provider]bool) bool {
+	candidates, listErr := accounts.ListRoutingCandidates(ctx, route.Provider, route.ID, route.UpstreamModel, providers.QuotaMode(route.Provider, route.UpstreamModel))
+	if listErr != nil {
+		providerErrors[route.Provider] = true
+		return false
+	}
+	for _, candidate := range candidates {
+		if !startupCandidateUsable(candidate, now, providers) {
+			continue
+		}
+		material, materialErr := accounts.GetCredentialMaterial(ctx, candidate.Credential.ID, candidate.Credential.Provider)
+		if materialErr != nil {
+			if !errors.Is(materialErr, repository.ErrNotFound) {
+				providerErrors[route.Provider] = true
+			}
+			continue
+		}
+		if material.EncryptedAccessToken != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// applyReadinessProviders 写入各 Provider 的就绪组件，返回可用与不可用数量。
+func applyReadinessProviders(snapshot *httpserver.ReadinessSnapshot, required, usable, providerErrors map[accountdomain.Provider]bool, statsig httpserver.ReadinessComponent) (int, int) {
 	readyProviders := 0
 	unavailableProviders := 0
 	for _, providerValue := range accountdomain.Providers() {
@@ -240,17 +284,7 @@ func readinessSnapshot(
 		snapshot.Components[string(accountdomain.ProviderWeb)] = component
 		unavailableProviders++
 	}
-	if readyProviders == 0 {
-		snapshot.State = "not_ready"
-		return snapshot
-	}
-	snapshot.Ready = true
-	if unavailableProviders > 0 || ledgerDegraded {
-		snapshot.State = "degraded"
-	} else {
-		snapshot.State = "ready"
-	}
-	return snapshot
+	return readyProviders, unavailableProviders
 }
 
 // newReadinessStartupReport 只公开稳定统计，不把启动错误原文暴露到无鉴权就绪端点。

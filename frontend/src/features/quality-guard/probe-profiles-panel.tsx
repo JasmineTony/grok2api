@@ -1,5 +1,6 @@
 import type { TFunction } from "i18next";
 import { Pencil, Plus, Star, Trash2 } from "lucide-react";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -162,7 +163,7 @@ function ProbeProfileDeleteDialog({ controller }: { controller: ProbeProfilesCon
   );
 }
 
-export function ProbeProfilesPanel() {
+export function ProbeProfilesPanel(): ReactElement {
   const { t } = useTranslation();
   const controller = useProbeProfiles();
   return (

@@ -86,59 +86,67 @@ func (c *responsesToolCompatibility) normalizeMessageContent(value any, role, pa
 	// 官方 Grok CLI 会把 assistant 的多个输出文本合并为 EasyInputMessage
 	// 字符串，既保留语义，也绕开 OutputMessage 对 id/status 的输入限制。
 	if role == "assistant" {
-		texts := make([]string, 0, len(items))
-		for _, raw := range items {
-			item, isObject := raw.(map[string]any)
-			if !isObject {
-				texts = nil
-				break
-			}
-			switch stringField(item, "type") {
-			case "text", "input_text", "output_text":
-				texts = append(texts, stringField(item, "text"))
-			case "refusal":
-				texts = append(texts, stringField(item, "refusal"))
-			default:
-				texts = nil
-			}
-			if texts == nil {
-				break
-			}
-		}
-		if texts != nil {
-			return strings.Join(texts, "\n"), nil
+		if text, joined := joinAssistantMessageText(items); joined {
+			return text, nil
 		}
 	}
-
 	textPartType := "input_text"
 	if role == "assistant" {
 		textPartType = "output_text"
 	}
+	return c.normalizeMessageContentParts(items, textPartType, param)
+}
+
+// joinAssistantMessageText 在 assistant 内容全为可读文本时合并为单条字符串。
+func joinAssistantMessageText(items []any) (string, bool) {
+	texts := make([]string, 0, len(items))
+	for _, raw := range items {
+		item, isObject := raw.(map[string]any)
+		if !isObject {
+			return "", false
+		}
+		switch stringField(item, "type") {
+		case "text", "input_text", "output_text":
+			texts = append(texts, stringField(item, "text"))
+		case "refusal":
+			texts = append(texts, stringField(item, "refusal"))
+		default:
+			return "", false
+		}
+	}
+	return strings.Join(texts, "\n"), true
+}
+
+func (c *responsesToolCompatibility) normalizeMessageContentParts(items []any, textPartType, param string) (any, error) {
 	normalized := make([]any, 0, len(items))
 	for index, raw := range items {
 		item, ok := raw.(map[string]any)
 		if !ok {
 			return nil, &responsesRequestError{Message: param + "[] 必须是对象", Param: fmt.Sprintf("%s[%d]", param, index), Code: "invalid_parameter"}
 		}
-		switch stringField(item, "type") {
-		case "text", "input_text", "output_text":
-			// 按角色重建文本类型，不能把 assistant 的 output_text 改成 input_text。
-			normalized = append(normalized, map[string]any{"type": textPartType, "text": stringField(item, "text")})
-		case "refusal":
-			normalized = append(normalized, map[string]any{"type": textPartType, "text": stringField(item, "refusal")})
-		case "input_image":
-			converted, err := c.normalizeInputImagePart(item, fmt.Sprintf("%s[%d]", param, index))
-			if err != nil {
-				return nil, err
-			}
-			normalized = append(normalized, converted)
-		case "input_file":
-			normalized = append(normalized, normalizeInputFilePart(item))
-		default:
-			return nil, &responsesRequestError{Message: "Grok Build 不支持该 message.content 类型", Param: fmt.Sprintf("%s[%d].type", param, index), Code: "unsupported_parameter"}
+		converted, err := c.normalizeMessageContentPart(item, textPartType, fmt.Sprintf("%s[%d]", param, index))
+		if err != nil {
+			return nil, err
 		}
+		normalized = append(normalized, converted)
 	}
 	return normalized, nil
+}
+
+func (c *responsesToolCompatibility) normalizeMessageContentPart(item map[string]any, textPartType, param string) (any, error) {
+	switch stringField(item, "type") {
+	case "text", "input_text", "output_text":
+		// 按角色重建文本类型，不能把 assistant 的 output_text 改成 input_text。
+		return map[string]any{"type": textPartType, "text": stringField(item, "text")}, nil
+	case "refusal":
+		return map[string]any{"type": textPartType, "text": stringField(item, "refusal")}, nil
+	case "input_image":
+		return c.normalizeInputImagePart(item, param)
+	case "input_file":
+		return normalizeInputFilePart(item), nil
+	default:
+		return nil, &responsesRequestError{Message: "Grok Build 不支持该 message.content 类型", Param: param + ".type", Code: "unsupported_parameter"}
+	}
 }
 
 func (c *responsesToolCompatibility) normalizeInputImagePart(item map[string]any, param string) (map[string]any, error) {

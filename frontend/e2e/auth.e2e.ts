@@ -30,7 +30,8 @@ test("错误密码登录失败并显示用户可见错误提示", async ({ page,
   await expect(page.getByRole("button", { name: submitButtonName })).toBeEnabled();
 });
 
-test("正确凭据登录成功、进入受保护页面并在刷新后保持登录", async ({ page, server }) => {
+// @desktop：断言依赖桌面侧栏里的账号名可见（移动 project 下侧栏 display:none，实测 Received: hidden）。
+test("正确凭据登录成功、进入受保护页面并在刷新后保持登录", { tag: "@desktop" }, async ({ page, server }) => {
   await signIn(page, server, { fresh: true });
 
   await expect(page.getByRole("heading", { name: dashboardHeadingName })).toBeVisible();
@@ -43,7 +44,8 @@ test("正确凭据登录成功、进入受保护页面并在刷新后保持登�
   await expect(page.getByText(server.username, { exact: true })).toBeVisible();
 });
 
-test("注销后再次访问受保护路由会被重定向到登录页", async ({ page, server }) => {
+// @desktop：注销入口是侧栏常驻的账号菜单按钮（移动 project 需先开抽屉，导航路径不同）。
+test("注销后再次访问受保护路由会被重定向到登录页", { tag: "@desktop" }, async ({ page, server }) => {
   await signIn(page, server, { fresh: true });
   await expect(page.getByRole("heading", { name: dashboardHeadingName })).toBeVisible();
 

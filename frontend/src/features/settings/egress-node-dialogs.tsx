@@ -1,6 +1,6 @@
 import type { TFunction } from "i18next";
 import { CircleHelp, Eye, EyeOff } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Badge } from "@/components/ui/badge";
@@ -44,7 +44,7 @@ type EgressNodeDialogProps = {
 };
 
 /** 出口节点新增/编辑弹窗：字段拆分为基础信息、作用域、代理与凭据四组。 */
-export function EgressNodeDialog(props: EgressNodeDialogProps) {
+export function EgressNodeDialog(props: EgressNodeDialogProps): ReactElement {
   const { t } = useTranslation();
   const { editing, form, savePending, onClose, onSubmit } = props;
   return (
@@ -345,7 +345,7 @@ type EgressImportDialogProps = {
 };
 
 /** 代理文本批量导入弹窗。 */
-export function EgressImportDialog(props: EgressImportDialogProps) {
+export function EgressImportDialog(props: EgressImportDialogProps): ReactElement {
   const { t } = useTranslation();
   const { form, pending, onClose, onSubmit } = props;
   return (

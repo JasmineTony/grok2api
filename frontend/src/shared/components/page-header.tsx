@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 
 export function PageHeader({
   title,
@@ -8,7 +8,7 @@ export function PageHeader({
   title: string;
   description: string;
   actions?: ReactNode;
-}) {
+}): ReactElement {
   return (
     <header className="flex min-h-8 shrink-0 flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">

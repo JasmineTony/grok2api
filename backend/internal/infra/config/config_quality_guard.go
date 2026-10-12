@@ -14,6 +14,17 @@ func validateQualityGuardConfig(value QualityGuardConfig) error {
 	if !value.Enabled {
 		return nil
 	}
+	if err := validateQualityGuardIdentity(value); err != nil {
+		return err
+	}
+	if err := validateQualityGuardLimits(value); err != nil {
+		return err
+	}
+	return validateQualityGuardRotation(value)
+}
+
+// validateQualityGuardIdentity 校验受管节点、探测模型、运行模式与探测周期。
+func validateQualityGuardIdentity(value QualityGuardConfig) error {
 	if !validUniquePositiveIDs(value.NodeIDs) || !validUniquePositiveIDs(value.RotatableNodeIDs) {
 		return errors.New("qualityGuard.nodeIDs 和 rotatableNodeIDs 必须是唯一的正整数")
 	}
@@ -29,6 +40,11 @@ func validateQualityGuardConfig(value QualityGuardConfig) error {
 	if value.PassivePollInterval.Value() < time.Second || value.PassivePollInterval.Value() > 5*time.Minute {
 		return errors.New("qualityGuard.passivePollInterval 必须在 1 秒到 5 分钟之间")
 	}
+	return nil
+}
+
+// validateQualityGuardLimits 校验质量判定阈值、隔离策略与轮换超时。
+func validateQualityGuardLimits(value QualityGuardConfig) error {
 	if value.SoftTPS < 1 || value.HardTPS <= value.SoftTPS || value.HardTPS > 10000 {
 		return errors.New("qualityGuard TPS 阈值无效")
 	}
@@ -50,6 +66,11 @@ func validateQualityGuardConfig(value QualityGuardConfig) error {
 	if value.RotationTimeout.Value() < 5*time.Second || value.RotationTimeout.Value() > 5*time.Minute {
 		return errors.New("qualityGuard.rotationTimeout 必须在 5 秒到 5 分钟之间")
 	}
+	return nil
+}
+
+// validateQualityGuardRotation 校验节点轮换地址。
+func validateQualityGuardRotation(value QualityGuardConfig) error {
 	if len(value.RotatableNodeIDs) > 0 && strings.TrimSpace(value.RotationURL) == "" {
 		return errors.New("qualityGuard.rotatableNodeIDs 非空时必须配置 rotationURL")
 	}

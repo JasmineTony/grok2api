@@ -1,4 +1,5 @@
 import { Menu } from "lucide-react";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ShellAccountControl } from "@/app/shell-account-control";
@@ -24,7 +25,7 @@ export function ShellMobileHeader({
   openSections,
   onToggleSection,
   onOpenPasswordDialog,
-}: ShellMobileHeaderProps) {
+}: ShellMobileHeaderProps): ReactElement {
   const { t } = useTranslation();
   const close = (): void => onOpenChange(false);
   return (

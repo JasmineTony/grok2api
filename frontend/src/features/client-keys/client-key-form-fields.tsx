@@ -1,4 +1,5 @@
 import { CircleHelp } from "lucide-react";
+import type { ReactElement } from "react";
 import { Controller, useWatch, type UseFormReturn } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 
@@ -11,7 +12,7 @@ import { DateTimePicker } from "@/shared/components/date-time-picker";
 
 type FormProps = { form: UseFormReturn<ClientKeyFormValues> };
 
-export function KeyNameField({ form }: FormProps) {
+export function KeyNameField({ form }: FormProps): ReactElement {
   const { t } = useTranslation();
   return (
     <div className="space-y-2">
@@ -65,7 +66,7 @@ function NumericLimitField({ form, id, label, name, unlimitedName, max }: Numeri
   );
 }
 
-export function KeyLimitFields({ form }: FormProps) {
+export function KeyLimitFields({ form }: FormProps): ReactElement {
   const { t } = useTranslation();
   return (
     <div className="grid gap-3 sm:grid-cols-2">
@@ -89,7 +90,7 @@ export function KeyLimitFields({ form }: FormProps) {
   );
 }
 
-export function KeyBillingLimitField({ form }: FormProps) {
+export function KeyBillingLimitField({ form }: FormProps): ReactElement {
   const { t } = useTranslation();
   const billingUnlimited = useWatch({ control: form.control, name: "billingUnlimited" });
   return (
@@ -140,7 +141,7 @@ export function KeyBillingLimitField({ form }: FormProps) {
   );
 }
 
-export function KeyExpiryField({ form }: FormProps) {
+export function KeyExpiryField({ form }: FormProps): ReactElement {
   const { t } = useTranslation();
   const expiryUnlimited = useWatch({ control: form.control, name: "expiryUnlimited" });
   return (
@@ -181,7 +182,7 @@ export function KeyExpiryField({ form }: FormProps) {
   );
 }
 
-export function KeyModelAliasesSection({ form }: FormProps) {
+export function KeyModelAliasesSection({ form }: FormProps): ReactElement {
   const { t } = useTranslation();
   const allowModelAliases = useWatch({ control: form.control, name: "allowModelAliases" });
   return (
@@ -225,7 +226,7 @@ export function KeyModelAliasesSection({ form }: FormProps) {
   );
 }
 
-export function KeyEnabledSection({ form }: FormProps) {
+export function KeyEnabledSection({ form }: FormProps): ReactElement {
   const { t } = useTranslation();
   const keyEnabled = useWatch({ control: form.control, name: "enabled" });
   return (

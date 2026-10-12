@@ -1,6 +1,6 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import { CircleHelp, MoreHorizontal, Pencil, RefreshCw, Trash2 } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Badge } from "@/components/ui/badge";
@@ -60,7 +60,7 @@ type EgressNodesTableProps = {
 };
 
 /** 出口节点表格：加载态、空态、失败重试与虚拟滚动行渲染。 */
-export function EgressNodesTable(props: EgressNodesTableProps) {
+export function EgressNodesTable(props: EgressNodesTableProps): ReactElement {
   const { query, nodes, hasActiveFilters, sort, scopeLabel, actions, onSort, onTogglePage } = props;
   if (query.isError) {
     return <ErrorState message={query.error.message} onRetry={() => void query.refetch()} />;

@@ -61,32 +61,71 @@ func (r *AccountRepository) attachAccountLinks(ctx context.Context, values []acc
 		ids = append(ids, values[index].ID)
 		positions[values[index].ID] = index
 	}
-	var buildRows []struct {
-		WebAccountID            uint64
-		BuildAccountID          uint64
-		WebName                 string
-		BuildName               string
-		WebEmail                string
-		BuildEmail              string
-		WebUserID               string
-		BuildUserID             string
-		WebSourceKey            string
-		EgressIdentity          string
-		WebNSFWEnabledAt        *time.Time
-		WebTermsAcceptedAt      *time.Time
-		WebTermsAcceptedVersion int
+	buildRows, err := r.loadBuildLinkRows(ctx, ids)
+	if err != nil {
+		return err
 	}
+	applyBuildLinkRows(buildRows, values, positions)
+	consoleRows, err := r.loadConsoleLinkRows(ctx, ids)
+	if err != nil {
+		return err
+	}
+	applyConsoleLinkRows(consoleRows, values, positions)
+	return nil
+}
+
+// accountBuildLinkRow 是 Web↔Build 关联查询的投影行。
+type accountBuildLinkRow struct {
+	WebAccountID            uint64
+	BuildAccountID          uint64
+	WebName                 string
+	BuildName               string
+	WebEmail                string
+	BuildEmail              string
+	WebUserID               string
+	BuildUserID             string
+	WebSourceKey            string
+	EgressIdentity          string
+	WebNSFWEnabledAt        *time.Time
+	WebTermsAcceptedAt      *time.Time
+	WebTermsAcceptedVersion int
+}
+
+// accountConsoleLinkRow 是 Web↔Console 关联查询的投影行。
+type accountConsoleLinkRow struct {
+	WebAccountID            uint64
+	ConsoleAccountID        uint64
+	WebName                 string
+	ConsoleName             string
+	WebEmail                string
+	ConsoleEmail            string
+	WebUserID               string
+	ConsoleUserID           string
+	WebSourceKey            string
+	EgressIdentity          string
+	WebNSFWEnabledAt        *time.Time
+	WebTermsAcceptedAt      *time.Time
+	WebTermsAcceptedVersion int
+}
+
+func (r *AccountRepository) loadBuildLinkRows(ctx context.Context, ids []uint64) ([]accountBuildLinkRow, error) {
+	var rows []accountBuildLinkRow
 	err := r.db.db.WithContext(ctx).Table("account_provider_links AS link").
 		Select("link.web_account_id, link.build_account_id, web.name AS web_name, build.name AS build_name, web.email AS web_email, build.email AS build_email, web.user_id AS web_user_id, build.user_id AS build_user_id, web.source_key AS web_source_key, profile.egress_identity, profile.nsfw_enabled_at AS web_nsfw_enabled_at, profile.terms_accepted_at AS web_terms_accepted_at, profile.terms_accepted_version AS web_terms_accepted_version").
 		Joins("JOIN provider_accounts AS web ON web.id = link.web_account_id").
 		Joins("JOIN provider_accounts AS build ON build.id = link.build_account_id").
 		Joins("LEFT JOIN web_account_profiles AS profile ON profile.account_id = web.id").
 		Where("link.web_account_id IN ? OR link.build_account_id IN ?", ids, ids).
-		Scan(&buildRows).Error
+		Scan(&rows).Error
 	if err != nil {
-		return err
+		return nil, err
 	}
-	for _, row := range buildRows {
+	return rows, nil
+}
+
+// applyBuildLinkRows 把 Web↔Build 关联回填到两侧账号：Web 侧记录单数关联字段，Build 侧补出口身份。
+func applyBuildLinkRows(rows []accountBuildLinkRow, values []account.Credential, positions map[uint64]int) {
+	for _, row := range rows {
 		egressIdentity := linkedWebEgressIdentity(row.EgressIdentity, row.WebSourceKey)
 		if index, ok := positions[row.WebAccountID]; ok {
 			values[index].LinkedAccountID = row.BuildAccountID
@@ -111,31 +150,26 @@ func (r *AccountRepository) attachAccountLinks(ctx context.Context, values []acc
 			values[index].WebTermsAcceptedAt = currentWebTermsAcceptedAt(row.WebTermsAcceptedAt, row.WebTermsAcceptedVersion)
 		}
 	}
-	var consoleRows []struct {
-		WebAccountID            uint64
-		ConsoleAccountID        uint64
-		WebName                 string
-		ConsoleName             string
-		WebEmail                string
-		ConsoleEmail            string
-		WebUserID               string
-		ConsoleUserID           string
-		WebSourceKey            string
-		EgressIdentity          string
-		WebNSFWEnabledAt        *time.Time
-		WebTermsAcceptedAt      *time.Time
-		WebTermsAcceptedVersion int
-	}
-	if err := r.db.db.WithContext(ctx).Table("web_console_account_links AS link").
+}
+
+func (r *AccountRepository) loadConsoleLinkRows(ctx context.Context, ids []uint64) ([]accountConsoleLinkRow, error) {
+	var rows []accountConsoleLinkRow
+	err := r.db.db.WithContext(ctx).Table("web_console_account_links AS link").
 		Select("link.web_account_id, link.console_account_id, web.name AS web_name, console.name AS console_name, web.email AS web_email, console.email AS console_email, web.user_id AS web_user_id, console.user_id AS console_user_id, web.source_key AS web_source_key, profile.egress_identity, profile.nsfw_enabled_at AS web_nsfw_enabled_at, profile.terms_accepted_at AS web_terms_accepted_at, profile.terms_accepted_version AS web_terms_accepted_version").
 		Joins("JOIN provider_accounts AS web ON web.id = link.web_account_id").
 		Joins("JOIN provider_accounts AS console ON console.id = link.console_account_id").
 		Joins("LEFT JOIN web_account_profiles AS profile ON profile.account_id = web.id").
 		Where("link.web_account_id IN ? OR link.console_account_id IN ?", ids, ids).
-		Scan(&consoleRows).Error; err != nil {
-		return err
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
 	}
-	for _, row := range consoleRows {
+	return rows, nil
+}
+
+// applyConsoleLinkRows 把 Web↔Console 关联回填到两侧账号：Web 侧只追加列表项，Console 侧补出口身份。
+func applyConsoleLinkRows(rows []accountConsoleLinkRow, values []account.Credential, positions map[uint64]int) {
+	for _, row := range rows {
 		egressIdentity := linkedWebEgressIdentity(row.EgressIdentity, row.WebSourceKey)
 		if index, ok := positions[row.WebAccountID]; ok {
 			values[index].LinkedAccounts = append(values[index].LinkedAccounts, account.LinkedAccount{ID: row.ConsoleAccountID, Provider: account.ProviderConsole, Name: row.ConsoleName, Email: row.ConsoleEmail, UserID: row.ConsoleUserID})
@@ -154,7 +188,6 @@ func (r *AccountRepository) attachAccountLinks(ctx context.Context, values []acc
 			values[index].WebTermsAcceptedAt = currentWebTermsAcceptedAt(row.WebTermsAcceptedAt, row.WebTermsAcceptedVersion)
 		}
 	}
-	return nil
 }
 
 func currentWebTermsAcceptedAt(value *time.Time, version int) *time.Time {
@@ -185,59 +218,12 @@ func (r *AccountRepository) UpsertManyByIdentity(ctx context.Context, values []a
 	}
 	results := make([]repository.AccountUpsertResult, len(values))
 	err := r.db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		identityKeys := make([]string, 0, len(values))
-		sourceKeysByProvider := make(map[account.Provider][]string)
-		for _, value := range values {
-			identityKeys = append(identityKeys, fromAccountDomain(value).IdentityKey)
-			if strings.TrimSpace(value.SourceKey) != "" {
-				sourceKeysByProvider[value.Provider] = append(sourceKeysByProvider[value.Provider], value.SourceKey)
-			}
-		}
-		var existingRows []accountModel
-		if err := tx.Where("identity_key IN ?", identityKeys).Find(&existingRows).Error; err != nil {
+		identityKeys, sourceKeysByProvider := collectUpsertIdentityKeys(values)
+		existingByIdentity, existingBySource, err := loadExistingAccountsForUpsert(tx, identityKeys, sourceKeysByProvider, len(values))
+		if err != nil {
 			return err
 		}
-		existingByIdentity := make(map[string]accountModel, len(values))
-		for _, row := range existingRows {
-			existingByIdentity[row.IdentityKey] = row
-		}
-		existingBySource := make(map[string]accountModel, len(values))
-		for providerValue, sourceKeys := range sourceKeysByProvider {
-			var sourceRows []accountModel
-			if err := tx.Where("provider = ? AND source_key IN ?", providerValue, sourceKeys).Find(&sourceRows).Error; err != nil {
-				return err
-			}
-			for _, row := range sourceRows {
-				key := providerSourceLookupKey(row.Provider, row.SourceKey)
-				if existing, duplicate := existingBySource[key]; duplicate && existing.ID != row.ID {
-					return fmt.Errorf("Provider %s 的来源凭据匹配多个账号", row.Provider)
-				}
-				existingBySource[key] = row
-			}
-		}
-		for index, value := range values {
-			identityKey := fromAccountDomain(value).IdentityKey
-			existing, foundByIdentity := existingByIdentity[identityKey]
-			bySource, foundBySource := existingBySource[providerSourceLookupKey(string(value.Provider), value.SourceKey)]
-			if foundByIdentity && foundBySource && existing.ID != bySource.ID {
-				return fmt.Errorf("账号身份与来源凭据指向不同账号")
-			}
-			if !foundByIdentity && foundBySource {
-				existing = bySource
-			}
-			var current *accountModel
-			if foundByIdentity || foundBySource {
-				current = &existing
-			}
-			result, stored, err := upsertKnownAccountByIdentity(tx, value, current)
-			if err != nil {
-				return err
-			}
-			results[index] = result
-			existingByIdentity[stored.IdentityKey] = stored
-			existingBySource[providerSourceLookupKey(stored.Provider, stored.SourceKey)] = stored
-		}
-		return nil
+		return upsertAccountsByIdentity(tx, values, existingByIdentity, existingBySource, results)
 	})
 	if err != nil {
 		return nil, mapError(err)
@@ -250,6 +236,73 @@ func (r *AccountRepository) UpsertManyByIdentity(ctx context.Context, values []a
 		r.notifyInvalidation(ctx, repository.InvalidationEvent{Kind: repository.InvalidationAccountStateChanged, Provider: providerValue})
 	}
 	return results, nil
+}
+
+// collectUpsertIdentityKeys 收集批量 upsert 的身份键与按号池分组的非空来源键。
+func collectUpsertIdentityKeys(values []account.Credential) ([]string, map[account.Provider][]string) {
+	identityKeys := make([]string, 0, len(values))
+	sourceKeysByProvider := make(map[account.Provider][]string)
+	for _, value := range values {
+		identityKeys = append(identityKeys, fromAccountDomain(value).IdentityKey)
+		if strings.TrimSpace(value.SourceKey) != "" {
+			sourceKeysByProvider[value.Provider] = append(sourceKeysByProvider[value.Provider], value.SourceKey)
+		}
+	}
+	return identityKeys, sourceKeysByProvider
+}
+
+// loadExistingAccountsForUpsert 加载身份键与来源键命中的既有账号，并拒绝同一来源凭据匹配多个账号。
+func loadExistingAccountsForUpsert(tx *gorm.DB, identityKeys []string, sourceKeysByProvider map[account.Provider][]string, capacity int) (map[string]accountModel, map[string]accountModel, error) {
+	var existingRows []accountModel
+	if err := tx.Where("identity_key IN ?", identityKeys).Find(&existingRows).Error; err != nil {
+		return nil, nil, err
+	}
+	existingByIdentity := make(map[string]accountModel, capacity)
+	for _, row := range existingRows {
+		existingByIdentity[row.IdentityKey] = row
+	}
+	existingBySource := make(map[string]accountModel, capacity)
+	for providerValue, sourceKeys := range sourceKeysByProvider {
+		var sourceRows []accountModel
+		if err := tx.Where("provider = ? AND source_key IN ?", providerValue, sourceKeys).Find(&sourceRows).Error; err != nil {
+			return nil, nil, err
+		}
+		for _, row := range sourceRows {
+			key := providerSourceLookupKey(row.Provider, row.SourceKey)
+			if existing, duplicate := existingBySource[key]; duplicate && existing.ID != row.ID {
+				return nil, nil, fmt.Errorf("Provider %s 的来源凭据匹配多个账号", row.Provider)
+			}
+			existingBySource[key] = row
+		}
+	}
+	return existingByIdentity, existingBySource, nil
+}
+
+// upsertAccountsByIdentity 逐个解析既有账号并写入，同时把新行同步回内存索引以处理批内重复。
+func upsertAccountsByIdentity(tx *gorm.DB, values []account.Credential, existingByIdentity, existingBySource map[string]accountModel, results []repository.AccountUpsertResult) error {
+	for index, value := range values {
+		identityKey := fromAccountDomain(value).IdentityKey
+		existing, foundByIdentity := existingByIdentity[identityKey]
+		bySource, foundBySource := existingBySource[providerSourceLookupKey(string(value.Provider), value.SourceKey)]
+		if foundByIdentity && foundBySource && existing.ID != bySource.ID {
+			return fmt.Errorf("账号身份与来源凭据指向不同账号")
+		}
+		if !foundByIdentity && foundBySource {
+			existing = bySource
+		}
+		var current *accountModel
+		if foundByIdentity || foundBySource {
+			current = &existing
+		}
+		result, stored, err := upsertKnownAccountByIdentity(tx, value, current)
+		if err != nil {
+			return err
+		}
+		results[index] = result
+		existingByIdentity[stored.IdentityKey] = stored
+		existingBySource[providerSourceLookupKey(stored.Provider, stored.SourceKey)] = stored
+	}
+	return nil
 }
 
 func upsertAccountByIdentity(tx *gorm.DB, value account.Credential) (repository.AccountUpsertResult, error) {
@@ -290,45 +343,55 @@ func providerSourceLookupKey(providerValue, sourceKey string) string {
 func upsertKnownAccountByIdentity(tx *gorm.DB, value account.Credential, existing *accountModel) (repository.AccountUpsertResult, accountModel, error) {
 	row := fromAccountDomain(value)
 	if existing != nil {
-		if value.EncryptedCloudflareCookie == "" {
-			var storedCredential accountCredentialModel
-			if err := tx.Where("account_id = ?", existing.ID).First(&storedCredential).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-				return repository.AccountUpsertResult{}, accountModel{}, err
-			}
-			value.EncryptedCloudflareCookie = storedCredential.EncryptedCloudflareCookie
-		}
-		row.ID = existing.ID
-		row.CreatedAt = existing.CreatedAt
-		row.Enabled = existing.Enabled
-		row.Priority = existing.Priority
-		row.MaxConcurrent = existing.MaxConcurrent
-		row.MinimumRemaining = existing.MinimumRemaining
-		row.FailureCount = existing.FailureCount
-		row.CooldownUntil = existing.CooldownUntil
-		row.LastError = existing.LastError
-		row.LastUsedAt = existing.LastUsedAt
-		row.ObservedModel = existing.ObservedModel
-		row.ObservedModelAt = existing.ObservedModelAt
-		// 账号级 Build 路由、XAI 回退记录与 Super entitlement 在 upsert/转换/刷新路径中保留。
-		row.BuildAPIFallback = existing.BuildAPIFallback
-		row.BuildRouteMode = existing.BuildRouteMode
-		row.BuildSuperEntitled = existing.BuildSuperEntitled
-		row.EgressNodeID = existing.EgressNodeID
-		row.EgressAssignmentMode = existing.EgressAssignmentMode
-		row.EgressAssignedAt = existing.EgressAssignedAt
-		// reauth_marked_at 与 Update 路径一致：保持 reauth 时永不被普通 upsert 改写。
-		applyReauthMarkedAtTransition(&row, *existing)
-		if err := tx.Save(&row).Error; err != nil {
-			return repository.AccountUpsertResult{}, accountModel{}, err
-		}
-		if _, err := deleteInvalidEgressLeaseBlocksForAccount(tx, row); err != nil {
-			return repository.AccountUpsertResult{}, accountModel{}, err
-		}
-		if err := saveAccountRelations(tx, value, row.ID); err != nil {
-			return repository.AccountUpsertResult{}, accountModel{}, err
-		}
-		return repository.AccountUpsertResult{ID: row.ID}, row, nil
+		return updateKnownAccountByIdentity(tx, value, row, *existing)
 	}
+	return createAccountByIdentity(tx, value, row)
+}
+
+// updateKnownAccountByIdentity 保留既有账号的调度、出口与 reauth 状态，只更新可变字段与关联数据。
+func updateKnownAccountByIdentity(tx *gorm.DB, value account.Credential, row accountModel, existing accountModel) (repository.AccountUpsertResult, accountModel, error) {
+	if value.EncryptedCloudflareCookie == "" {
+		var storedCredential accountCredentialModel
+		if err := tx.Where("account_id = ?", existing.ID).First(&storedCredential).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return repository.AccountUpsertResult{}, accountModel{}, err
+		}
+		value.EncryptedCloudflareCookie = storedCredential.EncryptedCloudflareCookie
+	}
+	row.ID = existing.ID
+	row.CreatedAt = existing.CreatedAt
+	row.Enabled = existing.Enabled
+	row.Priority = existing.Priority
+	row.MaxConcurrent = existing.MaxConcurrent
+	row.MinimumRemaining = existing.MinimumRemaining
+	row.FailureCount = existing.FailureCount
+	row.CooldownUntil = existing.CooldownUntil
+	row.LastError = existing.LastError
+	row.LastUsedAt = existing.LastUsedAt
+	row.ObservedModel = existing.ObservedModel
+	row.ObservedModelAt = existing.ObservedModelAt
+	// 账号级 Build 路由、XAI 回退记录与 Super entitlement 在 upsert/转换/刷新路径中保留。
+	row.BuildAPIFallback = existing.BuildAPIFallback
+	row.BuildRouteMode = existing.BuildRouteMode
+	row.BuildSuperEntitled = existing.BuildSuperEntitled
+	row.EgressNodeID = existing.EgressNodeID
+	row.EgressAssignmentMode = existing.EgressAssignmentMode
+	row.EgressAssignedAt = existing.EgressAssignedAt
+	// reauth_marked_at 与 Update 路径一致：保持 reauth 时永不被普通 upsert 改写。
+	applyReauthMarkedAtTransition(&row, existing)
+	if err := tx.Save(&row).Error; err != nil {
+		return repository.AccountUpsertResult{}, accountModel{}, err
+	}
+	if _, err := deleteInvalidEgressLeaseBlocksForAccount(tx, row); err != nil {
+		return repository.AccountUpsertResult{}, accountModel{}, err
+	}
+	if err := saveAccountRelations(tx, value, row.ID); err != nil {
+		return repository.AccountUpsertResult{}, accountModel{}, err
+	}
+	return repository.AccountUpsertResult{ID: row.ID}, row, nil
+}
+
+// createAccountByIdentity 应用默认调度参数与 reauth 锚点后创建新账号并保存关联数据。
+func createAccountByIdentity(tx *gorm.DB, value account.Credential, row accountModel) (repository.AccountUpsertResult, accountModel, error) {
 	if row.AuthStatus == "" {
 		row.AuthStatus = string(account.AuthStatusActive)
 	}

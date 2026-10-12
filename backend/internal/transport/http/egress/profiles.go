@@ -346,18 +346,28 @@ func (h *Handler) updateQualityGuardProfile(c *gin.Context) {
 		return
 	}
 	if existing.BuiltIn {
-		if request.Active {
-			data.ActiveProfileID = existing.ID
-			if err := saveProbeProfileFile(path, data); err != nil {
-				response.Error(c, http.StatusServiceUnavailable, "qualityGuardConfigWriteFailed", "探针方案保存失败")
-				return
-			}
-			response.Success(c, http.StatusOK, existing)
-			return
-		}
+		h.activateBuiltInQualityGuardProfile(c, path, data, existing, request.Active)
+		return
+	}
+	h.persistQualityGuardProfileUpdate(c, path, data, id, existing, request)
+}
+
+// activateBuiltInQualityGuardProfile 处理内置方案：仅允许把它切换为当前启用方案。
+func (h *Handler) activateBuiltInQualityGuardProfile(c *gin.Context, path string, data probeProfileFile, existing probeProfile, active bool) {
+	if !active {
 		response.Error(c, http.StatusBadRequest, "invalidRequest", "内置方案不能修改，请复制后另存")
 		return
 	}
+	data.ActiveProfileID = existing.ID
+	if err := saveProbeProfileFile(path, data); err != nil {
+		response.Error(c, http.StatusServiceUnavailable, "qualityGuardConfigWriteFailed", "探针方案保存失败")
+		return
+	}
+	response.Success(c, http.StatusOK, existing)
+}
+
+// persistQualityGuardProfileUpdate 覆盖自定义方案字段、校验后保存，并按请求切换启用方案。
+func (h *Handler) persistQualityGuardProfileUpdate(c *gin.Context, path string, data probeProfileFile, id string, existing probeProfile, request probeProfileWriteRequest) {
 	existing.Name = request.Name
 	existing.Prompt = request.Prompt
 	existing.ExpectedText = request.ExpectedText

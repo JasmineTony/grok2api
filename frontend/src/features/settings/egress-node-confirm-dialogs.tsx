@@ -1,4 +1,5 @@
 import type { UseMutationResult } from "@tanstack/react-query";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -31,7 +32,7 @@ export function EgressNodesBatchDeleteDialog({
   pending: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
-}) {
+}): ReactElement {
   const { t } = useTranslation();
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -101,7 +102,7 @@ export function EgressNodesCleanupDialog({
   pending: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
-}) {
+}): ReactElement {
   const { t } = useTranslation();
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>

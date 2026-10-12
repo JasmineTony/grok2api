@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Badge } from "@/components/ui/badge";
@@ -53,7 +54,7 @@ function DegradeEventRow({ event, locale }: { event: DegradeEventDTO; locale: st
   );
 }
 
-export function DegradeEventsList({ events }: { events: DegradeEventDTO[] }) {
+export function DegradeEventsList({ events }: { events: DegradeEventDTO[] }): ReactElement {
   const { t, i18n } = useTranslation();
   return (
     <section className="overflow-hidden rounded-lg bg-card" data-testid="degrade-events">

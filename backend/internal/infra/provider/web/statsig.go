@@ -380,23 +380,28 @@ func extractStatsigMetaContent(body []byte) (string, error) {
 			if !strings.EqualFold(string(name), "meta") || !hasAttrs {
 				continue
 			}
-			metaName := ""
-			content := ""
-			for {
-				key, value, more := tokenizer.TagAttr()
-				switch strings.ToLower(string(key)) {
-				case "name":
-					metaName = normalizeStatsigMetaName(string(value))
-				case "content":
-					content = strings.TrimSpace(string(value))
-				}
-				if !more {
-					break
-				}
-			}
+			metaName, content := statsigMetaAttributes(tokenizer)
 			if metaName == "grok-site-verification" && content != "" {
 				return content, nil
 			}
+		}
+	}
+}
+
+// statsigMetaAttributes 消费当前 meta 标签的全部属性，返回归一化后的 name 与去空白的 content。
+func statsigMetaAttributes(tokenizer *html.Tokenizer) (string, string) {
+	metaName := ""
+	content := ""
+	for {
+		key, value, more := tokenizer.TagAttr()
+		switch strings.ToLower(string(key)) {
+		case "name":
+			metaName = normalizeStatsigMetaName(string(value))
+		case "content":
+			content = strings.TrimSpace(string(value))
+		}
+		if !more {
+			return metaName, content
 		}
 	}
 }

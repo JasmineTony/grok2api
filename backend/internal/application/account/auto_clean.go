@@ -102,15 +102,22 @@ func (s *Service) RunAccountAutoClean(ctx context.Context) {
 			cfg, scheduledRevision = s.autoCleanSnapshot()
 			resetCredentialRefreshTimer(timer, autoCleanInterval(cfg))
 		case <-timer.C:
-			current, revision := s.autoCleanSnapshot()
-			if revision == scheduledRevision && current.Enabled {
-				if err := s.runAutoCleanReauthRevision(ctx, current, revision); err != nil && ctx.Err() == nil {
-					s.logger.Warn("account_auto_clean_failed", "error", err)
-				}
-			}
+			s.handleAutoCleanTimerTick(ctx, scheduledRevision)
 			cfg, scheduledRevision = s.autoCleanSnapshot()
 			resetCredentialRefreshTimer(timer, autoCleanInterval(cfg))
 		}
+	}
+}
+
+// handleAutoCleanTimerTick 在 timer 到期时执行一轮自动清理：只有当前快照仍处于排程 revision
+// 且已启用才删除，清理失败只记录日志，不影响后续调度。
+func (s *Service) handleAutoCleanTimerTick(ctx context.Context, scheduledRevision uint64) {
+	current, revision := s.autoCleanSnapshot()
+	if revision != scheduledRevision || !current.Enabled {
+		return
+	}
+	if err := s.runAutoCleanReauthRevision(ctx, current, revision); err != nil && ctx.Err() == nil {
+		s.logger.Warn("account_auto_clean_failed", "error", err)
 	}
 }
 
@@ -120,99 +127,134 @@ func (s *Service) runAutoCleanReauth(ctx context.Context, cfg AutoCleanConfig) e
 	return s.runAutoCleanReauthRevision(ctx, cfg, revision)
 }
 
+// autoCleanReauthStats 汇总一轮自动清理的扫描、删除与跳过计数。
+type autoCleanReauthStats struct {
+	scanned       int
+	deleted       int
+	skipped       int
+	activeSkipped int
+	scanBatches   int
+	deleteBatches int
+	limitReached  bool
+	exhausted     bool
+}
+
 func (s *Service) runAutoCleanReauthRevision(ctx context.Context, cfg AutoCleanConfig, revision uint64) error {
 	if !cfg.Enabled || !s.autoCleanRevisionCurrent(revision, cfg) {
 		return nil
 	}
 	runCtx, cancel := context.WithTimeout(ctx, autoCleanReauthRunTimeout)
 	defer cancel()
-	if s.refreshLock != nil {
-		release, acquired, err := s.refreshLock.Acquire(runCtx, autoCleanReauthLockKey, autoCleanReauthLockTTL)
-		if err != nil {
-			return err
-		}
-		if !acquired {
-			s.logger.Debug("account_auto_clean_skipped", "reason", "lock_contended")
-			return nil
-		}
-		if release != nil {
-			defer release()
-		}
+	release, skip, err := s.acquireAutoCleanReauthLock(runCtx)
+	if err != nil {
+		return err
 	}
+	if skip {
+		return nil
+	}
+	if release != nil {
+		defer release()
+	}
+	stats := autoCleanReauthStats{}
+	if err := s.runAutoCleanReauthScan(runCtx, cfg, revision, s.now().Add(-cfg.MinAge), &stats); err != nil {
+		return err
+	}
+	stats.limitReached = !stats.exhausted && (stats.scanBatches == autoCleanReauthMaxScans || stats.deleteBatches == autoCleanReauthMaxDeletes)
+	if stats.deleted > 0 {
+		s.invalidateBuildBotFlagCache()
+	}
+	if stats.scanned > 0 || stats.deleted > 0 || stats.skipped > 0 {
+		s.logger.Info("auto_clean_reauth", "deleted", stats.deleted, "scanned", stats.scanned, "skipped", stats.skipped, "active_skipped", stats.activeSkipped, "scan_batches", stats.scanBatches, "delete_batches", stats.deleteBatches, "limit_reached", stats.limitReached, "min_age", cfg.MinAge.String(), "include_disabled", cfg.IncludeDisabled)
+	}
+	return nil
+}
 
-	markedBefore := s.now().Add(-cfg.MinAge)
+// acquireAutoCleanReauthLock 获取跨实例自动清理锁；skip 表示其他实例正在执行。
+func (s *Service) acquireAutoCleanReauthLock(ctx context.Context) (func(), bool, error) {
+	if s.refreshLock == nil {
+		return nil, false, nil
+	}
+	release, acquired, err := s.refreshLock.Acquire(ctx, autoCleanReauthLockKey, autoCleanReauthLockTTL)
+	if err != nil {
+		return nil, false, err
+	}
+	if !acquired {
+		s.logger.Debug("account_auto_clean_skipped", "reason", "lock_contended")
+		return nil, true, nil
+	}
+	return release, false, nil
+}
+
+// runAutoCleanReauthScan 分批扫描并删除过期 reauthRequired 账号，直到批次上限或候选耗尽。
+func (s *Service) runAutoCleanReauthScan(ctx context.Context, cfg AutoCleanConfig, revision uint64, markedBefore time.Time, stats *autoCleanReauthStats) error {
 	var afterID uint64
-	scanned := 0
-	deleted := 0
-	skipped := 0
-	activeSkipped := 0
-	scanBatches := 0
-	deleteBatches := 0
-	limitReached := false
-	exhausted := false
-	for scanBatches < autoCleanReauthMaxScans && deleteBatches < autoCleanReauthMaxDeletes {
+	for stats.scanBatches < autoCleanReauthMaxScans && stats.deleteBatches < autoCleanReauthMaxDeletes {
 		if !s.autoCleanRevisionCurrent(revision, cfg) {
 			break
 		}
-		candidates, err := s.accounts.ListAutoCleanReauthCandidates(runCtx, markedBefore, cfg.IncludeDisabled, afterID, autoCleanReauthBatchSize)
+		candidates, err := s.accounts.ListAutoCleanReauthCandidates(ctx, markedBefore, cfg.IncludeDisabled, afterID, autoCleanReauthBatchSize)
 		if err != nil {
-			if scanned > 0 || deleted > 0 || skipped > 0 {
-				s.logger.Warn("auto_clean_reauth_partial", "deleted", deleted, "scanned", scanned, "skipped", skipped, "error", err)
-			}
+			s.logAutoCleanReauthPartial(stats, err)
 			return err
 		}
 		if len(candidates) == 0 {
-			exhausted = true
+			stats.exhausted = true
 			break
 		}
-		scanBatches++
-		scanned += len(candidates)
+		stats.scanBatches++
+		stats.scanned += len(candidates)
 		afterID = candidates[len(candidates)-1]
-		deletable, active, err := s.excludeAccountsWithActiveLeases(runCtx, candidates)
+		deletable, active, err := s.excludeAccountsWithActiveLeases(ctx, candidates)
 		if err != nil {
 			return err
 		}
-		activeSkipped += active
-		skipped += active
+		stats.activeSkipped += active
+		stats.skipped += active
 		if !s.autoCleanRevisionCurrent(revision, cfg) {
 			break
 		}
 		if len(deletable) == 0 {
 			if len(candidates) < autoCleanReauthBatchSize {
-				exhausted = true
+				stats.exhausted = true
 				break
 			}
 			continue
 		}
-		deleteBatches++
-		ids, err := s.accounts.DeleteAutoCleanReauthCandidates(runCtx, markedBefore, cfg.IncludeDisabled, deletable)
-		if err != nil {
-			if scanned > 0 || deleted > 0 || skipped > 0 {
-				s.logger.Warn("auto_clean_reauth_partial", "deleted", deleted, "scanned", scanned, "skipped", skipped, "error", err)
-			}
+		stats.deleteBatches++
+		if err := s.deleteAutoCleanReauthBatch(ctx, cfg, markedBefore, candidates, deletable, stats); err != nil {
 			return err
 		}
-		deleted += len(ids)
-		skipped += len(deletable) - len(ids)
-		if len(ids) > 0 {
-			s.logger.Debug("auto_clean_reauth_batch_deleted", "account_ids", ids)
-			if failures, cleanupErr := s.clearDeletedAccountRuntimeState(runCtx, ids); cleanupErr != nil {
-				s.logger.Warn("auto_clean_reauth_runtime_cleanup_failed", "failures", failures, "error", cleanupErr)
-			}
-		}
 		if len(candidates) < autoCleanReauthBatchSize {
-			exhausted = true
+			stats.exhausted = true
 			break
 		}
 	}
-	limitReached = !exhausted && (scanBatches == autoCleanReauthMaxScans || deleteBatches == autoCleanReauthMaxDeletes)
-	if deleted > 0 {
-		s.invalidateBuildBotFlagCache()
+	return nil
+}
+
+// deleteAutoCleanReauthBatch 删除一批已确认无活跃租约的候选账号并清理其运行时状态。
+func (s *Service) deleteAutoCleanReauthBatch(ctx context.Context, cfg AutoCleanConfig, markedBefore time.Time, candidates, deletable []uint64, stats *autoCleanReauthStats) error {
+	ids, err := s.accounts.DeleteAutoCleanReauthCandidates(ctx, markedBefore, cfg.IncludeDisabled, deletable)
+	if err != nil {
+		s.logAutoCleanReauthPartial(stats, err)
+		return err
 	}
-	if scanned > 0 || deleted > 0 || skipped > 0 {
-		s.logger.Info("auto_clean_reauth", "deleted", deleted, "scanned", scanned, "skipped", skipped, "active_skipped", activeSkipped, "scan_batches", scanBatches, "delete_batches", deleteBatches, "limit_reached", limitReached, "min_age", cfg.MinAge.String(), "include_disabled", cfg.IncludeDisabled)
+	stats.deleted += len(ids)
+	stats.skipped += len(deletable) - len(ids)
+	if len(ids) > 0 {
+		s.logger.Debug("auto_clean_reauth_batch_deleted", "account_ids", ids)
+		if failures, cleanupErr := s.clearDeletedAccountRuntimeState(ctx, ids); cleanupErr != nil {
+			s.logger.Warn("auto_clean_reauth_runtime_cleanup_failed", "failures", failures, "error", cleanupErr)
+		}
 	}
 	return nil
+}
+
+// logAutoCleanReauthPartial 在已有删除进展时记录部分失败，便于定位中断的批次。
+func (s *Service) logAutoCleanReauthPartial(stats *autoCleanReauthStats, err error) {
+	if stats.scanned > 0 || stats.deleted > 0 || stats.skipped > 0 {
+		s.logger.Warn("auto_clean_reauth_partial", "deleted", stats.deleted, "scanned", stats.scanned, "skipped", stats.skipped, "error", err)
+	}
 }
 
 func (s *Service) excludeAccountsWithActiveLeases(ctx context.Context, ids []uint64) ([]uint64, int, error) {

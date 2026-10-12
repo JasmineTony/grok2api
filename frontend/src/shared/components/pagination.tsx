@@ -1,5 +1,5 @@
 import { ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -54,7 +54,7 @@ export function Pagination({
   onPageSizeChange,
   pageSizeOptions = PAGE_SIZE_OPTIONS,
   className,
-}: PaginationProps) {
+}: PaginationProps): ReactElement {
   const pages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
@@ -121,7 +121,7 @@ export function CursorPagination({
   onNextPage,
   onPageSizeChange,
   className,
-}: CursorPaginationProps) {
+}: CursorPaginationProps): ReactElement {
   const { t } = useTranslation();
 
   return (

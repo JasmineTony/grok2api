@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -20,7 +21,7 @@ function PerformanceValue({ value, unit }: { value: string; unit: string }) {
   );
 }
 
-export function ResponsePerformance({ audit, locale }: { audit: AuditDTO; locale: string }) {
+export function ResponsePerformance({ audit, locale }: { audit: AuditDTO; locale: string }): ReactElement {
   const { t } = useTranslation();
   const duration = splitDuration(formatDuration(audit.durationMs));
   const firstToken =
@@ -39,7 +40,7 @@ export function ResponsePerformance({ audit, locale }: { audit: AuditDTO; locale
   );
 }
 
-export function EgressValue({ audit }: { audit: AuditDTO }) {
+export function EgressValue({ audit }: { audit: AuditDTO }): ReactElement {
   const { t } = useTranslation();
   if (!audit.egressMode) {
     return <span className="text-muted-foreground">-</span>;

@@ -132,15 +132,7 @@ func (s *Service) SyncStaleConsoleQuotas(ctx context.Context, before time.Time, 
 		if err != nil {
 			return 0, 0, nextAfterID, err
 		}
-		for _, value := range values {
-			nextAfterID = value.ID
-			if value.Enabled && value.AuthStatus == accountdomain.AuthStatusActive && staleCompleteConsoleUsageSnapshot(windows[value.ID], before) {
-				pending = append(pending, value.ID)
-				if len(pending) == limit {
-					break
-				}
-			}
-		}
+		nextAfterID, pending = collectStaleConsoleQuotaCandidates(values, windows, before, pending, limit)
 		if len(values) < accountTaskBatchSize {
 			reachedEnd = len(pending) < limit
 			break
@@ -154,6 +146,26 @@ func (s *Service) SyncStaleConsoleQuotas(ctx context.Context, before time.Time, 
 	}
 	succeeded, failed, err := s.syncConsoleQuotaAccounts(ctx, "console_quota_stale_catchup", pending)
 	return succeeded, failed, nextAfterID, err
+}
+
+// collectStaleConsoleQuotaCandidates 按账号顺序收集本批过期的 Console 快照账号；
+// 返回最后检查到的账号 ID 与合并后的候选集合，达到 limit 即停止本批扫描。
+func collectStaleConsoleQuotaCandidates(values []accountdomain.Credential, windows map[uint64][]accountdomain.QuotaWindow, before time.Time, pending []uint64, limit int) (uint64, []uint64) {
+	var nextAfterID uint64
+	for _, value := range values {
+		nextAfterID = value.ID
+		if !value.Enabled || value.AuthStatus != accountdomain.AuthStatusActive {
+			continue
+		}
+		if !staleCompleteConsoleUsageSnapshot(windows[value.ID], before) {
+			continue
+		}
+		pending = append(pending, value.ID)
+		if len(pending) == limit {
+			break
+		}
+	}
+	return nextAfterID, pending
 }
 
 func staleCompleteConsoleUsageSnapshot(windows []accountdomain.QuotaWindow, before time.Time) bool {

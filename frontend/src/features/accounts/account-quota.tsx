@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import type { TFunction } from "i18next";
 import { Info, TriangleAlert } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -8,7 +8,15 @@ import type { BillingDTO, ModelQuotaBlockDTO, QuotaDTO } from "@/entities/accoun
 import { cn } from "@/shared/lib/cn";
 import { formatDateTime, formatNumber, formatTokenMillions } from "@/shared/lib/format";
 
-export function AccountQuota({ quota, billing, locale }: { quota: QuotaDTO; billing?: BillingDTO; locale: string }) {
+export function AccountQuota({
+  quota,
+  billing,
+  locale,
+}: {
+  quota: QuotaDTO;
+  billing?: BillingDTO;
+  locale: string;
+}): ReactElement {
   const { t } = useTranslation();
   const modelQuotaBlocks = quota.modelQuotaBlocks ?? [];
   if (quota.type === "unknown") {

@@ -1,5 +1,5 @@
 import { RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,7 @@ import { cn } from "@/shared/lib/cn";
 
 type QualityGuardTab = "nodes" | "profiles" | "accounts";
 
-export function QualityGuardPage() {
+export function QualityGuardPage(): ReactElement {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<QualityGuardTab>("nodes");
   const nodesTabActive = activeTab === "nodes";

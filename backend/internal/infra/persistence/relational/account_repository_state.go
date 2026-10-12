@@ -361,50 +361,57 @@ func (r *AccountRepository) UpsertEgressLeaseBlock(ctx context.Context, value ac
 	value.UpdatedAt = time.Now().UTC()
 	stored := value
 	err := r.db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var owner accountModel
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "provider", "enabled", "auth_status", "egress_node_id").First(&owner, value.AccountID).Error; err != nil {
-			return mapError(err)
+		updated, err := upsertEgressLeaseBlockTx(tx, value)
+		if err != nil {
+			return err
 		}
-		if account.Provider(owner.Provider) != account.ProviderBuild || !owner.Enabled || account.AuthStatus(owner.AuthStatus) != account.AuthStatusActive || (owner.EgressNodeID != nil && *owner.EgressNodeID != value.NodeID) {
-			return repository.ErrConflict
-		}
-		var existing accountEgressLeaseBlockModel
-		load := tx.Where("account_id = ? AND node_id = ?", value.AccountID, value.NodeID).Limit(1).Find(&existing)
-		if load.Error != nil {
-			return load.Error
-		}
-		if load.RowsAffected > 0 && existing.CooldownUntil.After(value.CooldownUntil) {
-			stored = egressLeaseBlockFromModel(existing)
-			return nil
-		}
-		row := accountEgressLeaseBlockModel{
-			AccountID: value.AccountID, NodeID: value.NodeID, Reason: value.Reason, Version: value.Version,
-			CooldownUntil: value.CooldownUntil, UpdatedAt: value.UpdatedAt,
-		}
-		created := tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "account_id"}, {Name: "node_id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"reason", "version", "cooldown_until", "updated_at"}),
-			Where: clause.Where{Exprs: []clause.Expression{clause.Expr{
-				SQL: "account_egress_lease_blocks.cooldown_until <= excluded.cooldown_until",
-			}}},
-		}).Create(&row)
-		if created.Error != nil {
-			return created.Error
-		}
-		if created.RowsAffected == 0 {
-			if err := tx.Where("account_id = ? AND node_id = ?", value.AccountID, value.NodeID).First(&existing).Error; err != nil {
-				return err
-			}
-			stored = egressLeaseBlockFromModel(existing)
-			return nil
-		}
-		stored = egressLeaseBlockFromModel(row)
+		stored = updated
 		return nil
 	})
 	if err == nil {
 		r.notifyInvalidation(ctx, repository.InvalidationEvent{Kind: repository.InvalidationAccountEgressLeaseChanged, Provider: account.ProviderBuild, AccountID: value.AccountID})
 	}
 	return stored, err
+}
+
+// upsertEgressLeaseBlockTx 在事务内校验账号仍可使用该节点，并按冷却时间做 CAS 写入。
+func upsertEgressLeaseBlockTx(tx *gorm.DB, value account.EgressLeaseBlock) (account.EgressLeaseBlock, error) {
+	var owner accountModel
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "provider", "enabled", "auth_status", "egress_node_id").First(&owner, value.AccountID).Error; err != nil {
+		return account.EgressLeaseBlock{}, mapError(err)
+	}
+	if account.Provider(owner.Provider) != account.ProviderBuild || !owner.Enabled || account.AuthStatus(owner.AuthStatus) != account.AuthStatusActive || (owner.EgressNodeID != nil && *owner.EgressNodeID != value.NodeID) {
+		return account.EgressLeaseBlock{}, repository.ErrConflict
+	}
+	var existing accountEgressLeaseBlockModel
+	load := tx.Where("account_id = ? AND node_id = ?", value.AccountID, value.NodeID).Limit(1).Find(&existing)
+	if load.Error != nil {
+		return account.EgressLeaseBlock{}, load.Error
+	}
+	if load.RowsAffected > 0 && existing.CooldownUntil.After(value.CooldownUntil) {
+		return egressLeaseBlockFromModel(existing), nil
+	}
+	row := accountEgressLeaseBlockModel{
+		AccountID: value.AccountID, NodeID: value.NodeID, Reason: value.Reason, Version: value.Version,
+		CooldownUntil: value.CooldownUntil, UpdatedAt: value.UpdatedAt,
+	}
+	created := tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "account_id"}, {Name: "node_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"reason", "version", "cooldown_until", "updated_at"}),
+		Where: clause.Where{Exprs: []clause.Expression{clause.Expr{
+			SQL: "account_egress_lease_blocks.cooldown_until <= excluded.cooldown_until",
+		}}},
+	}).Create(&row)
+	if created.Error != nil {
+		return account.EgressLeaseBlock{}, created.Error
+	}
+	if created.RowsAffected > 0 {
+		return egressLeaseBlockFromModel(row), nil
+	}
+	if err := tx.Where("account_id = ? AND node_id = ?", value.AccountID, value.NodeID).First(&existing).Error; err != nil {
+		return account.EgressLeaseBlock{}, err
+	}
+	return egressLeaseBlockFromModel(existing), nil
 }
 
 // DeleteEgressLeaseBlock uses the opaque version as a compare-and-swap token,

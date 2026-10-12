@@ -1,3 +1,5 @@
+import type { ReactElement } from "react";
+
 import { GalleryContent } from "@/features/media/gallery-content";
 import { GalleryToolbar } from "@/features/media/gallery-toolbar";
 import type { GalleryImagesResult } from "@/features/media/use-gallery-images";
@@ -20,7 +22,7 @@ export type GalleryTableProps = {
 };
 
 /** 图库表格区：工具栏、分页与卡片网格，条件渲染顺序与原实现一致。 */
-export function GalleryTable(props: GalleryTableProps) {
+export function GalleryTable(props: GalleryTableProps): ReactElement {
   const { list, gallery, selection, result, pageIDs, selectedOnPageCount } = props;
   const allPageSelected = pageIDs.length > 0 && selectedOnPageCount === pageIDs.length;
   return (

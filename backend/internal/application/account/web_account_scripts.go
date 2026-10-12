@@ -59,25 +59,13 @@ func (s *Service) RunAllWebAccountScriptsWithProgress(ctx context.Context, optio
 		if !started {
 			total = int(count)
 			started = true
-			if progress != nil {
-				if err := progress(0, total); err != nil {
-					return succeeded, failed, err
-				}
+			if err := reportInitialBatchProgress(progress, total); err != nil {
+				return succeeded, failed, err
 			}
 		}
-		if len(values) == 0 {
+		ids := webAccountScriptPageIDs(values, total-completed)
+		if len(ids) == 0 {
 			return succeeded, failed, nil
-		}
-		remaining := total - completed
-		if remaining <= 0 {
-			return succeeded, failed, nil
-		}
-		if len(values) > remaining {
-			values = values[:remaining]
-		}
-		ids := make([]uint64, 0, len(values))
-		for _, value := range values {
-			ids = append(ids, value.ID)
 		}
 		batchSucceeded, batchFailed, err := s.runWebAccountScriptBatch(ctx, ids, options, offsetBatchProgress(progress, completed, total))
 		succeeded += batchSucceeded
@@ -91,6 +79,21 @@ func (s *Service) RunAllWebAccountScriptsWithProgress(ctx context.Context, optio
 			return succeeded, failed, nil
 		}
 	}
+}
+
+// webAccountScriptPageIDs 按剩余总量截断当前页并返回待执行脚本的账号 ID。
+func webAccountScriptPageIDs(values []accountdomain.Credential, remaining int) []uint64 {
+	if remaining <= 0 {
+		return nil
+	}
+	if len(values) > remaining {
+		values = values[:remaining]
+	}
+	ids := make([]uint64, 0, len(values))
+	for _, value := range values {
+		ids = append(ids, value.ID)
+	}
+	return ids
 }
 
 func normalizeWebAccountScriptOptions(options WebAccountScriptOptions) (WebAccountScriptOptions, error) {

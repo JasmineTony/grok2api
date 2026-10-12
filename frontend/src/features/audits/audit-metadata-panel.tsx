@@ -1,5 +1,5 @@
 import { FileText } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { EmptyPanel, HeadersPanel } from "@/features/audits/audit-detail-common";
@@ -22,7 +22,7 @@ function RequestPathSection({ audit }: { audit: AuditDTO }) {
   );
 }
 
-export function AuditMetadataPanel({ audit }: { audit: AuditDTO }) {
+export function AuditMetadataPanel({ audit }: { audit: AuditDTO }): ReactElement {
   const { t } = useTranslation();
   const headers = useMemo(() => audit.requestHeaders ?? {}, [audit.requestHeaders]);
   const hasMetadata = Boolean(audit.requestMethod) || Boolean(audit.requestPath) || Object.keys(headers).length > 0;

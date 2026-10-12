@@ -1,5 +1,6 @@
 import { KeyRound, Languages, LogOut, Monitor, Moon, MoreHorizontal, Settings, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { NavLink } from "react-router-dom";
 
@@ -24,7 +25,11 @@ type ShellAccountControlProps = {
 };
 
 /** 账号控制区：用户名、外观/语言/改密/退出菜单与设置入口。 */
-export function ShellAccountControl({ username, onOpenPasswordDialog, onNavigate }: ShellAccountControlProps) {
+export function ShellAccountControl({
+  username,
+  onOpenPasswordDialog,
+  onNavigate,
+}: ShellAccountControlProps): ReactElement {
   const { t } = useTranslation();
   return (
     <div className="flex h-9 items-center gap-1 px-2.5">

@@ -76,59 +76,8 @@ func (r *AccountRepository) CountCleanupWithLinked(ctx context.Context, provider
 	}
 	db := r.db.db.WithContext(ctx)
 	for _, status := range statuses {
-		if status != "disabled" && status != "reauthRequired" && status != "cooldown" {
-			return preview, fmt.Errorf("不支持清理账号状态 %q", status)
-		}
-		var rootCount int64
-		if err := applyAccountStatusFilter(
-			db.Session(&gorm.Session{NewDB: true}).Model(&accountModel{}).Where("provider = ?", providerValue),
-			status, now,
-		).Count(&rootCount).Error; err != nil {
+		if err := accumulateCleanupStatusCounts(db, providerValue, status, now, targets, &preview); err != nil {
 			return preview, err
-		}
-		preview.RootsByStatus[status] = rootCount
-		preview.RootCount += rootCount
-
-		rootsSub := func() *gorm.DB {
-			return applyAccountStatusFilter(
-				db.Session(&gorm.Session{NewDB: true}).Model(&accountModel{}).Select("id").Where("provider = ?", providerValue),
-				status, now,
-			)
-		}
-		for _, target := range targets {
-			if !target.IsValid() || target == providerValue {
-				return preview, fmt.Errorf("关联删除目标无效")
-			}
-			var linked int64
-			var err error
-			switch {
-			case providerValue == account.ProviderWeb && target == account.ProviderBuild:
-				err = db.Session(&gorm.Session{NewDB: true}).Table("account_provider_links").
-					Where("web_account_id IN (?)", rootsSub()).Count(&linked).Error
-			case providerValue == account.ProviderWeb && target == account.ProviderConsole:
-				err = db.Session(&gorm.Session{NewDB: true}).Table("web_console_account_links").
-					Where("web_account_id IN (?)", rootsSub()).Count(&linked).Error
-			case providerValue == account.ProviderBuild && target == account.ProviderWeb:
-				err = db.Session(&gorm.Session{NewDB: true}).Table("account_provider_links").
-					Where("build_account_id IN (?)", rootsSub()).Count(&linked).Error
-			case providerValue == account.ProviderBuild && target == account.ProviderConsole:
-				err = db.Session(&gorm.Session{NewDB: true}).Table("account_provider_links apl").
-					Joins("JOIN web_console_account_links wcal ON wcal.web_account_id = apl.web_account_id").
-					Where("apl.build_account_id IN (?)", rootsSub()).Count(&linked).Error
-			case providerValue == account.ProviderConsole && target == account.ProviderWeb:
-				err = db.Session(&gorm.Session{NewDB: true}).Table("web_console_account_links").
-					Where("console_account_id IN (?)", rootsSub()).Count(&linked).Error
-			case providerValue == account.ProviderConsole && target == account.ProviderBuild:
-				err = db.Session(&gorm.Session{NewDB: true}).Table("web_console_account_links wcal").
-					Joins("JOIN account_provider_links apl ON apl.web_account_id = wcal.web_account_id").
-					Where("wcal.console_account_id IN (?)", rootsSub()).Count(&linked).Error
-			default:
-				return preview, fmt.Errorf("关联删除目标无效")
-			}
-			if err != nil {
-				return preview, err
-			}
-			preview.LinkedByProvider[target] += linked
 		}
 	}
 	preview.Total = preview.RootCount
@@ -136,4 +85,77 @@ func (r *AccountRepository) CountCleanupWithLinked(ctx context.Context, provider
 		preview.Total += linked
 	}
 	return preview, nil
+}
+
+// accumulateCleanupStatusCounts 统计单个清理状态的根账号数，并累加各目标号池的关联账号数。
+func accumulateCleanupStatusCounts(db *gorm.DB, providerValue account.Provider, status string, now time.Time, targets []account.Provider, preview *repository.CleanupPreview) error {
+	if status != "disabled" && status != "reauthRequired" && status != "cooldown" {
+		return fmt.Errorf("不支持清理账号状态 %q", status)
+	}
+	var rootCount int64
+	if err := applyAccountStatusFilter(
+		db.Session(&gorm.Session{NewDB: true}).Model(&accountModel{}).Where("provider = ?", providerValue),
+		status, now,
+	).Count(&rootCount).Error; err != nil {
+		return err
+	}
+	preview.RootsByStatus[status] = rootCount
+	preview.RootCount += rootCount
+
+	rootsSub := func() *gorm.DB {
+		return cleanupRootIDsQuery(db, providerValue, status, now)
+	}
+	for _, target := range targets {
+		if !target.IsValid() || target == providerValue {
+			return fmt.Errorf("关联删除目标无效")
+		}
+		linked, err := countLinkedCleanupRows(db, providerValue, target, rootsSub)
+		if err != nil {
+			return err
+		}
+		preview.LinkedByProvider[target] += linked
+	}
+	return nil
+}
+
+// cleanupRootIDsQuery 构造命中清理状态的根账号 ID 子查询。
+func cleanupRootIDsQuery(db *gorm.DB, providerValue account.Provider, status string, now time.Time) *gorm.DB {
+	return applyAccountStatusFilter(
+		db.Session(&gorm.Session{NewDB: true}).Model(&accountModel{}).Select("id").Where("provider = ?", providerValue),
+		status, now,
+	)
+}
+
+// countLinkedCleanupRows 按根号池到目标号池的固定关联路径统计关联账号数。
+func countLinkedCleanupRows(db *gorm.DB, providerValue account.Provider, target account.Provider, rootsSub func() *gorm.DB) (int64, error) {
+	var linked int64
+	var err error
+	switch {
+	case providerValue == account.ProviderWeb && target == account.ProviderBuild:
+		err = db.Session(&gorm.Session{NewDB: true}).Table("account_provider_links").
+			Where("web_account_id IN (?)", rootsSub()).Count(&linked).Error
+	case providerValue == account.ProviderWeb && target == account.ProviderConsole:
+		err = db.Session(&gorm.Session{NewDB: true}).Table("web_console_account_links").
+			Where("web_account_id IN (?)", rootsSub()).Count(&linked).Error
+	case providerValue == account.ProviderBuild && target == account.ProviderWeb:
+		err = db.Session(&gorm.Session{NewDB: true}).Table("account_provider_links").
+			Where("build_account_id IN (?)", rootsSub()).Count(&linked).Error
+	case providerValue == account.ProviderBuild && target == account.ProviderConsole:
+		err = db.Session(&gorm.Session{NewDB: true}).Table("account_provider_links apl").
+			Joins("JOIN web_console_account_links wcal ON wcal.web_account_id = apl.web_account_id").
+			Where("apl.build_account_id IN (?)", rootsSub()).Count(&linked).Error
+	case providerValue == account.ProviderConsole && target == account.ProviderWeb:
+		err = db.Session(&gorm.Session{NewDB: true}).Table("web_console_account_links").
+			Where("console_account_id IN (?)", rootsSub()).Count(&linked).Error
+	case providerValue == account.ProviderConsole && target == account.ProviderBuild:
+		err = db.Session(&gorm.Session{NewDB: true}).Table("web_console_account_links wcal").
+			Joins("JOIN account_provider_links apl ON apl.web_account_id = wcal.web_account_id").
+			Where("wcal.console_account_id IN (?)", rootsSub()).Count(&linked).Error
+	default:
+		return 0, fmt.Errorf("关联删除目标无效")
+	}
+	if err != nil {
+		return 0, err
+	}
+	return linked, nil
 }

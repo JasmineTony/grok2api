@@ -1,5 +1,6 @@
 import type { TFunction } from "i18next";
 import { PowerOff, RefreshCw, Search } from "lucide-react";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Badge } from "@/components/ui/badge";
@@ -398,7 +399,7 @@ export function DegradeAccountsCard({
 }: {
   controller: DegradeAccountsController;
   summary: DegradeSummaryDTO;
-}) {
+}): ReactElement {
   const { i18n } = useTranslation();
   return (
     <section className="overflow-hidden rounded-lg bg-card" data-testid="degrade-accounts-card">

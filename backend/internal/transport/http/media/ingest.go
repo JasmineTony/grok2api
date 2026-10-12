@@ -298,64 +298,83 @@ func (h *Handler) uploadInputAsset(c *gin.Context) {
 		return
 	}
 	defer h.releaseIngest()
-	fileHeader, err := c.FormFile("file")
-	if err != nil {
-		var maxBytesError *http.MaxBytesError
-		if errors.As(err, &maxBytesError) {
-			response.Error(c, http.StatusRequestEntityTooLarge, "mediaTooLarge", "文件超过请求大小上限")
-			return
-		}
-		response.Error(c, http.StatusBadRequest, "invalidRequest", "缺少上传文件")
+	data, declaredMIME, ok := readInputAssetUpload(c)
+	if !ok {
 		return
 	}
-	if fileHeader.Size > ingestMaxImageBytes {
-		response.Error(c, http.StatusRequestEntityTooLarge, "mediaTooLarge", "文件超过大小上限")
-		return
-	}
-	src, err := fileHeader.Open()
-	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "mediaUploadReadFailed", "读取上传文件失败")
-		return
-	}
-	defer src.Close()
-	data, err := io.ReadAll(io.LimitReader(src, ingestMaxImageBytes+1))
-	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "mediaUploadReadFailed", "读取上传文件失败")
-		return
-	}
-	if int64(len(data)) > ingestMaxImageBytes {
-		response.Error(c, http.StatusRequestEntityTooLarge, "mediaTooLarge", "文件超过大小上限")
-		return
-	}
-	declaredMIME := strings.ToLower(strings.TrimSpace(strings.Split(fileHeader.Header.Get("Content-Type"), ";")[0]))
 	detectedMIME := strings.ToLower(http.DetectContentType(data))
 	if strings.HasPrefix(detectedMIME, "image/") {
 		h.saveIngestedImage(c, data)
 		return
 	}
 	if strings.HasPrefix(declaredMIME, "video/") || strings.HasPrefix(detectedMIME, "video/") {
-		contentType := declaredMIME
-		if contentType == "" {
-			contentType = detectedMIME
-		}
-		asset, saveErr := h.service.SaveInputVideo(c.Request.Context(), contentType, bytes.NewReader(data))
-		if saveErr != nil {
-			switch {
-			case errors.Is(saveErr, mediaapp.ErrVideoUploadTooLarge):
-				response.Error(c, http.StatusRequestEntityTooLarge, "mediaTooLarge", "视频超过大小上限")
-			case errors.Is(saveErr, mediaapp.ErrInvalidVideoUpload):
-				response.Error(c, http.StatusBadRequest, "invalidVideo", "视频内容无效或格式不支持（mp4/webm/quicktime）")
-			case errors.Is(saveErr, mediaapp.ErrMediaCapacity):
-				response.Error(c, http.StatusInsufficientStorage, "mediaCapacityExceeded", "媒体临时存储容量不足")
-			default:
-				response.Error(c, http.StatusInternalServerError, "mediaSaveVideoFailed", "保存视频失败")
-			}
-			return
-		}
-		h.writeInputAsset(c, asset)
+		h.saveUploadedVideo(c, data, declaredMIME, detectedMIME)
 		return
 	}
 	response.Error(c, http.StatusBadRequest, "invalidMedia", "仅支持图片或视频文件")
+}
+
+// readInputAssetUpload 读取上传文件内容与声明的 MIME 类型，失败时已写出错误响应。
+func readInputAssetUpload(c *gin.Context) ([]byte, string, bool) {
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			response.Error(c, http.StatusRequestEntityTooLarge, "mediaTooLarge", "文件超过请求大小上限")
+			return nil, "", false
+		}
+		response.Error(c, http.StatusBadRequest, "invalidRequest", "缺少上传文件")
+		return nil, "", false
+	}
+	if fileHeader.Size > ingestMaxImageBytes {
+		response.Error(c, http.StatusRequestEntityTooLarge, "mediaTooLarge", "文件超过大小上限")
+		return nil, "", false
+	}
+	src, err := fileHeader.Open()
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "mediaUploadReadFailed", "读取上传文件失败")
+		return nil, "", false
+	}
+	defer src.Close()
+	data, err := io.ReadAll(io.LimitReader(src, ingestMaxImageBytes+1))
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "mediaUploadReadFailed", "读取上传文件失败")
+		return nil, "", false
+	}
+	if int64(len(data)) > ingestMaxImageBytes {
+		response.Error(c, http.StatusRequestEntityTooLarge, "mediaTooLarge", "文件超过大小上限")
+		return nil, "", false
+	}
+	declaredMIME := strings.ToLower(strings.TrimSpace(strings.Split(fileHeader.Header.Get("Content-Type"), ";")[0]))
+	return data, declaredMIME, true
+}
+
+// saveUploadedVideo 保存上传视频并把失败原因映射到既有响应契约。
+func (h *Handler) saveUploadedVideo(c *gin.Context, data []byte, declaredMIME, detectedMIME string) {
+	contentType := declaredMIME
+	if contentType == "" {
+		contentType = detectedMIME
+	}
+	asset, saveErr := h.service.SaveInputVideo(c.Request.Context(), contentType, bytes.NewReader(data))
+	if saveErr != nil {
+		writeInputVideoSaveError(c, saveErr)
+		return
+	}
+	h.writeInputAsset(c, asset)
+}
+
+// writeInputVideoSaveError 按视频保存失败原因返回对应状态码与错误码。
+func writeInputVideoSaveError(c *gin.Context, saveErr error) {
+	switch {
+	case errors.Is(saveErr, mediaapp.ErrVideoUploadTooLarge):
+		response.Error(c, http.StatusRequestEntityTooLarge, "mediaTooLarge", "视频超过大小上限")
+	case errors.Is(saveErr, mediaapp.ErrInvalidVideoUpload):
+		response.Error(c, http.StatusBadRequest, "invalidVideo", "视频内容无效或格式不支持（mp4/webm/quicktime）")
+	case errors.Is(saveErr, mediaapp.ErrMediaCapacity):
+		response.Error(c, http.StatusInsufficientStorage, "mediaCapacityExceeded", "媒体临时存储容量不足")
+	default:
+		response.Error(c, http.StatusInternalServerError, "mediaSaveVideoFailed", "保存视频失败")
+	}
 }
 
 // saveIngestedImage 收口两种临时输入路径：校验、落盘并登记 TTL，不进入图库。

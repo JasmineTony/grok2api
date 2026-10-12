@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Spinner } from "@/components/ui/spinner";
@@ -15,7 +15,7 @@ type DashboardActivityProps = {
 };
 
 /** 活动面板：总请求数、日期范围、180 天热力图与强度图例。 */
-export function DashboardActivity({ dashboard, locale, loading }: DashboardActivityProps) {
+export function DashboardActivity({ dashboard, locale, loading }: DashboardActivityProps): ReactElement {
   const { t } = useTranslation();
   const activity = useMemo(() => dashboard?.activity ?? [], [dashboard?.activity]);
   const weeks = useMemo(() => buildActivityWeeks(activity), [activity]);

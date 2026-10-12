@@ -6,6 +6,7 @@ import (
 
 	"github.com/chenyme/grok2api/backend/internal/domain/egress"
 	"github.com/chenyme/grok2api/backend/internal/repository"
+	"gorm.io/gorm"
 )
 
 type EgressRepository struct{ db *Database }
@@ -47,25 +48,7 @@ func (r *EgressRepository) ListEgressNodes(ctx context.Context, scope egress.Sco
 }
 
 func (r *EgressRepository) ListEgressNodePage(ctx context.Context, input repository.EgressNodeListQuery) ([]egress.Node, int64, error) {
-	query := r.db.db.WithContext(ctx).Model(&egressNodeModel{})
-	if search := strings.TrimSpace(input.Page.Search); search != "" {
-		query = query.Where("LOWER(egress_nodes.name) LIKE ?", "%"+strings.ToLower(search)+"%")
-	}
-	if input.Filter.Scope != "" {
-		query = query.Where("egress_nodes.scope = ?", input.Filter.Scope)
-	}
-	if input.Filter.Enabled != nil {
-		query = query.Where("egress_nodes.enabled = ?", *input.Filter.Enabled)
-	}
-	if input.Filter.ProbeStatus != "" {
-		query = query.Where("egress_nodes.probe_status = ?", input.Filter.ProbeStatus)
-	}
-	switch input.Filter.Assignment {
-	case "bound":
-		query = query.Where("EXISTS (SELECT 1 FROM provider_accounts account WHERE account.egress_node_id = egress_nodes.id)")
-	case "unbound":
-		query = query.Where("NOT EXISTS (SELECT 1 FROM provider_accounts account WHERE account.egress_node_id = egress_nodes.id)")
-	}
+	query := applyEgressNodeListFilters(r.db.db.WithContext(ctx).Model(&egressNodeModel{}), input)
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -106,6 +89,28 @@ func (r *EgressRepository) ListEgressNodePage(ctx context.Context, input reposit
 		values = append(values, value)
 	}
 	return values, total, nil
+}
+
+func applyEgressNodeListFilters(query *gorm.DB, input repository.EgressNodeListQuery) *gorm.DB {
+	if search := strings.TrimSpace(input.Page.Search); search != "" {
+		query = query.Where("LOWER(egress_nodes.name) LIKE ?", "%"+strings.ToLower(search)+"%")
+	}
+	if input.Filter.Scope != "" {
+		query = query.Where("egress_nodes.scope = ?", input.Filter.Scope)
+	}
+	if input.Filter.Enabled != nil {
+		query = query.Where("egress_nodes.enabled = ?", *input.Filter.Enabled)
+	}
+	if input.Filter.ProbeStatus != "" {
+		query = query.Where("egress_nodes.probe_status = ?", input.Filter.ProbeStatus)
+	}
+	switch input.Filter.Assignment {
+	case "bound":
+		query = query.Where("EXISTS (SELECT 1 FROM provider_accounts account WHERE account.egress_node_id = egress_nodes.id)")
+	case "unbound":
+		query = query.Where("NOT EXISTS (SELECT 1 FROM provider_accounts account WHERE account.egress_node_id = egress_nodes.id)")
+	}
+	return query
 }
 
 func (r *EgressRepository) GetEgressNode(ctx context.Context, id uint64) (egress.Node, error) {

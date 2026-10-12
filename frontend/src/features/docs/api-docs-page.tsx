@@ -1,5 +1,5 @@
 import { Code2 } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { Navigate, useParams } from "react-router-dom";
 
@@ -23,7 +23,7 @@ import { useApiDocsExample } from "@/features/docs/use-api-docs-example";
  * API 文档页：解析路由参数后渲染对应端点文档。
  * 未知端点保持原有重定向语义（回落到 chat/completions）。
  */
-export function ApiDocsPage() {
+export function ApiDocsPage(): ReactElement {
   const { category, endpoint } = useParams();
   const definition = endpoints[`${category ?? ""}/${endpoint ?? ""}`];
   if (!definition) return <Navigate to="/docs/chat/completions" replace />;

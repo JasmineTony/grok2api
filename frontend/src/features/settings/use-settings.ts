@@ -1,14 +1,28 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type UseMutationResult,
+  type UseQueryResult,
+} from "@tanstack/react-query";
 import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, type UseFormReturn } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { getSettings, updateSettings } from "@/features/settings/settings-api";
+import type { SettingsSnapshotDTO } from "@/features/settings/settings-dto";
 import { settingsSchema, toSettingsDTO, toSettingsForm, type SettingsForm } from "@/features/settings/settings-model";
 
-export function useSettings() {
+type SettingsController = {
+  form: UseFormReturn<SettingsForm>;
+  settingsQuery: UseQueryResult<SettingsSnapshotDTO, Error>;
+  updateMutation: UseMutationResult<SettingsSnapshotDTO, Error, SettingsForm>;
+  reset: () => void;
+};
+
+export function useSettings(): SettingsController {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const settingsQuery = useQuery({ queryKey: ["settings"], queryFn: getSettings });

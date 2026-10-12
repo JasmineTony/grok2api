@@ -18,6 +18,15 @@ func (s *Service) Summary(ctx context.Context) (Summary, error) {
 	if err != nil {
 		return Summary{}, err
 	}
+	result := summarizeAccounts(rows)
+	if err := s.applyBuildBotFlagRisk(ctx, now, &result); err != nil {
+		return Summary{}, err
+	}
+	return result, nil
+}
+
+// summarizeAccounts 汇总各 provider 的账号统计并推导恢复与关注计数。
+func summarizeAccounts(rows []repository.AccountSummary) Summary {
 	result := Summary{Providers: make(map[string]ProviderSummary, len(accountdomain.Providers()))}
 	for _, providerValue := range accountdomain.Providers() {
 		result.Providers[string(providerValue)] = ProviderSummary{}
@@ -34,8 +43,14 @@ func (s *Service) Summary(ctx context.Context) (Summary, error) {
 	}
 	result.Recovering = result.Recovery.Cooldown + result.Recovery.WaitingReset + result.Recovery.Probing
 	result.Attention = result.Issues.Disabled + result.Issues.ReauthRequired
+	return result
+}
+
+// applyBuildBotFlagRisk 统计 Build bot 风控账号，并按配置扣减可调度可用数。
+func (s *Service) applyBuildBotFlagRisk(ctx context.Context, now time.Time, result *Summary) error {
 	indexed, hasIndex := s.accounts.(buildBotFlagIndexRepository)
 	var flaggedIDs []uint64
+	var err error
 	if hasIndex {
 		result.Risk, err = indexed.CountBuildBotFlagged(ctx)
 	} else {
@@ -43,76 +58,53 @@ func (s *Service) Summary(ctx context.Context) (Summary, error) {
 		result.Risk = int64(len(flaggedIDs))
 	}
 	if err != nil {
-		return Summary{}, err
+		return err
 	}
-	if s.excludeBuildBotFlaggedFromSchedulingEnabled() && result.Risk > 0 {
-		var excluded int64
-		if hasIndex {
-			excluded, err = indexed.CountAvailableBuildBotFlagged(ctx, now)
-		} else {
-			excluded, err = s.accounts.CountAvailableAmong(ctx, accountdomain.ProviderBuild, flaggedIDs, now)
-		}
-		if err != nil {
-			return Summary{}, err
-		}
-		if excluded > 0 {
-			buildKey := string(accountdomain.ProviderBuild)
-			build := result.Providers[buildKey]
-			if excluded > build.Available {
-				excluded = build.Available
-			}
-			build.Available -= excluded
-			result.Providers[buildKey] = build
-			if excluded > result.Available {
-				excluded = result.Available
-			}
-			result.Available -= excluded
-		}
+	if !s.excludeBuildBotFlaggedFromSchedulingEnabled() || result.Risk <= 0 {
+		return nil
 	}
-	return result, nil
+	excluded, err := s.countExcludedBuildBotFlagged(ctx, indexed, hasIndex, flaggedIDs, now)
+	if err != nil {
+		return err
+	}
+	if excluded > 0 {
+		subtractBuildBotFlaggedAvailability(result, excluded)
+	}
+	return nil
+}
+
+// countExcludedBuildBotFlagged 统计被 bot 风控排除在调度之外的可用 Build 账号数。
+func (s *Service) countExcludedBuildBotFlagged(ctx context.Context, indexed buildBotFlagIndexRepository, hasIndex bool, flaggedIDs []uint64, now time.Time) (int64, error) {
+	if hasIndex {
+		return indexed.CountAvailableBuildBotFlagged(ctx, now)
+	}
+	return s.accounts.CountAvailableAmong(ctx, accountdomain.ProviderBuild, flaggedIDs, now)
+}
+
+// subtractBuildBotFlaggedAvailability 从 Build provider 与总可用数中扣减被排除的账号。
+func subtractBuildBotFlaggedAvailability(result *Summary, excluded int64) {
+	buildKey := string(accountdomain.ProviderBuild)
+	build := result.Providers[buildKey]
+	if excluded > build.Available {
+		excluded = build.Available
+	}
+	build.Available -= excluded
+	result.Providers[buildKey] = build
+	if excluded > result.Available {
+		excluded = result.Available
+	}
+	result.Available -= excluded
 }
 
 func (s *Service) List(ctx context.Context, page, pageSize int, search string, filter ListFilter) ([]View, int64, error) {
 	page, pageSize = normalizePage(page, pageSize)
 	egressMode, egressNodeID, egressSourceID, egressValid := parseEgressFilter(filter.Egress)
-	if (filter.Provider != "" && !accountdomain.Provider(filter.Provider).IsValid()) ||
-		!oneOf(filter.QuotaType, "", "free", "paid", "unknown", "auto", "basic", "super", "heavy") ||
-		!oneOf(filter.Status, "", "active", "disabled", "reauthRequired", "cooldown", "waitingReset", "probing") ||
-		!egressValid ||
-		!oneOf(filter.Renewal, "", "refreshable", "unrefreshable") ||
-		!oneOf(filter.Risk, "", "flagged", "normal") ||
-		(filter.Risk != "" && filter.Provider != string(accountdomain.ProviderBuild)) ||
-		!oneOf(filter.Agreement, "", "nsfwEnabled", "nsfwDisabled", "termsAccepted", "termsNotAccepted", "allAccepted", "allNotAccepted") ||
-		(filter.Agreement != "" && filter.Provider != string(accountdomain.ProviderWeb)) ||
-		!validAssociationFilter(filter.Provider, filter.Association) ||
-		!repository.IsValidSort(filter.Sort, "name", "type", "status", "createdAt") {
+	if !isValidListFilter(filter, egressValid) {
 		return nil, 0, ErrInvalidFilter
 	}
-	var refreshable *bool
-	if filter.Renewal != "" {
-		value := filter.Renewal == "refreshable"
-		refreshable = &value
-	}
-	repositoryFilter := repository.AccountListFilter{
-		Provider: filter.Provider, QuotaType: filter.QuotaType, Status: filter.Status, Egress: egressMode,
-		EgressNodeID: egressNodeID, EgressSourceID: egressSourceID,
-		Refreshable: refreshable, Agreement: filter.Agreement, Association: filter.Association, Now: s.now(),
-	}
-	if filter.Risk != "" {
-		if _, ok := s.accounts.(buildBotFlagIndexRepository); ok {
-			repositoryFilter.Risk = filter.Risk
-		} else {
-			flaggedIDs, err := s.buildBotFlaggedAccountIDs(ctx)
-			if err != nil {
-				return nil, 0, err
-			}
-			if filter.Risk == "flagged" {
-				repositoryFilter.AccountIDs = flaggedIDs
-				repositoryFilter.RestrictIDs = true
-			} else {
-				repositoryFilter.ExcludeIDs = flaggedIDs
-			}
-		}
+	repositoryFilter := listRepositoryFilter(filter, s.now(), egressMode, egressNodeID, egressSourceID)
+	if err := s.applyListRiskFilter(ctx, filter, &repositoryFilter); err != nil {
+		return nil, 0, err
 	}
 	values, total, err := s.accounts.List(ctx, repository.AccountListQuery{
 		Page:   repository.PageQuery{Offset: (page - 1) * pageSize, Limit: pageSize, Search: search, Sort: filter.Sort},
@@ -121,29 +113,97 @@ func (s *Service) List(ctx context.Context, page, pageSize int, search string, f
 	if err != nil {
 		return nil, 0, err
 	}
+	views, err := s.buildListViews(ctx, values)
+	if err != nil {
+		return nil, 0, err
+	}
+	return views, total, nil
+}
+
+// isValidListFilter 逐项校验列表筛选取值；任一取值不被支持即返回 false。
+func isValidListFilter(filter ListFilter, egressValid bool) bool {
+	if filter.Provider != "" && !accountdomain.Provider(filter.Provider).IsValid() {
+		return false
+	}
+	if !oneOf(filter.QuotaType, "", "free", "paid", "unknown", "auto", "basic", "super", "heavy") ||
+		!oneOf(filter.Status, "", "active", "disabled", "reauthRequired", "cooldown", "waitingReset", "probing") ||
+		!egressValid {
+		return false
+	}
+	if !oneOf(filter.Renewal, "", "refreshable", "unrefreshable") ||
+		!oneOf(filter.Risk, "", "flagged", "normal") ||
+		(filter.Risk != "" && filter.Provider != string(accountdomain.ProviderBuild)) {
+		return false
+	}
+	if !oneOf(filter.Agreement, "", "nsfwEnabled", "nsfwDisabled", "termsAccepted", "termsNotAccepted", "allAccepted", "allNotAccepted") ||
+		(filter.Agreement != "" && filter.Provider != string(accountdomain.ProviderWeb)) ||
+		!validAssociationFilter(filter.Provider, filter.Association) {
+		return false
+	}
+	return repository.IsValidSort(filter.Sort, "name", "type", "status", "createdAt")
+}
+
+// listRepositoryFilter 把列表筛选与分页条件映射为仓储查询结构。
+func listRepositoryFilter(filter ListFilter, now time.Time, egressMode string, egressNodeID, egressSourceID uint64) repository.AccountListFilter {
+	var refreshable *bool
+	if filter.Renewal != "" {
+		value := filter.Renewal == "refreshable"
+		refreshable = &value
+	}
+	return repository.AccountListFilter{
+		Provider: filter.Provider, QuotaType: filter.QuotaType, Status: filter.Status, Egress: egressMode,
+		EgressNodeID: egressNodeID, EgressSourceID: egressSourceID,
+		Refreshable: refreshable, Agreement: filter.Agreement, Association: filter.Association, Now: now,
+	}
+}
+
+// applyListRiskFilter 按仓储能力下推 bot 风控筛选；不支持索引时改为 ID 白/黑名单。
+func (s *Service) applyListRiskFilter(ctx context.Context, filter ListFilter, repositoryFilter *repository.AccountListFilter) error {
+	if filter.Risk == "" {
+		return nil
+	}
+	if _, ok := s.accounts.(buildBotFlagIndexRepository); ok {
+		repositoryFilter.Risk = filter.Risk
+		return nil
+	}
+	flaggedIDs, err := s.buildBotFlaggedAccountIDs(ctx)
+	if err != nil {
+		return err
+	}
+	if filter.Risk == "flagged" {
+		repositoryFilter.AccountIDs = flaggedIDs
+		repositoryFilter.RestrictIDs = true
+		return nil
+	}
+	repositoryFilter.ExcludeIDs = flaggedIDs
+	return nil
+}
+
+// buildListViews 汇总当前页账号的用量、账单、恢复与配额窗口并组装视图。
+func (s *Service) buildListViews(ctx context.Context, values []accountdomain.Credential) ([]View, error) {
 	accountIDs := make([]uint64, 0, len(values))
 	for _, value := range values {
 		accountIDs = append(accountIDs, value.ID)
 	}
 	observedTokens, err := s.audits.SumTokensByAccountsSince(ctx, accountIDs, time.Now().UTC().Add(-freeUsageWindow))
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	billings, err := s.accounts.GetBillings(ctx, accountIDs)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	recoveries, err := s.accounts.GetQuotaRecoveries(ctx, accountIDs)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	quotaWindows, err := s.accounts.GetQuotaWindows(ctx, accountIDs)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	modelQuotaBlocks, err := s.accounts.GetModelQuotaBlocks(ctx, accountIDs, s.now())
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	views := make([]View, 0, len(values))
 	for _, value := range values {
@@ -161,7 +221,7 @@ func (s *Service) List(ctx context.Context, page, pageSize int, search string, f
 		view.ModelQuotaBlocks = modelQuotaBlocks[value.ID]
 		views = append(views, view)
 	}
-	return views, total, nil
+	return views, nil
 }
 
 func (s *Service) buildBotFlaggedAccountIDs(ctx context.Context) ([]uint64, error) {
@@ -381,49 +441,8 @@ func (s *Service) buildBotFlagMetadata(value accountdomain.Credential) provider.
 
 func newQuotaView(billing *accountdomain.Billing, observedTokens int64, recovery *accountdomain.QuotaRecovery, observedModel string, buildSuperEntitled bool) QuotaView {
 	// Upstream paid billing takes precedence and preserves reported quota values.
-	if billing != nil && billing.IsPaid() {
-		periodStart, periodEnd := billing.BillingPeriodStart, billing.BillingPeriodEnd
-		if billing.UsagePeriodType != "" {
-			periodStart, periodEnd = billing.UsagePeriodStart, billing.UsagePeriodEnd
-		}
-		result := QuotaView{Type: QuotaTypePaid, Source: "upstreamBilling", Confidence: "observed", Unit: "credits", UsagePercent: billing.CreditUsagePercent, Status: QuotaStatusActive, PeriodStart: periodStart, PeriodEnd: periodEnd}
-		if recovery != nil && recovery.Kind == accountdomain.QuotaRecoveryKindPaid {
-			result.Status = QuotaStatusWaitingReset
-			if recovery.Status == accountdomain.QuotaRecoveryStatusProbing {
-				result.Status = QuotaStatusProbing
-			}
-			result.ExhaustedAt = recovery.ExhaustedAt
-			result.NextProbeAt = recovery.NextProbeAt
-			result.LastConfirmedAt = recovery.LastConfirmedAt
-		}
-		switch {
-		case billing.MonthlyLimit > 0:
-			result.Used = billing.Used
-			result.Limit = billing.MonthlyLimit
-			result.Remaining = billing.Remaining()
-			result.UsagePercent = billing.Used / billing.MonthlyLimit * 100
-			result.LimitKnown = true
-		case billing.OnDemandCap > 0:
-			result.Limit = billing.OnDemandCap
-			result.Used = billing.OnDemandUsed
-			if result.Used == 0 && billing.CreditUsagePercent > 0 {
-				result.Used = billing.OnDemandCap * billing.CreditUsagePercent / 100
-			}
-			result.Remaining = billing.OnDemandCap - result.Used
-			result.LimitKnown = true
-			if result.Remaining < 0 {
-				result.Remaining = 0
-			}
-		case billing.PrepaidBalance > 0:
-			result.Remaining = billing.PrepaidBalance
-		case billing.UsagePeriodType != "":
-			result.Unit = "percent"
-			result.Used = billing.CreditUsagePercent
-			result.Limit = 100
-			result.Remaining = max(0, 100-billing.CreditUsagePercent)
-			result.LimitKnown = true
-		}
-		return result
+	if view, ok := paidQuotaView(billing, recovery); ok {
+		return view
 	}
 	// 管理员确认的 Build Super entitlement：覆盖 Free recovery / profile / observed free 等弱信号。
 	// 不伪造额度、余额、使用率或账期；Billing 数值保持未知/零。
@@ -433,32 +452,105 @@ func newQuotaView(billing *accountdomain.Billing, observedTokens int64, recovery
 			Confirmed: true, Status: QuotaStatusActive,
 		}
 	}
-	if recovery != nil && recovery.Status != accountdomain.QuotaRecoveryStatusActive && (recovery.Kind == "" || recovery.Kind == accountdomain.QuotaRecoveryKindFree) {
-		limit := recovery.ConfirmedLimit
-		used := recovery.ConfirmedUsed
-		if used <= 0 {
-			used = observedTokens
-		}
-		status := QuotaStatusWaitingReset
-		if recovery.Status == accountdomain.QuotaRecoveryStatusProbing {
-			status = QuotaStatusProbing
-		}
-		remaining := int64(0)
-		usagePercent := 0.0
-		if limit > 0 {
-			remaining = limit - used
-			if remaining < 0 {
-				remaining = 0
-			}
-			usagePercent = float64(used) / float64(limit) * 100
-		}
-		return QuotaView{
-			Type: QuotaTypeFree, Source: "upstreamExhaustion", Confidence: "confirmed", Unit: "tokens", Used: float64(used), Limit: float64(limit), LimitKnown: limit > 0,
-			Remaining: float64(remaining), UsagePercent: usagePercent,
-			WindowHours: int(freeUsageWindow / time.Hour), Confirmed: true, Status: status,
-			ExhaustedAt: recovery.ExhaustedAt, NextProbeAt: recovery.NextProbeAt, LastConfirmedAt: recovery.LastConfirmedAt,
-		}
+	if view, ok := exhaustedFreeQuotaView(recovery, observedTokens); ok {
+		return view
 	}
+	return observedFreeQuotaView(billing, observedTokens, observedModel)
+}
+
+// paidQuotaView 用上游 billing 生成已付费额度视图；非付费账单返回 false。
+func paidQuotaView(billing *accountdomain.Billing, recovery *accountdomain.QuotaRecovery) (QuotaView, bool) {
+	if billing == nil || !billing.IsPaid() {
+		return QuotaView{}, false
+	}
+	periodStart, periodEnd := billing.BillingPeriodStart, billing.BillingPeriodEnd
+	if billing.UsagePeriodType != "" {
+		periodStart, periodEnd = billing.UsagePeriodStart, billing.UsagePeriodEnd
+	}
+	result := QuotaView{Type: QuotaTypePaid, Source: "upstreamBilling", Confidence: "observed", Unit: "credits", UsagePercent: billing.CreditUsagePercent, Status: QuotaStatusActive, PeriodStart: periodStart, PeriodEnd: periodEnd}
+	applyPaidQuotaRecovery(recovery, &result)
+	applyPaidQuotaUsage(billing, &result)
+	return result, true
+}
+
+// applyPaidQuotaRecovery 用付费恢复记录覆盖额度状态与探测时间。
+func applyPaidQuotaRecovery(recovery *accountdomain.QuotaRecovery, result *QuotaView) {
+	if recovery == nil || recovery.Kind != accountdomain.QuotaRecoveryKindPaid {
+		return
+	}
+	result.Status = QuotaStatusWaitingReset
+	if recovery.Status == accountdomain.QuotaRecoveryStatusProbing {
+		result.Status = QuotaStatusProbing
+	}
+	result.ExhaustedAt = recovery.ExhaustedAt
+	result.NextProbeAt = recovery.NextProbeAt
+	result.LastConfirmedAt = recovery.LastConfirmedAt
+}
+
+// applyPaidQuotaUsage 按上游 billing 的额度形态填充用量、限额与剩余量。
+func applyPaidQuotaUsage(billing *accountdomain.Billing, result *QuotaView) {
+	switch {
+	case billing.MonthlyLimit > 0:
+		result.Used = billing.Used
+		result.Limit = billing.MonthlyLimit
+		result.Remaining = billing.Remaining()
+		result.UsagePercent = billing.Used / billing.MonthlyLimit * 100
+		result.LimitKnown = true
+	case billing.OnDemandCap > 0:
+		result.Limit = billing.OnDemandCap
+		result.Used = billing.OnDemandUsed
+		if result.Used == 0 && billing.CreditUsagePercent > 0 {
+			result.Used = billing.OnDemandCap * billing.CreditUsagePercent / 100
+		}
+		result.Remaining = billing.OnDemandCap - result.Used
+		result.LimitKnown = true
+		if result.Remaining < 0 {
+			result.Remaining = 0
+		}
+	case billing.PrepaidBalance > 0:
+		result.Remaining = billing.PrepaidBalance
+	case billing.UsagePeriodType != "":
+		result.Unit = "percent"
+		result.Used = billing.CreditUsagePercent
+		result.Limit = 100
+		result.Remaining = max(0, 100-billing.CreditUsagePercent)
+		result.LimitKnown = true
+	}
+}
+
+// exhaustedFreeQuotaView 用上游耗尽信号生成已确认耗尽的 Free 额度视图。
+func exhaustedFreeQuotaView(recovery *accountdomain.QuotaRecovery, observedTokens int64) (QuotaView, bool) {
+	if recovery == nil || recovery.Status == accountdomain.QuotaRecoveryStatusActive || (recovery.Kind != "" && recovery.Kind != accountdomain.QuotaRecoveryKindFree) {
+		return QuotaView{}, false
+	}
+	limit := recovery.ConfirmedLimit
+	used := recovery.ConfirmedUsed
+	if used <= 0 {
+		used = observedTokens
+	}
+	status := QuotaStatusWaitingReset
+	if recovery.Status == accountdomain.QuotaRecoveryStatusProbing {
+		status = QuotaStatusProbing
+	}
+	remaining := int64(0)
+	usagePercent := 0.0
+	if limit > 0 {
+		remaining = limit - used
+		if remaining < 0 {
+			remaining = 0
+		}
+		usagePercent = float64(used) / float64(limit) * 100
+	}
+	return QuotaView{
+		Type: QuotaTypeFree, Source: "upstreamExhaustion", Confidence: "confirmed", Unit: "tokens", Used: float64(used), Limit: float64(limit), LimitKnown: limit > 0,
+		Remaining: float64(remaining), UsagePercent: usagePercent,
+		WindowHours: int(freeUsageWindow / time.Hour), Confirmed: true, Status: status,
+		ExhaustedAt: recovery.ExhaustedAt, NextProbeAt: recovery.NextProbeAt, LastConfirmedAt: recovery.LastConfirmedAt,
+	}, true
+}
+
+// observedFreeQuotaView 用响应模型或 billing profile 弱信号估算 Free 额度视图。
+func observedFreeQuotaView(billing *accountdomain.Billing, observedTokens int64, observedModel string) QuotaView {
 	freeSource := ""
 	confidence := ""
 	if strings.HasSuffix(strings.ToLower(strings.TrimSpace(observedModel)), "-build-free") {

@@ -171,28 +171,33 @@ func copyJSON(writer gin.ResponseWriter, source io.Reader, protocol streamProtoc
 				return responseMetadata{}, err
 			}
 			transferred += n
+			metadataBody, metadataComplete = accumulateJSONMetadata(metadataBody, metadataComplete, chunk)
+		}
+		if readErr == nil {
+			continue
+		}
+		if errors.Is(readErr, io.EOF) {
+			if transferred == 0 {
+				return responseMetadata{}, neterror.ErrUpstreamResponseEmpty
+			}
 			if metadataComplete {
-				if len(metadataBody)+len(chunk) <= maxJSONMetadataInspectionBytes {
-					metadataBody = append(metadataBody, chunk...)
-				} else {
-					metadataBody = nil
-					metadataComplete = false
-				}
+				return normalizeMetadataUsage(extractMetadata(metadataBody), protocol), nil
 			}
+			return responseMetadata{}, nil
 		}
-		if readErr != nil {
-			if errors.Is(readErr, io.EOF) {
-				if transferred == 0 {
-					return responseMetadata{}, neterror.ErrUpstreamResponseEmpty
-				}
-				if metadataComplete {
-					return normalizeMetadataUsage(extractMetadata(metadataBody), protocol), nil
-				}
-				return responseMetadata{}, nil
-			}
-			return responseMetadata{Usage: gateway.Usage{OutputObserved: transferred > 0}}, readErr
-		}
+		return responseMetadata{Usage: gateway.Usage{OutputObserved: transferred > 0}}, readErr
 	}
+}
+
+// accumulateJSONMetadata 在采集仍然有效且未超过上限时累积分片内容，超限则放弃元数据采集。
+func accumulateJSONMetadata(metadataBody []byte, metadataComplete bool, chunk []byte) ([]byte, bool) {
+	if !metadataComplete {
+		return metadataBody, false
+	}
+	if len(metadataBody)+len(chunk) <= maxJSONMetadataInspectionBytes {
+		return append(metadataBody, chunk...), true
+	}
+	return nil, false
 }
 
 func copyHeaders(destination, source http.Header) {

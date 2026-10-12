@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { Pie, PieChart } from "recharts";
 
@@ -12,7 +13,7 @@ type DashboardResourcesChartProps = {
 };
 
 /** 账号可用率环形图：中心展示可用率百分比。 */
-export function DashboardResourcesChart({ model, config, locale }: DashboardResourcesChartProps) {
+export function DashboardResourcesChart({ model, config, locale }: DashboardResourcesChartProps): ReactElement {
   const { t } = useTranslation();
   return (
     <div className="relative mx-auto size-44 max-w-full">

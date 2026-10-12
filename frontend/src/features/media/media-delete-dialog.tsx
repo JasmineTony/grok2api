@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -33,7 +34,7 @@ export function MediaDeleteDialog({
   pending,
   onOpenChange,
   onConfirm,
-}: MediaDeleteDialogProps) {
+}: MediaDeleteDialogProps): ReactElement {
   const { t } = useTranslation();
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>

@@ -1,4 +1,5 @@
 import { Copy, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -58,7 +59,7 @@ type ClientKeysTableProps = {
 };
 
 /** 密钥列表：失败/空态与表格本体分离，便于分别断言用户可见结果。 */
-export function ClientKeysTable(props: ClientKeysTableProps) {
+export function ClientKeysTable(props: ClientKeysTableProps): ReactElement {
   const { result, isPending, isError, errorMessage, onRetry } = props;
   return (
     <>
@@ -407,7 +408,7 @@ export function AccountScopeSummary({
 }: {
   providerScope: ProviderScopeValue[];
   tierScope: TierScopeValue[];
-}) {
+}): ReactElement {
   const { t } = useTranslation();
   const providerLabels = providerScopeLabels(t);
   const tierLabels = tierScopeLabels(t);

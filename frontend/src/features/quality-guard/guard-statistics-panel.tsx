@@ -1,5 +1,6 @@
 import type { TFunction } from "i18next";
 import { AlertTriangle, BarChart3, Bot, Coins, Eye, Shield } from "lucide-react";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { formatCount, formatTime } from "@/features/quality-guard/guard-format";
@@ -65,7 +66,13 @@ function outcomeStatisticItems(statistics: QualityGuardStatistics, locale: strin
   ];
 }
 
-export function StatisticsPanel({ statistics, locale }: { statistics: QualityGuardStatistics; locale: string }) {
+export function StatisticsPanel({
+  statistics,
+  locale,
+}: {
+  statistics: QualityGuardStatistics;
+  locale: string;
+}): ReactElement {
   const { t } = useTranslation();
   const items = [...volumeStatisticItems(statistics, locale, t), ...outcomeStatisticItems(statistics, locale, t)];
   return (

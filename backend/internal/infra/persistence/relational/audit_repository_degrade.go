@@ -121,6 +121,32 @@ type degradeEventRow struct {
 }
 
 func (r *AuditRepository) SummarizeDegrade(ctx context.Context, input repository.DegradeSummaryQuery) (repository.DegradeSummaryResult, error) {
+	input = normalizedDegradeSummaryQuery(input)
+	var result repository.DegradeSummaryResult
+	err := r.db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		classified := r.degradeClassifiedQuery(tx, input)
+		if err := r.summarizeDegradeTotals(tx, classified, &result); err != nil {
+			return err
+		}
+		accountIDs, accountsByID, err := r.summarizeDegradeAccounts(tx, classified, input, &result)
+		if err != nil {
+			return err
+		}
+		if err := r.summarizeDegradeAccountNodes(tx, classified, input, accountIDs, accountsByID); err != nil {
+			return err
+		}
+		if err := r.summarizeDegradeNodes(tx, classified, &result); err != nil {
+			return err
+		}
+		if err := r.summarizeDegradeBuckets(tx, classified, input, &result); err != nil {
+			return err
+		}
+		return r.summarizeDegradeEvents(tx, classified, input, &result)
+	})
+	return result, err
+}
+
+func normalizedDegradeSummaryQuery(input repository.DegradeSummaryQuery) repository.DegradeSummaryQuery {
 	if input.AccountLimit <= 0 || input.AccountLimit > 100 {
 		input.AccountLimit = 50
 	}
@@ -130,130 +156,147 @@ func (r *AuditRepository) SummarizeDegrade(ctx context.Context, input repository
 	if input.RecentLimit <= 0 || input.RecentLimit > 200 {
 		input.RecentLimit = 80
 	}
-	var result repository.DegradeSummaryResult
-	err := r.db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		classified := r.degradeClassifiedQuery(tx, input)
-		var totals degradeTotalsRow
-		if err := tx.Table("(?) AS d", classified).
-			Select(`COUNT(*) AS hits,
-				COUNT(DISTINCT d.account_id) AS accounts,
-				COUNT(DISTINCT CASE WHEN p.id IS NOT NULL AND p.enabled = TRUE THEN d.account_id END) AS still_enabled,
-				COUNT(DISTINCT CASE WHEN p.id IS NOT NULL AND p.enabled = FALSE THEN d.account_id END) AS disabled,
-				COUNT(DISTINCT CASE WHEN p.id IS NULL THEN d.account_id END) AS deleted,
-				COALESCE(SUM(CASE WHEN d.degrade_class = 'hard_tps' THEN 1 ELSE 0 END), 0) AS hard,
-				COALESCE(SUM(CASE WHEN d.degrade_class = 'soft_tps' THEN 1 ELSE 0 END), 0) AS soft,
-				COALESCE(SUM(CASE WHEN d.degrade_class = 'buffered_burst' THEN 1 ELSE 0 END), 0) AS burst,
-				COALESCE(SUM(CASE WHEN d.degrade_class = 'missing_thinking' THEN 1 ELSE 0 END), 0) AS thinking,
-				COALESCE(MAX(d.tps), 0) AS max_tps`).
-			Joins("LEFT JOIN provider_accounts p ON p.id = d.account_id").
-			Scan(&totals).Error; err != nil {
-			return err
-		}
-		result.Totals = repository.DegradeTotals{
-			Hits: totals.Hits, Accounts: totals.Accounts, StillEnabled: totals.StillEnabled,
-			Disabled: totals.Disabled, Deleted: totals.Deleted, Hard: totals.Hard, Soft: totals.Soft,
-			Burst: totals.Burst, Thinking: totals.Thinking, MaxTPS: totals.MaxTPS,
-		}
+	return input
+}
 
-		accountQuery := r.degradeAccountAggregate(tx, classified, input)
-		if err := tx.Table("(?) AS filtered_accounts", accountQuery).Count(&result.AccountTotal).Error; err != nil {
-			return err
-		}
-		accountOffset := input.AccountOffset
-		if result.AccountTotal > 0 && int64(accountOffset) >= result.AccountTotal {
-			accountOffset = int((result.AccountTotal-1)/int64(input.AccountLimit)) * input.AccountLimit
-		}
-		result.AccountOffset = accountOffset
-		var accountRows []degradeAccountRow
-		if err := accountQuery.Order("hits DESC, max_tps DESC, id ASC").
-			Offset(accountOffset).Limit(input.AccountLimit).Scan(&accountRows).Error; err != nil {
-			return err
-		}
-		accountIDs := make([]uint64, 0, len(accountRows))
-		accountsByID := make(map[uint64]*repository.DegradeAccount, len(accountRows))
-		result.Accounts = make([]repository.DegradeAccount, 0, len(accountRows))
-		for _, row := range accountRows {
-			result.Accounts = append(result.Accounts, repository.DegradeAccount{
-				ID: row.ID, Name: row.Name, Email: row.Email, Hits: row.Hits, MaxTPS: row.MaxTPS,
-				Burst: row.Burst, Soft: row.Soft, Hard: row.Hard, Thinking: row.Thinking, Last: time.Time(row.Last), Enabled: row.Enabled,
-				Found: row.Found, BuildBotFlagSource: row.BuildBotFlagSource,
-			})
-			accountIDs = append(accountIDs, row.ID)
-			accountsByID[row.ID] = &result.Accounts[len(result.Accounts)-1]
-		}
-		if len(accountIDs) > 0 {
-			var leaseRows []degradeAccountLeaseRow
-			if err := tx.Table("account_egress_lease_blocks").
-				Select("account_id, MAX(cooldown_until) AS cooldown_until").
-				Where("account_id IN ? AND cooldown_until > ?", accountIDs, input.End).
-				Group("account_id").Scan(&leaseRows).Error; err != nil {
-				return err
-			}
-			for _, row := range leaseRows {
-				if account := accountsByID[row.AccountID]; account != nil {
-					cooldownUntil := time.Time(row.CooldownUntil).UTC()
-					account.LeaseCooldownUntil = &cooldownUntil
-				}
-			}
+func (r *AuditRepository) summarizeDegradeTotals(tx, classified *gorm.DB, result *repository.DegradeSummaryResult) error {
+	var totals degradeTotalsRow
+	if err := tx.Table("(?) AS d", classified).
+		Select(`COUNT(*) AS hits,
+			COUNT(DISTINCT d.account_id) AS accounts,
+			COUNT(DISTINCT CASE WHEN p.id IS NOT NULL AND p.enabled = TRUE THEN d.account_id END) AS still_enabled,
+			COUNT(DISTINCT CASE WHEN p.id IS NOT NULL AND p.enabled = FALSE THEN d.account_id END) AS disabled,
+			COUNT(DISTINCT CASE WHEN p.id IS NULL THEN d.account_id END) AS deleted,
+			COALESCE(SUM(CASE WHEN d.degrade_class = 'hard_tps' THEN 1 ELSE 0 END), 0) AS hard,
+			COALESCE(SUM(CASE WHEN d.degrade_class = 'soft_tps' THEN 1 ELSE 0 END), 0) AS soft,
+			COALESCE(SUM(CASE WHEN d.degrade_class = 'buffered_burst' THEN 1 ELSE 0 END), 0) AS burst,
+			COALESCE(SUM(CASE WHEN d.degrade_class = 'missing_thinking' THEN 1 ELSE 0 END), 0) AS thinking,
+			COALESCE(MAX(d.tps), 0) AS max_tps`).
+		Joins("LEFT JOIN provider_accounts p ON p.id = d.account_id").
+		Scan(&totals).Error; err != nil {
+		return err
+	}
+	result.Totals = repository.DegradeTotals{
+		Hits: totals.Hits, Accounts: totals.Accounts, StillEnabled: totals.StillEnabled,
+		Disabled: totals.Disabled, Deleted: totals.Deleted, Hard: totals.Hard, Soft: totals.Soft,
+		Burst: totals.Burst, Thinking: totals.Thinking, MaxTPS: totals.MaxTPS,
+	}
+	return nil
+}
 
-			var nodeRows []degradeAccountNodeRow
-			if err := tx.Table("(?) AS d", classified).
-				Select("d.account_id, COALESCE(NULLIF(d.egress_node_name, ''), '?') AS name").
-				Where("d.account_id IN ?", accountIDs).
-				Group("d.account_id, COALESCE(NULLIF(d.egress_node_name, ''), '?')").
-				Order("d.account_id ASC, name ASC").Scan(&nodeRows).Error; err != nil {
-				return err
-			}
-			for _, row := range nodeRows {
-				if account := accountsByID[row.AccountID]; account != nil {
-					account.Nodes = append(account.Nodes, row.Name)
-				}
-			}
-		}
+func (r *AuditRepository) summarizeDegradeAccounts(tx, classified *gorm.DB, input repository.DegradeSummaryQuery, result *repository.DegradeSummaryResult) ([]uint64, map[uint64]*repository.DegradeAccount, error) {
+	accountQuery := r.degradeAccountAggregate(tx, classified, input)
+	if err := tx.Table("(?) AS filtered_accounts", accountQuery).Count(&result.AccountTotal).Error; err != nil {
+		return nil, nil, err
+	}
+	accountOffset := input.AccountOffset
+	if result.AccountTotal > 0 && int64(accountOffset) >= result.AccountTotal {
+		accountOffset = int((result.AccountTotal-1)/int64(input.AccountLimit)) * input.AccountLimit
+	}
+	result.AccountOffset = accountOffset
+	var accountRows []degradeAccountRow
+	if err := accountQuery.Order("hits DESC, max_tps DESC, id ASC").
+		Offset(accountOffset).Limit(input.AccountLimit).Scan(&accountRows).Error; err != nil {
+		return nil, nil, err
+	}
+	accountIDs := make([]uint64, 0, len(accountRows))
+	accountsByID := make(map[uint64]*repository.DegradeAccount, len(accountRows))
+	result.Accounts = make([]repository.DegradeAccount, 0, len(accountRows))
+	for _, row := range accountRows {
+		result.Accounts = append(result.Accounts, repository.DegradeAccount{
+			ID: row.ID, Name: row.Name, Email: row.Email, Hits: row.Hits, MaxTPS: row.MaxTPS,
+			Burst: row.Burst, Soft: row.Soft, Hard: row.Hard, Thinking: row.Thinking, Last: time.Time(row.Last), Enabled: row.Enabled,
+			Found: row.Found, BuildBotFlagSource: row.BuildBotFlagSource,
+		})
+		accountIDs = append(accountIDs, row.ID)
+		accountsByID[row.ID] = &result.Accounts[len(result.Accounts)-1]
+	}
+	return accountIDs, accountsByID, nil
+}
 
-		var nodeRows []degradeNodeRow
-		if err := tx.Table("(?) AS d", classified).
-			Select("COALESCE(NULLIF(d.egress_node_name, ''), '?') AS name, COUNT(*) AS hits, COUNT(DISTINCT d.account_id) AS accounts, COALESCE(MAX(d.tps), 0) AS max_tps").
-			Group("COALESCE(NULLIF(d.egress_node_name, ''), '?')").Order("hits DESC, name ASC").Scan(&nodeRows).Error; err != nil {
-			return err
-		}
-		result.Nodes = make([]repository.DegradeNode, 0, len(nodeRows))
-		for _, row := range nodeRows {
-			result.Nodes = append(result.Nodes, repository.DegradeNode{Name: row.Name, Hits: row.Hits, Accounts: row.Accounts, MaxTPS: row.MaxTPS})
-		}
-
-		if len(input.Buckets) > 0 {
-			caseSQL, caseArgs := degradeBucketCase(input.Buckets)
-			bucketed := tx.Table("(?) AS d", classified).Select(caseSQL+" AS bucket_index, d.degrade_class", caseArgs...)
-			var bucketRows []degradeBucketRow
-			if err := tx.Table("(?) AS b", bucketed).
-				Select("b.bucket_index, COUNT(*) AS count, COALESCE(SUM(CASE WHEN b.degrade_class IN ('hard_tps', 'buffered_burst', 'missing_thinking') THEN 1 ELSE 0 END), 0) AS severe").
-				Where("b.bucket_index >= 0").Group("b.bucket_index").Order("b.bucket_index ASC").Scan(&bucketRows).Error; err != nil {
-				return err
-			}
-			result.Buckets = make([]repository.DegradeBucket, 0, len(bucketRows))
-			for _, row := range bucketRows {
-				result.Buckets = append(result.Buckets, repository.DegradeBucket{Index: row.Index, Count: row.Count, Severe: row.Severe})
-			}
-		}
-
-		var eventRows []degradeEventRow
-		if err := tx.Table("(?) AS d", classified).
-			Select("d.id, d.request_id, d.account_id, d.account_name, d.egress_node_id, d.egress_node_name, d.output_tokens, d.tps, d.degrade_class, d.created_at, d.model_upstream_model").
-			Order("d.created_at DESC, d.id DESC").Limit(input.RecentLimit).Scan(&eventRows).Error; err != nil {
-			return err
-		}
-		result.Events = make([]repository.DegradeEvent, 0, len(eventRows))
-		for _, row := range eventRows {
-			result.Events = append(result.Events, repository.DegradeEvent{
-				ID: row.ID, RequestID: row.RequestID, AccountID: row.AccountID, AccountName: row.AccountName,
-				EgressNodeID: row.EgressNodeID, EgressNodeName: row.EgressNodeName, OutputTokens: row.OutputTokens,
-				TPS: row.TPS, Class: row.Class, CreatedAt: row.CreatedAt, Model: row.Model,
-			})
-		}
+func (r *AuditRepository) summarizeDegradeAccountNodes(tx, classified *gorm.DB, input repository.DegradeSummaryQuery, accountIDs []uint64, accountsByID map[uint64]*repository.DegradeAccount) error {
+	if len(accountIDs) == 0 {
 		return nil
-	})
-	return result, err
+	}
+	var leaseRows []degradeAccountLeaseRow
+	if err := tx.Table("account_egress_lease_blocks").
+		Select("account_id, MAX(cooldown_until) AS cooldown_until").
+		Where("account_id IN ? AND cooldown_until > ?", accountIDs, input.End).
+		Group("account_id").Scan(&leaseRows).Error; err != nil {
+		return err
+	}
+	for _, row := range leaseRows {
+		if account := accountsByID[row.AccountID]; account != nil {
+			cooldownUntil := time.Time(row.CooldownUntil).UTC()
+			account.LeaseCooldownUntil = &cooldownUntil
+		}
+	}
+
+	var nodeRows []degradeAccountNodeRow
+	if err := tx.Table("(?) AS d", classified).
+		Select("d.account_id, COALESCE(NULLIF(d.egress_node_name, ''), '?') AS name").
+		Where("d.account_id IN ?", accountIDs).
+		Group("d.account_id, COALESCE(NULLIF(d.egress_node_name, ''), '?')").
+		Order("d.account_id ASC, name ASC").Scan(&nodeRows).Error; err != nil {
+		return err
+	}
+	for _, row := range nodeRows {
+		if account := accountsByID[row.AccountID]; account != nil {
+			account.Nodes = append(account.Nodes, row.Name)
+		}
+	}
+	return nil
+}
+
+func (r *AuditRepository) summarizeDegradeNodes(tx, classified *gorm.DB, result *repository.DegradeSummaryResult) error {
+	var nodeRows []degradeNodeRow
+	if err := tx.Table("(?) AS d", classified).
+		Select("COALESCE(NULLIF(d.egress_node_name, ''), '?') AS name, COUNT(*) AS hits, COUNT(DISTINCT d.account_id) AS accounts, COALESCE(MAX(d.tps), 0) AS max_tps").
+		Group("COALESCE(NULLIF(d.egress_node_name, ''), '?')").Order("hits DESC, name ASC").Scan(&nodeRows).Error; err != nil {
+		return err
+	}
+	result.Nodes = make([]repository.DegradeNode, 0, len(nodeRows))
+	for _, row := range nodeRows {
+		result.Nodes = append(result.Nodes, repository.DegradeNode{Name: row.Name, Hits: row.Hits, Accounts: row.Accounts, MaxTPS: row.MaxTPS})
+	}
+	return nil
+}
+
+func (r *AuditRepository) summarizeDegradeBuckets(tx, classified *gorm.DB, input repository.DegradeSummaryQuery, result *repository.DegradeSummaryResult) error {
+	if len(input.Buckets) == 0 {
+		return nil
+	}
+	caseSQL, caseArgs := degradeBucketCase(input.Buckets)
+	bucketed := tx.Table("(?) AS d", classified).Select(caseSQL+" AS bucket_index, d.degrade_class", caseArgs...)
+	var bucketRows []degradeBucketRow
+	if err := tx.Table("(?) AS b", bucketed).
+		Select("b.bucket_index, COUNT(*) AS count, COALESCE(SUM(CASE WHEN b.degrade_class IN ('hard_tps', 'buffered_burst', 'missing_thinking') THEN 1 ELSE 0 END), 0) AS severe").
+		Where("b.bucket_index >= 0").Group("b.bucket_index").Order("b.bucket_index ASC").Scan(&bucketRows).Error; err != nil {
+		return err
+	}
+	result.Buckets = make([]repository.DegradeBucket, 0, len(bucketRows))
+	for _, row := range bucketRows {
+		result.Buckets = append(result.Buckets, repository.DegradeBucket{Index: row.Index, Count: row.Count, Severe: row.Severe})
+	}
+	return nil
+}
+
+func (r *AuditRepository) summarizeDegradeEvents(tx, classified *gorm.DB, input repository.DegradeSummaryQuery, result *repository.DegradeSummaryResult) error {
+	var eventRows []degradeEventRow
+	if err := tx.Table("(?) AS d", classified).
+		Select("d.id, d.request_id, d.account_id, d.account_name, d.egress_node_id, d.egress_node_name, d.output_tokens, d.tps, d.degrade_class, d.created_at, d.model_upstream_model").
+		Order("d.created_at DESC, d.id DESC").Limit(input.RecentLimit).Scan(&eventRows).Error; err != nil {
+		return err
+	}
+	result.Events = make([]repository.DegradeEvent, 0, len(eventRows))
+	for _, row := range eventRows {
+		result.Events = append(result.Events, repository.DegradeEvent{
+			ID: row.ID, RequestID: row.RequestID, AccountID: row.AccountID, AccountName: row.AccountName,
+			EgressNodeID: row.EgressNodeID, EgressNodeName: row.EgressNodeName, OutputTokens: row.OutputTokens,
+			TPS: row.TPS, Class: row.Class, CreatedAt: row.CreatedAt, Model: row.Model,
+		})
+	}
+	return nil
 }
 
 func (r *AuditRepository) degradeClassifiedQuery(tx *gorm.DB, input repository.DegradeSummaryQuery) *gorm.DB {

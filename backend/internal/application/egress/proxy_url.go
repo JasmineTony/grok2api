@@ -78,27 +78,43 @@ func NormalizeProxyURL(value string) (string, error) {
 	if value == "" {
 		return "", nil
 	}
-	if len(value) > maxProxyURLBytes || strings.IndexFunc(value, func(character rune) bool { return character < 0x20 || character == 0x7f }) >= 0 {
-		return "", errors.New("代理地址过长或包含控制字符")
+	hasAccountPlaceholder, err := validateRawProxyURL(value)
+	if err != nil {
+		return "", err
 	}
-	hasAccountPlaceholder := strings.Contains(value, ProxyAccountPlaceholder)
-	if strings.Count(value, ProxyAccountPlaceholder) > 1 {
-		return "", errors.New("代理地址最多包含一个 {account} 占位符")
-	}
-	if hasAccountPlaceholder && strings.Contains(value, proxyAccountSentinel) {
-		return "", errors.New("代理地址包含保留的账号占位符文本")
-	}
-	parseValue := strings.ReplaceAll(value, ProxyAccountPlaceholder, proxyAccountSentinel)
 	// 传统 "IP:Port:Username:Password" 形式没有 scheme，一律按 http 处理；
 	// 必须在 {account} 替换为 sentinel 之后解析，否则 url.UserPassword 会把占位符转义成
 	// %7Baccount%7D，导致账号级粘性代理语义丢失。
+	parseValue := strings.ReplaceAll(value, ProxyAccountPlaceholder, proxyAccountSentinel)
 	if username, password, host, legacy := splitLegacyProxyFormat(parseValue); legacy {
-		if hasAccountPlaceholder && !strings.Contains(username, proxyAccountSentinel) {
-			return "", errors.New("{account} 只能用于代理认证用户名")
-		}
-		normalized := (&url.URL{Scheme: "http", User: url.UserPassword(username, password), Host: host}).String()
-		return strings.ReplaceAll(normalized, proxyAccountSentinel, ProxyAccountPlaceholder), nil
+		return normalizeLegacyProxyURL(hasAccountPlaceholder, username, password, host)
 	}
+	return normalizeStandardProxyURL(value, parseValue, hasAccountPlaceholder)
+}
+
+func validateRawProxyURL(value string) (bool, error) {
+	if len(value) > maxProxyURLBytes || strings.IndexFunc(value, func(character rune) bool { return character < 0x20 || character == 0x7f }) >= 0 {
+		return false, errors.New("代理地址过长或包含控制字符")
+	}
+	hasAccountPlaceholder := strings.Contains(value, ProxyAccountPlaceholder)
+	if strings.Count(value, ProxyAccountPlaceholder) > 1 {
+		return false, errors.New("代理地址最多包含一个 {account} 占位符")
+	}
+	if hasAccountPlaceholder && strings.Contains(value, proxyAccountSentinel) {
+		return false, errors.New("代理地址包含保留的账号占位符文本")
+	}
+	return hasAccountPlaceholder, nil
+}
+
+func normalizeLegacyProxyURL(hasAccountPlaceholder bool, username, password, host string) (string, error) {
+	if hasAccountPlaceholder && !strings.Contains(username, proxyAccountSentinel) {
+		return "", errors.New("{account} 只能用于代理认证用户名")
+	}
+	normalized := (&url.URL{Scheme: "http", User: url.UserPassword(username, password), Host: host}).String()
+	return strings.ReplaceAll(normalized, proxyAccountSentinel, ProxyAccountPlaceholder), nil
+}
+
+func normalizeStandardProxyURL(value, parseValue string, hasAccountPlaceholder bool) (string, error) {
 	parsed, err := url.Parse(parseValue)
 	if err != nil {
 		return "", errors.New("代理地址格式无效")

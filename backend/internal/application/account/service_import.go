@@ -167,13 +167,9 @@ func (s *Service) importCredentialDocumentsWithProgress(ctx context.Context, ada
 			return ImportResult{}, fmt.Errorf("%w: 单次最多导入 %d 个账号", ErrImportLimit, maxCredentialImportAccounts)
 		}
 		for _, value := range values {
-			if value.SourceKey != "" {
-				key := string(value.Provider) + "\x00" + value.SourceKey
-				if _, exists := seen[key]; exists {
-					skipped++
-					continue
-				}
-				seen[key] = struct{}{}
+			if !claimImportSourceKey(seen, value) {
+				skipped++
+				continue
 			}
 			seeds = append(seeds, value)
 		}
@@ -189,6 +185,19 @@ func (s *Service) importCredentialDocumentsWithProgress(ctx context.Context, ada
 	return result, err
 }
 
+// claimImportSourceKey 登记种子的 Provider+SourceKey；SourceKey 为空视为无需去重，重复种子返回 false。
+func claimImportSourceKey(seen map[string]struct{}, seed provider.CredentialSeed) bool {
+	if seed.SourceKey == "" {
+		return true
+	}
+	key := string(seed.Provider) + "\x00" + seed.SourceKey
+	if _, exists := seen[key]; exists {
+		return false
+	}
+	seen[key] = struct{}{}
+	return true
+}
+
 func hasRefreshTokenOnlySeed(seeds []provider.CredentialSeed) bool {
 	for _, seed := range seeds {
 		if strings.TrimSpace(seed.AccessToken) == "" && strings.TrimSpace(seed.RefreshToken) != "" {
@@ -198,82 +207,118 @@ func hasRefreshTokenOnlySeed(seeds []provider.CredentialSeed) bool {
 	return false
 }
 
+// preparedImportState 汇总「先准备后落库」导入的共享状态，由并发完成回调在锁内串行更新。
+type preparedImportState struct {
+	mu        sync.Mutex
+	result    ImportResult
+	seen      map[string]struct{}
+	completed int
+	persisted bool
+	firstErr  error
+	observer  ImportedAccountObserver
+	progress  BatchProgressObserver
+	total     int
+	cancel    context.CancelFunc
+}
+
 func (s *Service) persistPreparedImportedSeeds(ctx context.Context, seeds []provider.CredentialSeed, preparer provider.CredentialImportPreparer, observer ImportedAccountObserver, progress BatchProgressObserver) (ImportResult, error) {
-	result := ImportResult{AccountIDs: make([]uint64, 0, len(seeds))}
+	state := &preparedImportState{
+		result:   ImportResult{AccountIDs: make([]uint64, 0, len(seeds))},
+		seen:     make(map[string]struct{}, len(seeds)),
+		observer: observer,
+		progress: progress,
+		total:    len(seeds),
+	}
 	if progress != nil {
 		if err := progress(0, len(seeds)); err != nil {
-			return result, err
+			return state.result, err
 		}
 	}
 	prepareCtx, cancelPrepare := context.WithCancel(ctx)
 	defer cancelPrepare()
-	var (
-		mu        sync.Mutex
-		firstErr  error
-		completed int
-		persisted bool
-		seen      = make(map[string]struct{}, len(seeds))
-	)
+	state.cancel = cancelPrepare
 	_, batchErr := batch.ForEachObserved(prepareCtx, seeds, batch.Options{Workers: credentialImportPrepareWorkers}, func(itemCtx context.Context, seed provider.CredentialSeed) (provider.CredentialSeed, error) {
 		if strings.TrimSpace(seed.AccessToken) == "" && strings.TrimSpace(seed.RefreshToken) != "" {
 			return preparer.PrepareImportedCredential(itemCtx, seed)
 		}
 		return seed, nil
 	}, func(index int, item batch.Result[provider.CredentialSeed]) {
-		mu.Lock()
-		defer mu.Unlock()
-		completed++
-		if !item.Completed || item.Err != nil {
-			result.Failed++
-			if item.Err != nil {
-				s.logger.Warn("account_rt_import_failed", "index", index+1, "error", item.Err)
-			}
-			reportCredentialImportProgress(progress, completed, len(seeds), &firstErr, cancelPrepare)
-			return
-		}
-		seed := item.Value
-		if seed.SourceKey != "" {
-			key := string(seed.Provider) + "\x00" + seed.SourceKey
-			if _, exists := seen[key]; exists {
-				result.Skipped++
-				reportCredentialImportProgress(progress, completed, len(seeds), &firstErr, cancelPrepare)
-				return
-			}
-			seen[key] = struct{}{}
-		}
-
-		// OAuth providers may invalidate the submitted refresh token as soon as
-		// they return its replacement. Persist that replacement before any
-		// request-scoped observer or progress callback can abort the import.
-		persistCtx, cancelPersist := context.WithTimeout(context.WithoutCancel(ctx), credentialStateWriteTimeout)
-		stored, err := s.persistImportedSeed(persistCtx, seed)
-		cancelPersist()
-		if err != nil {
-			if firstErr == nil {
-				firstErr = err
-			}
-			cancelPrepare()
-			return
-		}
-		persisted = true
-		result.AccountIDs = append(result.AccountIDs, stored.ID)
-		if stored.Created {
-			result.Created++
-		} else {
-			result.Updated++
-		}
-		if firstErr == nil && observer != nil {
-			if err := observer(stored.ID); err != nil {
-				firstErr = err
-				cancelPrepare()
-			}
-		}
-		reportCredentialImportProgress(progress, completed, len(seeds), &firstErr, cancelPrepare)
+		s.recordPreparedImportResult(ctx, state, index, item)
 	})
-	if persisted {
+	if state.persisted {
 		s.WakeCredentialRefresh()
 	}
-	return result, errors.Join(firstErr, batchErr)
+	return state.result, errors.Join(state.firstErr, batchErr)
+}
+
+// recordPreparedImportResult 串行处理一个已完成准备的导入项：去重、落库、通知观察者并上报进度。
+func (s *Service) recordPreparedImportResult(ctx context.Context, state *preparedImportState, index int, item batch.Result[provider.CredentialSeed]) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	state.completed++
+	if !item.Completed || item.Err != nil {
+		state.result.Failed++
+		if item.Err != nil {
+			s.logger.Warn("account_rt_import_failed", "index", index+1, "error", item.Err)
+		}
+		reportCredentialImportProgress(state.progress, state.completed, state.total, &state.firstErr, state.cancel)
+		return
+	}
+	seed := item.Value
+	if !state.claimSeed(seed) {
+		reportCredentialImportProgress(state.progress, state.completed, state.total, &state.firstErr, state.cancel)
+		return
+	}
+	// OAuth providers may invalidate the submitted refresh token as soon as
+	// they return its replacement. Persist that replacement before any
+	// request-scoped observer or progress callback can abort the import.
+	stored, ok := s.storePreparedImportSeed(ctx, state, seed)
+	if !ok {
+		return
+	}
+	state.result.AccountIDs = append(state.result.AccountIDs, stored.ID)
+	if stored.Created {
+		state.result.Created++
+	} else {
+		state.result.Updated++
+	}
+	if state.firstErr == nil && state.observer != nil {
+		if err := state.observer(stored.ID); err != nil {
+			state.firstErr = err
+			state.cancel()
+		}
+	}
+	reportCredentialImportProgress(state.progress, state.completed, state.total, &state.firstErr, state.cancel)
+}
+
+// claimSeed 判断种子是否首次出现；重复种子计入跳过并返回 false。
+func (state *preparedImportState) claimSeed(seed provider.CredentialSeed) bool {
+	if seed.SourceKey == "" {
+		return true
+	}
+	key := string(seed.Provider) + "\x00" + seed.SourceKey
+	if _, exists := state.seen[key]; exists {
+		state.result.Skipped++
+		return false
+	}
+	state.seen[key] = struct{}{}
+	return true
+}
+
+// storePreparedImportSeed 在独立超时上下文内落库；失败时记录首个错误并取消准备阶段。
+func (s *Service) storePreparedImportSeed(ctx context.Context, state *preparedImportState, seed provider.CredentialSeed) (repository.AccountUpsertResult, bool) {
+	persistCtx, cancelPersist := context.WithTimeout(context.WithoutCancel(ctx), credentialStateWriteTimeout)
+	stored, err := s.persistImportedSeed(persistCtx, seed)
+	cancelPersist()
+	if err != nil {
+		if state.firstErr == nil {
+			state.firstErr = err
+		}
+		state.cancel()
+		return repository.AccountUpsertResult{}, false
+	}
+	state.persisted = true
+	return stored, true
 }
 
 func reportCredentialImportProgress(progress BatchProgressObserver, completed, total int, firstErr *error, cancel context.CancelFunc) {
@@ -328,28 +373,39 @@ func (s *Service) persistImportedSeedsFromProgress(ctx context.Context, seeds []
 			return ImportResult{}, err
 		}
 		for _, value := range stored {
-			result.AccountIDs = append(result.AccountIDs, value.ID)
-			s.reconcileProviderLinksBestEffort(ctx, value.ID)
-			if observer != nil {
-				if err := observer(value.ID); err != nil {
-					return ImportResult{}, err
-				}
+			nextCompleted, recordErr := s.recordImportedAccount(ctx, &result, value, observer, progress, completed, total)
+			if recordErr != nil {
+				return ImportResult{}, recordErr
 			}
-			completed++
-			if progress != nil {
-				if err := progress(completed, total); err != nil {
-					return ImportResult{}, err
-				}
-			}
-			if value.Created {
-				result.Created++
-			} else {
-				result.Updated++
-			}
+			completed = nextCompleted
 		}
 	}
 	s.WakeCredentialRefresh()
 	return result, nil
+}
+
+// recordImportedAccount 记录单个已落库账号：收集账号 ID、修复 Provider 关联、通知观察者并上报进度；
+// 返回新的完成计数，观察者或进度回调失败时不再累加创建/更新计数。
+func (s *Service) recordImportedAccount(ctx context.Context, result *ImportResult, value repository.AccountUpsertResult, observer ImportedAccountObserver, progress BatchProgressObserver, completed, total int) (int, error) {
+	result.AccountIDs = append(result.AccountIDs, value.ID)
+	s.reconcileProviderLinksBestEffort(ctx, value.ID)
+	if observer != nil {
+		if err := observer(value.ID); err != nil {
+			return completed, err
+		}
+	}
+	completed++
+	if progress != nil {
+		if err := progress(completed, total); err != nil {
+			return completed, err
+		}
+	}
+	if value.Created {
+		result.Created++
+	} else {
+		result.Updated++
+	}
+	return completed, nil
 }
 
 func (s *Service) persistSeed(ctx context.Context, seed provider.CredentialSeed) (accountdomain.Credential, bool, error) {

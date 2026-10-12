@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Spinner } from "@/components/ui/spinner";
@@ -18,7 +19,7 @@ type DashboardDataProps = {
 };
 
 /** 账号资源面板：可用率环形图 + 四行资源明细。 */
-export function DashboardResources({ dashboard, locale, loading }: DashboardDataProps) {
+export function DashboardResources({ dashboard, locale, loading }: DashboardDataProps): ReactElement {
   const { t } = useTranslation();
   const model = resolveResourcesChart(dashboard);
   const rows = buildResourceRows(dashboard, locale, t);

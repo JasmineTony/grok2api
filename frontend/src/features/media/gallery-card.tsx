@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { ArrowUpRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -16,7 +17,7 @@ type ImageCardProps = {
 };
 
 /** 图片卡片：选择态高亮、原图打开与元信息展示。 */
-export function ImageCard({ image, locale, selectionMode, selected, onSelectedChange }: ImageCardProps) {
+export function ImageCard({ image, locale, selectionMode, selected, onSelectedChange }: ImageCardProps): ReactElement {
   const { t } = useTranslation();
   const imageURL = imageAssetURL(image.id);
   return (

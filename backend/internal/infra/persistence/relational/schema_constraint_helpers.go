@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"gorm.io/gorm"
 )
 
 // ensureNamedConstraints 在约束定义尚未包含 marker 时 drop/recreate；已升级则跳过。
@@ -52,8 +54,8 @@ func (d *Database) withSQLiteForeignKeysDisabled(ctx context.Context, migrate fu
 		sqlDB.SetMaxIdleConns(16)
 	}()
 	db := d.db.WithContext(ctx)
-	if err := db.Exec("PRAGMA foreign_keys = OFF").Error; err != nil {
-		return fmt.Errorf("暂停 SQLite 外键约束: %w", err)
+	if err := pauseSQLiteForeignKeys(db); err != nil {
+		return err
 	}
 	foreignKeysDisabled := true
 	defer func() {
@@ -61,6 +63,22 @@ func (d *Database) withSQLiteForeignKeysDisabled(ctx context.Context, migrate fu
 			_ = db.Exec("PRAGMA foreign_keys = ON").Error
 		}
 	}()
+	migrationErr := migrate()
+	if migrationErr == nil {
+		migrationErr = sqliteForeignKeyViolationError(db)
+	}
+	enableErr := db.Exec("PRAGMA foreign_keys = ON").Error
+	if enableErr == nil {
+		foreignKeysDisabled = false
+	}
+	return sqliteForeignKeyRestoreError(migrationErr, enableErr)
+}
+
+// pauseSQLiteForeignKeys 关闭当前连接的外键开关，并确认其已生效。
+func pauseSQLiteForeignKeys(db *gorm.DB) error {
+	if err := db.Exec("PRAGMA foreign_keys = OFF").Error; err != nil {
+		return fmt.Errorf("暂停 SQLite 外键约束: %w", err)
+	}
 	var foreignKeys int
 	if err := db.Raw("PRAGMA foreign_keys").Scan(&foreignKeys).Error; err != nil {
 		return fmt.Errorf("确认 SQLite 外键状态: %w", err)
@@ -68,24 +86,28 @@ func (d *Database) withSQLiteForeignKeysDisabled(ctx context.Context, migrate fu
 	if foreignKeys != 0 {
 		return fmt.Errorf("暂停 SQLite 外键约束失败")
 	}
-	migrationErr := migrate()
-	if migrationErr == nil {
-		var violations []struct {
-			Table  string
-			RowID  *int64
-			Parent string
-			FKID   int
-		}
-		if err := db.Raw("PRAGMA foreign_key_check").Scan(&violations).Error; err != nil {
-			migrationErr = fmt.Errorf("校验 SQLite 外键: %w", err)
-		} else if len(violations) > 0 {
-			migrationErr = fmt.Errorf("SQLite 约束迁移产生 %d 条外键违规", len(violations))
-		}
+	return nil
+}
+
+// sqliteForeignKeyViolationError 在约束迁移完成后校验是否遗留外键违规。
+func sqliteForeignKeyViolationError(db *gorm.DB) error {
+	var violations []struct {
+		Table  string
+		RowID  *int64
+		Parent string
+		FKID   int
 	}
-	enableErr := db.Exec("PRAGMA foreign_keys = ON").Error
-	if enableErr == nil {
-		foreignKeysDisabled = false
+	if err := db.Raw("PRAGMA foreign_key_check").Scan(&violations).Error; err != nil {
+		return fmt.Errorf("校验 SQLite 外键: %w", err)
 	}
+	if len(violations) > 0 {
+		return fmt.Errorf("SQLite 约束迁移产生 %d 条外键违规", len(violations))
+	}
+	return nil
+}
+
+// sqliteForeignKeyRestoreError 合并约束迁移错误与恢复外键开关的错误。
+func sqliteForeignKeyRestoreError(migrationErr, enableErr error) error {
 	if migrationErr != nil {
 		if enableErr != nil {
 			return fmt.Errorf("%w；恢复 SQLite 外键失败: %v", migrationErr, enableErr)

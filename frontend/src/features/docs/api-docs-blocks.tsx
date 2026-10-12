@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { FieldDefinition, Method } from "@/features/docs/endpoint-definitions";
@@ -6,7 +6,7 @@ import { CopyButton } from "@/shared/components/copy-button";
 import { cn } from "@/shared/lib/cn";
 
 /** 方法标签：GET 绿色、POST 蓝色，与原实现一致。 */
-export function MethodLabel({ method }: { method: Method }) {
+export function MethodLabel({ method }: { method: Method }): ReactElement {
   return (
     <span
       className={cn(
@@ -20,7 +20,7 @@ export function MethodLabel({ method }: { method: Method }) {
 }
 
 /** 端点签名（方法与路径）与复制入口。 */
-export function EndpointSignature({ method, path }: { method: Method; path: string }) {
+export function EndpointSignature({ method, path }: { method: Method; path: string }): ReactElement {
   return (
     <div
       className="flex h-8 w-fit max-w-full items-center gap-2 rounded-md bg-card px-3"
@@ -36,7 +36,15 @@ export function EndpointSignature({ method, path }: { method: Method; path: stri
 }
 
 /** 文档分区：图标 + 标题 + 内容容器。 */
-export function DocsSection({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
+export function DocsSection({
+  icon,
+  title,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  children: ReactNode;
+}): ReactElement {
   return (
     <section className="space-y-3.5">
       <div className="flex items-center gap-2 text-sm font-medium [&_svg]:size-4 [&_svg]:text-muted-foreground">
@@ -49,7 +57,7 @@ export function DocsSection({ icon, title, children }: { icon: ReactNode; title:
 }
 
 /** 连接信息条目：标签 + 可复制取值。 */
-export function ConnectionItem({ label, value }: { label: string; value: string }) {
+export function ConnectionItem({ label, value }: { label: string; value: string }): ReactElement {
   return (
     <div className="min-w-0">
       <div className="mb-1.5 text-xs text-muted-foreground">{label}</div>
@@ -64,7 +72,7 @@ export function ConnectionItem({ label, value }: { label: string; value: string 
 }
 
 /** 参数表（字段名 + 说明）。 */
-export function ParameterTable({ fields }: { fields: FieldDefinition[] }) {
+export function ParameterTable({ fields }: { fields: FieldDefinition[] }): ReactElement {
   const { t } = useTranslation();
   return (
     <div className="overflow-hidden rounded-md bg-card" data-testid="docs-parameter-table">

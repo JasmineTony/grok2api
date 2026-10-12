@@ -12,76 +12,8 @@ import (
 )
 
 func (r *AccountRepository) List(ctx context.Context, input repository.AccountListQuery) ([]account.Credential, int64, error) {
+	query := buildAccountListQuery(r.db.db.WithContext(ctx), input)
 	var total int64
-	query := r.db.db.WithContext(ctx).Model(&accountModel{})
-	if input.Filter.Provider != "" {
-		query = query.Where("provider = ?", input.Filter.Provider)
-	}
-	if search := strings.TrimSpace(input.Page.Search); search != "" {
-		if id, err := strconv.ParseUint(strings.TrimPrefix(search, "#"), 10, 64); strings.HasPrefix(search, "#") && err == nil && id > 0 {
-			// #ID 是管理端名单使用的内部精确查询形式，走主键索引且不改变
-			// 原有纯数字名称的模糊搜索语义。
-			query = query.Where("provider_accounts.id = ?", id)
-		} else {
-			pattern := "%" + strings.ToLower(search) + "%"
-			query = query.Where("LOWER(name) LIKE ? OR LOWER(email) LIKE ? OR LOWER(user_id) LIKE ? OR LOWER(team_id) LIKE ?", pattern, pattern, pattern, pattern)
-		}
-	}
-	switch input.Filter.QuotaType {
-	case "free":
-		// Super（Billing paid 或 BuildSuperEntitled）不得落入 free；与 IsKnownFreeBuild / QuotaView 一致。
-		query = query.Where("NOT " + accountBuildSuperPredicate + " AND (EXISTS (SELECT 1 FROM account_quota_recovery recovery WHERE recovery.account_id = provider_accounts.id AND recovery.kind = 'free') OR " + accountFreeSignalPredicate + ")")
-	case "paid":
-		query = query.Where(accountBuildSuperPredicate)
-	case "unknown":
-		query = query.Where("NOT " + accountRecoveryPredicate + " AND NOT " + accountBuildSuperPredicate + " AND NOT " + accountFreeSignalPredicate)
-	case "auto", "basic", "super", "heavy":
-		query = query.Where("EXISTS (SELECT 1 FROM web_account_profiles profile WHERE profile.account_id = provider_accounts.id AND profile.tier = ?)", input.Filter.QuotaType)
-	}
-	query = applyAccountStatusFilter(query, input.Filter.Status, input.Filter.Now)
-	switch input.Filter.Egress {
-	case "bound":
-		query = query.Where("egress_node_id IS NOT NULL")
-		if nodeID := input.Filter.EgressNodeID; nodeID > 0 {
-			query = query.Where("egress_node_id = ?", nodeID)
-		}
-		if sourceID := input.Filter.EgressSourceID; sourceID > 0 {
-			query = query.Where("EXISTS (SELECT 1 FROM egress_nodes node WHERE node.id = provider_accounts.egress_node_id AND node.source_id = ?)", sourceID)
-		}
-	case "unbound":
-		query = query.Where("egress_node_id IS NULL")
-	}
-	if input.Filter.Refreshable != nil {
-		if *input.Filter.Refreshable {
-			query = query.Where("EXISTS (SELECT 1 FROM account_credentials credential WHERE credential.account_id = provider_accounts.id AND credential.encrypted_refresh <> '')")
-		} else {
-			query = query.Where("NOT EXISTS (SELECT 1 FROM account_credentials credential WHERE credential.account_id = provider_accounts.id AND credential.encrypted_refresh <> '')")
-		}
-	}
-	switch input.Filter.Risk {
-	case "flagged":
-		query = query.Where("EXISTS (SELECT 1 FROM account_credentials credential WHERE credential.account_id = provider_accounts.id AND credential.build_bot_flag_source IN (1,2))")
-	case "normal":
-		query = query.Where("NOT EXISTS (SELECT 1 FROM account_credentials credential WHERE credential.account_id = provider_accounts.id AND credential.build_bot_flag_source IN (1,2))")
-	}
-	query = applyWebAgreementFilter(query, input.Filter.Agreement)
-	query = applyAssociationFilter(query, input.Filter.Provider, input.Filter.Association)
-	if input.Filter.RestrictIDs {
-		if len(input.Filter.AccountIDs) == 0 {
-			query = query.Where("1 = 0")
-		} else {
-			query = query.Where("provider_accounts.id IN ?", input.Filter.AccountIDs)
-		}
-	}
-	if len(input.Filter.ExcludeIDs) > 0 {
-		query = query.Where("provider_accounts.id NOT IN ?", input.Filter.ExcludeIDs)
-	}
-	if input.Filter.AfterID > 0 {
-		query = query.Where("provider_accounts.id > ?", input.Filter.AfterID)
-	}
-	if input.Filter.ThroughID > 0 {
-		query = query.Where("provider_accounts.id <= ?", input.Filter.ThroughID)
-	}
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
@@ -104,6 +36,113 @@ func (r *AccountRepository) List(ctx context.Context, input repository.AccountLi
 		return nil, 0, err
 	}
 	return out, total, nil
+}
+
+// buildAccountListQuery 组装管理端账号列表的全部过滤条件；计数、排序与加载由 List 负责。
+func buildAccountListQuery(base *gorm.DB, input repository.AccountListQuery) *gorm.DB {
+	query := base.Model(&accountModel{})
+	if input.Filter.Provider != "" {
+		query = query.Where("provider = ?", input.Filter.Provider)
+	}
+	query = applyAccountSearchFilter(query, input.Page.Search)
+	query = applyAccountQuotaTypeFilter(query, input.Filter.QuotaType)
+	query = applyAccountStatusFilter(query, input.Filter.Status, input.Filter.Now)
+	query = applyAccountEgressFilter(query, input.Filter)
+	query = applyAccountCredentialFlagsFilter(query, input.Filter.Refreshable, input.Filter.Risk)
+	query = applyWebAgreementFilter(query, input.Filter.Agreement)
+	query = applyAssociationFilter(query, input.Filter.Provider, input.Filter.Association)
+	return applyAccountIDScopeFilter(query, input.Filter)
+}
+
+// applyAccountSearchFilter 支持 "#ID" 主键精确查询与名称、邮箱、用户 ID、团队 ID 的模糊搜索。
+func applyAccountSearchFilter(query *gorm.DB, search string) *gorm.DB {
+	search = strings.TrimSpace(search)
+	if search == "" {
+		return query
+	}
+	if id, err := strconv.ParseUint(strings.TrimPrefix(search, "#"), 10, 64); strings.HasPrefix(search, "#") && err == nil && id > 0 {
+		// #ID 是管理端名单使用的内部精确查询形式，走主键索引且不改变
+		// 原有纯数字名称的模糊搜索语义。
+		return query.Where("provider_accounts.id = ?", id)
+	}
+	pattern := "%" + strings.ToLower(search) + "%"
+	return query.Where("LOWER(name) LIKE ? OR LOWER(email) LIKE ? OR LOWER(user_id) LIKE ? OR LOWER(team_id) LIKE ?", pattern, pattern, pattern, pattern)
+}
+
+// applyAccountQuotaTypeFilter 按额度类型过滤，与 IsKnownFreeBuild / QuotaView 的判定保持一致。
+func applyAccountQuotaTypeFilter(query *gorm.DB, quotaType string) *gorm.DB {
+	switch quotaType {
+	case "free":
+		// Super（Billing paid 或 BuildSuperEntitled）不得落入 free；与 IsKnownFreeBuild / QuotaView 一致。
+		return query.Where("NOT " + accountBuildSuperPredicate + " AND (EXISTS (SELECT 1 FROM account_quota_recovery recovery WHERE recovery.account_id = provider_accounts.id AND recovery.kind = 'free') OR " + accountFreeSignalPredicate + ")")
+	case "paid":
+		return query.Where(accountBuildSuperPredicate)
+	case "unknown":
+		return query.Where("NOT " + accountRecoveryPredicate + " AND NOT " + accountBuildSuperPredicate + " AND NOT " + accountFreeSignalPredicate)
+	case "auto", "basic", "super", "heavy":
+		return query.Where("EXISTS (SELECT 1 FROM web_account_profiles profile WHERE profile.account_id = provider_accounts.id AND profile.tier = ?)", quotaType)
+	default:
+		return query
+	}
+}
+
+// applyAccountEgressFilter 按出口绑定状态过滤；bound 可再收敛到单个出口节点或订阅来源。
+func applyAccountEgressFilter(query *gorm.DB, filter repository.AccountListFilter) *gorm.DB {
+	switch filter.Egress {
+	case "bound":
+		query = query.Where("egress_node_id IS NOT NULL")
+		if nodeID := filter.EgressNodeID; nodeID > 0 {
+			query = query.Where("egress_node_id = ?", nodeID)
+		}
+		if sourceID := filter.EgressSourceID; sourceID > 0 {
+			query = query.Where("EXISTS (SELECT 1 FROM egress_nodes node WHERE node.id = provider_accounts.egress_node_id AND node.source_id = ?)", sourceID)
+		}
+		return query
+	case "unbound":
+		return query.Where("egress_node_id IS NULL")
+	default:
+		return query
+	}
+}
+
+// applyAccountCredentialFlagsFilter 按可刷新凭据与持久化 Build 风险标记过滤账号。
+func applyAccountCredentialFlagsFilter(query *gorm.DB, refreshable *bool, risk string) *gorm.DB {
+	if refreshable != nil {
+		if *refreshable {
+			query = query.Where("EXISTS (SELECT 1 FROM account_credentials credential WHERE credential.account_id = provider_accounts.id AND credential.encrypted_refresh <> '')")
+		} else {
+			query = query.Where("NOT EXISTS (SELECT 1 FROM account_credentials credential WHERE credential.account_id = provider_accounts.id AND credential.encrypted_refresh <> '')")
+		}
+	}
+	switch risk {
+	case "flagged":
+		return query.Where("EXISTS (SELECT 1 FROM account_credentials credential WHERE credential.account_id = provider_accounts.id AND credential.build_bot_flag_source IN (1,2))")
+	case "normal":
+		return query.Where("NOT EXISTS (SELECT 1 FROM account_credentials credential WHERE credential.account_id = provider_accounts.id AND credential.build_bot_flag_source IN (1,2))")
+	default:
+		return query
+	}
+}
+
+// applyAccountIDScopeFilter 应用 ID 白名单、排除列表与游标范围过滤。
+func applyAccountIDScopeFilter(query *gorm.DB, filter repository.AccountListFilter) *gorm.DB {
+	if filter.RestrictIDs {
+		if len(filter.AccountIDs) == 0 {
+			query = query.Where("1 = 0")
+		} else {
+			query = query.Where("provider_accounts.id IN ?", filter.AccountIDs)
+		}
+	}
+	if len(filter.ExcludeIDs) > 0 {
+		query = query.Where("provider_accounts.id NOT IN ?", filter.ExcludeIDs)
+	}
+	if filter.AfterID > 0 {
+		query = query.Where("provider_accounts.id > ?", filter.AfterID)
+	}
+	if filter.ThroughID > 0 {
+		query = query.Where("provider_accounts.id <= ?", filter.ThroughID)
+	}
+	return query
 }
 
 func (r *AccountRepository) ListProviderAccountBatch(ctx context.Context, providerValue account.Provider, afterID uint64, limit int) ([]account.Credential, int64, error) {

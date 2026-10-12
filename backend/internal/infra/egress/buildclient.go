@@ -47,27 +47,8 @@ func newBuildClientWithOptions(proxyURL string, responseHeaderTimeout time.Durat
 		transport.Proxy = http.ProxyFromEnvironment
 	}
 	if strings.TrimSpace(proxyURL) != "" {
-		parsed, err := url.Parse(proxyURL)
-		if err != nil {
-			return nil, fmt.Errorf("解析 Grok Build 出口代理: %w", err)
-		}
-		switch strings.ToLower(parsed.Scheme) {
-		case "http", "https":
-			transport.Proxy = http.ProxyURL(parsed)
-		case "socks4", "socks4a", "socks5", "socks5h":
-			dialer, err := xproxy.FromURL(parsed, direct)
-			if err != nil {
-				return nil, fmt.Errorf("创建 Grok Build SOCKS 代理: %w", err)
-			}
-			transport.DialContext = dialContext(dialer)
-		case "trojan", "vless", "ss", "vmess":
-			dialer, err := tunnelproxy.NewDialer(proxyURL)
-			if err != nil {
-				return nil, fmt.Errorf("创建 Grok Build 隧道代理: %w", err)
-			}
-			transport.DialContext = dialer.DialContext
-		default:
-			return nil, fmt.Errorf("Grok Build 不支持代理协议 %q", parsed.Scheme)
+		if err := configureBuildProxyTransport(transport, direct, proxyURL); err != nil {
+			return nil, err
 		}
 	}
 	if _, err := buildtransport.ConfigureHTTP2Health(transport); err != nil {
@@ -79,6 +60,34 @@ func newBuildClientWithOptions(proxyURL string, responseHeaderTimeout time.Durat
 			return http.ErrUseLastResponse
 		},
 	}, nil
+}
+
+// configureBuildProxyTransport 按出口代理协议改写 transport 的 Proxy 或 DialContext，
+// 协议不受支持或代理不可用时返回构建客户端时使用的错误。
+func configureBuildProxyTransport(transport *http.Transport, direct *net.Dialer, proxyURL string) error {
+	parsed, err := url.Parse(proxyURL)
+	if err != nil {
+		return fmt.Errorf("解析 Grok Build 出口代理: %w", err)
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+		transport.Proxy = http.ProxyURL(parsed)
+	case "socks4", "socks4a", "socks5", "socks5h":
+		dialer, err := xproxy.FromURL(parsed, direct)
+		if err != nil {
+			return fmt.Errorf("创建 Grok Build SOCKS 代理: %w", err)
+		}
+		transport.DialContext = dialContext(dialer)
+	case "trojan", "vless", "ss", "vmess":
+		dialer, err := tunnelproxy.NewDialer(proxyURL)
+		if err != nil {
+			return fmt.Errorf("创建 Grok Build 隧道代理: %w", err)
+		}
+		transport.DialContext = dialer.DialContext
+	default:
+		return fmt.Errorf("Grok Build 不支持代理协议 %q", parsed.Scheme)
+	}
+	return nil
 }
 
 func dialContext(dialer xproxy.Dialer) func(context.Context, string, string) (net.Conn, error) {

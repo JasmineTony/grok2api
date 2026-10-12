@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +16,7 @@ import { cn } from "@/shared/lib/cn";
 
 // 模型表格单元格的展示组件：与数据获取/交互状态解耦，props 驱动。
 
-export function ModelProvider({ provider }: { provider: ModelRouteDTO["provider"] }) {
+export function ModelProvider({ provider }: { provider: ModelRouteDTO["provider"] }): ReactElement {
   const { t } = useTranslation();
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground">
@@ -25,7 +26,7 @@ export function ModelProvider({ provider }: { provider: ModelRouteDTO["provider"
   );
 }
 
-export function ModelCapabilities({ capabilities }: { capabilities: ModelDisplayCapability[] }) {
+export function ModelCapabilities({ capabilities }: { capabilities: ModelDisplayCapability[] }): ReactElement {
   const { t } = useTranslation();
   return (
     <span className="mx-auto inline-flex max-w-28 flex-wrap items-center justify-center gap-0.5">
@@ -61,7 +62,7 @@ export function ModelCapabilities({ capabilities }: { capabilities: ModelDisplay
   );
 }
 
-export function ModelEnabledStateBadge({ state }: { state: ModelRouteGroup["enabledState"] }) {
+export function ModelEnabledStateBadge({ state }: { state: ModelRouteGroup["enabledState"] }): ReactElement {
   const { t } = useTranslation();
   if (state === "enabled") {
     return (
@@ -84,7 +85,7 @@ export function ModelEnabledStateBadge({ state }: { state: ModelRouteGroup["enab
   );
 }
 
-export function ModelAccountSupportCell({ model }: { model: ModelRouteGroup }) {
+export function ModelAccountSupportCell({ model }: { model: ModelRouteGroup }): ReactElement {
   const { t } = useTranslation();
   const bindingKey =
     model.bindingState === "bound"

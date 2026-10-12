@@ -120,6 +120,19 @@ func New(deps Dependencies) *gin.Engine {
 		panic("httpserver: trustedProxies 配置无效: " + err.Error())
 	}
 	router.Use(gin.Recovery(), middleware.RequestID(), middleware.ClientIP(), middleware.SecurityHeaders(), middleware.MaxBodyBytes(deps.MaxBodyBytes), middleware.Timeout(deps.RequestTimeout), middleware.AccessLog(deps.Logger))
+	registerRootRoutes(router, deps)
+	mediaHandler := mediahttp.NewHandler(deps.Media)
+	mediaHandler.RegisterPublic(router)
+	adminProtected, egressHandler := registerAdminRoutes(router, deps, mediaHandler)
+	registerSystemHandler(adminProtected, deps)
+	registerQualityGuardInternalRoutes(router, deps, egressHandler)
+	registerInferenceRoutes(router, deps)
+	registerFrontend(router, deps.FrontendStaticPath)
+	return router
+}
+
+// registerRootRoutes 注册根级健康检查与可选的 Swagger 文档路由。
+func registerRootRoutes(router *gin.Engine, deps Dependencies) {
 	router.GET("/healthz", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) })
 	router.GET("/readyz", func(c *gin.Context) {
 		if deps.Readiness != nil {
@@ -140,9 +153,10 @@ func New(deps Dependencies) *gin.Engine {
 	if deps.SwaggerEnabled {
 		router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	}
-	mediaHandler := mediahttp.NewHandler(deps.Media)
-	mediaHandler.RegisterPublic(router)
+}
 
+// registerAdminRoutes 按既有顺序注册管理员路由，并返回受保护分组与出口处理器。
+func registerAdminRoutes(router *gin.Engine, deps Dependencies, mediaHandler *mediahttp.Handler) (*gin.RouterGroup, *egresshttp.Handler) {
 	adminRoot := router.Group("/api/admin/v1")
 	authHandler := adminauthhttp.NewHandler(deps.AdminAuth, deps.SecureCookies)
 	authHandler.RegisterPublic(adminRoot)
@@ -159,20 +173,32 @@ func New(deps Dependencies) *gin.Engine {
 	settingshttp.NewHandler(deps.Settings).Register(adminProtected)
 	egressHandler := egresshttp.NewHandler(deps.Egress, deps.QualityGuardStatePath, deps.QualityGuardConfigPath).WithQualityGuardProbe(deps.QualityGuardProbe)
 	egressHandler.Register(adminProtected)
+	return adminProtected, egressHandler
+}
+
+// registerSystemHandler 注册系统信息路由，公开地址优先取运行设置。
+func registerSystemHandler(adminProtected *gin.RouterGroup, deps Dependencies) {
 	systemhttp.NewHandler(func() string {
 		if deps.Settings != nil {
 			return deps.Settings.PublicAPIBaseURL()
 		}
 		return deps.PublicAPIBaseURL
 	}, deps.Updates).Register(adminProtected)
+}
 
-	if deps.QualityGuardToken != "" {
-		qualityGuardInternal := router.Group("/api/internal/v1/quality-guard")
-		qualityGuardInternal.Use(middleware.QualityGuardAuth(deps.QualityGuardToken))
-		audithttp.NewQualityGuardHandler(deps.Audits, deps.QualityGuardProbe.ClientKeyID).RegisterQualityGuard(qualityGuardInternal)
-		egressHandler.RegisterQualityGuard(qualityGuardInternal)
+// registerQualityGuardInternalRoutes 在配置了令牌时注册内部质量守护路由。
+func registerQualityGuardInternalRoutes(router *gin.Engine, deps Dependencies, egressHandler *egresshttp.Handler) {
+	if deps.QualityGuardToken == "" {
+		return
 	}
+	qualityGuardInternal := router.Group("/api/internal/v1/quality-guard")
+	qualityGuardInternal.Use(middleware.QualityGuardAuth(deps.QualityGuardToken))
+	audithttp.NewQualityGuardHandler(deps.Audits, deps.QualityGuardProbe.ClientKeyID).RegisterQualityGuard(qualityGuardInternal)
+	egressHandler.RegisterQualityGuard(qualityGuardInternal)
+}
 
+// registerInferenceRoutes 注册受客户端密钥保护的 /v1 推理路由。
+func registerInferenceRoutes(router *gin.Engine, deps Dependencies) {
 	v1 := router.Group("/v1")
 	v1.Use(deps.ConcurrencyGate.Middleware())
 	v1.Use(middleware.ObserveBodyMemory())
@@ -193,6 +219,4 @@ func New(deps Dependencies) *gin.Engine {
 		inferenceHandler.SetPublicAPIBaseURLResolver(deps.Settings.PublicAPIBaseURL)
 	}
 	inferenceHandler.Register(v1)
-	registerFrontend(router, deps.FrontendStaticPath)
-	return router
 }

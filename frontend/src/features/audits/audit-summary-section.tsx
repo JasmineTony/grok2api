@@ -8,6 +8,7 @@ import {
   Database,
   WholeWord,
 } from "lucide-react";
+import type { ReactElement } from "react";
 
 import { AuditMetric, AuditTokenMetric } from "@/features/audits/audit-metric-cards";
 import { useTranslation } from "react-i18next";
@@ -28,7 +29,9 @@ export type AuditSummaryDisplay = {
   reasoningTokens: string;
 };
 
-export function AuditSummarySection({ loading, display }: { loading: boolean; display: AuditSummaryDisplay }) {
+type AuditSummarySectionProps = { loading: boolean; display: AuditSummaryDisplay };
+
+export function AuditSummarySection({ loading, display }: AuditSummarySectionProps): ReactElement {
   const { t } = useTranslation();
   return (
     <section className="space-y-2" aria-label={t("audits.usageSummary")}>
@@ -64,17 +67,25 @@ export function AuditSummarySection({ loading, display }: { loading: boolean; di
           tooltip={t("audits.pricingDescription")}
         />
       </div>
-      <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
-        <AuditTokenMetric icon={ArrowUp} loading={loading} label={t("audits.input")} value={display.inputTokens} />
-        <AuditTokenMetric icon={ArrowDown} loading={loading} label={t("audits.output")} value={display.outputTokens} />
-        <AuditTokenMetric icon={Database} loading={loading} label={t("audits.cached")} value={display.cachedTokens} />
-        <AuditTokenMetric
-          icon={BrainCircuit}
-          loading={loading}
-          label={t("audits.reasoning")}
-          value={display.reasoningTokens}
-        />
-      </div>
+      <AuditSummaryTokenMetrics loading={loading} display={display} />
     </section>
+  );
+}
+
+/** 令牌四宫格单独成组件：保持既有 aria 结构与 DOM 不变，同时让父组件满足 REV-2 的 50 行上限。 */
+function AuditSummaryTokenMetrics({ loading, display }: AuditSummarySectionProps): ReactElement {
+  const { t } = useTranslation();
+  return (
+    <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
+      <AuditTokenMetric icon={ArrowUp} loading={loading} label={t("audits.input")} value={display.inputTokens} />
+      <AuditTokenMetric icon={ArrowDown} loading={loading} label={t("audits.output")} value={display.outputTokens} />
+      <AuditTokenMetric icon={Database} loading={loading} label={t("audits.cached")} value={display.cachedTokens} />
+      <AuditTokenMetric
+        icon={BrainCircuit}
+        loading={loading}
+        label={t("audits.reasoning")}
+        value={display.reasoningTokens}
+      />
+    </div>
   );
 }

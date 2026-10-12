@@ -99,11 +99,25 @@ type modelUsageDTO struct {
 }
 
 func (h *Handler) get(c *gin.Context) {
+	result, err := h.loadDashboard(c)
+	if err != nil {
+		writeDashboardLoadError(c, err)
+		return
+	}
+	response.Success(c, http.StatusOK, newDashboardResponse(result))
+}
+
+// loadDashboard 按 refresh 查询参数选择实时刷新或读取缓存。
+func (h *Handler) loadDashboard(c *gin.Context) (dashboardapp.Result, error) {
 	load := h.service.Get
 	if c.Query("refresh") == "1" {
 		load = h.service.Refresh
 	}
-	result, err := load(c.Request.Context(), c.Query("period"), c.Query("timezone"))
+	return load(c.Request.Context(), c.Query("period"), c.Query("timezone"))
+}
+
+// writeDashboardLoadError 把加载失败原因映射到既有响应契约。
+func writeDashboardLoadError(c *gin.Context, err error) {
 	if errors.Is(err, dashboardapp.ErrInvalidPeriod) {
 		response.Error(c, http.StatusBadRequest, "invalidDashboardPeriod", "period 仅支持 24h、7d、30d、90d")
 		return
@@ -112,10 +126,11 @@ func (h *Handler) get(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "invalidDashboardTimezone", "timezone 必须是有效的 IANA 时区")
 		return
 	}
-	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "dashboardLoadFailed", "读取 Dashboard 失败")
-		return
-	}
+	response.Error(c, http.StatusInternalServerError, "dashboardLoadFailed", "读取 Dashboard 失败")
+}
+
+// newDashboardResponse 按原顺序转换各维度明细为响应 DTO。
+func newDashboardResponse(result dashboardapp.Result) responseDTO {
 	series := make([]seriesDTO, 0, len(result.Series))
 	for _, point := range result.Series {
 		series = append(series, seriesDTO{Start: point.Start, End: point.End, Requests: point.Requests, InputTokens: point.InputTokens, CachedInputTokens: point.CachedInputTokens, OutputTokens: point.OutputTokens, ReasoningTokens: point.ReasoningTokens, Tokens: point.Tokens, BilledCostUSDTicks: point.BilledCostUSDTicks})
@@ -132,7 +147,7 @@ func (h *Handler) get(c *gin.Context) {
 	for _, item := range result.Providers {
 		providers = append(providers, providerUsageDTO{Provider: item.Provider, Requests: item.Requests, SuccessfulRequests: item.SuccessfulRequests, Tokens: item.Tokens})
 	}
-	response.Success(c, http.StatusOK, responseDTO{
+	return responseDTO{
 		Period:      string(result.Period),
 		GeneratedAt: result.GeneratedAt,
 		Range:       rangeDTO{Start: result.Range.Start, End: result.Range.End},
@@ -152,7 +167,7 @@ func (h *Handler) get(c *gin.Context) {
 		Activity:  activity,
 		TopModels: topModels,
 		Providers: providers,
-	})
+	}
 }
 
 func toUsageDTO(usage dashboarddomain.Usage) usageDTO {

@@ -15,6 +15,14 @@ func (r *ModelRepository) availableRoutes(query *gorm.DB) *gorm.DB {
 	return query.Where(availableRoutePredicate, true, account.AuthStatusActive)
 }
 
+type modelAvailabilityRow struct {
+	RouteID           uint64
+	SupportedAccounts int
+	SyncedAccounts    int
+	TotalAccounts     int
+	LastSyncedUnix    sql.NullInt64
+}
+
 func (r *ModelRepository) annotateAvailability(ctx context.Context, values []model.Route) error {
 	if len(values) == 0 {
 		return nil
@@ -23,14 +31,20 @@ func (r *ModelRepository) annotateAvailability(ctx context.Context, values []mod
 	for _, value := range values {
 		ids = append(ids, value.ID)
 	}
-	type availabilityRow struct {
-		RouteID           uint64
-		SupportedAccounts int
-		SyncedAccounts    int
-		TotalAccounts     int
-		LastSyncedUnix    sql.NullInt64
+	rows, err := r.modelAvailabilityRows(ctx, ids)
+	if err != nil {
+		return err
 	}
-	var rows []availabilityRow
+	boundByRoute, err := r.modelRouteBoundAccountIDs(ctx, ids)
+	if err != nil {
+		return err
+	}
+	applyModelAvailability(values, rows, boundByRoute)
+	return nil
+}
+
+func (r *ModelRepository) modelAvailabilityRows(ctx context.Context, ids []uint64) ([]modelAvailabilityRow, error) {
+	var rows []modelAvailabilityRow
 	lastSyncedExpression := "MAX(unixepoch(sync.last_success_at))"
 	if r.db.dialect == "postgres" {
 		lastSyncedExpression = "CAST(MAX(EXTRACT(EPOCH FROM sync.last_success_at)) AS BIGINT)"
@@ -59,17 +73,25 @@ func (r *ModelRepository) annotateAvailability(ctx context.Context, values []mod
 		GROUP BY route.id
 	`, lastSyncedExpression), account.AuthStatusActive, account.AuthStatusActive, account.AuthStatusActive, account.AuthStatusActive, account.AuthStatusActive, ids).Scan(&rows).Error
 	if err != nil {
-		return err
+		return nil, err
 	}
+	return rows, nil
+}
+
+func (r *ModelRepository) modelRouteBoundAccountIDs(ctx context.Context, ids []uint64) (map[uint64][]uint64, error) {
 	var bindings []modelRouteAccountModel
 	if err := r.db.db.WithContext(ctx).Where("model_route_id IN ?", ids).Order("model_route_id ASC, account_id ASC").Find(&bindings).Error; err != nil {
-		return err
+		return nil, err
 	}
-	boundByRoute := make(map[uint64][]uint64, len(values))
+	boundByRoute := make(map[uint64][]uint64, len(ids))
 	for _, binding := range bindings {
 		boundByRoute[binding.ModelRouteID] = append(boundByRoute[binding.ModelRouteID], binding.AccountID)
 	}
-	byID := make(map[uint64]availabilityRow, len(rows))
+	return boundByRoute, nil
+}
+
+func applyModelAvailability(values []model.Route, rows []modelAvailabilityRow, boundByRoute map[uint64][]uint64) {
+	byID := make(map[uint64]modelAvailabilityRow, len(rows))
 	for _, row := range rows {
 		byID[row.RouteID] = row
 	}
@@ -84,7 +106,6 @@ func (r *ModelRepository) annotateAvailability(ctx context.Context, values []mod
 			values[index].LastSyncedAt = &lastSyncedAt
 		}
 	}
-	return nil
 }
 
 func truncate(value string, limit int) string {

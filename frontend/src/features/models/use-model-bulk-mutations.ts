@@ -1,9 +1,10 @@
-import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient, type QueryClient, type UseMutationResult } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { deleteModels, syncModels, updateModelsEnabled } from "@/entities/model/model-api";
+import type { ModelRouteDTO } from "@/entities/model/types";
 import { deleteModelRoutes, showModelError } from "@/features/models/model-mutations";
 import type { ModelDialogsController } from "@/features/models/use-model-dialogs";
 import type { ModelListController } from "@/features/models/use-model-list";
@@ -36,9 +37,17 @@ function syncModelCapabilities(t: TFunction): Promise<{ synced: number }> {
   });
 }
 
-export function useModelBulkMutations({ list, selection, dialogs }: ModelBulkMutationScope) {
+type ModelBulkMutationsResult = {
+  remove: UseMutationResult<Awaited<ReturnType<typeof deleteModelRoutes>>, Error, ModelRouteDTO[]>;
+  removeSelected: UseMutationResult<Awaited<ReturnType<typeof deleteModels>>, Error, void>;
+  setEnabled: UseMutationResult<Awaited<ReturnType<typeof updateModelsEnabled>>, Error, boolean>;
+  sync: UseMutationResult<Awaited<ReturnType<typeof syncModels>>, Error, void, ReturnType<typeof toast.loading>>;
+};
+
+export function useModelBulkMutations(scope: ModelBulkMutationScope): ModelBulkMutationsResult {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const { list, selection, dialogs } = scope;
   const reset = (): void => resetModelList(list, selection, queryClient);
 
   const remove = useMutation({

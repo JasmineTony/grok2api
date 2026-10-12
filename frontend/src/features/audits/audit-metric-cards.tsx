@@ -1,4 +1,5 @@
 import { Info, type LucideIcon } from "lucide-react";
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Spinner } from "@/components/ui/spinner";
@@ -60,7 +61,7 @@ export function AuditMetric({
   tooltip?: string;
   fullValue?: string;
   loading: boolean;
-}) {
+}): ReactElement {
   return (
     <article className="min-h-28 rounded-lg bg-card p-4" aria-busy={loading}>
       <MetricHeader icon={icon} label={label} tooltip={tooltip} />
@@ -89,7 +90,7 @@ export function AuditTokenMetric({
   label: string;
   value: string;
   loading: boolean;
-}) {
+}): ReactElement {
   return (
     <div className="flex min-h-11 min-w-0 items-center justify-between gap-3 rounded-lg bg-muted/45 px-4 py-2">
       <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">

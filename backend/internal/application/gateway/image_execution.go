@@ -111,11 +111,16 @@ func (s *Service) executeImage(
 		return nil, err
 	}
 	defer billing.cancelUnlessOwned()
-	outcome, err := s.runImageAttempts(ctx, imageExecutionPlan{
+	return s.completeImageExecution(ctx, &billing, auditCtx, operation, route, settlement, imageExecutionPlan{
 		requestID: requestID, eventID: eventID, externalModel: externalModel, key: key, route: route,
 		quotaMode: s.providers.QuotaMode(route.Provider, route.UpstreamModel), preselected: preselectedSession,
 		policy: newRoutingAttemptPolicy(int(s.maxAttempts.Load())), execute: execute,
 	})
+}
+
+// completeImageExecution 执行图片账号尝试，并按结果完成计费移交、失败审计或构造客户端结果。
+func (s *Service) completeImageExecution(ctx context.Context, reservation *imageBillingReservation, auditCtx mediaAuditContext, operation audit.Operation, route modeldomain.Route, settlement imageSettlementFields, plan imageExecutionPlan) (*Result, error) {
+	outcome, err := s.runImageAttempts(ctx, plan)
 	if err != nil {
 		s.writeMediaFailureAudit(auditCtx, outcome.failureStatus, outcome.failureCode, outcome.failureCredential)
 		return nil, err
@@ -123,7 +128,7 @@ func (s *Service) executeImage(
 	if outcome.response == nil {
 		return nil, s.reportImageSelectionFailure(auditCtx, outcome)
 	}
-	billing.owned = true
+	reservation.owned = true
 	return buildImageResult(newImageFinalization(s, auditCtx, operation, route, outcome, settlement)), nil
 }
 

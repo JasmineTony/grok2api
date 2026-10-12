@@ -230,16 +230,20 @@ func (a *Adapter) fetchDPoPSession(ctx context.Context, ssoToken string, lease *
 	// yields 0 (no correction) — still a defined, usable value for every proof.
 	clockSkew := dpopClockSkewFromDateHeader(response.Header.Get("Date"), localBefore, localAfter)
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		if response.StatusCode == http.StatusForbidden {
-			if shouldInvalidateConsoleClearance(data) {
-				lease.InvalidateClearance()
-			}
+		if response.StatusCode == http.StatusForbidden && shouldInvalidateConsoleClearance(data) {
+			lease.InvalidateClearance()
 		}
 		return dpopSession{}, &dpopTokenEndpointError{
 			status: response.StatusCode, statusText: response.Status, header: response.Header.Clone(),
 			body: data, bodyTruncated: truncated, request: response.Request,
 		}
 	}
+	return buildDPoPSession(data, privateKey, publicJWK, clockSkew)
+}
+
+// buildDPoPSession validates the minted DPoP token against the local key and
+// derives the cache expiry for the session.
+func buildDPoPSession(data []byte, privateKey *ecdsa.PrivateKey, publicJWK dpopJWK, clockSkew time.Duration) (dpopSession, error) {
 	var tokenResponse struct {
 		AccessToken string `json:"access_token"`
 		TokenType   string `json:"token_type"`
@@ -319,24 +323,8 @@ func (a *Adapter) doDPoPRequestWithContentType(
 			}
 			return nil, err
 		}
-		request, err := http.NewRequestWithContext(ctx, method, endpoint, bytes.NewReader(body))
+		request, err := newConsoleDPoPRequest(ctx, method, endpoint, body, contentType, accept, ssoToken, lease, session)
 		if err != nil {
-			return nil, err
-		}
-		applyBrowserHeaders(request, ssoToken, lease)
-		if len(body) > 0 {
-			if strings.TrimSpace(contentType) == "" {
-				contentType = "application/json"
-			}
-			request.Header.Set("Content-Type", contentType)
-		}
-		if strings.TrimSpace(accept) != "" {
-			request.Header.Set("Accept", accept)
-		}
-		if strings.HasSuffix(request.URL.Path, "/responses") {
-			request.Header.Set("x-cluster", "https://us-east-1.api.x.ai")
-		}
-		if err := applyDPoPAuthorization(request, session); err != nil {
 			return nil, err
 		}
 		response, err := lease.DoDeferredForbidden(request)
@@ -351,6 +339,32 @@ func (a *Adapter) doDPoPRequestWithContentType(
 		a.dpop.invalidate(cacheKey, session.accessToken)
 	}
 	return nil, errors.New("Console DPoP 重试状态无效")
+}
+
+// newConsoleDPoPRequest builds the DPoP-authorized Console request for one
+// session, preserving browser headers and the responses cluster hint.
+func newConsoleDPoPRequest(ctx context.Context, method, endpoint string, body []byte, contentType, accept, ssoToken string, lease *infraegress.Lease, session dpopSession) (*http.Request, error) {
+	request, err := http.NewRequestWithContext(ctx, method, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	applyBrowserHeaders(request, ssoToken, lease)
+	if len(body) > 0 {
+		if strings.TrimSpace(contentType) == "" {
+			contentType = "application/json"
+		}
+		request.Header.Set("Content-Type", contentType)
+	}
+	if strings.TrimSpace(accept) != "" {
+		request.Header.Set("Accept", accept)
+	}
+	if strings.HasSuffix(request.URL.Path, "/responses") {
+		request.Header.Set("x-cluster", "https://us-east-1.api.x.ai")
+	}
+	if err := applyDPoPAuthorization(request, session); err != nil {
+		return nil, err
+	}
+	return request, nil
 }
 
 func publicDPoPJWK(key *ecdsa.PublicKey) dpopJWK {

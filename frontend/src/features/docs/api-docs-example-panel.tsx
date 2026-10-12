@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { ModelRouteDTO } from "@/entities/model/types";
@@ -18,7 +19,7 @@ type ExamplePanelProps = {
 };
 
 /** 请求/响应示例：视图切换、语言与示例模型选择、复制与代码块。 */
-export function ExamplePanel(props: ExamplePanelProps) {
+export function ExamplePanel(props: ExamplePanelProps): ReactElement {
   return (
     <div className="overflow-hidden rounded-lg bg-card" data-testid="docs-example-panel">
       <ExampleToolbar {...props} />

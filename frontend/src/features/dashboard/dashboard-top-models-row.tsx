@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { TableCell, TableRow } from "@/components/ui/table";
@@ -9,7 +10,7 @@ import { formatNumber } from "@/shared/lib/format";
 export type TopModel = DashboardDTO["topModels"][number];
 
 /** 单个模型行：模型与 tokens 明细、计费、tokens、请求数。 */
-export function TopModelRow({ item, locale }: { item: TopModel; locale: string }) {
+export function TopModelRow({ item, locale }: { item: TopModel; locale: string }): ReactElement {
   const inactive = item.requests === 0;
   return (
     <TableRow className="h-14">

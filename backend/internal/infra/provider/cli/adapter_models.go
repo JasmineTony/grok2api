@@ -222,11 +222,21 @@ func (a *Adapter) listModelsAt(ctx context.Context, credential account.Credentia
 	if resp.StatusCode != http.StatusOK {
 		return nil, resp.StatusCode, nil
 	}
+	models, err := parseModelCatalogEntries(body)
+	if err != nil {
+		return nil, resp.StatusCode, err
+	}
+	a.recordModelsETag(credential.ID, resp.Header.Get("ETag"))
+	return models, resp.StatusCode, nil
+}
+
+// parseModelCatalogEntries 解析 /models 目录：按出现顺序去重，并把上游推理菜单与上下文预算发布给模型域。
+func parseModelCatalogEntries(body []byte) ([]string, error) {
 	var payload struct {
 		Data []json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, resp.StatusCode, err
+		return nil, err
 	}
 	models := make([]string, 0, len(payload.Data))
 	seen := make(map[string]struct{}, len(payload.Data))
@@ -248,8 +258,7 @@ func (a *Adapter) listModelsAt(ctx context.Context, credential account.Credentia
 		// aliases, and catalog output follow the upstream catalog like grok-build does.
 		modeldomain.RegisterUpstreamModelProfile(identifier, item.upstreamProfile())
 	}
-	a.recordModelsETag(credential.ID, resp.Header.Get("ETag"))
-	return models, resp.StatusCode, nil
+	return models, nil
 }
 
 func (a *Adapter) recordModelsETag(accountID uint64, etag string) {

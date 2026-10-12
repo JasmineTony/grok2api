@@ -21,144 +21,189 @@ func (c *streamConverter) handle(event string, data []byte) error {
 	}
 	switch typeName {
 	case "response.created", "response.in_progress":
-		var response responseEnvelope
-		_ = json.Unmarshal(root["response"], &response)
-		c.setResponse(response)
-		return c.start()
+		return c.handleResponseStart(root)
 	case "response.output_text.delta":
-		var delta string
-		_ = json.Unmarshal(root["delta"], &delta)
-		if err := c.start(); err != nil {
-			return err
-		}
-		if c.operation == OperationMessages && c.deferSearchText {
-			return c.bufferSearchText(delta)
-		}
-		return c.textDelta(delta)
+		return c.handleTextDelta(root)
 	case "response.refusal.delta":
-		var delta string
-		_ = json.Unmarshal(root["delta"], &delta)
-		c.refused = true
-		if c.operation == OperationChat {
-			return c.chatDelta(map[string]any{"refusal": delta})
-		}
-		return c.textDeltaMessages(delta)
+		return c.handleRefusalDelta(root)
 	case "response.output_text.annotation.added":
-		if c.operation != OperationChat {
-			return nil
-		}
-		var annotation any
-		if json.Unmarshal(root["annotation"], &annotation) != nil || annotation == nil {
-			return nil
-		}
-		return c.chatDelta(map[string]any{"annotations": []any{annotation}})
+		return c.handleAnnotationAdded(root)
 	case "response.reasoning_summary_text.delta":
-		var itemID, delta string
-		_ = json.Unmarshal(root["item_id"], &itemID)
-		_ = json.Unmarshal(root["delta"], &delta)
-		return c.reasoningSummaryDelta(itemID, delta)
+		return c.handleReasoningSummaryDelta(root)
 	case "response.reasoning_text.delta":
-		var itemID, delta string
-		_ = json.Unmarshal(root["item_id"], &itemID)
-		_ = json.Unmarshal(root["delta"], &delta)
-		return c.reasoningTextDelta(itemID, delta)
+		return c.handleReasoningTextDelta(root)
 	case "response.output_item.added":
-		var item responseItem
-		_ = json.Unmarshal(root["item"], &item)
-		if item.Type == "reasoning" && c.reasoningOutputEnabled() {
-			c.ensureReasoningState(item.ID)
-		}
-		if item.Type == "reasoning" && c.operation == OperationMessages && c.options.AnthropicThinking {
-			if err := c.thinkingStart(item.ID); err != nil {
-				return err
-			}
-			return c.emitEncrypted(item)
-		}
-		if item.Type == "reasoning" && item.ID != "" && c.operation == OperationChat {
-			if err := c.markChatReasoningStart(); err != nil {
-				return err
-			}
-			return c.emitEncrypted(item)
-		}
-		if item.Type == "web_search_call" && c.operation == OperationMessages && c.options.AnthropicWebSearch {
-			if call, ok := parseWebSearchCallItem(item); ok {
-				return c.noteWebSearch(call, false)
-			}
-			return nil
-		}
-		if item.Type != "function_call" {
-			return nil
-		}
-		var outputIndex int
-		_ = json.Unmarshal(root["output_index"], &outputIndex)
-		return c.toolStart(item, outputIndex)
+		return c.handleOutputItemAdded(root)
 	case "response.function_call_arguments.delta":
-		var itemID, delta string
-		_ = json.Unmarshal(root["item_id"], &itemID)
-		_ = json.Unmarshal(root["delta"], &delta)
-		return c.toolDelta(itemID, delta)
+		return c.handleFunctionCallArgumentsDelta(root)
 	case "response.function_call_arguments.done":
-		var itemID, arguments string
-		_ = json.Unmarshal(root["item_id"], &itemID)
-		_ = json.Unmarshal(root["arguments"], &arguments)
-		return c.toolArgumentsDone(itemID, arguments)
+		return c.handleFunctionCallArgumentsDone(root)
 	case "response.output_item.done":
-		var item responseItem
-		_ = json.Unmarshal(root["item"], &item)
-		c.recordOutputItem(item)
-		if item.Type == "function_call" {
-			return c.toolArgumentsDone(item.ID, item.Arguments)
-		}
-		if item.Type == "reasoning" {
-			if c.reasoningOutputEnabled() {
-				if err := c.reasoningDone(item); err != nil {
-					return err
-				}
-			}
-			if err := c.emitEncrypted(item); err != nil {
-				return err
-			}
-			return c.thinkingDone(item)
-		}
-		if item.Type == "web_search_call" && c.operation == OperationMessages && c.options.AnthropicWebSearch {
-			if call, ok := parseWebSearchCallItem(item); ok {
-				return c.noteWebSearch(call, true)
-			}
-		}
+		return c.handleOutputItemDone(root)
 	case "response.completed", "response.incomplete":
-		var response responseEnvelope
-		_ = json.Unmarshal(root["response"], &response)
-		// Some upstream streams omit output_item.done and put the complete
-		// reasoning/function_call objects only in the terminal envelope. Record
-		// those objects before done() commits the replay cache.
-		c.recordReplayOutput(response.Output)
-		response.Output = c.mergeOutputItems(response.Output)
-		c.setResponse(response)
-		for _, item := range response.Output {
-			if item.Type == "reasoning" {
-				if err := c.emitEncrypted(item); err != nil {
-					return err
-				}
-			}
-		}
-		if c.operation == OperationMessages && c.options.AnthropicWebSearch {
-			parsed := parseResponse(response)
-			for _, call := range parsed.WebSearch {
-				if err := c.noteWebSearch(call, true); err != nil {
-					return err
-				}
-			}
-		}
-		status := response.Status
-		if status == "" && typeName == "response.incomplete" {
-			status = "incomplete"
-		}
-		c.terminalEvent = true
-		return c.done(status)
+		return c.handleTerminalResponse(typeName, root)
 	case "error", "response.failed":
 		return c.streamError(data)
 	}
 	return nil
+}
+
+func (c *streamConverter) handleResponseStart(root map[string]json.RawMessage) error {
+	var response responseEnvelope
+	_ = json.Unmarshal(root["response"], &response)
+	c.setResponse(response)
+	return c.start()
+}
+
+func (c *streamConverter) handleTextDelta(root map[string]json.RawMessage) error {
+	var delta string
+	_ = json.Unmarshal(root["delta"], &delta)
+	if err := c.start(); err != nil {
+		return err
+	}
+	if c.operation == OperationMessages && c.deferSearchText {
+		return c.bufferSearchText(delta)
+	}
+	return c.textDelta(delta)
+}
+
+func (c *streamConverter) handleRefusalDelta(root map[string]json.RawMessage) error {
+	var delta string
+	_ = json.Unmarshal(root["delta"], &delta)
+	c.refused = true
+	if c.operation == OperationChat {
+		return c.chatDelta(map[string]any{"refusal": delta})
+	}
+	return c.textDeltaMessages(delta)
+}
+
+func (c *streamConverter) handleAnnotationAdded(root map[string]json.RawMessage) error {
+	if c.operation != OperationChat {
+		return nil
+	}
+	var annotation any
+	if json.Unmarshal(root["annotation"], &annotation) != nil || annotation == nil {
+		return nil
+	}
+	return c.chatDelta(map[string]any{"annotations": []any{annotation}})
+}
+
+func (c *streamConverter) handleReasoningSummaryDelta(root map[string]json.RawMessage) error {
+	var itemID, delta string
+	_ = json.Unmarshal(root["item_id"], &itemID)
+	_ = json.Unmarshal(root["delta"], &delta)
+	return c.reasoningSummaryDelta(itemID, delta)
+}
+
+func (c *streamConverter) handleReasoningTextDelta(root map[string]json.RawMessage) error {
+	var itemID, delta string
+	_ = json.Unmarshal(root["item_id"], &itemID)
+	_ = json.Unmarshal(root["delta"], &delta)
+	return c.reasoningTextDelta(itemID, delta)
+}
+
+func (c *streamConverter) handleOutputItemAdded(root map[string]json.RawMessage) error {
+	var item responseItem
+	_ = json.Unmarshal(root["item"], &item)
+	if item.Type == "reasoning" && c.reasoningOutputEnabled() {
+		c.ensureReasoningState(item.ID)
+	}
+	if item.Type == "reasoning" && c.operation == OperationMessages && c.options.AnthropicThinking {
+		if err := c.thinkingStart(item.ID); err != nil {
+			return err
+		}
+		return c.emitEncrypted(item)
+	}
+	if item.Type == "reasoning" && item.ID != "" && c.operation == OperationChat {
+		if err := c.markChatReasoningStart(); err != nil {
+			return err
+		}
+		return c.emitEncrypted(item)
+	}
+	if item.Type == "web_search_call" && c.operation == OperationMessages && c.options.AnthropicWebSearch {
+		if call, ok := parseWebSearchCallItem(item); ok {
+			return c.noteWebSearch(call, false)
+		}
+		return nil
+	}
+	if item.Type != "function_call" {
+		return nil
+	}
+	var outputIndex int
+	_ = json.Unmarshal(root["output_index"], &outputIndex)
+	return c.toolStart(item, outputIndex)
+}
+
+func (c *streamConverter) handleFunctionCallArgumentsDelta(root map[string]json.RawMessage) error {
+	var itemID, delta string
+	_ = json.Unmarshal(root["item_id"], &itemID)
+	_ = json.Unmarshal(root["delta"], &delta)
+	return c.toolDelta(itemID, delta)
+}
+
+func (c *streamConverter) handleFunctionCallArgumentsDone(root map[string]json.RawMessage) error {
+	var itemID, arguments string
+	_ = json.Unmarshal(root["item_id"], &itemID)
+	_ = json.Unmarshal(root["arguments"], &arguments)
+	return c.toolArgumentsDone(itemID, arguments)
+}
+
+func (c *streamConverter) handleOutputItemDone(root map[string]json.RawMessage) error {
+	var item responseItem
+	_ = json.Unmarshal(root["item"], &item)
+	c.recordOutputItem(item)
+	if item.Type == "function_call" {
+		return c.toolArgumentsDone(item.ID, item.Arguments)
+	}
+	if item.Type == "reasoning" {
+		if c.reasoningOutputEnabled() {
+			if err := c.reasoningDone(item); err != nil {
+				return err
+			}
+		}
+		if err := c.emitEncrypted(item); err != nil {
+			return err
+		}
+		return c.thinkingDone(item)
+	}
+	if item.Type == "web_search_call" && c.operation == OperationMessages && c.options.AnthropicWebSearch {
+		if call, ok := parseWebSearchCallItem(item); ok {
+			return c.noteWebSearch(call, true)
+		}
+	}
+	return nil
+}
+
+func (c *streamConverter) handleTerminalResponse(typeName string, root map[string]json.RawMessage) error {
+	var response responseEnvelope
+	_ = json.Unmarshal(root["response"], &response)
+	// Some upstream streams omit output_item.done and put the complete
+	// reasoning/function_call objects only in the terminal envelope. Record
+	// those objects before done() commits the replay cache.
+	c.recordReplayOutput(response.Output)
+	response.Output = c.mergeOutputItems(response.Output)
+	c.setResponse(response)
+	for _, item := range response.Output {
+		if item.Type == "reasoning" {
+			if err := c.emitEncrypted(item); err != nil {
+				return err
+			}
+		}
+	}
+	if c.operation == OperationMessages && c.options.AnthropicWebSearch {
+		parsed := parseResponse(response)
+		for _, call := range parsed.WebSearch {
+			if err := c.noteWebSearch(call, true); err != nil {
+				return err
+			}
+		}
+	}
+	status := response.Status
+	if status == "" && typeName == "response.incomplete" {
+		status = "incomplete"
+	}
+	c.terminalEvent = true
+	return c.done(status)
 }
 
 // recordOutputItem retains the authoritative item-done payload. In streamed
@@ -173,17 +218,23 @@ func (c *streamConverter) recordOutputItem(item responseItem) {
 	}
 	key := replayOutputKey(item)
 	if key != "" {
-		if _, exists := c.outputItemIDs[key]; exists {
-			for index := range c.outputItems {
-				if replayOutputKey(c.outputItems[index]) == key {
-					c.outputItems[index] = mergeResponseItem(c.outputItems[index], item)
-					return
-				}
-			}
+		if _, exists := c.outputItemIDs[key]; exists && c.replaceRecordedOutputItem(key, item) {
+			return
 		}
 		c.outputItemIDs[key] = struct{}{}
 	}
 	c.outputItems = append(c.outputItems, cloneResponseItem(item))
+}
+
+// replaceRecordedOutputItem 用新 payload 合并已记录的同 key item，返回是否命中。
+func (c *streamConverter) replaceRecordedOutputItem(key string, item responseItem) bool {
+	for index := range c.outputItems {
+		if replayOutputKey(c.outputItems[index]) == key {
+			c.outputItems[index] = mergeResponseItem(c.outputItems[index], item)
+			return true
+		}
+	}
+	return false
 }
 
 func replayOutputKey(item responseItem) string {
@@ -219,38 +270,7 @@ func (c *streamConverter) recordReplayOutput(output []responseItem) {
 			}
 		}
 	} else {
-		terminal := make(map[string]responseItem, len(output))
-		for _, item := range output {
-			if item.Type == "reasoning" || item.Type == "function_call" {
-				if key := replayOutputKey(item); key != "" {
-					terminal[key] = item
-				}
-			}
-		}
-		seen := make(map[string]struct{}, len(c.outputItems)+len(output))
-		for _, item := range c.outputItems {
-			key := replayOutputKey(item)
-			if key != "" {
-				if update, ok := terminal[key]; ok {
-					item = mergeResponseItem(item, update)
-				}
-				seen[key] = struct{}{}
-			}
-			merged = append(merged, cloneResponseItem(item))
-		}
-		for _, item := range output {
-			if item.Type != "reasoning" && item.Type != "function_call" {
-				continue
-			}
-			key := replayOutputKey(item)
-			if key != "" {
-				if _, ok := seen[key]; ok {
-					continue
-				}
-				seen[key] = struct{}{}
-			}
-			merged = append(merged, cloneResponseItem(item))
-		}
+		merged = mergeReplayOutputItems(c.outputItems, output)
 	}
 	c.outputItems = merged
 	c.outputItemIDs = make(map[string]struct{}, len(merged))
@@ -259,6 +279,44 @@ func (c *streamConverter) recordReplayOutput(output []responseItem) {
 			c.outputItemIDs[key] = struct{}{}
 		}
 	}
+}
+
+// mergeReplayOutputItems 以事件流顺序为主，用终端信封补全字段并追加未宣告的 item。
+func mergeReplayOutputItems(observed, output []responseItem) []responseItem {
+	merged := make([]responseItem, 0, len(observed)+len(output))
+	terminal := make(map[string]responseItem, len(output))
+	for _, item := range output {
+		if item.Type == "reasoning" || item.Type == "function_call" {
+			if key := replayOutputKey(item); key != "" {
+				terminal[key] = item
+			}
+		}
+	}
+	seen := make(map[string]struct{}, len(observed)+len(output))
+	for _, item := range observed {
+		key := replayOutputKey(item)
+		if key != "" {
+			if update, ok := terminal[key]; ok {
+				item = mergeResponseItem(item, update)
+			}
+			seen[key] = struct{}{}
+		}
+		merged = append(merged, cloneResponseItem(item))
+	}
+	for _, item := range output {
+		if item.Type != "reasoning" && item.Type != "function_call" {
+			continue
+		}
+		key := replayOutputKey(item)
+		if key != "" {
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+		}
+		merged = append(merged, cloneResponseItem(item))
+	}
+	return merged
 }
 
 func (c *streamConverter) commitReasoningReplay() {
@@ -277,21 +335,25 @@ func (c *streamConverter) mergeOutputItems(output []responseItem) []responseItem
 	}
 	merged := append([]responseItem(nil), output...)
 	for _, item := range c.outputItems {
-		found := false
 		if key := replayOutputKey(item); key != "" {
-			for index := range merged {
-				if replayOutputKey(merged[index]) == key {
-					merged[index] = mergeResponseItem(merged[index], item)
-					found = true
-					break
-				}
+			if index, found := findReplayOutputIndex(merged, key); found {
+				merged[index] = mergeResponseItem(merged[index], item)
+				continue
 			}
 		}
-		if !found {
-			merged = append(merged, item)
-		}
+		merged = append(merged, item)
 	}
 	return merged
+}
+
+// findReplayOutputIndex 返回 merged 中 replay key 匹配的 item 下标。
+func findReplayOutputIndex(merged []responseItem, key string) (int, bool) {
+	for index := range merged {
+		if replayOutputKey(merged[index]) == key {
+			return index, true
+		}
+	}
+	return -1, false
 }
 
 func mergeResponseItem(base, update responseItem) responseItem {

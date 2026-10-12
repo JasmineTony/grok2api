@@ -184,32 +184,10 @@ func (h *Handler) update(c *gin.Context) {
 }
 
 func (value settingsConfigDTO) toApplication() settingsapp.EditableConfig {
-	clearanceProvided := value.ProviderWeb.ClearanceMode != nil || value.ProviderWeb.FlareSolverrURL != nil ||
-		value.ProviderWeb.ClearanceTimeout != nil || value.ProviderWeb.ClearanceRefresh != nil
 	result := settingsapp.EditableConfig{
-		Server: settingsapp.ServerConfig{MaxConcurrentRequests: value.Server.MaxConcurrentRequests},
-		ProviderBuild: settingsapp.ProviderBuildConfig{
-			BaseURL: value.ProviderBuild.BaseURL, FallbackBaseURL: value.ProviderBuild.FallbackBaseURL,
-			ClientVersion: value.ProviderBuild.ClientVersion, ClientIdentifier: value.ProviderBuild.ClientIdentifier,
-			TokenAuth: value.ProviderBuild.TokenAuth, UserAgent: value.ProviderBuild.UserAgent,
-			ResponseHeaderTimeout: value.ProviderBuild.ResponseHeaderTimeout,
-			StreamIdleTimeout:     value.ProviderBuild.StreamIdleTimeout,
-		},
-		ProviderWeb: settingsapp.ProviderWebConfig{
-			BaseURL: value.ProviderWeb.BaseURL, QuotaTimeout: value.ProviderWeb.QuotaTimeout,
-			StatsigMode: value.ProviderWeb.StatsigMode, StatsigManualValue: value.ProviderWeb.StatsigManualValue,
-			StatsigManualConfigured: value.ProviderWeb.StatsigManualConfigured, StatsigSignerURL: value.ProviderWeb.StatsigSignerURL,
-			ClearanceMode: optionalString(value.ProviderWeb.ClearanceMode), FlareSolverrURL: optionalString(value.ProviderWeb.FlareSolverrURL),
-			ClearanceTimeout: optionalString(value.ProviderWeb.ClearanceTimeout), ClearanceRefresh: optionalString(value.ProviderWeb.ClearanceRefresh),
-			ClearanceProvided: clearanceProvided,
-			ChatTimeout:       value.ProviderWeb.ChatTimeout, StreamIdleTimeout: value.ProviderWeb.StreamIdleTimeout,
-			ImageTimeout:     value.ProviderWeb.ImageTimeout,
-			VideoTimeout:     value.ProviderWeb.VideoTimeout,
-			MediaConcurrency: value.ProviderWeb.MediaConcurrency, AllowNSFW: value.ProviderWeb.AllowNSFW,
-			FreeVideoDurationCap:         intValue(value.ProviderWeb.FreeVideoDurationCap),
-			FreeVideoDurationCapProvided: value.ProviderWeb.FreeVideoDurationCap != nil,
-			RecoveryBackoffBase:          value.ProviderWeb.RecoveryBackoffBase, RecoveryBackoffMax: value.ProviderWeb.RecoveryBackoffMax,
-		},
+		Server:        settingsapp.ServerConfig{MaxConcurrentRequests: value.Server.MaxConcurrentRequests},
+		ProviderBuild: value.toProviderBuildConfig(),
+		ProviderWeb:   value.toProviderWebConfig(),
 		ProviderConsole: settingsapp.ProviderConsoleConfig{
 			BaseURL: value.ProviderConsole.BaseURL, ChatTimeout: value.ProviderConsole.ChatTimeout,
 			StreamIdleTimeout: value.ProviderConsole.StreamIdleTimeout,
@@ -226,15 +204,7 @@ func (value settingsConfigDTO) toApplication() settingsapp.EditableConfig {
 		Frontend: settingsapp.FrontendConfig{
 			PublicAPIBaseURL: value.Frontend.PublicAPIBaseURL,
 		},
-		Routing: settingsapp.RoutingConfig{
-			StickyTTL: value.Routing.StickyTTL, CooldownBase: value.Routing.CooldownBase,
-			CooldownMax: value.Routing.CooldownMax, CapacityWait: value.Routing.CapacityWait, MaxAttempts: value.Routing.MaxAttempts, VideoMaxAttempts: value.Routing.VideoMaxAttempts,
-			PreferFreeBuild:                     value.Routing.PreferFreeBuild,
-			MarkBuildChatDeniedAsReauth:         boolValue(value.Routing.MarkBuildChatDeniedAsReauth),
-			MarkBuildChatDeniedAsReauthProvided: value.Routing.MarkBuildChatDeniedAsReauth != nil,
-			AccountIsolatedConnections:          boolValue(value.Routing.AccountIsolatedConnections),
-			AccountIsolatedConnectionsProvided:  value.Routing.AccountIsolatedConnections != nil,
-		},
+		Routing: value.toRoutingConfig(),
 		Audit: settingsapp.AuditConfig{
 			BufferSize: value.Audit.BufferSize, BatchSize: value.Audit.BatchSize, FlushInterval: value.Audit.FlushInterval, CommitDelayMS: value.Audit.CommitDelayMS,
 			RetentionDays: intValue(value.Audit.RetentionDays), RetentionDaysProvided: value.Audit.RetentionDays != nil,
@@ -251,49 +221,80 @@ func (value settingsConfigDTO) toApplication() settingsapp.EditableConfig {
 		result.Routing.SegmentedSelectorProvided = true
 	}
 	if value.Accounts != nil {
-		result.Accounts = settingsapp.AccountsConfig{
-			MarkBuildForbiddenReauth:                     boolValue(value.Accounts.MarkBuildForbiddenReauth),
-			BuildForbiddenReauthCodes:                    stringSliceValue(value.Accounts.BuildForbiddenReauthCodes),
-			ExcludeBuildBotFlaggedFromScheduling:         boolValue(value.Accounts.ExcludeBuildBotFlaggedFromScheduling),
-			MarkBuildForbiddenReauthProvided:             value.Accounts.MarkBuildForbiddenReauth != nil,
-			BuildForbiddenReauthCodesProvided:            value.Accounts.BuildForbiddenReauthCodes != nil,
-			ExcludeBuildBotFlaggedFromSchedulingProvided: value.Accounts.ExcludeBuildBotFlaggedFromScheduling != nil,
-			AutoCleanReauthEnabled:                       value.Accounts.AutoCleanReauthEnabled,
-			AutoCleanReauthInterval:                      value.Accounts.AutoCleanReauthInterval,
-			AutoCleanReauthMinAge:                        value.Accounts.AutoCleanReauthMinAge,
-			AutoCleanIncludeDisabled:                     value.Accounts.AutoCleanIncludeDisabled,
-		}
+		result.Accounts = value.toAccountsConfig()
 		result.AccountsProvided = true
 	}
 	return result
+}
+
+// toProviderBuildConfig 转换 Build 通道配置。
+func (value settingsConfigDTO) toProviderBuildConfig() settingsapp.ProviderBuildConfig {
+	return settingsapp.ProviderBuildConfig{
+		BaseURL: value.ProviderBuild.BaseURL, FallbackBaseURL: value.ProviderBuild.FallbackBaseURL,
+		ClientVersion: value.ProviderBuild.ClientVersion, ClientIdentifier: value.ProviderBuild.ClientIdentifier,
+		TokenAuth: value.ProviderBuild.TokenAuth, UserAgent: value.ProviderBuild.UserAgent,
+		ResponseHeaderTimeout: value.ProviderBuild.ResponseHeaderTimeout,
+		StreamIdleTimeout:     value.ProviderBuild.StreamIdleTimeout,
+	}
+}
+
+// toProviderWebConfig 转换 Web 通道配置，并保留清关参数是否被显式提交的信息。
+func (value settingsConfigDTO) toProviderWebConfig() settingsapp.ProviderWebConfig {
+	clearanceProvided := value.ProviderWeb.ClearanceMode != nil || value.ProviderWeb.FlareSolverrURL != nil ||
+		value.ProviderWeb.ClearanceTimeout != nil || value.ProviderWeb.ClearanceRefresh != nil
+	return settingsapp.ProviderWebConfig{
+		BaseURL: value.ProviderWeb.BaseURL, QuotaTimeout: value.ProviderWeb.QuotaTimeout,
+		StatsigMode: value.ProviderWeb.StatsigMode, StatsigManualValue: value.ProviderWeb.StatsigManualValue,
+		StatsigManualConfigured: value.ProviderWeb.StatsigManualConfigured, StatsigSignerURL: value.ProviderWeb.StatsigSignerURL,
+		ClearanceMode: optionalString(value.ProviderWeb.ClearanceMode), FlareSolverrURL: optionalString(value.ProviderWeb.FlareSolverrURL),
+		ClearanceTimeout: optionalString(value.ProviderWeb.ClearanceTimeout), ClearanceRefresh: optionalString(value.ProviderWeb.ClearanceRefresh),
+		ClearanceProvided: clearanceProvided,
+		ChatTimeout:       value.ProviderWeb.ChatTimeout, StreamIdleTimeout: value.ProviderWeb.StreamIdleTimeout,
+		ImageTimeout:     value.ProviderWeb.ImageTimeout,
+		VideoTimeout:     value.ProviderWeb.VideoTimeout,
+		MediaConcurrency: value.ProviderWeb.MediaConcurrency, AllowNSFW: value.ProviderWeb.AllowNSFW,
+		FreeVideoDurationCap:         intValue(value.ProviderWeb.FreeVideoDurationCap),
+		FreeVideoDurationCapProvided: value.ProviderWeb.FreeVideoDurationCap != nil,
+		RecoveryBackoffBase:          value.ProviderWeb.RecoveryBackoffBase, RecoveryBackoffMax: value.ProviderWeb.RecoveryBackoffMax,
+	}
+}
+
+// toRoutingConfig 转换路由、冷却与分段选择器开关。
+func (value settingsConfigDTO) toRoutingConfig() settingsapp.RoutingConfig {
+	return settingsapp.RoutingConfig{
+		StickyTTL: value.Routing.StickyTTL, CooldownBase: value.Routing.CooldownBase,
+		CooldownMax: value.Routing.CooldownMax, CapacityWait: value.Routing.CapacityWait, MaxAttempts: value.Routing.MaxAttempts, VideoMaxAttempts: value.Routing.VideoMaxAttempts,
+		PreferFreeBuild:                     value.Routing.PreferFreeBuild,
+		MarkBuildChatDeniedAsReauth:         boolValue(value.Routing.MarkBuildChatDeniedAsReauth),
+		MarkBuildChatDeniedAsReauthProvided: value.Routing.MarkBuildChatDeniedAsReauth != nil,
+		AccountIsolatedConnections:          boolValue(value.Routing.AccountIsolatedConnections),
+		AccountIsolatedConnectionsProvided:  value.Routing.AccountIsolatedConnections != nil,
+	}
+}
+
+// toAccountsConfig 转换账号自动清理与 Build 封禁重认证配置。
+func (value settingsConfigDTO) toAccountsConfig() settingsapp.AccountsConfig {
+	return settingsapp.AccountsConfig{
+		MarkBuildForbiddenReauth:                     boolValue(value.Accounts.MarkBuildForbiddenReauth),
+		BuildForbiddenReauthCodes:                    stringSliceValue(value.Accounts.BuildForbiddenReauthCodes),
+		ExcludeBuildBotFlaggedFromScheduling:         boolValue(value.Accounts.ExcludeBuildBotFlaggedFromScheduling),
+		MarkBuildForbiddenReauthProvided:             value.Accounts.MarkBuildForbiddenReauth != nil,
+		BuildForbiddenReauthCodesProvided:            value.Accounts.BuildForbiddenReauthCodes != nil,
+		ExcludeBuildBotFlaggedFromSchedulingProvided: value.Accounts.ExcludeBuildBotFlaggedFromScheduling != nil,
+		AutoCleanReauthEnabled:                       value.Accounts.AutoCleanReauthEnabled,
+		AutoCleanReauthInterval:                      value.Accounts.AutoCleanReauthInterval,
+		AutoCleanReauthMinAge:                        value.Accounts.AutoCleanReauthMinAge,
+		AutoCleanIncludeDisabled:                     value.Accounts.AutoCleanIncludeDisabled,
+	}
 }
 
 func newSettingsResponse(value settingsapp.Snapshot) settingsResponse {
 	config := value.Config
 	return settingsResponse{
 		Config: settingsConfigDTO{
-			Server: serverConfigDTO{MaxConcurrentRequests: config.Server.MaxConcurrentRequests},
-			ProviderBuild: providerBuildConfigDTO{
-				BaseURL: config.ProviderBuild.BaseURL, FallbackBaseURL: config.ProviderBuild.FallbackBaseURL,
-				ClientVersion: config.ProviderBuild.ClientVersion, ClientIdentifier: config.ProviderBuild.ClientIdentifier,
-				TokenAuth:           config.ProviderBuild.TokenAuth,
-				TokenAuthConfigured: strings.TrimSpace(config.ProviderBuild.TokenAuth) != "", UserAgent: config.ProviderBuild.UserAgent,
-				ResponseHeaderTimeout: config.ProviderBuild.ResponseHeaderTimeout,
-				StreamIdleTimeout:     config.ProviderBuild.StreamIdleTimeout,
-			},
-			ProviderWeb: providerWebConfigDTO{
-				BaseURL: config.ProviderWeb.BaseURL, QuotaTimeout: config.ProviderWeb.QuotaTimeout,
-				StatsigMode: config.ProviderWeb.StatsigMode, StatsigManualConfigured: config.ProviderWeb.StatsigManualConfigured,
-				StatsigSignerURL: config.ProviderWeb.StatsigSignerURL,
-				ClearanceMode:    stringPointer(config.ProviderWeb.ClearanceMode), FlareSolverrURL: stringPointer(config.ProviderWeb.FlareSolverrURL),
-				ClearanceTimeout: stringPointer(config.ProviderWeb.ClearanceTimeout), ClearanceRefresh: stringPointer(config.ProviderWeb.ClearanceRefresh),
-				ChatTimeout: config.ProviderWeb.ChatTimeout, StreamIdleTimeout: config.ProviderWeb.StreamIdleTimeout,
-				ImageTimeout:     config.ProviderWeb.ImageTimeout,
-				VideoTimeout:     config.ProviderWeb.VideoTimeout,
-				MediaConcurrency: config.ProviderWeb.MediaConcurrency, AllowNSFW: config.ProviderWeb.AllowNSFW,
-				FreeVideoDurationCap: intPointer(config.ProviderWeb.FreeVideoDurationCap),
-				RecoveryBackoffBase:  config.ProviderWeb.RecoveryBackoffBase, RecoveryBackoffMax: config.ProviderWeb.RecoveryBackoffMax,
-			},
+			Server:        serverConfigDTO{MaxConcurrentRequests: config.Server.MaxConcurrentRequests},
+			ProviderBuild: newProviderBuildConfigDTO(config.ProviderBuild),
+			ProviderWeb:   newProviderWebConfigDTO(config.ProviderWeb),
 			ProviderConsole: providerConsoleConfigDTO{
 				BaseURL: config.ProviderConsole.BaseURL, ChatTimeout: config.ProviderConsole.ChatTimeout,
 				StreamIdleTimeout: config.ProviderConsole.StreamIdleTimeout,
@@ -310,17 +311,7 @@ func newSettingsResponse(value settingsapp.Snapshot) settingsResponse {
 			Frontend: frontendConfigDTO{
 				PublicAPIBaseURL: config.Frontend.PublicAPIBaseURL,
 			},
-			Routing: routingConfigDTO{
-				StickyTTL: config.Routing.StickyTTL, CooldownBase: config.Routing.CooldownBase,
-				CooldownMax: config.Routing.CooldownMax, CapacityWait: config.Routing.CapacityWait, MaxAttempts: config.Routing.MaxAttempts, VideoMaxAttempts: config.Routing.VideoMaxAttempts,
-				MarkBuildChatDeniedAsReauth: boolPointer(config.Routing.MarkBuildChatDeniedAsReauth),
-				PreferFreeBuild:             config.Routing.PreferFreeBuild,
-				AccountIsolatedConnections:  boolPointer(config.Routing.AccountIsolatedConnections),
-				SegmentedSelector: &segmentedSelectorConfigDTO{
-					Enabled: config.Routing.SegmentedSelector.Enabled, MinCandidates: config.Routing.SegmentedSelector.MinCandidates,
-					WindowSize: config.Routing.SegmentedSelector.WindowSize,
-				},
-			},
+			Routing: newRoutingConfigDTO(config.Routing),
 			Audit: auditConfigDTO{
 				BufferSize: config.Audit.BufferSize, BatchSize: config.Audit.BatchSize, FlushInterval: config.Audit.FlushInterval, CommitDelayMS: config.Audit.CommitDelayMS,
 				RetentionDays: intPointer(config.Audit.RetentionDays),
@@ -328,21 +319,70 @@ func newSettingsResponse(value settingsapp.Snapshot) settingsResponse {
 			ClientKeyDefaults: clientKeyDefaultsConfigDTO{
 				RPMLimit: config.ClientKeyDefaults.RPMLimit, MaxConcurrent: config.ClientKeyDefaults.MaxConcurrent,
 			},
-			Accounts: &accountsConfigDTO{
-				MarkBuildForbiddenReauth:             boolPointer(config.Accounts.MarkBuildForbiddenReauth),
-				BuildForbiddenReauthCodes:            stringSlicePointer(config.Accounts.BuildForbiddenReauthCodes),
-				ExcludeBuildBotFlaggedFromScheduling: boolPointer(config.Accounts.ExcludeBuildBotFlaggedFromScheduling),
-				AutoCleanReauthEnabled:               config.Accounts.AutoCleanReauthEnabled,
-				AutoCleanReauthInterval:              config.Accounts.AutoCleanReauthInterval,
-				AutoCleanReauthMinAge:                config.Accounts.AutoCleanReauthMinAge,
-				AutoCleanIncludeDisabled:             config.Accounts.AutoCleanIncludeDisabled,
-			},
+			Accounts: newAccountsConfigDTO(config.Accounts),
 		},
 		RecommendedProviderBuild: providerBuildRecommendationDTO{
 			ClientVersion: value.RecommendedProviderBuild.ClientVersion,
 			UserAgent:     value.RecommendedProviderBuild.UserAgent,
 		},
 		UpdatedAt: value.UpdatedAt, Revision: value.Revision, RestartRequired: value.RestartRequired,
+	}
+}
+
+// newProviderBuildConfigDTO 转换 Build 通道响应字段，并标记 TokenAuth 是否已配置。
+func newProviderBuildConfigDTO(config settingsapp.ProviderBuildConfig) providerBuildConfigDTO {
+	return providerBuildConfigDTO{
+		BaseURL: config.BaseURL, FallbackBaseURL: config.FallbackBaseURL,
+		ClientVersion: config.ClientVersion, ClientIdentifier: config.ClientIdentifier,
+		TokenAuth:           config.TokenAuth,
+		TokenAuthConfigured: strings.TrimSpace(config.TokenAuth) != "", UserAgent: config.UserAgent,
+		ResponseHeaderTimeout: config.ResponseHeaderTimeout,
+		StreamIdleTimeout:     config.StreamIdleTimeout,
+	}
+}
+
+// newProviderWebConfigDTO 转换 Web 通道响应字段，未提交的清关参数返回空指针。
+func newProviderWebConfigDTO(config settingsapp.ProviderWebConfig) providerWebConfigDTO {
+	return providerWebConfigDTO{
+		BaseURL: config.BaseURL, QuotaTimeout: config.QuotaTimeout,
+		StatsigMode: config.StatsigMode, StatsigManualConfigured: config.StatsigManualConfigured,
+		StatsigSignerURL: config.StatsigSignerURL,
+		ClearanceMode:    stringPointer(config.ClearanceMode), FlareSolverrURL: stringPointer(config.FlareSolverrURL),
+		ClearanceTimeout: stringPointer(config.ClearanceTimeout), ClearanceRefresh: stringPointer(config.ClearanceRefresh),
+		ChatTimeout: config.ChatTimeout, StreamIdleTimeout: config.StreamIdleTimeout,
+		ImageTimeout:     config.ImageTimeout,
+		VideoTimeout:     config.VideoTimeout,
+		MediaConcurrency: config.MediaConcurrency, AllowNSFW: config.AllowNSFW,
+		FreeVideoDurationCap: intPointer(config.FreeVideoDurationCap),
+		RecoveryBackoffBase:  config.RecoveryBackoffBase, RecoveryBackoffMax: config.RecoveryBackoffMax,
+	}
+}
+
+// newRoutingConfigDTO 转换路由、冷却与分段选择器响应字段。
+func newRoutingConfigDTO(config settingsapp.RoutingConfig) routingConfigDTO {
+	return routingConfigDTO{
+		StickyTTL: config.StickyTTL, CooldownBase: config.CooldownBase,
+		CooldownMax: config.CooldownMax, CapacityWait: config.CapacityWait, MaxAttempts: config.MaxAttempts, VideoMaxAttempts: config.VideoMaxAttempts,
+		MarkBuildChatDeniedAsReauth: boolPointer(config.MarkBuildChatDeniedAsReauth),
+		PreferFreeBuild:             config.PreferFreeBuild,
+		AccountIsolatedConnections:  boolPointer(config.AccountIsolatedConnections),
+		SegmentedSelector: &segmentedSelectorConfigDTO{
+			Enabled: config.SegmentedSelector.Enabled, MinCandidates: config.SegmentedSelector.MinCandidates,
+			WindowSize: config.SegmentedSelector.WindowSize,
+		},
+	}
+}
+
+// newAccountsConfigDTO 转换账号自动清理与 Build 封禁重认证响应字段。
+func newAccountsConfigDTO(config settingsapp.AccountsConfig) *accountsConfigDTO {
+	return &accountsConfigDTO{
+		MarkBuildForbiddenReauth:             boolPointer(config.MarkBuildForbiddenReauth),
+		BuildForbiddenReauthCodes:            stringSlicePointer(config.BuildForbiddenReauthCodes),
+		ExcludeBuildBotFlaggedFromScheduling: boolPointer(config.ExcludeBuildBotFlaggedFromScheduling),
+		AutoCleanReauthEnabled:               config.AutoCleanReauthEnabled,
+		AutoCleanReauthInterval:              config.AutoCleanReauthInterval,
+		AutoCleanReauthMinAge:                config.AutoCleanReauthMinAge,
+		AutoCleanIncludeDisabled:             config.AutoCleanIncludeDisabled,
 	}
 }
 

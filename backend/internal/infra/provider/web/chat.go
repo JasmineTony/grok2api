@@ -357,26 +357,9 @@ func preflightUpstream(source io.ReadCloser) (io.ReadCloser, error) {
 		line, err := reader.ReadString('\n')
 		if line != "" {
 			prefetched.WriteString(line)
-			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(trimmed, "data:") {
-				trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
-			}
-			if strings.HasPrefix(trimmed, "{") {
-				var root map[string]any
-				if json.Unmarshal([]byte(trimmed), &root) == nil {
-					if errorValue, ok := root["error"].(map[string]any); ok {
-						return nil, webResponseError(errorValue)
-					}
-					if event, ok := root["event"].(map[string]any); ok {
-						if event["type"] == "error" {
-							return nil, gatewayEventError(event)
-						}
-						return &readerCloser{Reader: io.MultiReader(bytes.NewReader(prefetched.Bytes()), reader), closer: source}, nil
-					}
-					if result, ok := root["result"].(map[string]any); ok && (result["conversation"] != nil || result["response"] != nil) {
-						return &readerCloser{Reader: io.MultiReader(bytes.NewReader(prefetched.Bytes()), reader), closer: source}, nil
-					}
-				}
+			result, done, scanErr := inspectPrefetchedLine(line, &prefetched, reader, source)
+			if done {
+				return result, scanErr
 			}
 		}
 		if err != nil {
@@ -387,6 +370,35 @@ func preflightUpstream(source io.ReadCloser) (io.ReadCloser, error) {
 		}
 	}
 	return nil, fmt.Errorf("Grok Web 首个流事件超过安全检查上限")
+}
+
+// inspectPrefetchedLine 检查预读到的首个流事件行，判断是否已经能确定上游结果。
+// done 为 true 时返回的 result/err 即 preflightUpstream 的返回值；result 为 nil 表示上游返回错误。
+func inspectPrefetchedLine(line string, prefetched *bytes.Buffer, reader io.Reader, source io.ReadCloser) (io.ReadCloser, bool, error) {
+	trimmed := strings.TrimSpace(line)
+	if strings.HasPrefix(trimmed, "data:") {
+		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
+	}
+	if !strings.HasPrefix(trimmed, "{") {
+		return nil, false, nil
+	}
+	var root map[string]any
+	if json.Unmarshal([]byte(trimmed), &root) != nil {
+		return nil, false, nil
+	}
+	if errorValue, ok := root["error"].(map[string]any); ok {
+		return nil, true, webResponseError(errorValue)
+	}
+	if event, ok := root["event"].(map[string]any); ok {
+		if event["type"] == "error" {
+			return nil, true, gatewayEventError(event)
+		}
+		return &readerCloser{Reader: io.MultiReader(bytes.NewReader(prefetched.Bytes()), reader), closer: source}, true, nil
+	}
+	if result, ok := root["result"].(map[string]any); ok && (result["conversation"] != nil || result["response"] != nil) {
+		return &readerCloser{Reader: io.MultiReader(bytes.NewReader(prefetched.Bytes()), reader), closer: source}, true, nil
+	}
+	return nil, false, nil
 }
 
 func (a *Adapter) openChat(ctx context.Context, credential account.Credential, previousResponseID string, spec ModelSpec, input normalizedChatInput, options gatewayOpenOptions) (*http.Response, *infraegress.Lease, *inferencedomain.WebResponseState, string, error) {

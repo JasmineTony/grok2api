@@ -116,36 +116,15 @@ func (a *Adapter) ForwardResponse(ctx context.Context, request provider.Response
 	if err != nil {
 		return nil, err
 	}
-	body := request.Body
-	var conversationOptions conversation.ResponseOptions
-	if request.NormalizeBody {
-		if request.Operation == conversation.OperationMessages {
-			body, conversationOptions, err = conversation.ConvertRequestWithOptions(body, request.Model, request.Operation)
-			if err == nil && conversationOptions.ReasoningEffortSet && request.NormalizedMetadata != nil {
-				request.NormalizedMetadata.ReasoningEffort = conversationOptions.ReasoningEffort
-			}
-		} else {
-			body, err = conversation.ConvertRequest(body, request.Model, request.Operation)
-		}
-		if err == nil {
-			body, err = normalizeRequestWithMetadata(body, spec, request.NormalizedMetadata)
-		}
-		if err != nil {
-			return invalidConversationResponse(request.Operation, err), nil
-		}
+	body, conversationOptions, invalid, err := normalizeForwardRequestBody(request, spec)
+	if err != nil {
+		return nil, err
+	}
+	if invalid != nil {
+		return invalid, nil
 	}
 	cfg := a.config()
-	requestCtx, totalCancel := context.WithTimeout(ctx, time.Duration(cfg.TimeoutSeconds)*time.Second)
-	var idleCancel context.CancelCauseFunc
-	if cfg.StreamIdleTimeoutSeconds > 0 {
-		requestCtx, idleCancel = context.WithCancelCause(requestCtx)
-	}
-	cancel := func() {
-		if idleCancel != nil {
-			idleCancel(nil)
-		}
-		totalCancel()
-	}
+	requestCtx, idleCancel, cancel := consoleRequestContext(ctx, cfg)
 	lease, err := a.egress.AcquireCredential(requestCtx, egressdomain.ScopeConsole, request.Credential)
 	if err != nil {
 		cancel()
@@ -161,40 +140,58 @@ func (a *Adapter) ForwardResponse(ctx context.Context, request provider.Response
 	if idleCancel != nil && response.StatusCode >= 200 && response.StatusCode < 300 && response.Body != nil {
 		response.Body = providerstreamidle.New(response.Body, time.Duration(cfg.StreamIdleTimeoutSeconds)*time.Second, idleCancel)
 	}
-	responseBodyTruncated := false
-	var rateLimit *provider.RateLimitMetadata
-	if response.StatusCode == http.StatusTooManyRequests {
-		responseBodyTruncated, rateLimit, err = normalizeRateLimitResponse(response)
-		if err != nil {
-			_ = response.Body.Close()
-			lease.Release()
-			cancel()
-			return nil, err
-		}
+	return a.completeConsoleResponse(ctx, request, response, conversationOptions, lease, cancel)
+}
+
+// normalizeForwardRequestBody rewrites the client body into the Console request
+// shape. A non-nil response means the request was rejected for the client.
+func normalizeForwardRequestBody(request provider.ResponseResourceRequest, spec ModelSpec) ([]byte, conversation.ResponseOptions, *provider.Response, error) {
+	body := request.Body
+	var conversationOptions conversation.ResponseOptions
+	if !request.NormalizeBody {
+		return body, conversationOptions, nil, nil
 	}
-	responseReleased := false
-	if response.StatusCode == http.StatusForbidden {
-		data, truncated, readErr := provider.ReadDiagnosticBody(response.Body)
-		_ = response.Body.Close()
-		if readErr != nil {
-			lease.Release()
-			cancel()
-			return nil, readErr
+	var err error
+	if request.Operation == conversation.OperationMessages {
+		body, conversationOptions, err = conversation.ConvertRequestWithOptions(body, request.Model, request.Operation)
+		if err == nil && conversationOptions.ReasoningEffortSet && request.NormalizedMetadata != nil {
+			request.NormalizedMetadata.ReasoningEffort = conversationOptions.ReasoningEffort
 		}
-		if shouldInvalidateConsoleClearance(data) {
-			lease.InvalidateClearance()
-			a.egress.FeedbackForScope(context.WithoutCancel(ctx), egressdomain.ScopeConsole, lease.NodeID, response.StatusCode, nil)
+	} else {
+		body, err = conversation.ConvertRequest(body, request.Model, request.Operation)
+	}
+	if err == nil {
+		body, err = normalizeRequestWithMetadata(body, spec, request.NormalizedMetadata)
+	}
+	if err != nil {
+		return nil, conversationOptions, invalidConversationResponse(request.Operation, err), nil
+	}
+	return body, conversationOptions, nil, nil
+}
+
+// consoleRequestContext applies the total Console request timeout plus the
+// optional stream idle timeout, exposing one cancel that releases both.
+func consoleRequestContext(ctx context.Context, cfg Config) (context.Context, context.CancelCauseFunc, func()) {
+	requestCtx, totalCancel := context.WithTimeout(ctx, time.Duration(cfg.TimeoutSeconds)*time.Second)
+	var idleCancel context.CancelCauseFunc
+	if cfg.StreamIdleTimeoutSeconds > 0 {
+		requestCtx, idleCancel = context.WithCancelCause(requestCtx)
+	}
+	cancel := func() {
+		if idleCancel != nil {
+			idleCancel(nil)
 		}
-		lease.Release()
-		cancel()
-		responseReleased = true
-		responseBodyTruncated = responseBodyTruncated || truncated
-		response.Body = io.NopCloser(bytes.NewReader(data))
-		response.ContentLength = int64(len(data))
-		response.Header.Set("Content-Length", strconv.Itoa(len(data)))
-		if truncated {
-			response.Header.Set("X-Grok2API-Body-Truncated", "1")
-		}
+		totalCancel()
+	}
+	return requestCtx, idleCancel, cancel
+}
+
+// completeConsoleResponse releases the egress lease exactly once and converts
+// the upstream response into the client-facing shape.
+func (a *Adapter) completeConsoleResponse(ctx context.Context, request provider.ResponseResourceRequest, response *http.Response, conversationOptions conversation.ResponseOptions, lease *infraegress.Lease, cancel func()) (*provider.Response, error) {
+	responseBodyTruncated, rateLimit, responseReleased, err := a.prepareConsoleErrorResponse(ctx, response, lease, cancel)
+	if err != nil {
+		return nil, err
 	}
 	release := func() {
 		if responseReleased {
@@ -205,55 +202,129 @@ func (a *Adapter) ForwardResponse(ctx context.Context, request provider.Response
 		cancel()
 	}
 	if request.Operation == conversation.OperationChat || request.Operation == conversation.OperationMessages {
-		if request.Streaming && response.StatusCode >= 200 && response.StatusCode < 300 {
-			response.Body = conversation.ConvertResponseStreamWithOptions(response.Body, request.Operation, conversationOptions)
-			response.Header.Del("Content-Length")
-			response.Header.Set("Content-Type", "text/event-stream")
-			result := responseResult(response, &releaseBody{ReadCloser: response.Body, release: release})
-			result.RateLimit = rateLimit
-			return result, nil
-		}
-		var data []byte
-		var readErr error
-		var diagnosticTruncated bool
-		if response.StatusCode >= 200 && response.StatusCode < 300 {
-			data, readErr = io.ReadAll(io.LimitReader(response.Body, (64<<20)+1))
-		} else {
-			data, diagnosticTruncated, readErr = provider.ReadDiagnosticBody(response.Body)
-			diagnosticTruncated = diagnosticTruncated || responseBodyTruncated
-		}
-		_ = response.Body.Close()
-		release()
-		if readErr != nil {
-			return nil, readErr
-		}
-		if response.StatusCode >= 200 && response.StatusCode < 300 && len(bytes.TrimSpace(data)) == 0 {
-			return nil, neterrorpkg.ErrUpstreamResponseEmpty
-		}
-		if response.StatusCode >= 200 && response.StatusCode < 300 && len(data) > 64<<20 {
-			return nil, fmt.Errorf("Console 对话响应超过 64 MiB")
-		}
-		if response.StatusCode < 200 || response.StatusCode >= 300 {
-			diagnostic := &provider.DiagnosticResponse{StatusCode: response.StatusCode, Status: response.Status, Header: response.Header.Clone(), Body: data, BodyTruncated: diagnosticTruncated}
-			converted := normalizeConversationError(data, request.Operation, response.StatusCode)
-			response.Header.Set("Content-Length", strconv.Itoa(len(converted)))
-			response.Header.Set("Content-Type", "application/json")
-			result := responseResult(response, io.NopCloser(bytes.NewReader(converted)))
-			result.Diagnostic = diagnostic
-			result.RateLimit = rateLimit
-			return result, nil
-		}
-		converted, convertErr := conversation.ConvertResponseJSONWithOptions(data, request.Operation, conversationOptions)
-		if convertErr != nil {
-			return nil, convertErr
-		}
-		response.Header.Set("Content-Length", strconv.Itoa(len(converted)))
-		response.Header.Set("Content-Type", "application/json")
-		result := responseResult(response, io.NopCloser(bytes.NewReader(converted)))
-		result.RateLimit = rateLimit
-		return result, nil
+		return finalizeConversationResponse(request, response, conversationOptions, rateLimit, responseBodyTruncated, release)
 	}
 	result := responseResult(response, &releaseBody{ReadCloser: response.Body, release: release})
+	result.RateLimit = rateLimit
+	return result, nil
+}
+
+// prepareConsoleErrorResponse normalizes rate-limit and forbidden Console
+// responses and reports whether the lease has already been released.
+func (a *Adapter) prepareConsoleErrorResponse(ctx context.Context, response *http.Response, lease *infraegress.Lease, cancel func()) (bool, *provider.RateLimitMetadata, bool, error) {
+	truncated := false
+	var rateLimit *provider.RateLimitMetadata
+	if response.StatusCode == http.StatusTooManyRequests {
+		var err error
+		truncated, rateLimit, err = normalizeRateLimitResponse(response)
+		if err != nil {
+			_ = response.Body.Close()
+			lease.Release()
+			cancel()
+			return false, nil, false, err
+		}
+	}
+	if response.StatusCode != http.StatusForbidden {
+		return truncated, rateLimit, false, nil
+	}
+	forbiddenTruncated, err := a.rewriteForbiddenResponse(ctx, response, lease)
+	cancel()
+	if err != nil {
+		return false, nil, false, err
+	}
+	return truncated || forbiddenTruncated, rateLimit, true, nil
+}
+
+// rewriteForbiddenResponse turns a Console 403 into a replayable body so the
+// client still sees the upstream rejection after the lease is released.
+func (a *Adapter) rewriteForbiddenResponse(ctx context.Context, response *http.Response, lease *infraegress.Lease) (bool, error) {
+	data, truncated, readErr := provider.ReadDiagnosticBody(response.Body)
+	_ = response.Body.Close()
+	if readErr != nil {
+		lease.Release()
+		return false, readErr
+	}
+	if shouldInvalidateConsoleClearance(data) {
+		lease.InvalidateClearance()
+		a.egress.FeedbackForScope(context.WithoutCancel(ctx), egressdomain.ScopeConsole, lease.NodeID, response.StatusCode, nil)
+	}
+	lease.Release()
+	response.Body = io.NopCloser(bytes.NewReader(data))
+	response.ContentLength = int64(len(data))
+	response.Header.Set("Content-Length", strconv.Itoa(len(data)))
+	if truncated {
+		response.Header.Set("X-Grok2API-Body-Truncated", "1")
+	}
+	return truncated, nil
+}
+
+// finalizeConversationResponse converts a Console conversation response into the
+// OpenAI-compatible shape expected by the client.
+func finalizeConversationResponse(request provider.ResponseResourceRequest, response *http.Response, conversationOptions conversation.ResponseOptions, rateLimit *provider.RateLimitMetadata, responseBodyTruncated bool, release func()) (*provider.Response, error) {
+	if request.Streaming && response.StatusCode >= 200 && response.StatusCode < 300 {
+		return streamConversationResponse(response, request.Operation, conversationOptions, rateLimit, release), nil
+	}
+	data, diagnosticTruncated, readErr := readConversationResponseBody(response, responseBodyTruncated)
+	_ = response.Body.Close()
+	release()
+	if readErr != nil {
+		return nil, readErr
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return diagnosticConversationResponse(response, request.Operation, data, diagnosticTruncated, rateLimit), nil
+	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		return nil, neterrorpkg.ErrUpstreamResponseEmpty
+	}
+	if len(data) > 64<<20 {
+		return nil, fmt.Errorf("Console 对话响应超过 64 MiB")
+	}
+	return jsonConversationResponse(response, request.Operation, data, conversationOptions, rateLimit)
+}
+
+// readConversationResponseBody reads a bounded conversation body; error
+// responses use the diagnostic reader that also reports truncation.
+func readConversationResponseBody(response *http.Response, responseBodyTruncated bool) ([]byte, bool, error) {
+	if response.StatusCode >= 200 && response.StatusCode < 300 {
+		data, err := io.ReadAll(io.LimitReader(response.Body, (64<<20)+1))
+		return data, false, err
+	}
+	data, truncated, err := provider.ReadDiagnosticBody(response.Body)
+	return data, truncated || responseBodyTruncated, err
+}
+
+// streamConversationResponse rewrites the upstream body as an SSE stream.
+func streamConversationResponse(response *http.Response, operation string, conversationOptions conversation.ResponseOptions, rateLimit *provider.RateLimitMetadata, release func()) *provider.Response {
+	response.Body = conversation.ConvertResponseStreamWithOptions(response.Body, operation, conversationOptions)
+	response.Header.Del("Content-Length")
+	response.Header.Set("Content-Type", "text/event-stream")
+	result := responseResult(response, &releaseBody{ReadCloser: response.Body, release: release})
+	result.RateLimit = rateLimit
+	return result
+}
+
+// diagnosticConversationResponse exposes the raw upstream failure together with
+// the normalized error envelope.
+func diagnosticConversationResponse(response *http.Response, operation string, data []byte, diagnosticTruncated bool, rateLimit *provider.RateLimitMetadata) *provider.Response {
+	diagnostic := &provider.DiagnosticResponse{StatusCode: response.StatusCode, Status: response.Status, Header: response.Header.Clone(), Body: data, BodyTruncated: diagnosticTruncated}
+	converted := normalizeConversationError(data, operation, response.StatusCode)
+	response.Header.Set("Content-Length", strconv.Itoa(len(converted)))
+	response.Header.Set("Content-Type", "application/json")
+	result := responseResult(response, io.NopCloser(bytes.NewReader(converted)))
+	result.Diagnostic = diagnostic
+	result.RateLimit = rateLimit
+	return result
+}
+
+// jsonConversationResponse converts a successful non-streaming body.
+func jsonConversationResponse(response *http.Response, operation string, data []byte, conversationOptions conversation.ResponseOptions, rateLimit *provider.RateLimitMetadata) (*provider.Response, error) {
+	converted, convertErr := conversation.ConvertResponseJSONWithOptions(data, operation, conversationOptions)
+	if convertErr != nil {
+		return nil, convertErr
+	}
+	response.Header.Set("Content-Length", strconv.Itoa(len(converted)))
+	response.Header.Set("Content-Type", "application/json")
+	result := responseResult(response, io.NopCloser(bytes.NewReader(converted)))
 	result.RateLimit = rateLimit
 	return result, nil
 }

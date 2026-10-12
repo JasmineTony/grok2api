@@ -36,6 +36,40 @@ func (a *Adapter) doResponseRequest(ctx context.Context, request provider.Respon
 	if len(body) > 0 {
 		bodyReader = bytes.NewReader(body)
 	}
+	requestCtx := a.responseRequestContext(ctx, request, base)
+	req, err := http.NewRequestWithContext(requestCtx, request.Method, call.upstreamURL, bodyReader)
+	if err != nil {
+		call.err = err
+		return call
+	}
+	call.upstreamURL = req.URL.String()
+	if err := a.applyResponseRequestHeaders(req, request, accessToken, body); err != nil {
+		call.err = err
+		return call
+	}
+	// Streaming requests already receive transport/semantic idle protection.
+	// Non-streaming text inference needs its own cancel-cause-aware body timer:
+	// ResponseHeaderTimeout stops once headers arrive and cannot interrupt a
+	// server that then leaves the JSON body silent indefinitely. Create the
+	// derived context only after every fallible request-construction step so
+	// every remaining path either cancels it or transfers ownership to the body.
+	responseIdle := a.config().StreamIdleTimeout
+	req, responseIdleCancel := prepareResponseIdleRequest(request, req, requestCtx, responseIdle)
+	resp, err := a.http.Do(req)
+	if err != nil {
+		if responseIdleCancel != nil {
+			responseIdleCancel(nil)
+		}
+		call.err = err
+		return call
+	}
+	attachResponseIdleBody(resp, responseIdle, responseIdleCancel)
+	call.response = resp
+	return call
+}
+
+// responseRequestContext 附加凭据、强制出口节点与物理调用平面，供上游审计归因。
+func (a *Adapter) responseRequestContext(ctx context.Context, request provider.ResponseResourceRequest, base string) context.Context {
 	requestCtx := infraegress.WithCredential(ctx, request.Credential)
 	if request.ForcedEgressNodeID != 0 {
 		requestCtx = infraegress.WithEgressNode(requestCtx, request.ForcedEgressNodeID)
@@ -44,16 +78,13 @@ func (a *Adapter) doResponseRequest(ctx context.Context, request provider.Respon
 	if fallback := a.fallbackBaseURL(); fallback != "" && strings.EqualFold(strings.TrimRight(base, "/"), fallback) {
 		plane = "xai"
 	}
-	requestCtx = infraegress.WithPhysicalCallPlane(requestCtx, plane)
-	req, err := http.NewRequestWithContext(requestCtx, request.Method, call.upstreamURL, bodyReader)
-	if err != nil {
-		call.err = err
-		return call
-	}
-	call.upstreamURL = req.URL.String()
+	return infraegress.WithPhysicalCallPlane(requestCtx, plane)
+}
+
+// applyResponseRequestHeaders 写入 Responses 上游调用所需的鉴权、会话与内容协商头。
+func (a *Adapter) applyResponseRequestHeaders(req *http.Request, request provider.ResponseResourceRequest, accessToken string, body []byte) error {
 	if err := a.applyHeaders(req, request.Credential, accessToken, request.Model, request.PromptCacheKey, true); err != nil {
-		call.err = err
-		return call
+		return err
 	}
 	applyGrokTurnIndexHeader(req, request.GrokTurnIndex)
 	if len(body) > 0 {
@@ -68,38 +99,32 @@ func (a *Adapter) doResponseRequest(ctx context.Context, request provider.Respon
 	if request.IdempotencyID != "" {
 		req.Header.Set("Idempotency-Key", request.IdempotencyID)
 	}
-	// Streaming requests already receive transport/semantic idle protection.
-	// Non-streaming text inference needs its own cancel-cause-aware body timer:
-	// ResponseHeaderTimeout stops once headers arrive and cannot interrupt a
-	// server that then leaves the JSON body silent indefinitely. Create the
-	// derived context only after every fallible request-construction step so
-	// every remaining path either cancels it or transfers ownership to the body.
-	var responseIdleCancel context.CancelCauseFunc
-	responseIdle := a.config().StreamIdleTimeout
-	if !request.Streaming && responseIdle > 0 {
-		requestCtx, responseIdleCancel = context.WithCancelCause(requestCtx)
-		req = req.WithContext(requestCtx)
+	return nil
+}
+
+// prepareResponseIdleRequest 为非流式文本推理派生可取消的响应体空闲计时器上下文。
+func prepareResponseIdleRequest(request provider.ResponseResourceRequest, req *http.Request, requestCtx context.Context, responseIdle time.Duration) (*http.Request, context.CancelCauseFunc) {
+	if request.Streaming || responseIdle <= 0 {
+		return req, nil
 	}
-	resp, err := a.http.Do(req)
-	if err != nil {
-		if responseIdleCancel != nil {
-			responseIdleCancel(nil)
-		}
-		call.err = err
-		return call
+	idleCtx, cancel := context.WithCancelCause(requestCtx)
+	return req.WithContext(idleCtx), cancel
+}
+
+// attachResponseIdleBody 把响应体空闲计时器的所有权交给响应体：成功响应在读取空闲超时后取消，
+// 失败响应在关闭时取消，无响应体则立即取消。
+func attachResponseIdleBody(resp *http.Response, responseIdle time.Duration, cancel context.CancelCauseFunc) {
+	if cancel == nil {
+		return
 	}
-	if responseIdleCancel != nil {
-		switch {
-		case resp.Body == nil:
-			responseIdleCancel(nil)
-		case isHTTPSuccess(resp.StatusCode):
-			resp.Body = providerstreamidle.New(resp.Body, responseIdle, responseIdleCancel)
-		default:
-			resp.Body = &cancelOnCloseReadCloser{ReadCloser: resp.Body, cancel: responseIdleCancel}
-		}
+	switch {
+	case resp.Body == nil:
+		cancel(nil)
+	case isHTTPSuccess(resp.StatusCode):
+		resp.Body = providerstreamidle.New(resp.Body, responseIdle, cancel)
+	default:
+		resp.Body = &cancelOnCloseReadCloser{ReadCloser: resp.Body, cancel: cancel}
 	}
-	call.response = resp
-	return call
 }
 
 // applyGrokTurnIndexHeader forwards a real client turn only when the request has a stable Grok session.

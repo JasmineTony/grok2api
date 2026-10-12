@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { DegradeEventsList } from "@/features/quality-guard/degrade-events-list";
@@ -22,7 +23,7 @@ export function DegradeAccountsPanel({
   hardTPS?: number;
   failClosed?: boolean;
   minGenMs?: number;
-}) {
+}): ReactElement | null {
   const { t } = useTranslation();
   const controller = useDegradeAccounts({ softTPS, hardTPS, failClosed, minGenMs });
   const summary = controller.query.data;

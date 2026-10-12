@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
@@ -5,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { useAuth } from "@/shared/auth/use-auth";
 
-export function AuthBoundary() {
+export function AuthBoundary(): ReactElement {
   const { status, retryRestore } = useAuth();
   const location = useLocation();
 
@@ -23,7 +24,7 @@ export function AuthBoundary() {
   return <Outlet />;
 }
 
-export function AnonymousBoundary() {
+export function AnonymousBoundary(): ReactElement {
   const { status, retryRestore } = useAuth();
   if (status === "restoring") {
     return <RestoringScreen />;

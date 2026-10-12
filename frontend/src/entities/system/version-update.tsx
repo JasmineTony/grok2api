@@ -1,5 +1,5 @@
 import { ArrowUpRight, Info, RefreshCw } from "lucide-react";
-import { type ReactNode } from "react";
+import { type ReactElement, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -9,14 +9,14 @@ import { useCheckForUpdates, useVersionInfo } from "@/entities/system/use-versio
 import { cn } from "@/shared/lib/cn";
 import { formatDateTime } from "@/shared/lib/format";
 
-export function CurrentVersionLabel() {
+export function CurrentVersionLabel(): ReactElement | null {
   const versionQuery = useVersionInfo();
   const version = versionQuery.data?.currentVersion;
   if (!version) return null;
   return <span className="font-mono text-[10px] font-normal text-muted-foreground">{version}</span>;
 }
 
-export function VersionUpdateBanner() {
+export function VersionUpdateBanner(): ReactElement | null {
   const { t } = useTranslation();
   const versionQuery = useVersionInfo();
   const checkMutation = useCheckForUpdates();
@@ -161,7 +161,7 @@ function ReleaseNotesSection({ version }: { version: VersionInfoDTO | undefined 
   );
 }
 
-export function VersionUpdateSection() {
+export function VersionUpdateSection(): ReactElement {
   const { t } = useTranslation();
   const versionQuery = useVersionInfo();
   const checkMutation = useCheckForUpdates();

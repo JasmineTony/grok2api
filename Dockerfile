@@ -7,7 +7,7 @@ FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-alpine AS frontend-builder
 WORKDIR /src/frontend
 RUN corepack enable
 
-COPY frontend/package.json frontend/pnpm-lock.yaml ./
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
 RUN --mount=type=cache,id=grok2api-pnpm,target=/pnpm/store \
     pnpm config set store-dir /pnpm/store && \
     pnpm fetch
@@ -16,7 +16,8 @@ RUN --mount=type=cache,id=grok2api-pnpm,target=/pnpm/store \
     pnpm config set store-dir /pnpm/store && \
     pnpm install --offline --frozen-lockfile
 
-COPY frontend/index.html frontend/vite.config.ts frontend/tsconfig.json frontend/tsconfig.app.json frontend/tsconfig.node.json ./
+COPY frontend/index.html frontend/vite.config.ts frontend/vitest.config.ts frontend/tsconfig.json frontend/tsconfig.app.json frontend/tsconfig.node.json ./
+COPY frontend/scripts/build-inputs.ts ./scripts/build-inputs.ts
 COPY frontend/public ./public
 COPY frontend/src ./src
 RUN --mount=type=cache,id=grok2api-tsc,target=/src/frontend/.cache,sharing=locked \

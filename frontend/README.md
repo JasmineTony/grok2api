@@ -61,24 +61,25 @@ pnpm verify        # 完整质量门禁
 
 `pnpm verify` 依次执行：
 
-| 步骤             | 命令                      | 说明                                                              |
-| ---------------- | ------------------------- | ----------------------------------------------------------------- |
-| 格式             | `pnpm format:check`       | Prettier 是格式唯一来源                                           |
-| Oxlint           | `pnpm oxlint`             | correctness 类快速检查                                            |
-| ESLint           | `pnpm lint`               | TS / React / Hooks 语义                                           |
-| 类型             | `pnpm typecheck`          | `tsc -b --force`                                                  |
-| E2E 类型         | `pnpm typecheck:e2e`      | `tsc -p tsconfig.e2e.json`                                        |
-| 纯逻辑单测       | `pnpm test`               | `node:test`（含 `tsc -p tsconfig.test.json` 类型检查），68 个用例 |
-| 组件单测与覆盖率 | `pnpm test:ui:coverage`   | Vitest + jsdom；全局门槛 76%，口径与例外见 `vitest.config.ts`     |
-| 依赖边界         | `pnpm check:architecture` | dependency-cruiser：循环、分层方向、跨 feature                    |
-| 结构约束         | `pnpm check:structure`    | 单文件 ≤600 行、具名函数 ≤50 行，存量债务冻结                     |
-| 门禁自测         | `pnpm test:gates`         | 验证门禁在违规输入下确实失败                                      |
-| 生产构建         | `pnpm build`              | `tsc -b && vite build`                                            |
-| 体积预算         | `pnpm check:budget`       | 首屏闭包 / 路由新增闭包 / 总量 / 最大 chunk                       |
+| 步骤             | 命令                      | 说明                                                                                                         |
+| ---------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| 格式             | `pnpm format:check`       | Prettier 是格式唯一来源                                                                                      |
+| Oxlint           | `pnpm oxlint`             | correctness 类快速检查                                                                                       |
+| ESLint           | `pnpm lint`               | TS / React / Hooks 语义                                                                                      |
+| 类型             | `pnpm typecheck`          | `tsc -b --force`                                                                                             |
+| E2E 类型         | `pnpm typecheck:e2e`      | `tsc -p tsconfig.e2e.json`                                                                                   |
+| 纯逻辑单测       | `pnpm test`               | `node:test`（含 `tsc -p tsconfig.test.json` 与 `scripts/**` 构建输入指纹用例）                               |
+| 组件单测与覆盖率 | `pnpm test:ui:coverage`   | Vitest + jsdom；逐文件门槛 76%，口径与例外见 `vitest.config.ts`                                              |
+| 必需场景执行     | `pnpm test:results`       | 解析 Vitest 原生 JSON：必需文件存在、必需用例标题为 `passed`、通过数与文件数不低于棘轮、无未登记跳过与 flaky |
+| 依赖边界         | `pnpm check:architecture` | dependency-cruiser：循环、分层方向、跨 feature                                                               |
+| 结构约束         | `pnpm check:structure`    | 单文件 ≤600 行、具名函数 ≤50 行，存量债务冻结                                                                |
+| 门禁自测         | `pnpm test:gates`         | 验证门禁在违规输入下确实失败                                                                                 |
+| 生产构建         | `pnpm build`              | `tsc -b && vite build`                                                                                       |
+| 体积预算         | `pnpm check:budget`       | 首屏闭包 / 路由新增闭包 / 总量 / 最大 chunk                                                                  |
 
 `pnpm verify` **不含** E2E。真实全栈 E2E 单独执行：`pnpm test:e2e`（Playwright + 生产 dist + 真实 Go 服务，临时 SQLite/Memory）。
 
-`pnpm verify:full` = `pnpm verify && pnpm test:e2e`，用于交付前完整验收。
+`pnpm verify:full` = `pnpm verify` + `pnpm test:e2e` + `pnpm test:results:e2e`（对 Playwright 报告做同一套断言：必需用例标题、文件总数下限、`expectedStatus`/未知状态 fail-closed、无未登记跳过与 flaky），用于交付前完整验收。
 
 单项命令可用于开发反馈，例如 `pnpm test:ui`、`pnpm check:budget`、`pnpm test:e2e`。
 
@@ -87,8 +88,9 @@ pnpm verify        # 完整质量门禁
 - 需要本机可用的 Go 与 Playwright 浏览器（首次执行 `pnpm exec playwright install chromium`）。
 - 每个 worker 独占一个后端进程：动态端口 + 独立临时目录（`config.yaml`、SQLite、媒体目录）+ 一次性合成管理员凭据。
 - 不读取仓库 `config.yaml`；启动前剔除 `GROK2API_*`、`TEST_POSTGRES_*`、`TEST_REDIS_*`，并把 `HTTP(S)_PROXY` 指向未监听端口，使未知外呼快速失败而不是挂起。
-- `globalSetup` 在 `dist` 缺失或早于构建输入时重建前端、并每次重建后端二进制，避免测到过期产物。
+- `globalSetup` 用内容指纹（`scripts/build-inputs.ts` 的 `inputHash`/`outputHash`）判定 `dist` 是否与当前构建输入一致，缺失或不一致即重建前端，并每次重建后端二进制，避免测到过期产物。
 - 产物与报告输出到 `frontend/.artifacts/playwright`（已忽略，不参与格式与 lint 门禁）。
+- project 矩阵：`chromium`（Desktop Chrome，运行全部用例）与 `mobile-chromium`（Pixel 5 真实设备描述符：`isMobile`/`hasTouch`/`deviceScaleFactor`/`userAgent`）。仅在桌面布局成立的用例标 `@desktop` 并由移动 project `grepInvert` 排除；桌面 project 不过滤，用例数不减少；`e2e/mobile-device.e2e.ts` 只在移动 project 运行。
 
 规则与阈值定义在根目录 [`AGENTS.md`](../AGENTS.md)，实际证据与问题状态见 [`AUDIT.md`](./AUDIT.md)。
 

@@ -13,7 +13,15 @@ export type ModelForm = z.infer<ReturnType<typeof modelFormSchema>>;
 
 export type ModelFormReturn = UseFormReturn<ModelForm>;
 
-export function modelFormSchema(t: TFunction) {
+export function modelFormSchema(t: TFunction): z.ZodObject<{
+  publicId: z.ZodString;
+  provider: z.ZodEnum<{ [Provider in ModelRouteDTO["provider"]]: Provider }>;
+  upstreamModel: z.ZodString;
+  capability: z.ZodEnum<{ [Capability in ModelRouteDTO["capability"]]: Capability }>;
+  enabled: z.ZodBoolean;
+  bindingMode: z.ZodBoolean;
+  accountIds: z.ZodArray<z.ZodString>;
+}> {
   return z
     .object({
       publicId: z.string().min(1, t("errors.required")),
