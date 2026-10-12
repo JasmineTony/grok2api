@@ -160,6 +160,22 @@ jobs:
         working-directory: frontend
         run: pnpm verify
 
+      - name: Capture bundle budget report
+        if: always()
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          mkdir -p .artifacts
+          pnpm check:budget 2>&1 | tee .artifacts/bundle-budget.txt
+
+      - name: Upload bundle budget report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: bundle-budget-report
+          path: frontend/.artifacts/bundle-budget.txt
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Install Playwright browser
         working-directory: frontend
         run: pnpm exec playwright install --with-deps chromium
