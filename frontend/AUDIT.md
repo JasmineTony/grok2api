@@ -1786,3 +1786,24 @@ git ls-files --eol <抽查文件>                      # 全部 i/lf w/lf attr/t
 | `b98b53fe` | **P3-4/P3-5**：`router.tsx` 的 `{ path: "*" }` 路由补 `errorElement`（与两个顶层路由一致）；删除 `route-error-boundary.test.tsx` 里重复的 `afterEach`                                                                                                                                                                                                   |
 
 **主代理实测（工作树 A，detached `c250eb75`）**：`pnpm format:check` / `oxlint` / `lint` / `typecheck` / `check:structure`（REV-3 **2527**）/ `test:gates` / `build` / `check:budget`（`体积预算门禁通过`）**均 exit 0**。E2E 与覆盖率的最终 tip 证据见 §30.6。
+
+### 30.6 最终 tip 复跑与 CI 探针（`c250eb75`）
+
+**本机 `pnpm verify:full`（会话 scratch `t6-verifyfull.out.log`，2288 行 / 267753 B）**：**exit 0**，外部墙钟 **663.1 s**。16 步全过：
+
+- `test` 126 用例（`fail 0 / skipped 0 / todo 0`）；`test:results:node` 14 文件 / 126 用例、磁盘文件 14 = 清单 14
+- `test:ui:coverage` **126 文件 / 1496 用例**（`All files 98.01 | 94.32 | 98.29 | 98.69`）；`src/app/route-error-fallback.tsx` **100 / 100 / 100 / 100**；`test:results` 126 文件 / 1496 用例
+- `check:architecture` 431 模块 / 2040 依赖；`check:structure` 405 文件、`参与判定的作用域（REV-3）：2527`；`test:gates` **85 用例（含 68 必须失败）**
+- `check:budget`：首屏 **3 文件 194.05 KiB gzip**（阈值 260）/ 全部生产 JS 624.82（650）/ CSS 16.65（20）/ 最大 chunk 458.55 KiB 原始（500）
+- `test:e2e` **50 passed**（0 failed / 0 skipped / 0 flaky，1.3m）；`test:results:e2e` 7 文件 / 50 用例、**chromium 25 / mobile-chromium 25**
+
+**CI 探针**：分支 `ci-probe/acceptance-audit-20261012-r1` @ `bc0bfc52`（= `c250eb75` 内容；`.github/workflows/**` 保持 `origin/main`，因本机凭据缺工作流作用域）、draft PR #3。
+
+| run                              | 结论        | 覆盖                                                                                                                                                                                                                                                                                                                                        |
+| -------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `38214762730`「GHCR Image」      | **success** | job `Verify`（`06:53:18Z→07:11:17Z`）全部步骤 success：`Verify frontend`（14 步，含 `test:results:node` 与新的预算新鲜度断言）、`Run full-stack E2E`、`Assert required integration tests ran`、`Race backend`、`Verify Swagger document`；`Build image (amd64)` / `(arm64)` success；`Merge image` / `Publish image` skipped（PR 事件预期） |
+| `38214762715`「CodeQL Advanced」 | **success** | 三个 Analyze job                                                                                                                                                                                                                                                                                                                            |
+
+**最终 tip 与探针的差异（如实登记）**：探针之后仅追加 `docs(audit)` 的**纯文档**提交（§30.5/§34.4 与本节，`7764e002`），影响面仅 `prettier --check`；已用 CI 同口径（`cd frontend && prettier --check .`）复核 **exit 0**。代码与配置在 `c250eb75` 与最终 tip 之间**逐字未变**。
+
+**仍未取得 run 证据的步骤**：维护线工作流新增的 `Verify backend structure and API contract` 与 `Assert required frontend tests ran` 两条 step（探针分支按设计保留 `origin/main` 的工作流定义）→ 需合并/推送 `main` 才能触发（同 §28.6）。
