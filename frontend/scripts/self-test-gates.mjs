@@ -859,7 +859,7 @@ function buildNodeTestRoot(name, options = {}) {
   if (options.writeReport !== false) {
     writeProbeFile(
       path.join(dir, ".artifacts", "node-test", "results.json"),
-      `${JSON.stringify(report, null, 2)}\n`,
+      options.reportText ?? `${JSON.stringify(report, null, 2)}\n`,
       options.reportMtimeMs ?? probeNow,
     );
   }
@@ -996,6 +996,35 @@ const nodeTestInconsistentRoot = buildNodeTestRoot("node-test-inconsistent", {
     report.totals.passed += 1;
   },
 });
+/** 夹具（F12）：报告 kind 不匹配（旧版 reporter 或手改报告）→ 形状不可用，exit 2。 */
+const nodeTestWrongKindRoot = buildNodeTestRoot("node-test-wrong-kind", {
+  startMs: probeNow,
+  mutate: (report) => {
+    report.kind = "vitest-json";
+  },
+});
+/** 夹具（F13）：报告 version 不匹配 → 形状不可用，exit 2。 */
+const nodeTestWrongVersionRoot = buildNodeTestRoot("node-test-wrong-version", {
+  startMs: probeNow,
+  mutate: (report) => {
+    report.version = 2;
+  },
+});
+/** 夹具（F14）：报告 files 不是数组 → 形状不可用，exit 2。 */
+const nodeTestFilesNotArrayRoot = buildNodeTestRoot("node-test-files-not-array", {
+  startMs: probeNow,
+  mutate: (report) => {
+    report.files = {};
+  },
+});
+/** 夹具（F15）：报告内容不是合法 JSON（被截断 / 手改坏）→ exit 2，不得沿用无法解释的报告。 */
+const nodeTestUnparsableRoot = buildNodeTestRoot("node-test-unparsable", {
+  startMs: probeNow,
+  reportText: '{ "kind": "node-test-json", "version": 1, \n',
+});
+/** 夹具（F16）：清单文件全部不在磁盘上（present.length === 0）→ 新鲜度无法核对，旧报告不得放行。 */
+const nodeTestNoListFilesRoot = buildNodeTestRoot("node-test-no-list-files", { startMs: probeNow });
+for (const entry of nodeTestProbe) fs.rmSync(path.join(nodeTestNoListFilesRoot, entry.file));
 
 const cases = [
   {
@@ -1479,6 +1508,36 @@ const cases = [
     ],
     absent: ["必需文件未出现在报告中"],
     run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestUnregisteredFileRoot }),
+  },
+  {
+    name: "node:test：报告 kind 不匹配应报错退出（fail-closed）",
+    expect: 2,
+    contains: ["形状不可用", 'kind 为 "vitest-json"'],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestWrongKindRoot }),
+  },
+  {
+    name: "node:test：报告 version 不匹配应报错退出（fail-closed）",
+    expect: 2,
+    contains: ["形状不可用", "version 为 2"],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestWrongVersionRoot }),
+  },
+  {
+    name: "node:test：报告 files 不是数组应报错退出（fail-closed）",
+    expect: 2,
+    contains: ["形状不可用", "files 不是数组"],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestFilesNotArrayRoot }),
+  },
+  {
+    name: "node:test：报告 JSON 不可解析应报错退出（fail-closed）",
+    expect: 2,
+    contains: ["无法解析"],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestUnparsableRoot }),
+  },
+  {
+    name: "node:test：清单文件全部不在磁盘上应失败（present.length === 0，旧报告不得放行）",
+    expect: 1,
+    contains: ["清单文件全部不在磁盘上，无法核对报告新鲜度（旧报告不得放行）"],
+    run: () => runGate("check-node-test-results.mjs", { NODE_TEST_REPORT_ROOT: nodeTestNoListFilesRoot }),
   },
 ];
 
