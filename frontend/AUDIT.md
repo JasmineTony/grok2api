@@ -1479,3 +1479,41 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 | REV-5「认证后首屏 282.30 KiB」                                 | 属口径外（门禁只保护未认证首屏）；**不可**调高 `initialJsGzipKiB`（同 §21.4 / FE-19-5）                    |
 | BE-G3 `ports/security` 迁移                                    | 设计已出（会话 scratch `BA-02-ports-security-migration-design.md`）；需单独批准 + `apicheck --update` 批准 |
 | CI 侧维护线新增步骤（`Assert required frontend tests ran` 等） | 仍无 run 证据 → 需合并/推送 `main` 才能取证（同 §23.2 第 3 条）                                            |
+
+### 28.7 最终 tip 复跑与 CI 探针两轮证据（2026-10-12）
+
+**最终 tip 复跑（本机，`bbd1d826`）**：`pnpm verify:full` **exit 0**，墙钟 660.7s（日志 2274 行 / 265779 B，SHA256 `A6BF01E5…4AFB39`）。16 步全过，关键数字：
+
+| 步骤                 | 关键输出                                                                                                                                                                          |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test`               | `tests 126 / suites 43 / pass 126 / fail 0 / skipped 0 / todo 0`                                                                                                                  |
+| `test:results:node`  | `参与判定的文件 14 个、用例 126 个`；`磁盘上的 node:test 文件 14 个（必须与清单完全相等）`                                                                                        |
+| `test:ui:coverage`   | `Test Files 125 passed (125)` / `Tests 1492 passed (1492)`；`All files 98.01 \| 94.32 \| 98.29 \| 98.69`                                                                          |
+| `test:results`       | `参与判定的文件 125 个、用例 1492 个（通过 1492、失败 0、跳过 0、flaky 0）`                                                                                                       |
+| `check:architecture` | `no dependency violations found (430 modules, 2037 dependencies cruised)`                                                                                                         |
+| `check:structure`    | 404 文件；超限文件/函数/嵌套均 0；`参与判定的作用域（REV-3）：2525 个`                                                                                                            |
+| `test:gates`         | `门禁自测通过：78 个用例（含 63 个必须失败的用例）`                                                                                                                               |
+| `check:budget`       | 首屏 2 文件 **193.59** KiB gzip（阈值 260）；全部生产 JS 76 文件 **624.43**（650）；CSS **16.65**（20）；最大 chunk **457.73** KiB 原始（500）；13 个路由入口；`体积预算门禁通过` |
+| `test:e2e`           | `42 passed (1.2m)`，0 failed / 0 skipped / 0 flaky（逐行 `ok N [project]` 共 42 行）                                                                                              |
+| `test:results:e2e`   | `参与判定的文件 6 个、用例 42 个（通过 42）`；`project 报告：chromium 通过 21 个、mobile-chromium 通过 21 个`                                                                     |
+
+交叉核对：`git grep -E "test\.(skip\|fixme)\|describe\.skip" -- frontend/e2e` 无匹配（exit 1）；`check-test-results.mjs:199` 的 `ALLOWED_SKIPS` 为空且报告 skipped=0 ⇒ 不存在已登记/未登记跳过。
+
+**CI 探针第一轮（失败 → 修复，EVID-8 留痕）**
+
+| 项       | 值                                                                                                                                                                                                                                                                             |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 探针     | 分支 `ci-probe/acceptance-audit-20261012-r1` @ `547956eb`（= `3d81ced2` 内容，`.github/workflows/**` 保持 `origin/main`）、draft PR #3                                                                                                                                         |
+| run      | `38204446981`「GHCR Image」`conclusion=failure`（`38204446982` CodeQL = success）                                                                                                                                                                                              |
+| 失败步骤 | job `Verify` → **`Verify frontend`**；后端各步（`Test backend`/`Assert required integration tests ran`/`Race backend`/`Vet backend`/`Verify Swagger document`）全 `success`                                                                                                    |
+| 根因     | `pnpm verify` 第 1 步 `format:check` 报 `AUDIT.md`、`README.md` 不合规：上一提交在 markdown 表格新增超长行后，prettier 要求整表重新对齐列宽；而当时的本地校验用了 `--config <绝对路径>` + **显式文件路径**，未复现 CI 的 `prettier --check .`（cwd=`frontend`）口径 → 结论失真 |
+| 修复     | `prettier --write frontend/AUDIT.md frontend/README.md` 后用 **CI 同口径**复核 `prettier --check .` = exit 0；提交 `ba77a324`                                                                                                                                                  |
+
+**CI 探针第二轮（成功）**
+
+| run                              | sha        | 结论        | 覆盖内容                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| -------------------------------- | ---------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `38206150260`「GHCR Image」      | `61f8f0a3` | **success** | job `Verify`（`114669966685`，05:01:12Z→05:12:51Z）**全部步骤 success**：`Verify frontend`（14 步，含新接线的 `test:results:node`）、`Run full-stack E2E`、`Assert required integration tests ran`、`Race backend`、`Verify Swagger document`；`Build image (amd64)` / `(arm64)` success；`Publish image` / `Merge image` `skipped`（PR 事件下的预期行为）；仅 `Upload Playwright artifacts` `skipped`（`if: failure()` 的预期结果） |
+| `38206150263`「CodeQL Advanced」 | `61f8f0a3` | **success** | 三个 Analyze job                                                                                                                                                                                                                                                                                                                                                                                                                     |
+
+探针内容 `61f8f0a3` = 本文件所在分支 `bbd1d826` 的内容（唯一差异：`.github/workflows/**` 保持 `origin/main` 版本）。**结论**：14 步 `pnpm verify`（含新增的 node:test 报告门禁）与全栈 E2E、E2E 报告门禁**已在真实 CI 执行并通过**——§28.1 的 P1「门禁未接线」由此获得 CI 侧证据。仍未取得 run 证据的只有维护线工作流新增的两条 step（`Verify backend structure and API contract`、`Assert required frontend tests ran`），需合并/推送 `main` 才能触发（同 §23.2 第 3 条、§28.6）。
