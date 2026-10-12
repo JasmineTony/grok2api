@@ -1190,3 +1190,4 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 | §21.3                     | （未记录阈值）                | `MIN_E2E_FILES = 6`、minPassed 10/7/7/5/5 | 棘轮对齐 (spec × project) 口径；见 `scripts/check-test-results.mjs` 常量与注释 |
 | 历史记录中的 E2E 门禁输出 | 文件 5 个 / 用例 21 个        | **文件 6 个 / 用例 35 个**                | 移动 project 加入后的口径；由 `844c355c` 对齐                                  |
 | §20.3                     | REV-3 作用域 5475             | 5475（不变）                              | `cd backend; go run ./tools/structurecheck`                                    |
+| §19.8                     | 前端 REV-3 作用域 2524        | **2525**                                  | 修复后的工具口径；复现 `cd frontend; node scripts/check-structure.mjs`         |

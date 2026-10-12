@@ -10,7 +10,7 @@
 | 适用主体   | 人类贡献者、自动化代理（含子代理）、维护线负责人；三者同受约束                                           |
 | 触发时机   | 写入前（§9/§2）、提交前（§11）、PR/合并前（§3/§4/§7）、发布前（§8）                                      |
 | 判定方式   | **机器门禁** = 有命令与退出码（表见 §14.4）；**评审准则** = 无门禁、人工判断，违反须在 PR/汇报中说明理由 |
-| 失败后果   | 见 META-4；P0/P1 阻塞合并与发布，P2/P3 只登记                                                            |
+| 失败后果   | P0–P3 完整定义见 §6；阻塞语义与规则编号的绑定见 META-4                                                   |
 | 规则元信息 | 每条规则标注适用主体、判定方式；未标注判定的条目一律视为评审准则                                         |
 
 ### META-1 规则必须可判定
@@ -27,12 +27,10 @@
 
 ### META-4 优先级与阻塞语义
 
-- **P0**：安全、数据损坏、计费/额度/审计不变量失效 → 立即阻塞。
-- **P1**：必需检查失败或未运行、新增架构/预算/结构违规、生产隔离失败 → 阻塞阶段验收与发布。
-- **P2**：已登记且未扩张的存量债务 → 不阻塞，按棘轮只许持平或下降。
-- **P3**：无缺陷证据的改进建议 → 只登记，不扩大任务。
+- P0–P3 的完整定义只在 §6 一份（DOC-1）；本节只定义阻塞语义与规则编号的绑定，同一分级不在两处并行维护。
+- 阻塞语义：P0/P1 阻塞合并、阶段验收与发布；P2 不阻塞，按棘轮只许持平或下降；P3 只登记，不扩大任务。
 
-规则与 P 级绑定：违反 §2/§3/§4/§7 的机器门禁 = P1；违反 §13 = P0；违反 §10 的虚假通过 = P1；其余见各节。
+规则与 P 级绑定：违反 §2/§3/§4/§7 的机器门禁 = P1；违反 §13 中标注 P0 的条目（SEC-1/SEC-3/SEC-4）= P0，标注 P1 的条目（SEC-2）= P1；违反 §10 的虚假通过 = P1；其余见各节。
 
 ### META-5 编号稳定
 
@@ -118,13 +116,13 @@
 - 覆盖订阅、定时器、请求/流取消、重复操作、StrictMode 和边界入参；按生命周期实际断言清理。
 - 可将 hook 与展示职责分离以单独设置 100% 门槛，不能为了覆盖率改变行为或隐藏未测试分支。
 - 新增 hook 必须在同一次改动内加入阈值，或登记未纳入的原因（不得静默留在门槛外）。
-- 判定：`vitest.config.ts` 的阈值条目与覆盖率报告一致；当前纳入数量见 §5。
+- 判定：`frontend/vitest.config.ts` 的 `thresholds` 条目与覆盖率报告一致；当前条目数与清单直接读该文件的 `thresholds`（历史值与逐条依据见 `frontend/AUDIT.md` §17.3），不在本文件复制。
 
 ### TEST-3 关键路径组件集成测试（评审准则 + CI 硬门禁）
 
 - 登录/鉴权、导入与凭据刷新、额度/模型封锁、审计筛选、客户端密钥增删、设置冲突、版本更新等均需覆盖 UI → API → 状态/错误。
 - 网络边界可替换，被测业务组件、hook、decoder 与状态流保持真实；不能只检查 mock 调用次数。
-- 判定：评审准则；CI 的两条报告断言为硬门禁：后端 Go 集成用例「0 跳过」断言，以及前端 `pnpm test:results`（Vitest）与 `pnpm test:results:e2e`（Playwright）的必需用例执行/跳过断言（§7、§8）。
+- 判定：场景覆盖范围按评审准则；用例**真的跑了**按机器门禁——后端 Go 集成用例「0 跳过」断言（CI 步骤 `Assert required integration tests ran`），前端 `pnpm test:results`（Vitest）与 `pnpm test:results:e2e`（Playwright）的必需用例执行/跳过断言（CI 步骤 `Assert required frontend tests ran`，脚本 `frontend/scripts/check-test-results.mjs`；`pnpm verify` 已内含 `pnpm test:results`）。命令见 §7、发布前置见 §8、判定命令列见 §14.4。
 
 ### TEST-4 禁止弱化测试（评审准则）
 
@@ -161,7 +159,7 @@
 
 - 新增或完成重构的 `.ts`/`.tsx` 与生产 Go 文件 ≤600 行；存量豁免必须在阶段基线中明确，不得把未超限文件推过阈值。
 - 判定：前端 `pnpm check:structure`（扫描 `src/**/*.ts(x)`，排除 `*.test.*`/`*.spec.*`/`*.d.ts`）与后端 `go run ./tools/structurecheck`（排除 `*_test.go`、`docs/`、`testdata/`）。
-- 行数仅是边界，不是只搬文件即可通过的理由。测试文件不在该门禁范围内（存量 >600 行测试文件已在 §5 登记）。
+- 行数仅是边界，不是只搬文件即可通过的理由。测试文件不在该门禁范围内（存量 >600 行测试文件的数量与清单见 `frontend/AUDIT.md` §18.3 与 `backend/AUDIT.md` §16.4；后端不在前端 REV-1 的扫描范围内，见 `backend/AUDIT.md` §17）。
 
 ### REV-2 函数不超过 50 行（前后端双侧机器门禁）
 
@@ -174,7 +172,7 @@
 - `if`/`for`/`try`/三元链最多 3 层，优先提前返回、明确条件与职责拆分。
 - 统一口径：计入 `if`（含 `else` 分支，但 **`else if` 与 `if` 同层**）/ `for` / `range` / `switch` / type switch / `select`；`case` / `comm` 子句体不额外加层；函数字面量是独立作用域（Go 侧按 `<closure>` 上报，前端侧归属最近外层具名作用域）。`else { if ... }` 比 `else if` 多一层，属有意保留的不对称口径。
 - 判定：同 REV-1 的两个工具，> 3 层即失败，存量由两侧 `structure-baseline.json` 棘轮冻结。
-- **「0 越限」必须附带参与判定的作用域总数**，以证明不是漏报通道造成的假通过（§10 的 EVID-3）。两个工具均已输出该行：`参与判定的作用域（REV-3）：N 个`（前端 404 文件 / 2524 个作用域，后端 478 个生产文件 / 5472 个作用域，见两个 AUDIT）。
+- **「0 越限」必须附带参与判定的作用域总数**，以证明不是漏报通道造成的假通过（§10 的 EVID-3）。两个工具均已输出该行 `参与判定的作用域（REV-3）：N 个` 与扫描文件数（前端 `node scripts/check-structure.mjs`、后端 `go run ./tools/structurecheck`）；具体数值以当次工具输出为准，历次实测与口径差异见 `frontend/AUDIT.md`、`backend/AUDIT.md`（META-3/DOC-1：不在本文件复制会过期的数字）。
 
 ### REV-4 使用业务命名（评审准则）
 
@@ -191,19 +189,19 @@
 | 全部生产 CSS                               |      20 KiB gzip |
 | 单个 JS chunk                              | 500 KiB 原始体积 |
 
-- 前端（机器门禁）：KiB=1024 B，gzip 使用固定参数。共享依赖去重；结合浏览器资源记录检查，不能只拆 chunk 绕预算。关键体积比冻结基线增长 >5% 必须解释处理，不自动提高阈值。压缩体积不等于服务器已开启传输压缩。
+- 前端（机器门禁）：量纲与压缩参数的唯一来源是 `frontend/bundle-budget.json` 的 `unit`/`thresholds`（KiB=1024 B，gzip 用 zlib level 9），预算按构建产物在**磁盘上的 gzip 体积**计算，不测线上下载体积。共享依赖去重；结合浏览器资源记录检查，不能只拆 chunk 绕预算。关键体积比冻结基线增长 >5% 必须解释处理，不自动提高阈值。Go 服务当前未启用传输压缩，静态资源只设置缓存头（`backend/internal/transport/http/frontend.go`），因此本预算不代表线上传输量；实测值见 `frontend/AUDIT.md` 的体积章节，以 `pnpm check:budget` 当次输出为准。
 - 判定：`pnpm check:budget`（基线 `frontend/bundle-budget.json`；`--update` 须满足 CHG-5）。
 - 后端性能（`ns/op`、`B/op`、`allocs/op`、查询次数）：**评审准则，无门禁**。性能比较同环境重复测量；稳定回退 >10% 必须查明；不为提速牺牲事务、安全、审计或一致性；无实测收益则不声称优化成功。
 
 ## 5. 债务与基线（棘轮）
 
 - 本文件只登记**当前基线**与指针；历史演进、逐轮实测与更正记录见 `frontend/AUDIT.md`、`backend/AUDIT.md`（§12）。
-- 结构基线（REV-1/REV-2/REV-3）：`frontend/structure-baseline.json` 与 `backend/structure-baseline.json` 的 `files`/`functions`/`nesting` **当前均为空** → 存量 0 项，只允许持平或下降；新增越限即违规。
+- 结构基线（REV-1/REV-2/REV-3）：`frontend/structure-baseline.json` 与 `backend/structure-baseline.json` 的 `files`/`functions`/`nesting` **当前均为空** → 存量 0 项，只允许持平或下降；新增越限即违规（复现：`cd frontend && pnpm check:structure`；`cd backend && go run ./tools/structurecheck`）。
 - 契约基线：`backend/api-baseline.txt`（由 `go run ./tools/apicheck --update` 生成）；当前条数以 `go run ./tools/apicheck` 的输出为准（数字不在此复制，META-2）。
 - 前端跨 feature 依赖：`frontend/.dependency-cruiser.cjs` 的 `frozenCrossFeatureDebt` 为空对象 → 任何新增跨 feature 直接依赖即违规。
 - 覆盖率与用例数、体积实测值、hook 阈值条目数：以 `pnpm test:ui:coverage`、`pnpm check:budget` 的当次输出为准，历史值见两个 AUDIT。
 - 测试分层现状（已决策接受）：`pnpm test` 运行纯逻辑 `src/**/*.test.ts`（node:test，Node 环境），`pnpm test:ui:coverage` 运行组件/集成 `src/**/*.test.tsx`（Vitest + jsdom）。双运行器不迁移（理由见 `frontend/AUDIT.md` 的 FE-08）。
-- 已登记的 P2/P3 未收口项（含前端 >600 行测试文件、未纳入 100% 阈值的 hook、匿名回调不参与 REV-2 判定、`uses:` 未固定 SHA 等）见两个 AUDIT 的「未达标/未覆盖」章节；按 META-4 不阻塞，但不得扩张。
+- 已登记的 P2/P3 未收口项（含前端 >600 行测试文件、未纳入 100% 阈值的 hook、匿名回调不参与 REV-2 判定等）见两个 AUDIT 的「未达标/未覆盖」章节；按 §6 不阻塞，但不得扩张。
 - 棘轮更新必须满足 CHG-5：只在工作区静止时执行，并记录 `git rev-parse HEAD` 与在跑任务数。
 
 ## 6. 文档与验收状态
@@ -228,6 +226,8 @@ pnpm check:architecture
 pnpm check:structure
 pnpm test:gates
 pnpm check:budget
+pnpm test:results       # 报告门禁：Vitest 报告中的必需用例均已执行、通过且未跳过
+pnpm test:results:e2e   # 报告门禁：Playwright 报告同上（需先 pnpm test:e2e）
 # 阶段 2 起：pnpm verify:full（质量门禁 + 真实全栈 E2E）
 
 # backend/（必须在 backend/ 目录执行；verify.sh 会校验 cwd，否则退出 2）
@@ -251,12 +251,13 @@ git remote -v
 
 ## 8. 发布流程（REL）
 
-- 版本载体：仓库根 `VERSION` 是唯一权威版本源（`Dockerfile:66` 把它复制到镜像 `/app/VERSION`，`backend/internal/buildinfo/version.go` 的 `CurrentVersion()` 读取它）；`frontend/package.json` 的 `version` 必须与 `VERSION` 处于同一条版本线，二者不一致按文档缺陷处理。该一致性由 CI 步骤「Verify version carriers are aligned」强制。
-- 发布前置（缺一不可，未实际完成不得记为 `Passed`）：目标提交上前端 `pnpm verify`、后端 `go test ./... -count=1` / `go vet ./...` / `go build ./...` 退出 0；`ghcr-image.yml` 的 Verify job 在远端真实跑完（含 race、PostgreSQL/Redis 集成用例 0 跳过、Swagger 精确 diff、全栈 E2E）。
+- 版本载体：仓库根 `VERSION` 是唯一权威版本源（`Dockerfile:67` 的 `COPY VERSION /app/VERSION` 把它复制到镜像 `/app/VERSION`，`backend/internal/buildinfo/version.go` 的 `CurrentVersion()` 读取它）；`frontend/package.json` 的 `version` 必须与 `VERSION` 处于同一条版本线，二者不一致按文档缺陷处理。该一致性由 CI 步骤「Verify version carriers are aligned」强制。
+- 发布前置（缺一不可，未实际完成不得记为 `Passed`）：目标提交上前端 `pnpm verify`（已内含 `pnpm test:results`）、后端 `go test ./... -count=1` / `go vet ./...` / `go build ./...` 退出 0；`ghcr-image.yml` 的 Verify job 在远端真实跑完（含 race、PostgreSQL/Redis 集成用例 0 跳过、Swagger 精确 diff、全栈 E2E，以及两条必需场景断言：后端 `Assert required integration tests ran`、前端 `Assert required frontend tests ran`（`pnpm test:results:e2e`））。
 - 发布步骤：① 把维护分支 fast-forward 合并到 `main` 并推送 `origin`；② 打 annotated tag `vX.Y.Z` 并推送；③ 创建同名 GitHub Release，说明引用 `frontend/AUDIT.md` / `backend/AUDIT.md` 的验收结论；④ 等待 `ghcr-image.yml` 的 `build_ghcr_image` 与 `merge` 产出 `ghcr.io/<owner>/grok2api:vX.Y.Z` 的 amd64/arm64 与 manifest list。
 - 发布后登记（必须附 run id + step + conclusion，见 EVID-2）：在两个 `AUDIT.md` 中记录 tag、commit sha、CI run id 与镜像 digest；任何未达成的环节按 §6 记为 `Blocked`/`Failed` 并写明精确补救步骤，不得以「配置已写好」代替。
 - 固有局限（必须一并登记）：tag 指向发布提交，其 `AUDIT.md` 不含 tag run 之后的登记；如需 tag 自带登记只能重打 tag（不可逆，默认不做）。
 - 授权与边界：合并 `main`、创建 tag/Release、推送镜像、删除/重建远端仓库或容器包属不可逆操作，逐次单独授权；`upstream` 永不推送。执行前必须逐项列出并确认外部依赖（CI 包权限、Secrets、Release、Webhook、镜像 tag、下游消费者），无法确认则阻塞（§11 的 CHG-9）。
+- 非 `ghcr-image.yml` 的外部必需 check（例如 CodeQL 的告警 check）为 `failure` 时，必须登记 check/run id、`conclusion`、告警条目与 triage 结论；假阳性须在 `AUDIT.md` 记录最小复现命令；**不得**为消除告警而修改被检代码语义或删除日志（评审准则）。现有 triage 见 `backend/AUDIT.md` §24。
 
 ## 9. 执行与委派纪律（EXEC）
 
@@ -419,7 +420,7 @@ CI 变绿只证明检查通过，不证明已交付。CI 通过后必须在同�
 
 ### SEC-2 供应链（P1，评审准则）
 
-CI 的 `uses:` 应固定到 commit SHA（当前为 tag，登记为 P3）；新增依赖须说明现有能力不足、版本兼容性、许可证、体积与回滚方式；`frontend/pnpm-workspace.yaml` 的 `minimumReleaseAge` 策略不得为个别包随意放宽。
+CI 的 `uses:` 已全部固定到 commit SHA（22/22，复现：`rg -n "^\s*uses:" .github/workflows/*.yml` → 形如 `owner/repo@<40 位 sha> # vX.Y.Z`）；**新增 action 必须固定到 40 位 commit SHA** 并附 `# vX.Y.Z` 注释，禁止新增浮动 tag/branch 引用；新增依赖须说明现有能力不足、版本兼容性、许可证、体积与回滚方式；`frontend/pnpm-workspace.yaml` 的 `minimumReleaseAge` 策略不得为个别包随意放宽。
 
 ### SEC-3 外部调用与网络（P0，评审准则）
 
@@ -462,8 +463,9 @@ CI 的 `uses:` 应固定到 commit SHA（当前为 tag，登记为 P3）；新�
 | DEV-4      | `pnpm verify`（`frontend/`）                                                          | `frontend/package.json`                              | Verify  | P1       |
 | DEV-5      | `pnpm format:check`、`pnpm install --frozen-lockfile`（`frontend/`）                  | `.prettierrc`、`.gitattributes`                      | Verify  | P1       |
 | TEST-1/2   | `pnpm test:ui:coverage`（`frontend/`）                                                | `vitest.config.ts`                                   | Verify  | P1       |
+| TEST-3     | `pnpm test:results`、`pnpm test:results:e2e`（`frontend/`，脚本 `frontend/scripts/check-test-results.mjs`）；CI 步骤 `Assert required integration tests ran`、`Assert required frontend tests ran` | `.github/workflows/ghcr-image.yml`、Vitest / Playwright 报告产物 | Verify  | P1       |
 | TEST-5     | `pnpm test:e2e`（`frontend/`）                                                        | `playwright.config.ts`                               | Verify  | P1       |
-| TEST-6     | `bash scripts/verify.sh`（`backend/`）                                                | `backend/tools/*`                                    | Verify  | P1       |
+| TEST-6     | `bash scripts/verify.sh`（`backend/`）                                                | `backend/scripts/verify.sh`、`backend/structure-baseline.json`、`backend/api-baseline.txt` | Verify  | P1       |
 | REV-1/2/3  | `pnpm check:structure`（`frontend/`）、`go run ./tools/structurecheck`（`backend/`）  | 两侧 `structure-baseline.json`                       | Verify  | P1       |
 | REV-5      | `pnpm check:budget`（`frontend/`）                                                    | `bundle-budget.json`                                 | Verify  | P1       |
 | REL 版本载体 | CI 步骤「Verify version carriers are aligned」                                        | `VERSION`、`frontend/package.json`                   | Verify  | P1       |
@@ -471,5 +473,5 @@ CI 的 `uses:` 应固定到 commit SHA（当前为 tag，登记为 P3）；新�
 
 ### BIND-5 只有评审准则、没有机器门禁的规则
 
-DEV-1、DEV-3 的复用/职责部分、DEV-5 的编码与文本比对、TEST-3、TEST-4、TEST-7、REV-2 的匿名回调边界、REV-4、REV-5 的后端性能、SEC-1…SEC-4、§9 全部、§10 除 EVID-3、§11 全部、§12 全部。
+DEV-1、DEV-3 的复用/职责部分、DEV-5 的编码与文本比对、TEST-4、TEST-7、REV-2 的匿名回调边界、REV-4、REV-5 的后端性能、SEC-1…SEC-4、§8 的外部必需 check 登记、§9 全部、§10 除 EVID-3、§11 全部、§12 全部。
 违反这些条目必须说明理由，**不得声称「已由门禁保证」**。
