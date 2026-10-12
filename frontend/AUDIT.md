@@ -1536,3 +1536,130 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 - 真实报告路径：`node scripts/check-test-results.mjs --e2e` exit 0（`文件 6 个、用例 42 个`，`chromium 通过 21 个、mobile-chromium 通过 21 个`）；该结论在 §28.7 的最终 tip 复跑（`pnpm verify:full`）中再次覆盖。
 
 **已知边界（如实登记）**：`isListOnlyReport` 的 `expected === 0 && skipped > 0` 判据对「真实执行但全部用例被跳过」的报告同样返回 true——按设计 fail-closed（错误文案已覆盖该情形），未新增任何放宽。
+
+## 29. 2026-10-12（续五）计划 0-4/1-4/3-5/4-2/4-5/6-4 与 FB-02 收口
+
+> 分支 `maint/acceptance-audit-20261012-registration`（基点 `0e8c02b7`）。本节按 META-3 只追加，§1–§28 的既有数字不改写（唯一例外是 §29.8，按 EVID-8 以「原值 → 新值」格式更正并保留历史快照）。计划条目编号取自 `.pi/plan/前后端验收审计与增量模块化优化计划-20261011-1936.md`（阶段 0 第 4 项、阶段 1 第 4 项、阶段 3 第 5 项、阶段 4 第 2/5 项、阶段 6 第 4 项）。**本节只做只读核对与文档登记，未改任何代码/配置/生成物**；本工作树未安装前端 `node_modules`，故结果列一律**引用既有实测**并标注出处，未在本工作树重跑前端门禁（唯一的本机实跑见 §29.6 的 git 命令）。
+
+### 29.1 计划 0-4：规则 → 配置 → 文件范围 → 命令 → 结果 → 阻塞级别
+
+范围与命令以本工作树配置为准（`frontend/package.json`、`AGENTS.md` §7）；结果列引用 §19.2(a)、§19.7、§23.2、§28.4、§28.7 的既有实测。阻塞级别按 `AGENTS.md` §6 与 META-4（P0/P1 阻塞合并与发布）。
+
+| 规则（SSOT 条目）          | 配置来源                                                        | 文件范围                                                | 命令（cwd=`frontend/`，除注明外）                            | 结果（出处）                                                                                                                          | 阻塞级别 |
+| -------------------------- | --------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| 格式（DEV-5）              | `.prettierrc:1-8`、`.prettierignore:1-6`                        | `frontend/**`（**不含**仓库根级文件，见 §23.2 第 2 条） | `pnpm format:check`                                          | §19.2(a) `All matched files use Prettier code style!` → Passed                                                                        | P1       |
+| 类型（DEV-2）              | `tsconfig.app/test/e2e/node.json`                               | 源码 + 工具配置 + 测试 + E2E                            | `pnpm typecheck`、`pnpm typecheck:e2e`                       | §19.2(a) 无输出 → Passed；FQ-03 由 `tsconfig.node.json` strict 覆盖                                                                   | P1       |
+| Lint（DEV-2/DEV-5）        | `eslint.config.js:1-44`                                         | 见 §29.2                                                | `pnpm lint`（=`eslint .`，`package.json:19`）                | §19.2 FQ-02：修复前 32 errors / 23 文件 → 修复后 0 error / 0 warning（541 文件）                                                      | P1       |
+| Oxlint（DEV-5）            | `.oxlintrc.json:1-7`                                            | 见 §29.2                                                | `pnpm oxlint`（`package.json:18`）                           | §19.2(a) `Found 0 warnings and 0 errors.`（541 files / 96 rules）                                                                     | P1       |
+| 单元测试（node:test）      | `package.json` 的 `test` + 报告清单                             | `src/**/*.test.ts`                                      | `pnpm test`                                                  | §28.4 `tests 126 / pass 126 / fail 0 / skipped 0 / todo 0`                                                                            | P1       |
+| 组件/集成测试 + 覆盖率     | `vitest.config.ts`（`coverage.include` + `perFile` 阈值）       | `src/**/*.test.tsx`                                     | `pnpm test:ui:coverage`                                      | §28.4 `Test Files 125 passed` / `Tests 1492 passed` / `All files 98.01 \| 94.32 \| 98.29 \| 98.69`                                    | P1       |
+| hook 100% 阈值（TEST-2）   | `vitest.config.ts` 的逐文件 `thresholds`                        | 纳入清单的 hook                                         | 同上                                                         | 与上同一份报告；纳入条目数以该文件为准（不在本节复制数字）                                                                            | P1       |
+| 报告门禁（必需场景）       | `scripts/check-test-results.mjs`、`check-node-test-results.mjs` | Vitest / node:test / Playwright 报告                    | `pnpm test:results`、`test:results:node`、`test:results:e2e` | §28.4 三份均 exit 0（`参与判定的文件 125 / 14 / 6`）                                                                                  | P1       |
+| 架构（DEV-3）              | `.dependency-cruiser.cjs`（含 `frozenCrossFeatureDebt`）        | `src/**`                                                | `pnpm check:architecture`                                    | §28.4 `no dependency violations found (430 modules, 2037 dependencies cruised)`                                                       | P1       |
+| 结构（REV-1/2/3）          | `scripts/check-structure.mjs`、`structure-baseline.json`        | `src/**/*.ts(x)`（排除 `*.test.*`/`*.spec.*`/`*.d.ts`） | `pnpm check:structure`                                       | §28.4 `404 文件`；超限文件/函数/嵌套均 0；`参与判定的作用域（REV-3）：2525 个`                                                        | P1       |
+| 门禁自测（EVID-3）         | `scripts/self-test-gates.mjs`                                   | 上述门禁脚本                                            | `pnpm test:gates`                                            | §28.7 最终 tip `78 个用例（含 63 个必须失败的用例）`（§28.4 快照为 75/61）                                                            | P1       |
+| 构建/预算（REV-5）         | `vite.config.ts:45-48`、`bundle-budget.json`                    | `dist/**`                                               | `pnpm build`、`pnpm check:budget`                            | §28.7 首屏 **193.59** KiB（260）/ 全 JS **624.43**（650）/ CSS **16.65**（20）/ 最大 chunk **457.73** 原始（500）/ 13 路由入口 → 通过 | P1       |
+| 全栈 E2E（TEST-5）         | `playwright.config.ts`、`e2e/**`                                | 生产 dist + 真实 Go 后端                                | `pnpm test:e2e`（`verify:full` 内）                          | §28.4/§28.7 `42 passed`（0 failed / 0 skipped / 0 flaky；chromium 21 + mobile-chromium 21）                                           | P1       |
+| 后端/存储（TEST-6）        | `backend/scripts/verify.sh`                                     | `backend/**`                                            | `bash scripts/verify.sh`（cwd=`backend/`）                   | §28.4 exit **0**（6 步；`go test ./...` 67 包 ok、0 FAIL、20 条环境门控跳过）                                                         | P1       |
+| Linux race / 隔离 PG+Redis | `.github/workflows/ghcr-image.yml`                              | 后端并发与集成用例                                      | CI `Race backend`、`Assert required integration tests ran`   | §28.7 探针 run `38206150260` 全步 success；本机 `Blocked`（`CGO_ENABLED=0`、无服务）                                                  | P1       |
+
+**历史问题去重**：§19.7 的 FE-19-1/2/3/4/5/6/7 中，FE-19-1（必需用例标题）、FE-19-2（门禁自证）、FE-19-3（新鲜度）、FE-19-4（flaky）已由 §21.1/§22.4/§28.1/§28.2/§28.8 关闭或收窄；FE-19-5 转为 §29.7 的四项 FB-02 状态；FE-19-6（文档漂移）由 §28.5 末段关闭；FE-19-7 仍为待补强项。§23.2 的「只有 CI 能跑 / 只有本地跑」两栏仍成立。
+
+### 29.2 计划 1-4：Prettier / ESLint / Oxlint 三工具范围差异表
+
+依据 `frontend/.prettierrc`、`.prettierignore`、`eslint.config.js`、`.oxlintrc.json` 的实际内容（行号为本工作树实测）。
+
+| 维度                         | Prettier                                                                                                                                    | ESLint                                                                                                                                                                                                                          | Oxlint                                                                                |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| 配置载体与命令               | `.prettierrc:1-8`（`printWidth 120`、`endOfLine auto`）；`package.json:17` `prettier --check .`                                             | `eslint.config.js:1-44`；`package.json:19` `eslint .`                                                                                                                                                                           | `.oxlintrc.json:1-7`（`correctness: error`）；`package.json:18` `oxlint`              |
+| 排除的生成物与目录           | `dist`、`node_modules`、`coverage`、`.cache`、`.artifacts`、`pnpm-lock.yaml`（`.prettierignore:1-6`）                                       | `dist`、`coverage`、`.cache`、`.artifacts`、`src/components/ui`（`eslint.config.js:9`）                                                                                                                                         | `dist`、`coverage`、`.cache`、`.artifacts`、`src/components/ui`（`.oxlintrc.json:6`） |
+| 仅在某个检查中豁免的基础原语 | **无豁免**：`src/components/ui` 不在 `.prettierignore` 中，基础原语仍受格式门禁约束                                                         | **豁免** `src/components/ui`（`:9`）                                                                                                                                                                                            | **豁免** `src/components/ui`（`:6`，与 ESLint 同一豁免集）                            |
+| 按目录切运行环境             | 不适用（纯格式）                                                                                                                            | 有：`**/*.{js,cjs,mjs}` 排除 `public/**` 用 Node globals（`:12-15`）；`public/**/*.js` 用 browser globals（`:18-21`）；`*.config.ts`/`e2e/**`/`scripts/**` 用 Node globals（`:41-43`）；`src/**` 用 browser globals（`:32-33`） | **无**：Oxlint 只按 `ignorePatterns` 过滤，无按 glob 切 globals 的能力                |
+| 必须检查的自定义逻辑         | 业务 `src/**/*.{ts,tsx}`（含 `src/components/ui`）、`e2e/**`、`scripts/**`、`*.config.ts`                                                   | 业务 `src/**/*.{ts,tsx}`（除 `src/components/ui`）→ `no-explicit-any` + `explicit-module-boundary-types`（`:27-28`）+ react-hooks/react-refresh（`:35-38`）                                                                     | 同 ESLint 范围，只跑 `correctness` 类别                                               |
+| 共同不覆盖的范围             | 仓库根级 `AGENTS.md`/`Makefile`/`Dockerfile`/`VERSION`/`.github/**`：三者均不覆盖（`format:check` 的 cwd 是 `frontend/`，见 §23.2 第 2 条） | 同左                                                                                                                                                                                                                            | 同左                                                                                  |
+
+### 29.3 计划 3-5：tree-shaking 与浏览器目标
+
+**现状（如实记录，未做专项测量）**：
+
+- `vite.config.ts:45-48` 的 `build` 段**只设** `outDir: "dist"` 与 `sourcemap: false`；**没有** `target`、**没有** `esbuild`、**没有** `rollupOptions`（因而也没有 `manualChunks` / `cssCodeSplit` / `minify` 的显式覆盖）。
+- `frontend/package.json` **没有** `browserslist` 字段；`frontend/.browserslistrc` **不存在**（`build-inputs.ts` 把它作为可选输入跟踪，缺失时按 ENOENT 处理，见 §19.4）。
+- **结论：浏览器目标与 tree-shaking 沿用 Vite 默认，未单独记录**。默认值来源：Vite 的 `build.target` 默认 `'modules'`（面向支持原生 ESM 与动态 `import()` 的现代浏览器），`build.minify` 默认 `esbuild`；tree-shaking 由 Vite 底层的 Rollup 默认 dead-code elimination 承担。Vite 版本 `vite ^8.3.4`（`package.json:95`）。
+- **未做**：无 bundle 分析器记录、无「删除未用导出后体积变化」的专项测量 ⇒ 本节**不给出任何 tree-shaking 收益数字**（不臆造测量）。CSS/chunk 侧的可测结论已由 `check:budget` 覆盖（§29.1 末行、§19.5）。
+
+### 29.4 计划 4-2：barrel 专项判定
+
+检索式：`rg -n "export \* from" frontend/src`（本工作树实测）。
+
+**命中 4 条，全部位于同一文件 `src/features/accounts/accounts-api.ts:22-25`**：
+
+- `:22` `export * from "@/features/accounts/accounts-dto";`
+- `:23` `export * from "@/features/accounts/account-task-stream";`
+- `:24` `export * from "@/features/accounts/account-batch-api";`
+- `:25` `export * from "@/features/accounts/account-export-api";`
+
+**判定**：`frontend/src` 下**没有任何目录级 `index.ts` 全量 re-export**，即不存在「为目录整齐制造的 barrel」。上述 4 条是**单个 feature 内部的 API 聚合入口**（accounts feature 的 DTO/任务流/批量/导出四组 API 合成一个对外模块），**不跨 feature**（`.dependency-cruiser.cjs` 的 `frozenCrossFeatureDebt` 为空，§29.1 架构行 Passed 即为其证据），也不制造循环。⇒ 符合计划 4-2「不为目录整齐制造大量 barrel」，**无需整改**。
+
+### 29.5 计划 4-5：列表优化
+
+计划 4-5 的验收口径是「列表只优化**经 Profiler 证实**的重复渲染或失效，不重建虚拟化」。
+
+**登记为「无需调整」**：本批**没有**任何 React Profiler 证据（无渲染提交次数、无重复渲染火焰图、无失效重取记录），因此按「无实测收益不声称优化成功」的口径，**本轮不做列表优化**，`shared/components/virtual-table-body.tsx` 未被改动。既有登记见 §19.5（体积预算口径复核：列表相关的体积与路由闭包口径、认证后首屏 282.30 KiB 与 `runtime-config.js` 漏算通道），以及 §15 的 i18n 非首屏拆包（早于本计划，不是本轮触发）。
+
+### 29.6 计划 6-4：`git diff --numstat` 与编码/用户改动边界核对
+
+命令与真实输出摘要（本机实跑，2026-10-12，工作树根 `E:\grok2api\.pi\worktrees\acceptance-audit-20261012-registration`，分支 `maint/acceptance-audit-20261012-registration`）：
+
+```
+git diff --numstat 0c23f902..HEAD | tail          # 见下表
+git ls-files --eol <抽查文件>                      # 全部 i/lf w/lf attr/text eol=lf
+```
+
+`git diff --numstat 0c23f902..HEAD` 的 16 条记录（末 15 条如下，最前一条为 `AGENTS.md` 9/7）：
+
+| 文件（相对工作树根）                                               | +   | −   |
+| ------------------------------------------------------------------ | --- | --- |
+| `AGENTS.md`                                                        | 9   | 7   |
+| `README.md`                                                        | 3   | 2   |
+| `backend/AUDIT.md`                                                 | 229 | 3   |
+| `backend/internal/ports/provider/import_boundary_fixtures_test.go` | 135 | 0   |
+| `backend/internal/ports/provider/import_boundary_test.go`          | 142 | 47  |
+| `backend/internal/transport/http/frontend_exposure_test.go`        | 202 | 0   |
+| `frontend/AUDIT.md`                                                | 259 | 18  |
+| `frontend/README.md`                                               | 17  | 16  |
+| `frontend/package.json`                                            | 3   | 2   |
+| `frontend/scripts/check-node-test-results.mjs`                     | 502 | 0   |
+| `frontend/scripts/check-test-results.mjs`                          | 162 | 48  |
+| `frontend/scripts/node-test-json-reporter.mjs`                     | 116 | 0   |
+| `frontend/scripts/self-test-gates.mjs`                             | 742 | 47  |
+| `frontend/src/app/deferred-resources-failure.test.tsx`             | 101 | 0   |
+| `frontend/src/shared/i18n/deferred-resources-retry.test.tsx`       | 84  | 0   |
+| `frontend/src/shared/i18n/index.ts`                                | 14  | 7   |
+
+**编码核对**：`git ls-files --eol` 抽查 `AGENTS.md`、`backend/AUDIT.md`、`backend/internal/transport/http/frontend.go`、`frontend/AUDIT.md`、`frontend/vite.config.ts` 均为 `i/lf w/lf attr/text eol=lf`，索引与工作区换行一致、无 CRLF 混入（`.gitattributes` 统一为 LF）。
+
+**用户改动边界**：本批全部写入都发生在**隔离工作树**内（`.pi/worktrees/acceptance-audit-20261012-*`），未触碰主检出 `E:\grok2api` 的工作区文件，也未 `reset`/`restore` 任何工作树；`git status --porcelain` 在提交后为空（见 §29.6 末的提交核对）。按 §6「用户原有改动保留，最终 diff 与本任务文件清单一致」核对：上表文件集合与本批各提交的文件清单逐一对应，无夹带。
+
+### 29.7 FB-02 四项状态
+
+| #   | 项                                 | 状态（2026-10-12）                                                                                                                                                                                                                                                                                                                                                                                                                |
+| --- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ①   | 认证后首屏 **282.30 KiB** 不入门禁 | **口径缺口，需授权**（`§19.5` ①、`§21.4`、`§28.6`）。门禁只保护**未认证**首屏闭包（193.59 KiB）；认证后首个界面 = app-shell 31.47 + 延迟文案 57.25 = **282.30 KiB / 26 文件 > 260 KiB**（超 22.30 = 8.58%）。**不可**调高 `initialJsGzipKiB` 阈值（AGENTS.md CHG-4 / §21.4 FE-19-5）；任何改口径须单独评审并补负样本。                                                                                                            |
+| ②   | `runtime-config.js` 漏算           | **待并入**。首屏入口正则只采 `/assets/**`，HTML 同步脚本 `runtime-config.js`（84 B gzip 实测 / §19.5 记 91 B）不入门禁闭包（193.58 → 193.67 KiB）。修复在分支 `maint/acceptance-audit-20261012-budget-gate`（提交 `e8f4fbd7` `fix(frontend): 首屏入口纳入非 assets 的同步脚本`，含 dist 新鲜度断言 D4）；本工作树实测 `git merge-base --is-ancestor maint/acceptance-audit-20261012-budget-gate HEAD` **exit 1** ⇒ **尚未并入**。 |
+| ③   | 嵌套 `import()` 静态不可见         | **现状登记**（`§19.5` ④）：页面 chunk 内部的嵌套 `import()` 既不在 `__vite__mapDeps` 清单、也不被路由闭包跟随；`preloadOwnerOf`（`check-bundle-budget.mjs:189-205`）在「一次 `__vitePreload` 包多个动态 import」时会丢失其余入口。**影响**：理论上存在「拆分绕预算」的结构通道，但当前只有 2 个文件含动态 import、1:1 形态未触发 ⇒ 无实际超限证据，登记不扩张。                                                                   |
+| ④   | 冻结基线陈旧                       | **需授权 + 静止窗口**（`§19.5` ⑤、`§28.6`）：`bundle-budget.json` 与当前产物首屏文件名重合 0/2、JS 文件数 77 vs 76，增长校验实际只在比总量。`--update` 属 CHG-5 约束的棘轮更新，只能在**工作区静止**（无在跑写者、`git status` 稳定）时执行并记录 `git rev-parse HEAD`，且须单独授权；**当前不得更新**。                                                                                                                          |
+
+### 29.8 EVID-8 更正：§19.4 的构建可复现性引用
+
+**原值（§19.4，第 810 行，保留为历史快照）**：「同输入两次干净构建 **89/89 文件 SHA256 全等**，`inputHash`/`outputHash` 相同（`dist-b` vs `dist-c`；来源 `scratch/1c33f674-…/resume-state.md`）」。
+
+**问题（本工作树实测）**：该引用**无法从本工作区解析**——① `resume-state.md` 不在本工作树内，也不在 `E:\grok2api\.pi` 任何路径下（`Glob **/resume-state.md` = 0 命中）；② 被引用的那个会话目录 `scratch/1c33f674-9db5-4a37-9576-2bea68d9316a` 内**根本没有** `resume-state.md`（该目录只有 `progress.md`、`evidence-ledger.md` 等），因此这是一条**失效引用**，不是「文件在别处」。
+
+**新值（可复现性佐证改为）**：该会话 scratch 内**实际存在** `manifest-b.json` 与 `manifest-c.json`（各 186 B），两者 `inputHash` / `outputHash` **完全相同**：
+
+- `inputHash` = `ccd62bff87846938f0601a652121a4e6242f946fa3796e6ca41a96a0c7830245`（与 §19.4 记的「本会话对 `dist-c` 复算输入指纹 `ccd62bff…c7830245`」一致）；
+- `outputHash` = `838471176e90cf82b2ff0045f07426bdb6724a7aef1f39fd7c1ab9ce5e58f67a`。
+
+⇒ 两次干净构建**同输入同输出**这一结论由这两份清单**直接佐证**（`outputHash` 即对产物文件集合逐文件哈希后的聚合值，见 `scripts/build-inputs.ts` 与 `vite.config.ts` 的清单插件）。
+
+**降级说明**：「89/89 逐文件 SHA256 全等」这一**逐文件**清单本身**未找到**（`manifest-*.json` 只存聚合哈希，该目录内无逐文件哈希清单文件）⇒ 逐文件等价性在本工作区**不可复现**，只能复现到「聚合 `outputHash` 相同」。原数字按 META-3 保留在 §19.4 与本节历史快照中，后续引用一律以本节的「聚合哈希相同 + 逐文件清单未找到」为准。
