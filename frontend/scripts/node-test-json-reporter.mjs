@@ -26,7 +26,7 @@
  *   "files": [{
  *     "file": "src/shared/lib/format.test.ts",                      // 相对 cwd 的正斜杠路径
  *     "cases": [{ "name", "kind": "test"|"file-root", "status": "passed"|"failed"|"skipped"|"todo"|"cancelled", "failureType"? }],
- *     "suites": [{ "name", "status" }],
+ *     "cases": [{ "name", "kind": "test"|"file-root", "status": "passed"|"failed"|"skipped"|"todo"|"cancelled", "failureType"? }],
  *     "summary": { "tests", "passed", ... } | null                  // 该文件的 test:summary；收集失败的文件为 null
  *   }]
  * }
@@ -53,7 +53,7 @@ function eventFile(data) {
 function fileReportOf(files, file) {
   const existing = files.get(file);
   if (existing) return existing;
-  const created = { file, cases: [], suites: [], summary: null };
+  const created = { file, cases: [], summary: null };
   files.set(file, created);
   return created;
 }
@@ -76,10 +76,10 @@ function applyEvent(files, diagnostics, state, event) {
     const file = eventFile(data);
     if (file === null) return;
     const entry = fileReportOf(files, file);
-    if (details.type === "suite") {
-      entry.suites.push({ name: data.name ?? "", status: event.type === "test:pass" ? "passed" : "failed" });
-      return;
-    }
+    // suite 事件不是用例，必须在这里丢弃：写进 cases 会污染用例计数与报告自洽性校验。
+    // 历史上这里额外记录了一个 `suites` 字段，但 `test:pass` 对 `test.skip` 的 suite 同样成立，
+    // 跳过的 suite 会被一律标成 passed，而该字段没有任何消费者（门禁只读 cases），故删除这个误导字段。
+    if (details.type === "suite") return;
     entry.cases.push({
       name: data.name ?? "",
       kind: data.name === path.basename(file) ? "file-root" : "test",
