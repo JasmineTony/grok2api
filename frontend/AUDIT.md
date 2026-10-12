@@ -588,7 +588,7 @@ CI run `38047249123`（sha `5bd6b34d`）Verify job 其余步骤全 success，「
 | 有意丢弃的历史 | PR #1、Release `v0.1.1`、全部 Actions run 历史、tag `v0.1.1` 及其镜像（`sha256:daa912bf…`）。**代价已确认**：`v0.1.1` 镜像不再可拉取；其发布结论仍作为历史事实保留在本文件 §14 与 `backend/AUDIT.md` §14                                                                          |
 | 未推送的 refs  | 远端只保留 `main` 与 `maint/modular-quality-audit`（推送时均为 `d070144b`）。上游历史 tag（`v1.x`–`v3.1.6` 等 50 个）与 `v0.1.1` tag **未推送**：它们匹配工作流的 `v*.*.*` 触发器，会对旧提交触发镜像工作流并再次留下失败历史（`v0.1.1` 提交 `b2123a7d` 早于 P1 修复 `b4068303`） |
 | 本地安全备份   | 删除前执行 `git clone --mirror` 到会话 scratch 的 `grok2api-mirror.git`（69 个 ref、16.2 MB），并留档旧仓库远端 ref 清单（78 条）、旧仓库设置与旧 GHCR 版本清单；需要时可从该镜像恢复历史 ref                                                                                     |
-| 推送凭据       | HTTPS OAuth 凭据缺工作流作用域（无法创建/更新 `.github/workflows/**`，推送被拒），改用已注册到该账号的 SSH 密钥推送；`origin` 仍为 `https://github.com/JasmineTony/grok2api.git`（`AGENTS.md` §1 未变），`upstream` 未推送                                                   |
+| 推送凭据       | HTTPS OAuth 凭据缺工作流作用域（无法创建/更新 `.github/workflows/**`，推送被拒），改用已注册到该账号的 SSH 密钥推送；`origin` 仍为 `https://github.com/JasmineTony/grok2api.git`（`AGENTS.md` §1 未变），`upstream` 未推送。后续实测与归正见 §37.4/§37.5                     |
 | 首次 push 触发 | 首次 push 未产生 Actions run（`actions/runs` 持续 `total=0`，原因未查明），改用 `workflow_dispatch` 触发 run `38106888325` 验证 Actions 可用；后续 push 的触发情况在 16.2 登记                                                                                                    |
 
 ### 16.2 发布与镜像证据
@@ -2020,5 +2020,7 @@ git ls-files --eol <抽查文件>                      # 全部 i/lf w/lf attr/t
 
 - **原值（`§36.2`）**：本地 HTTPS 凭据，推送含 `.github/workflows/**` 改动的提交被拒（实测 `git push` exit 1，`refusing to allow an OAuth App to create or update workflow ... without 'workflow' scope`），据此判定「发布无法执行」。
 - **新值（2026-10-12 实测）**：**改用 SSH 通道推送即通过**。`ssh -T git@github.com` → `Hi JasmineTony!`；`git push git@github.com:JasmineTony/grok2api.git maint/release-v0-1-3:refs/heads/maint/release-v0-1-3` → **exit 0**（`* [new branch]`），远端已含**真实工作流改动**。SSH 认证不携带 OAuth scope，故不受该限制；`origin` 的 HTTPS 配置**未改动**（`git config --get remote.origin.url` 仍为 `https://github.com/JasmineTony/grok2api.git`），且**未**采用「剥离工作流改动后再推送」的规避方式（`AGENTS.md` §8 绑定事实）。
+- **归正（2026-10-12 深夜，本轮实测）**：本小节此前把「SSH 通道解阻塞」写成了本问题已收口的单一结论；实测表明**两条通道并存**——SSH 密钥认证成功（`-> exit 0`）与「HTTPS 通道凭据缺工作流作用域（`push` exit 1）」都是当前真实状态，后者是**账号级授权状态**、并非本地可修的缺陷。凭据现状与处置规程见 §37.5。
 - **根因（CHG-7）**：阻塞的直接原因是**凭据权限集合**，而非仓库权限或分支保护（`main` 实测 `protected:false`）。
 - **复现**：`ssh -T git@github.com`（期望 `Hi JasmineTony!`）与上述 push 命令（期望 exit 0 且远端出现该分支）。
+
