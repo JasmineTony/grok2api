@@ -26,7 +26,6 @@
  *   "files": [{
  *     "file": "src/shared/lib/format.test.ts",                      // 相对 cwd 的正斜杠路径
  *     "cases": [{ "name", "kind": "test"|"file-root", "status": "passed"|"failed"|"skipped"|"todo"|"cancelled", "failureType"? }],
- *     "cases": [{ "name", "kind": "test"|"file-root", "status": "passed"|"failed"|"skipped"|"todo"|"cancelled", "failureType"? }],
  *     "summary": { "tests", "passed", ... } | null                  // 该文件的 test:summary；收集失败的文件为 null
  *   }]
  * }

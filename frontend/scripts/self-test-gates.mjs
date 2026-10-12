@@ -586,7 +586,6 @@ function buildReportRoot(name, options) {
 }
 
 /**
-/**
  * E2E 报告的形态：默认与真实产物一致（file 是纯文件名 + `config.rootDir` 指向 <dir>/e2e）；e2eAbsoluteShape
  * 构造绝对路径形态，e2eWithoutRootDir 构造缺 `config.rootDir` 形态，e2eProjects 覆盖 project 形态，
  * e2eListOnly 构造 `playwright test --list` 的收集清单形态（config.argv 含 `--list`、stats 只有 skipped）。
