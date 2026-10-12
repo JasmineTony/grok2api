@@ -1259,6 +1259,8 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 | FE-19-8（i18n 单例失败重试语义）、BE-G3（`ports/security` 迁移） | FE-19-8 **已关闭**；BE-G3 需授权 | FE-19-8 原值「本轮未改」→ 新值「已关闭」（`5b85f92d` + `874c4841`，见 §28.3），根因：登记滞后；BE-G3 本轮未改 |
 | `main` 的 11 个未推送提交                                        | 待决策                           | 本轮未改写其引用                                                                                              |
 
+**更正（2026-10-12，tip `5625a857`）**：上表第 1、2 行的判定经本轮实测细化——**交付线本身**的推送被凭据拒绝（远端原文 `refusing to allow an OAuth App to create or update workflow ... without 'workflow' scope`），故「合并 `main` / tag / Release / 镜像推送」在取得具 `workflow` scope 的凭据前**即使获得授权也无法执行**；同时 `origin/main`(`1a510f5d`) 的 CI 全绿。依据与复现见 §36.2 / §36.3。
+
 ### 23.4 探针 R3：最终内容的 CI 复跑（success）
 
 | run                              | sha        | 结论        | 覆盖内容                                                                                                                                                                                                |
@@ -1649,12 +1651,12 @@ git ls-files --eol <抽查文件>                      # 全部 i/lf w/lf attr/t
 
 ### 29.7 FB-02 四项状态
 
-| #   | 项                                 | 状态（2026-10-12）                                                                                                                                                                                                                                                                                                                                                                                                                |
-| --- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ①   | 认证后首屏 **282.30 KiB** 不入门禁 | **口径缺口，需授权**（`§19.5` ①、`§21.4`、`§28.6`）。门禁只保护**未认证**首屏闭包（193.59 KiB）；认证后首个界面 = app-shell 31.47 + 延迟文案 57.25 = **282.30 KiB / 26 文件 > 260 KiB**（超 22.30 = 8.58%）。**不可**调高 `initialJsGzipKiB` 阈值（AGENTS.md CHG-4 / §21.4 FE-19-5）；任何改口径须单独评审并补负样本。                                                                                                            |
-| ②   | `runtime-config.js` 漏算           | **待并入**。首屏入口正则只采 `/assets/**`，HTML 同步脚本 `runtime-config.js`（84 B gzip 实测 / §19.5 记 91 B）不入门禁闭包（193.58 → 193.67 KiB）。修复在分支 `maint/acceptance-audit-20261012-budget-gate`（提交 `e8f4fbd7` `fix(frontend): 首屏入口纳入非 assets 的同步脚本`，含 dist 新鲜度断言 D4）；本工作树实测 `git merge-base --is-ancestor maint/acceptance-audit-20261012-budget-gate HEAD` **exit 1** ⇒ **尚未并入**。 |
-| ③   | 嵌套 `import()` 静态不可见         | **现状登记**（`§19.5` ④）：页面 chunk 内部的嵌套 `import()` 既不在 `__vite__mapDeps` 清单、也不被路由闭包跟随；`preloadOwnerOf`（`check-bundle-budget.mjs:189-205`）在「一次 `__vitePreload` 包多个动态 import」时会丢失其余入口。**影响**：理论上存在「拆分绕预算」的结构通道，但当前只有 2 个文件含动态 import、1:1 形态未触发 ⇒ 无实际超限证据，登记不扩张。                                                                   |
-| ④   | 冻结基线陈旧                       | **需授权 + 静止窗口**（`§19.5` ⑤、`§28.6`）：`bundle-budget.json` 与当前产物首屏文件名重合 0/2、JS 文件数 77 vs 76，增长校验实际只在比总量。`--update` 属 CHG-5 约束的棘轮更新，只能在**工作区静止**（无在跑写者、`git status` 稳定）时执行并记录 `git rev-parse HEAD`，且须单独授权；**当前不得更新**。                                                                                                                          |
+| #   | 项                                 | 状态（2026-10-12）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| --- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ①   | 认证后首屏 **282.30 KiB** 不入门禁 | **口径缺口，需授权**（`§19.5` ①、`§21.4`、`§28.6`）。门禁只保护**未认证**首屏闭包（193.59 KiB）；认证后首个界面 = app-shell 31.47 + 延迟文案 57.25 = **282.30 KiB / 26 文件 > 260 KiB**（超 22.30 = 8.58%）。**不可**调高 `initialJsGzipKiB` 阈值（AGENTS.md CHG-4 / §21.4 FE-19-5）；任何改口径须单独评审并补负样本。                                                                                                                                                                                                                                                    |
+| ②   | `runtime-config.js` 漏算           | **待并入**。首屏入口正则只采 `/assets/**`，HTML 同步脚本 `runtime-config.js`（84 B gzip 实测 / §19.5 记 91 B）不入门禁闭包（193.58 → 193.67 KiB）。修复在分支 `maint/acceptance-audit-20261012-budget-gate`（提交 `e8f4fbd7` `fix(frontend): 首屏入口纳入非 assets 的同步脚本`，含 dist 新鲜度断言 D4）；本工作树实测 `git merge-base --is-ancestor maint/acceptance-audit-20261012-budget-gate HEAD` **exit 1** ⇒ **尚未并入**。**更正（2026-10-12，tip `5625a857`）**：该修复已并入交付线（`git merge-base --is-ancestor e8f4fbd7 HEAD` → exit 0），见 §30.1 与 §36.6。 |
+| ③   | 嵌套 `import()` 静态不可见         | **现状登记**（`§19.5` ④）：页面 chunk 内部的嵌套 `import()` 既不在 `__vite__mapDeps` 清单、也不被路由闭包跟随；`preloadOwnerOf`（`check-bundle-budget.mjs:189-205`）在「一次 `__vitePreload` 包多个动态 import」时会丢失其余入口。**影响**：理论上存在「拆分绕预算」的结构通道，但当前只有 2 个文件含动态 import、1:1 形态未触发 ⇒ 无实际超限证据，登记不扩张。                                                                                                                                                                                                           |
+| ④   | 冻结基线陈旧                       | **需授权 + 静止窗口**（`§19.5` ⑤、`§28.6`）：`bundle-budget.json` 与当前产物首屏文件名重合 0/2、JS 文件数 77 vs 76，增长校验实际只在比总量。`--update` 属 CHG-5 约束的棘轮更新，只能在**工作区静止**（无在跑写者、`git status` 稳定）时执行并记录 `git rev-parse HEAD`，且须单独授权；**当前不得更新**。                                                                                                                                                                                                                                                                  |
 
 ### 29.8 EVID-8 更正：§19.4 的构建可复现性引用
 
@@ -1800,7 +1802,7 @@ git ls-files --eol <抽查文件>                      # 全部 i/lf w/lf attr/t
 - `check:budget`：首屏 **3 文件 194.05 KiB gzip**（阈值 260）/ 全部生产 JS 624.82（650）/ CSS 16.65（20）/ 最大 chunk 458.55 KiB 原始（500）
 - `test:e2e` **50 passed**（0 failed / 0 skipped / 0 flaky，1.3m）；`test:results:e2e` 7 文件 / 50 用例、**chromium 25 / mobile-chromium 25**
 
-**CI 探针**：分支 `ci-probe/acceptance-audit-20261012-r1` @ `bc0bfc52`（= `c250eb75` 内容；`.github/workflows/**` 保持 `origin/main`，因本机凭据缺工作流作用域）、draft PR #3。
+**CI 探针**：分支 `ci-probe/acceptance-audit-20261012-r1` @ `bc0bfc52`（= `c250eb75` 内容**除 `.github/workflows/**` 三个文件**：`codeql.yml` / `ghcr-image.yml` / `stale.yml` 保持 `origin/main` 版本，因本机凭据缺工作流作用域；更正依据与复现见 §36.1）、draft PR #3。
 
 | run                              | 结论        | 覆盖                                                                                                                                                                                                                                                                                                                                        |
 | -------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1898,3 +1900,81 @@ git ls-files --eol <抽查文件>                      # 全部 i/lf w/lf attr/t
 **条目数交叉核对（cwd=仓库根）**：`(Select-String -Path frontend/vitest.config.ts -Pattern '^\s+"src/').Count` → **63 = include 18 + exclude 14 + 100% hook 条目 31**（只读匹配行数，不改写文件）。单项复核：hook 条目 `git grep -c "lines: 100" 5625a857 -- frontend/vitest.config.ts` → `31`（exit 0）；FT-01 的纳入证据 `git grep -nE "src/features/auth" 5625a857 -- frontend/vitest.config.ts` → 命中 `:46`（`"src/features/auth/**",`）。
 
 **已登记的口径边界（只给指针，不新增结论）**：shadcn 基础原语的豁免只覆盖 ESLint / Oxlint（§29.2 的 `src/components/ui` 行），Prettier 与覆盖率口径各自独立；REV-3 两侧计数口径差异见 §25.1；前端存量未达标项（含 >600 行测试文件、未纳入 100% 阈值的 hook）见 §5 与 §17.5 / §19.7 / §23.3 的登记，本轮不扩张。
+
+## 36. 2026-10-12（续七）证据更正、发布阻塞根因与 `origin/main` CI 取证（FE-20）
+
+本轮只做**只读取证与文档更正**，未改任何代码与配置。工作树 `.pi/worktrees/acceptance-audit-20261012-integration`，分支 `maint/acceptance-audit-20261012-audit-evidence-correction`，基点 `5625a857`（交付 tip）。
+
+### 36.1 EVID-8 更正：CI 探针 `bc0bfc52` 的内容不等于 `c250eb75`
+
+- **原值**（§30.6 原表述）：「`bc0bfc52`（= `c250eb75` 内容；`.github/workflows/**` 保持 `origin/main`）」——两半自相矛盾：若 workflow 保持 `origin/main` 版本，内容不可能同时等于含 3 个 workflow 改动的 `c250eb75`。
+- **新值（实测）**：`bc0bfc52` = `c250eb75` **+ 1 个提交**（`chore(ci-probe): 以 origin/main 工作流定义验证装配后的交付线`），差异**仅**三个 workflow 文件。
+- **复现命令与输出**：
+
+  ```powershell
+  git -C E:\grok2api diff --stat bc0bfc52 c250eb75
+  #  .github/workflows/codeql.yml     |  6 +++---
+  #  .github/workflows/ghcr-image.yml | 17 +++++++++++++++++
+  #  .github/workflows/stale.yml      |  2 +-
+  #  3 files changed, 21 insertions(+), 4 deletions(-)
+  git -C E:\grok2api merge-base --is-ancestor c250eb75 bc0bfc52   # exit 0
+  ```
+
+- **根因**：`bc0bfc52` 的提交正文自述「本机凭据缺工作流作用域，带工作流改动的推送会被拒」，故刻意保留 `origin/main` 的 workflow 定义。
+- §30.6 的原表述已按本节收紧（见该行「除 `.github/workflows/**` 三个文件」）。
+
+### 36.2 发布阻塞根因（实测）：推送交付线被凭据拒绝
+
+- **命令与结果**（2026-10-12，`E:\grok2api`）：
+
+  ```powershell
+  git push origin maint/acceptance-audit-20261012-final:refs/heads/ci-probe/acceptance-audit-20261012-r2
+  # exit 1
+  # ! [remote rejected] ... (refusing to allow an OAuth App to create or update workflow
+  #   `.github/workflows/codeql.yml` without `workflow` scope)
+  ```
+
+- **结论**：交付线相对 `origin/main` 含 3 个 workflow 文件改动（`git diff --name-only origin/main maint/acceptance-audit-20261012-final -- .github/`），因此**合并 `main` / 打 tag / Release 在取得具备 `workflow` scope 的凭据之前无法执行**——该阻塞是**凭据能力**问题，不只是授权问题（§23.3 的「需授权」不足以描述它）。
+- **复现**：`git remote -v`（origin = HTTPS，`credential.helper=<已脱敏>`）。
+- **未收口项不变**：两条新 CI step（`Verify backend structure and API contract`、`Assert required frontend tests ran`）**零 run 证据**。对全部曾被推送的 7 个 sha（`1a510f5d`、`b59e5ff6`、`3714cd39`、`bc0bfc52`、`542c8084`、`61f8f0a3`、`547956eb`）执行
+
+  ```powershell
+  git show <sha>:.github/workflows/ghcr-image.yml | Select-String "Verify backend structure and API contract"
+  ```
+
+  → **7/7 零命中**（`Assert required frontend tests ran` 同为 7/7 零命中）。`ghcr-image.yml` 的触发条件只有 `push: branches:[main]`、`push: tags:["v*.*.*"]`、`pull_request: branches:[main]`、`workflow_dispatch`，故取证据必须走**对 `main` 的 pull_request** 或先合并。
+
+### 36.3 `origin/main` CI 取证（EVID-9 更正）
+
+- 当前 `origin/main` = `1a510f5d`（`git rev-parse origin/main`）。本机 `gh` CLI 不可用，证据取自 GitHub 公共 REST API（仓库为 public）：
+  - `actions/runs?branch=main`：`38121078190`「GHCR Image」@`1a510f5d` **success**；`38121078196`「CodeQL Advanced」@`1a510f5d` **success**。
+  - `commits/1a510f5d/check-runs`：`total_count = 12`，其中 **11 项 `completed/success`** + **1 项 `completed/skipped`**（`Build image (${{ matrix.arch }})`，矩阵占位 check-run，非失败）。success 项含 `Verify`、`Analyze (actions)` / `Analyze (go)` / `Analyze (javascript-typescript)`（每个语言各上报 2 次）、`Publish image (amd64)`、`Publish image (arm64)`、`Merge image`、`Mark and close inactive issues and PRs`。计数复现：`Invoke-RestMethod https://api.github.com/repos/JasmineTony/grok2api/commits/1a510f5d/check-runs` → success 11 / skipped 1 / 其他 0。（本节初稿误写「12 项全部 success」，同日按 EVID-8 更正；`backend/AUDIT.md` §35.4 为同一更正。）
+- **结论**：EVID-9 所记的用户投诉「当前 `main` 分支 CI 有报错」在**当前 `origin/main` 上不成立**。本地 `main` = `13626e6c` 比 `origin/main` 多 **11** 个未推送提交，尚无任何 CI 证据。
+
+### 36.4 数字更正（META-2）
+
+| 口径                                           | 值  | 复现命令                                          |
+| ---------------------------------------------- | --- | ------------------------------------------------- |
+| 交付线 `5625a857` 相对基点 `0c23f902`          | 62  | `git rev-list --count 0c23f902..maint/…-final`    |
+| 交付线相对 `origin/main`（`1a510f5d`）         | 115 | `git rev-list --count origin/main..maint/…-final` |
+| 交付线相对本地 `main`（`13626e6c`）            | 104 | `git rev-list --count main..maint/…-final`        |
+| 本地 `main` 相对 `origin/main`                 | 11  | `git rev-list --count origin/main..main`          |
+| `merge-base --is-ancestor origin/main …-final` | 0   | 可 fast-forward                                   |
+
+### 36.5 本轮本机复跑证据（工作树 `acceptance-audit-20261011`，detached `c250eb75`）
+
+| 命令                   | 退出码 | 关键输出片段                                                                                                                                                  |
+| ---------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm check:structure` | **0**  | 扫描源码文件 405 个；超限文件 0 / 超限函数 0 / 超限嵌套 0；参与判定的作用域（REV-3）**2527** 个                                                               |
+| `pnpm test:gates`      | **0**  | 门禁自测通过：**85** 个用例（含 **68** 个必须失败的用例）                                                                                                     |
+| `pnpm check:budget`    | **0**  | 首屏关键 JS 闭包 3 文件 **194.05** KiB；全部生产 JS 76 文件 **624.82** KiB；全部生产 CSS 1 文件 **16.65** KiB；最大 chunk **458.55** KiB 原始；路由入口 13 个 |
+| `pnpm typecheck`       | **0**  | `tsc -b --force` 无错误输出                                                                                                                                   |
+| `pnpm format:check`    | **0**  | All matched files use Prettier code style!                                                                                                                    |
+
+（该工作树 `dist/` 与 `dist/.build-manifest.json` 均存在，`check:budget` 是在既有构建产物上实跑并通过其自身的新鲜度断言；本轮**未**重新 `pnpm build`。）
+
+### 36.6 指针与未收口项
+
+- 解阻塞与发布执行包（凭据修复三方案、真实推送探测、PR 取 CI 证据、ff 合并、tag/Release、镜像校验、回滚）：会话 scratch `unblock-package\README.md` 与 `release.ps1`。
+- §29.7 ② 的「待并入」已由 §30.1 关闭（`git merge-base --is-ancestor e8f4fbd7 HEAD` → exit 0）。
+- **仍未收口**（与 §23.3、§28.6、§30.6 一致）：交付线推送被凭据阻塞 → 合并 `main` / tag / Release / 镜像推送全部无法执行；两条新 CI step 无 run 证据；`bundle-budget.json --update` 需静止窗口 + 授权；REV-5「认证后首屏」口径需授权（不可调阈值）；BE-G3 `ports/security` 迁移需单独批准。
