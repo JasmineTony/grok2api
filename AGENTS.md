@@ -142,7 +142,7 @@
 
 ### TEST-6 后端与存储验证（机器门禁）
 
-- **必须在 `backend/` 目录执行**（`backend/scripts/verify.sh` 会校验 cwd，否则退出 2）。单一入口：`bash scripts/verify.sh`，依次执行 `go build ./...` → `go vet ./...` → `go run ./tools/structurecheck` → `go run ./tools/apicheck` → `go test ./... -count=1`，失败即停并透传退出码。
+- **必须在 `backend/` 目录执行**（`backend/scripts/verify.sh` 会校验 cwd，否则退出 2）。单一入口：`bash scripts/verify.sh`，依次执行 `go build ./...` → `go vet ./...` → `go run ./tools/structurecheck` → `go run ./tools/apicheck` → `go run ./tools/dockerfilecheck` → `go test ./... -count=1`，失败即停并透传退出码。
 - Linux CI 追加 `go test -race ./...`；CI 的 `go test` 与 `-race` 本身会编译全部包，因此 CI 未再单列 `go build`。
 - PostgreSQL/Redis 集成测试使用隔离 CI 服务；启动前确认环境可达，不能用缺环境跳过冒充通过。复用临时 PostgreSQL 数据库和隔离 Redis 命名空间。
 - 公开接口注释变化需 `make swagger` 并做精确 diff 校验（`git diff --exit-code -- backend/docs/{docs.go,swagger.json,swagger.yaml}`）；架构重构保持公开协议与前轮回归。
@@ -237,6 +237,7 @@ go build ./...
 go vet ./...
 go run ./tools/structurecheck   # REV-1/REV-2/REV-3 结构门禁（基线棘轮，--list 输出工作清单）
 go run ./tools/apicheck         # 导出 API 面契约门禁（基线 backend/api-baseline.txt）
+go run ./tools/dockerfilecheck  # 容器构建输入静态守卫（必需文件是否都能进入构建上下文）
 go test ./... -count=1
 # 支持 race 的 Linux/CI 工具链
 go test -race ./...

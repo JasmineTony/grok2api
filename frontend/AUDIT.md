@@ -1402,7 +1402,7 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 | `pnpm test:gates`                                                         | 0      | 75 用例（含 61 必须失败）                 |
 | `pnpm format:check` / `oxlint` / `lint` / `typecheck` / `check:structure` | 0      | 逐条单独执行，全部通过                    |
 
-**本工作树只读核对（静态，可复现）**：`frontend/package.json:31` 的 `verify` 共 14 步、第 7 步为 `test:results:node`；`scripts/check-node-test-results.mjs:89-103` 的 `REQUIRED_NODE_TESTS` 为 14 条、`minPassed` 合计 **126**（与上表「14 文件 / 126 用例」一致）；`NODE_TEST_REPORT_ROOT` 的 `os.tmpdir()` 限制见同文件 `:50-65`。
+**本工作树只读核对（静态，可复现）**：`frontend/package.json:31` 的 `verify` 共 14 步、第 7 步为 `test:results:node`；`scripts/check-node-test-results.mjs:90-105` 的 `REQUIRED_NODE_TESTS` 为 14 条、`minPassed` 合计 **126**（与上表「14 文件 / 126 用例」一致）；`NODE_TEST_REPORT_ROOT` 的 `os.tmpdir()` 限制见同文件 `:59-66`。
 
 ### 28.2 E2E 报告门禁新增 project 维度棘轮（关闭 §24.2 P2-1）
 
@@ -1412,9 +1412,9 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 
 **独立核实（本工作树只读，与 §24.2 的 42 实例逐项对账）**：
 
-- `scripts/check-test-results.mjs:143` 为 `MIN_E2E_PROJECT_PASSED = { chromium: 21, "mobile-chromium": 21 }` ⇒ **42 实例**；`:358`（按 `test.projectName` 归一）、`:386`（缺失即记失败）、`:410`（低于 project 下限即失败）为判定落点，`:335`/`:353` 注释给出判据来源与 `expected`/缺失语义。
+- `scripts/check-test-results.mjs:147` 为 `MIN_E2E_PROJECT_PASSED = { chromium: 21, "mobile-chromium": 21 }` ⇒ **42 实例**；`:366`（按 `test.projectName` 归一）、`:394`（缺失即记失败）、`:418-419`（低于 project 下限即失败）为判定落点，`:339`/`:357-359` 注释给出判据来源与 `expectedStatus`/缺失语义。
 - 实例构成：`e2e/**` 共 22 个 `test()`；`chromium` 含 1 个仅桌面用例（`e2e/navigation.e2e.ts:93` 的 `describe(…, { tag: "@desktop" })`，用例在 `:96`；`playwright.config.ts:43` 以 `grepInvert` 排除），`mobile-chromium` 含 1 个仅移动用例（`e2e/mobile-device.e2e.ts:22`；`playwright.config.ts:42` 以 `testIgnore` 排除）⇒ **42 = 20 × 2 + 1 仅桌面 + 1 仅移动**；无「两个 project 都不跑」的用例；无 `.only`/`.skip`。
-- 真实报告状态（主代理实测）：本机 `.artifacts/playwright/results.json` 是 `playwright test --list` 的产物（0 通过 / 42 跳过）⇒ `node scripts/check-test-results.mjs --e2e` **exit 1**，属 fail-closed 的正确行为，**不是缺陷**；真实 E2E 证据见 §28.4。装配工作树内 `.artifacts/` 未生成（该目录被 gitignore，随工作树状态而变），复现需先在该工作树跑一次 `pnpm test:e2e`。
+- 真实报告状态（主代理实测）：本机 `.artifacts/playwright/results.json` 是 `playwright test --list` 的产物（0 通过 / 42 跳过）⇒ 该形态由 `scripts/check-test-results.mjs:566-571` 的 `isListOnlyReport` 显式拒绝并返回 **exit 2**（提交 `cb9eff38`，见 §28.8；H3 之前为 exit 1），属 fail-closed 的正确行为，**不是缺陷**；真实 E2E 证据见 §28.4。装配工作树内 `.artifacts/` 未生成（该目录被 gitignore，随工作树状态而变），复现需先在该工作树跑一次 `pnpm test:e2e`。
 
 ### 28.3 FE-19-8 i18n 单例失败缓存（关闭）
 
@@ -1422,7 +1422,7 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 
 **改动核对（本工作树只读）**：`src/shared/i18n/index.ts:47-58` —— `deferredResourcesPromise ??= import("./resources/deferred").then(…).catch((error: unknown) => { deferredResourcesPromise = null; throw error; })`，即失败时清空单例（`:55`）并 rethrow（`:56`）。
 
-**新增测试**：`src/shared/i18n/deferred-resources-retry.test.tsx`（3 用例）、`src/app/deferred-resources-failure.test.tsx`（1 用例）；已登记进 `scripts/check-test-results.mjs`（`MIN_VITEST_FILES` 123 → **125**，本工作树 `:86` 实测为 125）。
+**新增测试**：`src/shared/i18n/deferred-resources-retry.test.tsx`（3 用例）、`src/app/deferred-resources-failure.test.tsx`（1 用例）；已登记进 `scripts/check-test-results.mjs`（`MIN_VITEST_FILES` 123 → **125**，实测于 `scripts/check-test-results.mjs:90`）。
 
 **验证（cwd=`frontend/`，主代理实测）**：`pnpm test:ui:coverage` exit 0（**125 文件 / 1492 用例**，`src/shared/i18n/index.ts` 保持 100%）；`pnpm test:results` exit 0（125 文件 / 1492 用例）；`pnpm test` exit 0；`test:gates` / `format:check` / `oxlint` / `lint` / `typecheck` / `check:structure` 均 exit 0。
 
@@ -1432,10 +1432,10 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 
 验收在装配提交 `580fd9e7`（本批全部**代码**改动的收敛点）上执行；其后只追加两个**纯文档**提交（`11c1aa6b` §28、`3d81ced2` README/步数同步），文档增量以 `prettier --check` 单独复核，**不重跑** E2E（E2E 只依赖代码与配置，不依赖 md）。
 
-| 命令                     | 执行目录    | 退出码 | 关键输出                                                                                                                                                                                                                                 |
-| ------------------------ | ----------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm verify:full`       | `frontend/` | **0**  | 14 步全过 + `test:e2e`：`42 passed (1.1m)`（0 failed / 0 skipped / 0 flaky）+ `test:results:e2e`：`参与判定的文件 6 个、用例 42 个（通过 42、失败 0、跳过 0、flaky 0）`、`project 报告：chromium 通过 21 个、mobile-chromium 通过 21 个` |
-| `bash scripts/verify.sh` | `backend/`  | **0**  | `全部通过`；脚本计时 170.167 秒（6 步：`build` / `vet` / `structurecheck` / `apicheck` / `dockerfilecheck` / `go test`）；`go test ./... -count=1` 67 包 `ok`、0 `FAIL`、20 条环境门控跳过；`api-baseline.txt` SHA256 与 mtime 前后一致  |
+| 命令                     | 执行目录    | 退出码 | 关键输出                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------ | ----------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm verify:full`       | `frontend/` | **0**  | 14 步全过 + `test:e2e`：`42 passed (1.1m)`（0 failed / 0 skipped / 0 flaky）+ `test:results:e2e`：`参与判定的文件 6 个、用例 42 个（通过 42、失败 0、跳过 0、flaky 0）`、`project 报告：chromium 通过 21 个、mobile-chromium 通过 21 个`                                                                                                                                               |
+| `bash scripts/verify.sh` | `backend/`  | **0**  | `全部通过`；脚本计时 170.167 秒（6 步：`build` / `vet` / `structurecheck` / `apicheck` / `dockerfilecheck` / `go test`）；`go test ./... -count=1` 67 包 `ok`、0 `FAIL`、20 条环境门控跳过（**出处更正**：`t2-verify.out.log` 未加 `-v`、不含 SKIP 行；该数字来自 `t2-gotest-verbose.log` 的 `--- SKIP` 枚举与 `backend/AUDIT.md` §31.4）；`api-baseline.txt` SHA256 与 mtime 前后一致 |
 
 逐步关键数字（`pnpm verify:full`，墙钟 **789.9 s**，日志 2257 行 / 264111 B）：
 
@@ -1443,7 +1443,7 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 - `test:ui:coverage`：`Test Files 125 passed (125)` / `Tests 1492 passed (1492)`，`All files 98.01 | 94.32 | 98.29 | 98.69`
 - `test:results`：`参与判定的文件 125 个、用例 1492 个（通过 1492、失败 0、跳过 0、flaky 0）`
 - `check:architecture`：`no dependency violations found (430 modules, 2037 dependencies cruised)`；`check:structure`：`扫描源码文件 404 个`、超限文件/函数/嵌套均 0、`参与判定的作用域（REV-3）：2525 个`
-- `test:gates`：`门禁自测通过：75 个用例（含 61 个必须失败的用例）`
+- `test:gates`：`门禁自测通过：75 个用例（含 61 个必须失败的用例）`（此为 `580fd9e7` 快照值；最终 tip 为 **78** 用例 / 63 必须失败，见 §28.7 与 §28.8）
 - `check:budget`：`体积预算门禁通过`（首屏 2 文件 193.59 KiB gzip / 阈值 260；全部生产 JS 76 文件 624.43 KiB / 650；CSS 16.65 KiB / 20；最大 chunk 457.73 KiB 原始 / 500；路由入口 13 个）
 
 **未执行 / 未覆盖（如实登记，不得记为 `Passed`）**：`go test -race`（本机 `CGO_ENABLED=0` → `Blocked`，由 CI `Race backend` 覆盖）；PostgreSQL/Redis 集成 20 条（本机无服务 → `Blocked`/`Skipped`，由 CI 隔离服务覆盖，清单见 `backend/AUDIT.md` §31.4 与本批会话 scratch `t2-gotest-verbose.log`）；Swagger 精确 diff 与镜像构建（仅 CI 可执行）。
