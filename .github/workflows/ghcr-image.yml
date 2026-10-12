@@ -124,6 +124,12 @@ jobs:
           go run ./tools/structurecheck
           go run ./tools/apicheck
 
+      # AGENTS.md BE-28：Dockerfile 与 .dockerignore 必须覆盖全部必需输入。
+      # 「本地构建通过、镜像缺文件」不会被其它门禁发现，故静态守卫必须随 CI 执行。
+      - name: Verify Dockerfile covers required inputs
+        working-directory: backend
+        run: go run ./tools/dockerfilecheck
+
       - name: Verify Swagger document
         run: |
           make swagger
