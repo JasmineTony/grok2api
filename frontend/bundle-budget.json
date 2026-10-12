@@ -10,12 +10,12 @@
   },
   "growthTolerancePercent": 5,
   "baseline": {
-    "generatedAt": "2026-10-11T02:27:32.159Z",
+    "generatedAt": "2026-10-12T09:07:19.809Z",
     "allJs": {
-      "count": 77,
-      "rawBytes": 2210794,
-      "gzipBytes": 636140,
-      "brotliBytes": 545744
+      "count": 76,
+      "rawBytes": 2225034,
+      "gzipBytes": 639820,
+      "brotliBytes": 548624
     },
     "allCss": {
       "count": 1,
@@ -24,70 +24,70 @@
       "brotliBytes": 13845
     },
     "initialClosure": {
-      "count": 2,
-      "files": ["assets/createLucideIcon-CWntw5RN.js", "assets/index-DU7-as6D.js"],
-      "rawBytes": 633892,
-      "gzipBytes": 197947,
-      "brotliBytes": 172222
+      "count": 3,
+      "files": ["assets/createLucideIcon-B2FFh1CY.js", "assets/index-BHj-RmxP.js", "runtime-config.js"],
+      "rawBytes": 635185,
+      "gzipBytes": 198711,
+      "brotliBytes": 172764
     },
     "maxChunk": {
-      "file": "assets/index-DU7-as6D.js",
-      "rawBytes": 468141,
-      "gzipBytes": 142928,
-      "brotliBytes": 123976
+      "file": "assets/index-BHj-RmxP.js",
+      "rawBytes": 469557,
+      "gzipBytes": 143411,
+      "brotliBytes": 124236
     },
     "routes": [
       {
-        "entry": "assets/accounts-page-CXGUw2n5.js",
-        "closureGzipBytes": 82998
+        "entry": "assets/accounts-page-DJ2renbW.js",
+        "closureGzipBytes": 82691
       },
       {
-        "entry": "assets/api-docs-page-CIMlaHLL.js",
-        "closureGzipBytes": 29766
+        "entry": "assets/api-docs-page-C_ZJeGdO.js",
+        "closureGzipBytes": 29880
       },
       {
-        "entry": "assets/app-shell-CS82Wpc5.js",
-        "closureGzipBytes": 32182
+        "entry": "assets/app-shell-BYCWQ7HB.js",
+        "closureGzipBytes": 32252
       },
       {
-        "entry": "assets/client-keys-page-BW6DEQGe.js",
-        "closureGzipBytes": 78418
+        "entry": "assets/client-keys-page-Cb-6-bnh.js",
+        "closureGzipBytes": 79345
       },
       {
-        "entry": "assets/creative-console-page-E2TwvQQI.js",
-        "closureGzipBytes": 83561
+        "entry": "assets/creative-console-page-BZ1c2lSb.js",
+        "closureGzipBytes": 82816
       },
       {
-        "entry": "assets/dashboard-page-CJkShBA4.js",
-        "closureGzipBytes": 132214
+        "entry": "assets/dashboard-page-BHMuZmJw.js",
+        "closureGzipBytes": 132336
       },
       {
         "entry": "assets/deferred-BN8Gy8Tv.js",
         "closureGzipBytes": 58621
       },
       {
-        "entry": "assets/gallery-page-DlfCLE0i.js",
-        "closureGzipBytes": 33806
+        "entry": "assets/gallery-page-YpG4K6tk.js",
+        "closureGzipBytes": 33586
       },
       {
-        "entry": "assets/models-page-DI4eRHWW.js",
-        "closureGzipBytes": 52012
+        "entry": "assets/models-page-BjdktENk.js",
+        "closureGzipBytes": 52194
       },
       {
-        "entry": "assets/quality-guard-page-CH04z2hv.js",
-        "closureGzipBytes": 69399
+        "entry": "assets/quality-guard-page-C9-e--tP.js",
+        "closureGzipBytes": 65878
       },
       {
-        "entry": "assets/request-audits-page-CZvt6EO9.js",
-        "closureGzipBytes": 61951
+        "entry": "assets/request-audits-page-WTCuGuT9.js",
+        "closureGzipBytes": 59572
       },
       {
-        "entry": "assets/settings-page-DUxWMH0S.js",
-        "closureGzipBytes": 81004
+        "entry": "assets/settings-page-CggNPh1F.js",
+        "closureGzipBytes": 82774
       },
       {
-        "entry": "assets/video-gallery-page-DWbvwejD.js",
-        "closureGzipBytes": 47782
+        "entry": "assets/video-gallery-page-B_MkqMqX.js",
+        "closureGzipBytes": 47739
       }
     ]
   }
