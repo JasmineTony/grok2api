@@ -84,7 +84,7 @@
 
 ### DEV-4 前端质量门禁（机器门禁）
 
-- `frontend/` 下 `pnpm verify` 必须退出 0，覆盖 13 步：`format:check → oxlint → lint → typecheck → typecheck:e2e → test → test:ui:coverage → test:results → check:architecture → check:structure → test:gates → build → check:budget`；其中 `test:results` 解析 Vitest 原生 JSON 报告，断言必需前端用例确实执行、通过数达标且无未登记跳过。
+- `frontend/` 下 `pnpm verify` 必须退出 0，覆盖 14 步：`format:check → oxlint → lint → typecheck → typecheck:e2e → test → test:results:node → test:ui:coverage → test:results → check:architecture → check:structure → test:gates → build → check:budget`；其中 `test:results:node` 紧跟产生报告的那一步 `test` 之后，解析 node:test 原生 JSON 报告（`.artifacts/node-test/results.json`），断言必需文件与用例确实执行、通过数达标、无未登记跳过、磁盘测试文件与清单集合相等；`test:results` 解析 Vitest 原生 JSON 报告，断言必需前端用例确实执行、通过数达标且无未登记跳过。
 - `pnpm verify:full` = `pnpm verify` + `pnpm test:e2e` + `pnpm test:results:e2e`：质量门禁之后运行真实全栈 E2E，并对 Playwright 报告做同样的必需用例执行/跳过断言；CI 必须同时运行前端质量、E2E、后端与镜像检查，不能以快速命令代替全部验收。
 - 聚合命令不重复运行同一套测试。独立 `pnpm test` 用于开发反馈，`pnpm test:ui:coverage` 保留覆盖率入口。
 - 不以 `Skipped`、`Blocked`、未运行、只写好配置或重试后偶然通过代替 `Passed`（§10）。
