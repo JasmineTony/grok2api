@@ -49,6 +49,7 @@
 
 - 2026-10-10 维护线负责人授权：把 `maint/modular-quality-audit` 合并到 `main` 并发布 `v0.1.1`。
 - 2026-10-11 维护线负责人授权：合并 `maint/modular-quality-audit` 到 `main`、发布 `v0.1.2`（annotated tag + GitHub Release + GHCR 镜像），并在同一授权内重建远端 `origin`（删除并新建同名仓库，同时删除历史遗留的 GHCR 容器包）。发布证据按 §8 登记。
+- 2026-10-12 维护线负责人授权：完成验收审计遗留收口后，把交付线 `maint/release-v0-1-3`（并入 `maint/acceptance-audit-20261012-final`）合并到 `main` 并发布 **`v0.1.3`**（annotated tag + GitHub Release + GHCR 镜像）。发布版本号按负责人本轮指令为 `v0.1.3`（原计划默认的 `v0.1.15` 作废，属 D1 决策变更）。发布证据按 §8 登记。
 - 授权记录不可改写；新增授权在末尾追加（META-5）。
 
 ## 2. 开发规范（DEV）
@@ -260,6 +261,7 @@ git remote -v
 - 授权与边界：合并 `main`、创建 tag/Release、推送镜像、删除/重建远端仓库或容器包属不可逆操作，逐次单独授权；`upstream` 永不推送。执行前必须逐项列出并确认外部依赖（CI 包权限、Secrets、Release、Webhook、镜像 tag、下游消费者），无法确认则阻塞（§11 的 CHG-9）。
 - 非 `ghcr-image.yml` 的外部必需 check（例如 CodeQL 的告警 check）为 `failure` 时，必须登记 check/run id、`conclusion`、告警条目与 triage 结论；假阳性须在 `AUDIT.md` 记录最小复现命令；**不得**为消除告警而修改被检代码语义或删除日志（评审准则）。现有 triage 见 `backend/AUDIT.md` §24。
 - 绑定事实：`ghcr.io` 容器包必须与 `origin` 仓库建立链接，否则 `GITHUB_TOKEN` 即使声明 `packages: write` 也会以 `permission_denied: write_package` 失败（证据与根因见 `backend/AUDIT.md` §11）。
+- 绑定事实：推送含 `.github/workflows/**` 改动的提交需要具 `workflow` scope 的凭据。仅有 `repo` scope 的 OAuth token 会被 GitHub 拒绝（实测错误原文：`refusing to allow an OAuth App to create or update workflow ... without 'workflow' scope`，`git push` exit 1，2026-10-12）。因此维护线新增 CI step 的首次真实执行，只能在取得该 scope 后由**携该工作流定义**的提交取得；**不得**以「剥离工作流改动后再推送」代替——那会使 CI 缺少被验证的 step 并掩盖真实发布路径。
 
 ## 9. 执行与委派纪律（EXEC）
 
