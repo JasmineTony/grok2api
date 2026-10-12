@@ -251,12 +251,51 @@ function collectClosure(entryFiles) {
   return seen;
 }
 
+/** 先剥离 HTML 注释（含未闭合注释），避免注释里的引用被当成真实入口。 */
+function stripHtmlComments(html) {
+  return html.replace(/<!--[\s\S]*?(?:-->|$)/g, "");
+}
+
+/** 单标签自身的属性表：兼容双引号、单引号与无引号写法，引号内的 `>` 不会截断标签。 */
+function attributesOf(tag) {
+  const attributes = new Map();
+  const pattern = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
+  for (const match of tag.matchAll(pattern)) {
+    attributes.set(match[1].toLowerCase(), match[2] ?? match[3] ?? match[4] ?? "");
+  }
+  return attributes;
+}
+
+/**
+ * 把 HTML 引用解析为 dist 内真实存在的 `.js` 文件；站外协议（`http:`/`data:`/`//`）、查询串、
+ * 越出 dist 的相对路径（`../x.js`）与非 `.js` 引用一律不参与首屏闭包。
+ */
+function resolveEntryReference(reference) {
+  if (reference === undefined || reference === "") return null;
+  const clean = reference.split(/[?#]/)[0];
+  if (clean === "" || /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(clean)) return null;
+  const candidate = clean.startsWith("/") ? path.join(distDir, clean.slice(1)) : path.resolve(distDir, clean);
+  const relative = path.relative(distDir, candidate);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) return null;
+  if (!candidate.endsWith(".js") || !fs.existsSync(candidate) || !fs.statSync(candidate).isFile()) return null;
+  return candidate;
+}
+
+/**
+ * 首屏入口 = dist/index.html 里静态声明的脚本/样式引用，**不限 `/assets/` 前缀**：
+ * Vite 之外还有 `public/` 原样拷贝的脚本（如 `/runtime-config.js`），只认 `/assets/` 会静默漏算
+ * 首屏真实字节。defer/async 标记的静态引用仍计入——浏览器解析 index.html 时即会请求它们；
+ * 动态注入的引用不在 HTML 里，注释里的字符串已先剥离。
+ */
 function indexEntryFiles() {
-  const html = fs.readFileSync(path.join(distDir, "index.html"), "utf8");
+  const html = stripHtmlComments(fs.readFileSync(path.join(distDir, "index.html"), "utf8"));
   const files = [];
-  for (const match of html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)) {
-    const candidate = path.join(distDir, match[1].replace(/^\//, ""));
-    if (candidate.endsWith(".js") && fs.existsSync(candidate)) files.push(candidate);
+  for (const match of html.matchAll(/<(?:script|link)\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi)) {
+    const attributes = attributesOf(match[0]);
+    for (const reference of [attributes.get("src"), attributes.get("href")]) {
+      const candidate = resolveEntryReference(reference);
+      if (candidate !== null) files.push(candidate);
+    }
   }
   if (files.length === 0) {
     console.error("dist/index.html 未引用任何 JS 入口，无法计算首屏闭包。");

@@ -8,7 +8,8 @@
  *    具名嵌套函数重置为独立作用域）与输出中的键名、深度断言。
  *  - check-bundle-budget：首屏闭包超限 / 路由新增闭包超限 / 无法识别路由 / 相对基线增长 / dist 陈旧
  *    （清单输入指纹不一致 / 缺构建清单 / 产物被改写）→ 非零退出；并通过「阈值放宽」与「符合基线」两组
- *    反例确认门禁不是无条件失败。
+ *    反例确认门禁不是无条件失败，另用同一份合成 dist 断言首屏入口纳入非 `/assets/` 的同步脚本
+ *    （旧正则漏算 `/runtime-config.js`）、且注释里的引用不计入。
  *  - check-test-results：清单文件缺失（部分缺失也算）/ 通过数低于棘轮 / 必填用例标题缺失或未通过 /
  *    报告文件总数低于棘轮 / 出现未登记跳过 / 文件级失效（Vitest 收集期失败、非清单文件整文件跳过）/
  *    移动 project 被移除后 E2E 实例数回落到桌面口径 / E2E 存在 flaky / 报告早于清单文件 mtime / 报告缺失 →
@@ -30,6 +31,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
 
 // 装置清单必须与门禁使用同一套指纹：直接引用产品代码（TS 由 Node 类型剥离加载），不另写一份指纹逻辑。
 import { buildInputHash, writeBuildManifest } from "./build-inputs.ts";
@@ -236,16 +238,28 @@ const constructorEnv = { STRUCTURE_SRC_DIR: constructorSrc, STRUCTURE_BASELINE_P
 // ---- 体积预算装置 ----
 const distDir = path.join(root, "dist");
 const assetsDir = path.join(distDir, "assets");
-writeFile(
-  path.join(distDir, "index.html"),
-  '<!doctype html><html><head><script type="module" src="/assets/entry.js"></script></head><body></body></html>\n',
-);
+/**
+ * 合成 index.html 覆盖三种引用形态：Vite 的 `/assets/` 模块入口、`public/` 原样拷贝的非 `/assets/`
+ * 同步脚本（`/runtime-config.js`，D3 缺口）、只出现在 HTML 注释里的引用（不得计入）。
+ */
+const budgetIndexHtml = [
+  "<!doctype html><html><head>",
+  '<script src="/runtime-config.js"></script>',
+  '<script type="module" src="/assets/entry.js"></script>',
+  '<!-- <script src="/assets/commented-out.js"></script> -->',
+  "</head><body></body></html>",
+  "",
+].join("\n");
+writeFile(path.join(distDir, "index.html"), budgetIndexHtml);
+writeFile(path.join(distDir, "runtime-config.js"), 'window.__RUNTIME_CONFIG__ = { apiBase: "" };\n');
 writeFile(path.join(assetsDir, "shared.js"), `export const shared = "${"s".repeat(4096)}";\n`);
 writeFile(
   path.join(assetsDir, "entry.js"),
   'import { shared } from "./shared.js";\nvoid import(`./route.js`);\nconsole.log(shared);\n',
 );
 writeFile(path.join(assetsDir, "route.js"), `export const route = "${"r".repeat(400 * 1024)}";\n`);
+/** 只在注释里被引用：注释剥离失效时首屏闭包会多算一个文件，下面的计数与 gzip 断言即失败。 */
+writeFile(path.join(assetsDir, "commented-out.js"), `export const commentedOut = "${"c".repeat(64)}";\n`);
 
 const distWithoutRoutes = path.join(root, "dist-no-routes");
 writeFile(path.join(distWithoutRoutes, "assets", "shared.js"), `export const shared = "x";\n`);
@@ -281,6 +295,30 @@ const distTamperedOutput = path.join(root, "dist-tampered-output");
 fs.cpSync(distDir, distTamperedOutput, { recursive: true });
 fs.appendFileSync(path.join(distTamperedOutput, "assets", "shared.js"), "// 被改写的产物\n");
 
+/**
+ * 夹具判别力前提（TEST-7，D3）：修复前的入口采集只认 `/assets/` 前缀。同一份合成 index.html 上，
+ * 旧正则必须采集不到 `/runtime-config.js`（且会把注释里的引用算进去），否则下面的断言证明不了缺口被补上。
+ */
+const LEGACY_ENTRY_PATTERN = /(?:src|href)="(\/assets\/[^"]+)"/g;
+const legacyEntryReferences = [...budgetIndexHtml.matchAll(LEGACY_ENTRY_PATTERN)].map((match) => match[1]);
+if (legacyEntryReferences.some((reference) => reference.includes("runtime-config"))) {
+  throw new Error(`自测装置失效：旧正则不应采集到非 /assets 引用，实际 ${legacyEntryReferences.join("、")}`);
+}
+/**
+ * 首屏闭包期望值 = entry.js + shared.js（静态 import）+ runtime-config.js；route.js 是懒加载入口，
+ * commented-out.js 只在注释里被引用，均不得计入。gzip 用门禁同一参数（level 9）。
+ */
+const initialClosureFiles = [
+  path.join(assetsDir, "entry.js"),
+  path.join(assetsDir, "shared.js"),
+  path.join(distDir, "runtime-config.js"),
+];
+const initialClosureBytes = initialClosureFiles.reduce(
+  (total, file) => total + gzipSync(fs.readFileSync(file), { level: 9 }).length,
+  0,
+);
+const initialClosureKiB = Math.round((initialClosureBytes / 1024) * 100) / 100;
+const expectedInitialClosure = `首屏关键 JS 闭包：${initialClosureFiles.length} 个文件，${initialClosureKiB} KiB gzip`;
 const budgetOk = path.join(root, "budget-ok.json");
 const budgetTightInitial = path.join(root, "budget-tight-initial.json");
 const budgetTightRoute = path.join(root, "budget-tight-route.json");
@@ -1182,6 +1220,7 @@ const cases = [
   {
     name: "预算：阈值宽松应通过",
     expect: 0,
+    contains: [expectedInitialClosure, "体积预算门禁通过。"],
     run: () => runGate("check-bundle-budget.mjs", { ...budgetEnv, BUDGET_CONFIG_PATH: budgetOk }),
   },
   {
