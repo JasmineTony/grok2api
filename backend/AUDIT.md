@@ -1446,3 +1446,86 @@ BenchmarkDashboardUsageAggregate/performance-8      1   167337300 ns/op   23768 
 - `bash scripts/verify.sh`、`go test ./... -count=1`、`go test -race ./...`、隔离 PostgreSQL/Redis 集成用例：本批未在装配分支上重跑；最终验收由 `frontend/AUDIT.md` §28.4 的表格回填，**回填前不得记为 `Passed`**。
 - BE-G3（`ports/security` 迁移）与 `apicheck --update`：需单独授权，未实施（同 `frontend/AUDIT.md` §28.6）。
 - 本工作树未安装 Go 工具链依赖之外的前端 `node_modules`，本章不含任何本机复跑的前端命令结论。
+
+## 33. 2026-10-12（续二）计划 5-2/5-6 收口与静态托管测试登记
+
+> 分支 `maint/acceptance-audit-20261012-registration`（基点 `0e8c02b7`）。按 META-3 只追加，§29–§32 既有数字不改写。计划条目编号取自 `.pi/plan/前后端验收审计与增量模块化优化计划-20261011-1936.md`（阶段 5 第 2 项与第 6 项）。**本节未修改任何代码**，结论均为只读核对。
+
+### 33.1 计划 5-2（装配、生命周期、任务退出、请求取消与业务状态转移）——只读核对结论
+
+方法：真实读取本工作树的代码（未新增探针、未改文件）。结论分三类：**已核对成立** / **发现缺陷** / **无法核实**。四项全部核对完毕，**未发现 P0/P1/P2 缺陷**；唯一「无法核实」项见 (c) 末。
+
+#### (a) 装配入口：`internal/app/assemble.go`
+
+**已核对成立。**
+
+- 唯一装配入口 `New`（`assemble.go:139-165`）按**固定顺序**执行 16 个步骤（`:141-158`），任一步返回错误即中止；`assembly.fail`（`:168-176`）按「先关运行态存储、再关数据库」释放已建立资源，与拆分前清理顺序一致（`:50-51` 注释即为该契约）。
+- 依赖注入点集中在各 `assembleXxx` 方法，且**被依赖方先于依赖方构造**：如 `:368` `cliAdapter.SetFallbackMarker(a.accountService)` 在 `:366-367` 构造 `accountService` 之后；`:424` `egressManager.SetFailureProber(a.egressService.TestNode)` 在 `:419` 构造 `egressService` 之后；`:449-450` 审计的 commit/drop observer 在 `:430` 的 `clientKeyService` 之后。未发现「先于构造」的悬空注入。
+- 生命周期钩子：`assembleHTTPServer`（`:561-576`）把 readiness 闭包（`:562-564`）与 `a.startup.acceptsTraffic` 注入路由（`:573`），`http.Server` 的超时字段（`ReadHeaderTimeout` 10s / `ReadTimeout` / `IdleTimeout` 2m / `MaxHeaderBytes` 64 KiB）在此显式设定；`application()`（`:579-585`）把全部字段映射进 `Application`。
+
+#### (b) 任务退出 / 后台任务：启动、停止、关闭顺序、是否泄漏
+
+**已核对成立（无泄漏证据）。**
+
+- **统一注册与等待**：`Application.Run`（`internal/app/lifecycle.go:16-34`）建 `runCtx` + `sync.WaitGroup`，`defer` 先 `cancelBackground()` 再 `background.Wait()`（`:21-24`），即**先发取消、再等待全部后台任务退出**；所有任务经同一 `start` 闭包注册（`:65-71`）。
+- **监督语义**：`runSupervisedTask`（`internal/app/application.go:268-293`）对 panic/异常退出做指数退避重启（1s → `min(backoff*2, 30s)`），并在 `ctx.Done()` 时停止（`:285-290`）；`runPeriodicTask`（`:249-266`）每次执行新建带超时的子 ctx 并**立即 `cancel()`**（`:257-259`），退出路径 `timer.Stop()`（`:251`）。`batch.Do` 包装保证 panic 被转成 `*batch.PanicError` 而非进程崩溃。
+- **固定 Worker**：`RunVideoWorkers`（`internal/application/gateway/video_tasks.go:17-46`）`workers.Add(s.mediaWorker)` → 每个 worker 在 `ctx.Done()` 时 `return`（`:27-29`）→ `workers.Wait()`（`:45`）；入队是非阻塞 `select/default`（`:68-80`），队列满时回滚 `mediaQueued` 标记并计数告警，**不会阻塞请求**；任务侧 `TryClaimMediaJob`（`:121-127`）用租约去重。
+- **批处理池不持有常驻 goroutine**：`batch.Pool.Do`（`internal/pkg/batch/executor.go:105`）是同步调用 + 槽位信号量；`mapObserved` 的 worker goroutine（`executor.go:331-339`）由 `jobs` channel 与 `sync.WaitGroup` 收敛。
+- **关闭顺序**：`Run` 退出时 `defer a.closeAudits()`（`lifecycle.go:18`、`:37-43`，10s 超时，失败只告警）→ 后台任务全部 `Wait()` → 进程退出；`Application.Close`（`application.go:241-247`）关闭运行态存储与数据库。顺序为「审计 → 后台任务 → 运行态存储 → 数据库」。
+
+#### (c) 请求取消：transport → application → infra 的传播与超时
+
+**已核对成立（含一处有意设计，非缺陷）。**
+
+- **入口超时**：`internal/transport/http/server.go:122` 的全局中间件链挂 `middleware.Timeout(deps.RequestTimeout)`；`middleware.Timeout`（`internal/transport/http/middleware/request.go:64-71`）以 `context.WithTimeout(c.Request.Context(), duration)` **写回** `c.Request` 并 `defer cancel()`。各 handler 一律传 `c.Request.Context()` 下探（例：`transport/http/model/handler.go:259` 的 `context.WithCancel`、`settings/handler.go:170`、`system/handler.go:38`）。
+- **应用层保留请求 ctx**：网关在 `initializeRequest`（`internal/application/gateway/service_request.go:161-163`）把入参 ctx（含 egress trace）存为 `state.ctx`；上游调用使用由其派生的 `physicalCallCtx`（`service_request.go:388`）⇒ 客户端取消沿 ctx 链传播到 provider 的 HTTP 调用。
+- **取消分类**：`service_request_attempt.go:205-208` 把 `state.ctx.Err() != nil || errors.Is(err, context.Canceled)` 归为 HTTP **499** / `request_canceled`；`attempt.go:565-573` 的 `transportStage` 另分 `response_header_timeout` / `request_canceled` / `request_timeout` 三档。
+- **有意设计（非缺陷）**：收尾与用量落库**刻意脱离**请求 ctx——`finalization.go:39` 用 `context.WithDeadline(context.Background(), …)`、`:54` 用 `context.WithTimeout(context.Background(), finalizationTimeout)`、`service_request_attempt.go:236` 用 `context.WithoutCancel(state.ctx)`；`finalization.go:52` 的注释写明目的是「避免请求取消或收尾预算耗尽丢失记录」，各阶段另有硬预算（`:11-17`，750ms/1.5s/1s/3s/500ms）。⇒ 客户端取消**不会**回滚已确认用量或丢失审计记录，符合计划第 7 项要求的账本一致性。
+- **无法核实**：端到端「客户端断连 → 上游 TCP 连接实际关闭时延」的真实时序**未在本机测量**（需真实上游或可控代理；本机无 Docker、不接外部 Provider）。需要什么才能核实：一个可注入延迟/断连的本地 HTTP 替身 + 连接级观测（`httptrace` 或代理日志）。
+
+#### (d) 业务状态转移（抽 3 条真实路径）
+
+1. **账号认证状态（`active` / `reauthRequired`）——已核对成立。**
+   - 状态机定义：`internal/domain/account/account.go:105-109` 的 `type AuthStatus string` + `AuthStatusActive` / `AuthStatusReauthRequired` 两个枚举常量（无自由字符串）。
+   - 转移入口单一：`MarkReauthRequired`（`internal/application/account/service_credential_refresh.go:16`）。
+   - 并发/幂等：写路径经仓储原子更新，未发现无保护的读改写。
+
+2. **Free 额度恢复状态机（`active` / `exhausted` / `probing`）——已核对成立。**
+   - 状态机定义：`internal/domain/account/account_quota.go:82-87`。
+   - 推进链：`quotarecovery.Service.Run`（`internal/application/quotarecovery/service.go:54`）→ `runDue`（`:72`）→ `runOne`（`:93`）；`reconcileDue`（`:126`）把「持久化窗口存在但队列缺失」的事件补回（幂等补偿）。
+   - **并发保护**：以 `ClaimDueQuotaRecoveries(..., lease)` 认领（带租约，天然去重）；失败按 `backoff`（`:139-142`）重排，退避参数用 `s.mu` 保护（`:48-51`）。
+
+3. **客户端 Key 计费预留 → 结算——已核对成立（幂等语义清晰）。**
+   - 预留：`clientkey/service_billing.go:15-42`，先由仓储 `ReserveBillingUsage` 原子判限额（`:26`），`ErrLimitExceeded` 映射为 `ErrBillingLimit`（`:27-30`）。
+   - 进程内保护集合：`activeBilling` 由 `activeMu` 保护（写 `:36-38`、删 `:78-82`、快照 `:91-96`）。
+   - **幂等/权威性**：`:72-73` 的注释明确「进程内标记只是保护，**持久预留才是权威**，直到 commit / cancel / 过期」；`CleanupExpiredBilling`（`:86-103`）把 `activeBilling` 作为 `protected` 集合传入清理，避免误删正在结算的预留。审计侧通过 `SetCommitObserver` / `SetDropObserver`（`assemble.go:449-450`）回调 `CompleteBillingBatch` / `ReleaseBillingProtectionBatch`，与上述语义一致。
+
+**本节小结**：装配、生命周期/任务退出、请求取消、业务状态转移四项**均已核对成立**，未发现缺陷；唯一「无法核实」为端到端断连时序（需真实上游或代理）。**本轮未改动任何代码**，因此不产生新的回归面。
+
+### 33.2 计划 5-6（按证据选热点并优化）
+
+**本轮不实施性能优化，且不声称无回退。** 依据 `backend/AUDIT.md` §28.1：`benchstat` 已装并实际执行统计检验，结论是**本机不具备 `ns/op` 判别力**——26.7% 的对比被判为「假显著」、CI 半宽中位 **±36%**；§28.3 已明确列出**不可声称项**（无判别力 ⇒ 既不得声称优化收益，也不得声称无回退）。因此按计划第 4 项验收口径「无可复现收益则不合入性能改动，记录『无需调整』」，本轮结论为**不做优化**，`§28.2` 的唯一相关改动是修复基准自身的缺陷（`b.ResetTimer()`），不属于生产路径优化。
+
+**后续重测的前置条件**（缺一不可，否则仍无判别力）：① **安静窗口**——无并行重负载任务（本机 8 逻辑核，性能测量不得与重负载测试并行）；② **固定 `-count`（≥5）** 并在同平台 / 同 Go 版本 / 同 `CGO_ENABLED` 下重复；③ **统计检验**——用 `benchstat` 输出 CI 半宽，只有半宽小到足以分辨目标差异（远小于预期收益）时才据以选热点；④ 有可复现收益时先用 CPU/内存/锁分析与 SQL 查询证据定位根因，再按计划第 6 项的最小面实施。
+
+### 33.3 本批静态托管相关登记（提交 `98cc6f06`、合并 `0e8c02b7`）
+
+- **`98cc6f06`**（`test(backend): 为静态托管的敏感文件暴露面补表征测试（§25.2 风险成测）`）：新增 `backend/internal/transport/http/frontend_exposure_test.go`（`git diff --numstat` = **+202 / −0**），把 §25.2 第 3 项（`staticPath` 指到父目录即公开 config/二进制/数据库）**表征化**为 **5 个顶层用例**：
+  `TestFrontendStaticExposureServesSensitiveFilesFromConfiguredRoot`（`:75`）、`TestFrontendStaticExposureRejectsRootLevelDotfiles`（`:105`）、`TestFrontendStaticExposureNotRegisteredWithoutIndexHTML`（`:125`）、`TestFrontendStaticExposureRejectsDirectoryTraversal`（`:151`）、`TestFrontendFileRejectsResolvedPathsOutsideRoot`（`:189`）。
+- **合并提交 `0e8c02b7`**：`Merge branch 'maint/acceptance-audit-20261012-static-exposure-test' into maint/acceptance-audit-20261012-final`（本工作树基点）。
+- **回归命令（本机实跑，2026-10-12，cwd=`backend`，`CGO_ENABLED=0`）**：
+
+```
+go test ./internal/transport/http/ -run 'TestFrontendStaticExposure|TestFrontendFileRejectsResolvedPathsOutsideRoot' -count=1
+```
+
+**exit 0**，关键输出：`ok github.com/chenyme/grok2api/backend/internal/transport/http 3.827s`，5 个顶层用例全 `PASS`（穿越用例的子用例含 `//../outside-secret.txt`、`//%2e%2e/outside-secret.txt`、`//..%2foutside-secret.txt`、`//..\outside-secret.txt` 四条 404，另有一条 200 正对照）。注意 §32.1 原回归命令 `-run TestFrontendStaticFilesAndSPAFallback` **不覆盖本批新增用例**——即 R20 的 F5。
+
+**R20 复核两点（按是否已并入如实标注）**：
+
+| 编号 | 内容 | 并入状态（本工作树实测） |
+| --- | --- | --- |
+| **F1（P2）** | `frontend.go:76-79` 的 `filepath.Rel` 包含性守卫在 **Linux 上不可达**（`path.Clean` 已消掉根处 `..`；唯一触发形态是含 `filepath.Separator` 的别名路径，而 Linux 上 `\` 是普通文件名字符）⇒ 删除该守卫 CI(Linux) 仍为绿，平台无关回归必须由谓词单测承担。 | **待并入**。本工作树 `frontend.go:77` **仍是内联判定**（未抽出谓词）。重构在分支 `maint/acceptance-audit-20261012-static-guard-testable`（提交 `b1d38714`：抽出 `isRelativePathWithinRoot` + 新增 `TestIsRelativePathWithinRoot`，仅改 `frontend.go` 与 `server_test.go`）；实测 `git merge-base --is-ancestor maint/acceptance-audit-20261012-static-guard-testable HEAD` **exit 1** ⇒ 尚未并入。 |
+| **F5（P3）** | §32.1 的回归命令未含本批新增用例；§25.3①「穿越/编码别名（httptest + 哨兵文件，删守卫必失败）」的预期**需更正**——该测试缺口已由 `98cc6f06` 的 `TestFrontendStaticExposureRejectsDirectoryTraversal`（哨兵文件在静态根外、断言 404）在 **Windows** 上覆盖；Linux 侧因 F1 的不可达性，仍需谓词单测补足。 | **待并入**。文档更正与 F1 同属 `b1d38714` 所在分支，但该分支当前**只含 `frontend.go` 与 `server_test.go` 两个文件**（无 AUDIT 改动）⇒ §32.1 / §25.3① 的文本更正**尚未落地**。本节按 META-3 只登记事实与并入状态，不改写 §32.1 / §25.3 原文。 |
+
+**未执行（如实登记）**：本节**未重跑**变异注入验证 F1/F5 的判别力归属（该结论引用 R20 复核，见会话 scratch `plan-progress.md` 的 R20 结论）；`go test ./... -count=1`、`bash scripts/verify.sh`、`-race` 与隔离 PG/Redis 均未在本节范围内重跑（其最新证据见 §31.4、§32.4 与 `frontend/AUDIT.md` §28.4）。
