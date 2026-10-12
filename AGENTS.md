@@ -51,6 +51,7 @@
 - 2026-10-11 维护线负责人授权：合并 `maint/modular-quality-audit` 到 `main`、发布 `v0.1.2`（annotated tag + GitHub Release + GHCR 镜像），并在同一授权内重建远端 `origin`（删除并新建同名仓库，同时删除历史遗留的 GHCR 容器包）。发布证据按 §8 登记。
 - 2026-10-12 维护线负责人授权：完成验收审计遗留收口后，把交付线 `maint/release-v0-1-3`（并入 `maint/acceptance-audit-20261012-final`）合并到 `main` 并发布 **`v0.1.3`**（annotated tag + GitHub Release + GHCR 镜像）。发布版本号按负责人本轮指令为 `v0.1.3`（原计划默认的 `v0.1.15` 作废，属 D1 决策变更）。发布证据按 §8 登记。
 - 2026-10-12 维护线负责人授权（**新规则，取代此前「不直接合并 `main`、不部署、不发布」的约束**）：把本地**全部分支**并入 `main` 并发布（本轮为 `v0.1.3`）；**以当前状态为准**，同一路径冲突时保留主干（`main`）现状，不因并入旧分支而回退主干已验收的改动（规则文本见 §8 的 REL-1）。
+- 2026-10-12 维护线负责人授权（**本轮凭据元数据清除与重发**）：删除并重建远端 `origin` 仓库；清除仓库文档中已公开的推送凭据元数据段落（含历史重写）；重发 **`v0.1.1`**；推送通道收紧为 **SSH-only**，撤销 OAuth 授权后不再落地长期令牌。执行动作与证据登记见 `frontend/AUDIT.md` §38 与 `backend/AUDIT.md` §36。
 - 授权记录不可改写；新增授权在末尾追加（META-5）。
 
 ## 2. 开发规范（DEV）
@@ -262,10 +263,9 @@ git remote -v
 - 授权与边界：合并 `main`、创建 tag/Release、推送镜像、删除/重建远端仓库或容器包属不可逆操作，逐次单独授权；`upstream` 永不推送。执行前必须逐项列出并确认外部依赖（CI 包权限、Secrets、Release、Webhook、镜像 tag、下游消费者），无法确认则阻塞（§11 的 CHG-9）。
 - 非 `ghcr-image.yml` 的外部必需 check（例如 CodeQL 的告警 check）为 `failure` 时，必须登记 check/run id、`conclusion`、告警条目与 triage 结论；假阳性须在 `AUDIT.md` 记录最小复现命令；**不得**为消除告警而修改被检代码语义或删除日志（评审准则）。现有 triage 见 `backend/AUDIT.md` §24。
 - 绑定事实：`ghcr.io` 容器包必须与 `origin` 仓库建立链接，否则 `GITHUB_TOKEN` 即使声明 `packages: write` 也会以 `permission_denied: write_package` 失败（证据与根因见 `backend/AUDIT.md` §11）。
-- 绑定事实：推送含 `.github/workflows/**` 改动的提交需要具 `workflow` scope 的凭据。仅有 `repo` scope 的 OAuth token 会被 GitHub 拒绝（实测错误原文：`refusing to allow an OAuth App to create or update workflow ... without 'workflow' scope`，`git push` exit 1，2026-10-12）。因此维护线新增 CI step 的首次真实执行，只能在取得该 scope 后由**携该工作流定义**的提交取得；**不得**以「剥离工作流改动后再推送」代替——那会使 CI 缺少被验证的 step 并掩盖真实发布路径。
-
-- 绑定事实：按 SEC-1，本文件只保留可判定结论：**「本地 HTTPS 推送是否携带 `workflow`」必须逐次实测，不得据凭据名称或历史 scope 推断**。
-- 绑定事实：**实测** HTTPS 通道的已知凭据均不携带 `workflow` scope，而 SSH 通道的认证不携带 OAuth scope，因此本仓库含工作流定义的发布推送走 SSH（`ssh -T git@github.com` 回显 `Hi <owner>!`）；本地凭据通道配置均**未**改动。该路径只改变推送通道，不改变被验证的提交内容，推送方式与远端证据必须登记在 `frontend/AUDIT.md`。
+- 绑定事实：推送含 `.github/workflows/**` 改动的提交需要具备 `workflow` 权限的推送凭据；权限不足会被 GitHub 拒绝（实测错误原文：`refusing to allow an OAuth App to create or update workflow ... without 'workflow' scope`，`git push` exit 1，2026-10-12）。因此维护线新增 CI step 的首次真实执行，只能由**携该工作流定义**的提交取得；**不得**以「剥离工作流改动后再推送」代替——那会使 CI 缺少被验证的 step 并掩盖真实发布路径。
+- 绑定事实：**本地 HTTPS 推送是否携带 `workflow` 权限必须逐次实测，不得据凭据名称或历史作用域推断**。
+- 绑定事实：含工作流定义的发布推送走 SSH（`ssh -T git@github.com` 回显 `Hi <owner>!`）；SSH 认证不携带 OAuth scope，因此不受上述限制。该路径只改变推送通道，不改变被验证的提交内容；`origin` 的 HTTPS URL 与本地凭据通道配置均**未**改动，推送方式与远端证据登记在 `frontend/AUDIT.md` §37.4 与 §38。
 
 ### REL-1 全量分支并入与「当前状态优先」（评审准则，可检索）
 
@@ -431,7 +431,7 @@ CI 变绿只证明检查通过，不证明已交付。CI 通过后必须在同�
 
 ### SEC-1 秘密（P0，评审准则 + 可检索）
 
-禁止把秘密写入仓库、日志、测试夹具或 `VITE_*`（会进产物）；开发代理目标不得污染生产回退。辅助检索 `rg -n "VITE_.*(KEY|SECRET|TOKEN)"`。
+禁止把秘密写入仓库、日志、测试夹具或 `VITE_*`（会进产物）；开发代理目标不得污染生产回退。禁止在仓库文档、日志与测试夹具中登记推送凭据的元数据（账号标识、授权浏览器 profile、令牌存储位置、作用域清单、过期状态、令牌前缀/长度）：凭据一律由本地凭据助手提供，所需推送权限按 §8 逐次实测。辅助检索 `rg -n "VITE_.*(KEY|SECRET|TOKEN)"`。
 
 ### SEC-2 供应链（P1，评审准则）
 

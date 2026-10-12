@@ -298,7 +298,7 @@ ERROR: failed to push ghcr.io/jasminetony/grok2api:main-arm64: denied: permissio
 
 **为什么分支看起来是绿的**：PR 事件只跑 `check_ghcr_image`（`push: false`，仅构建不推送），永远不会触发推送，因此碰不到该拒绝。分支**无法**修复此问题。
 
-**所需操作（需要 GitHub 设置或具备包作用域的凭据，本机现有凭据缺少相应包权限，包 API 返回 403，我无法代为执行）**
+**所需操作（需要 GitHub 设置或具备相应包权限的凭据；包 API 返回 403，我无法代为执行）**
 
 1. 打开 GitHub → 个人头像 → **Packages** → `grok2api` → Package settings → **Connect repository** → 选择 `JasmineTony/grok2api`；随后重跑 main 的失败任务。
 2. 或**删除该孤立包**，让新仓库在下一次推送时重新创建并持有它。
@@ -944,7 +944,7 @@ go test <pkg> -run '^$' -bench '<正则>' -benchmem -count=5
 | --- | --- | --- |
 | `go test -race` | ① `$env:CGO_ENABLED=1; go test -race ./internal/app/ -count=1` → **exit 1**：`# runtime/cgo` / `cgo: C compiler "gcc" not found: exec: "gcc": executable file not found in %PATH%` / `FAIL … [build failed]`；② 默认 `go test -race ./internal/app/ -count=1` → **exit 2**：`go: -race requires cgo; enable cgo by setting CGO_ENABLED=1`；③ 全量 `CGO_ENABLED=1 go test -race ./... -count=1` → **exit 1**：68 个 FAIL 行、唯一 unique 错误即上述 gcc 缺失（`ok` 行 0） | **Blocked**（本机无任何 C 编译器）。工具链探测：`winget` 可用（v1.29.380，用户级）、无 choco/scoop、无 `C:\msys64`/`C:\mingw64`/LLVM、**WSL 子系统整体未安装**（`wsl -l -v` 与 `wsl --list --online` 均报「未安装适用于 Windows 的 Linux 子系统」→ 需 `wsl --install` + 重启，且 WSL 内需另装 Linux Go 工具链，会引入与 CI go1.26.1 的版本漂移）。恢复命令（用户级、无需管理员/重启）：`winget install --id BrechtSanders.WinLibs.POSIX.UCRT --accept-source-agreements --accept-package-agreements` → 新 shell → `cd backend; $env:CGO_ENABLED=1; go test -race ./... -count=1`；或由 CI 步骤 `.github/workflows/ghcr-image.yml:109-111` 覆盖 |
 | 隔离 PostgreSQL/Redis「0 跳过」 | 三条命令（`TEST_POSTGRES_*`/`TEST_REDIS_*` 均为空）：`./internal/infra/persistence/relational -count=1 -v` → exit 0，**SKIP 17 / PASS 193 / FAIL 0**；`./internal/infra/runtime/redis -count=1 -v` → exit 0，**SKIP 2 / PASS 4**；`./internal/application/account -count=1 -v` → exit 0，**SKIP 1 / PASS 172** ⇒ 合计 **20 条 `--- SKIP`**，与 §20.9 登记 1:1；静态面：全后端仅 6 个 `TEST_*` 变量、20 个 `t.Skip` 站点、无 `b.Skip`/`testing.Short`、CI 与 `scripts/verify.sh` 均无 `-short` | **Blocked**（本机无 psql/pg_ctl/redis-server/redis-cli/docker，WSL 无发行版；无法监听 127.0.0.1:5432/6379）。0 跳过证据只能由 CI Verify job 的 services（`postgres:17-alpine` + `redis:7-alpine`）产出，断言原文见 `.github/workflows/ghcr-image.yml:86-107`；注意 **`Race backend` 步骤不含该 0-skip 断言** |
-| CI 运行（覆盖 race、PG+Redis 0 跳过、镜像 check、前端 E2E 等） | `git push -u origin maint/acceptance-audit-20261011-closeout` → **exit 1**，原文：`! [remote rejected] … (refusing to allow an OAuth App to create or update workflow '.github/workflows/codeql.yml' without 'workflow' scope)`；`gh` CLI 不存在 | **Blocked**（缺凭据 scope，非代码问题）。所需用户动作：提供具备 `workflow` 权限的推送凭据（或 `gh auth login`），随后推送该分支并开草稿 PR（`pull_request`→main 即触发 Verify + check_ghcr_image，不推送镜像）。推送前已按评审准则复核 `git remote -v`（origin=`JasmineTony/grok2api`，upstream 永不推送） |
+| CI 运行（覆盖 race、PG+Redis 0 跳过、镜像 check、前端 E2E 等） | `git push -u origin maint/acceptance-audit-20261011-closeout` → **exit 1**，原文：`! [remote rejected] … (refusing to allow an OAuth App to create or update workflow '.github/workflows/codeql.yml' without 'workflow' scope)`；`gh` CLI 不存在；凭据缺工作流作用域 | **Blocked**（缺凭据权限，非代码问题）。所需用户动作：提供具备 `workflow` 权限的推送凭据，随后推送该分支并开草稿 PR（`pull_request`→main 即触发 Verify + check_ghcr_image，不推送镜像）。推送前已按评审准则复核 `git remote -v`（origin=`JasmineTony/grok2api`，upstream 永不推送） |
  
 **说明**：Swagger 精确 diff 已在本机闭环（§20.12），不再属于 CI-only 项；`check_ghcr_image` 的多架构构建仍只能由 CI 产出。
 
@@ -1772,3 +1772,33 @@ exit=0
 - **未复跑** F3 的 push（远端写操作）；**未验证**换用带 `workflow` scope 的凭据后能否推送。
 - **未执行**：`bash scripts/verify.sh`、`go test ./... -count=1`、`-race`、隔离 PG/Redis、Swagger 精确 diff、全栈 E2E —— 本节为纯文档更正，未触碰代码。
 - **未修改**：除本文件外未改动任何文件；未 commit、未 push。
+
+## 36. 2026-10-12（续）推送凭据元数据清除与 `v0.1.1` 重发（后端与发布侧登记）
+
+本节与 `frontend/AUDIT.md` §38 同批，登记后端与发布相关项；授权本体见 `AGENTS.md` §1「授权登记」末条，凭据元数据禁令见 `AGENTS.md` §13 的 SEC-1。
+
+### 36.1 与 §20.13 / §35.3 / §35.8 的关系（append-only）
+
+- §35.3 的 `Failed` 结论与 §35.8 的「F3 未复跑、换用凭据后能否推送未验证」**保留原值**（META-3 / EVID-8）；本轮按 §8 的绑定事实逐次实测，通道结论与复现登记在 `frontend/AUDIT.md` §37.4，不在本节回改历史结论。
+- 按本轮口径收敛凭据描述：§35.3 的复现行只保留 `git remote -v`（移除本地凭据助手配置查询半句）；§20.13 与 §11 的授权叙述改为「具备相应包权限的凭据」。
+
+### 36.2 `v0.1.3` 未登记事实（与 `frontend/AUDIT.md` §38.3 同源）
+
+- **事实**：发布授权 `v0.1.3` 此前**未在任何 AUDIT 中登记**——本节写入时点，`v0.1.3` 在本文件中的出现次数**为 0**。复现：`rg -c "v0\.1\.3" backend/AUDIT.md frontend/AUDIT.md`（两文件均无匹配；唯一登记处是 `AGENTS.md` §1 的两条授权条目）。
+- 本文件按 META-3 / EVID-8 **不回改**历史章节；发布证据在回填时登记于本节 §36.3 与 `frontend/AUDIT.md` §38.4。
+
+### 36.3 待补登记项（发布完成后回填）
+
+| 登记项 | 值 |
+| --- | --- |
+| 文档清除提交 sha（`AGENTS.md` / `frontend/AUDIT.md` / `backend/AUDIT.md`） | 待补 |
+| 重写后 `main` tip sha（后端门禁复跑基准） | 待补 |
+| 目标提交上 `bash scripts/verify.sh`（`go build` / `go vet` / `structurecheck` / `apicheck` / `dockerfilecheck` / `go test -count=1`） | 待补（本节为纯文档改动，未复跑） |
+| CI run id 与 `Assert required integration tests ran`（0 跳过）step 的 conclusion | 待补 |
+| 镜像 digest（含 `merge` 后的 manifest list） | 待补 |
+
+### 36.4 未收口项与残留风险
+
+- GitHub 侧提交缓存/搜索索引、已克隆副本与 CI 日志无法保证清除（与 `frontend/AUDIT.md` §38.5 同口径）；本轮不得声称凭据元数据已彻底清除。
+- 历史重写后，本文件与 `frontend/AUDIT.md` 中引用的历史 sha（`5625a857`、`04a3a5c9` 等）在新的提交图上失效；重写后的 sha 映射按 §36.3 待补登记，回填前只能按历史快照理解。
+- 本节未执行：`bash scripts/verify.sh`、`go test ./... -count=1`、`-race`、隔离 PG/Redis、Swagger 精确 diff、全栈 E2E（纯文档改动）；发布前置在重发目标提交上按 §8 逐项执行。
