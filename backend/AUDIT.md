@@ -1802,3 +1802,21 @@ exit=0
 - GitHub 侧提交缓存/搜索索引、已克隆副本与 CI 日志无法保证清除（与 `frontend/AUDIT.md` §38.5 同口径）；本轮不得声称凭据元数据已彻底清除。
  - 历史重写后，本文件与 `frontend/AUDIT.md` 中引用的历史 sha（`5625a857`、`04a3a5c9` 等）在新的提交图上失效；**sha 映射已登记**于 §36.3 与 `frontend/AUDIT.md` §38.6（旧 `04a3a5c9` → 新 `37fd2dda`，旧远端 tip `4358867f` → 新 `45dd2447`）；旧对象已从本地对象库清除。
 - 本节未执行：`bash scripts/verify.sh`、`go test ./... -count=1`、`-race`、隔离 PG/Redis、Swagger 精确 diff、全栈 E2E（纯文档改动）；发布前置在重发目标提交上按 §8 逐项执行。
+
+## 37. 2026-10-12（收口执行轮）远端重建与 `v0.1.1` 重发：后端与镜像证据
+
+**授权与边界**：见 `AGENTS.md` §1「2026-10-12 维护线负责人授权（执行轮）」；凭据元数据按 SEC-1 不登记。
+
+**发布前置门禁（最终 tip `00120cea`）**：`cd backend; bash scripts/verify.sh` → **exit 0**，6/6 步通过，103.6s。
+
+- `go build ./...` 10.5s / `go vet ./...` 3.7s / `go run ./tools/structurecheck` 1.4s / `go run ./tools/apicheck` 1.8s / `go run ./tools/dockerfilecheck` 1.5s / `go test ./... -count=1` 83.7s（78 个包 `ok`，11 个 `[no test files]`，无 FAIL/panic）。
+- structurecheck：`扫描生产 Go 文件：483 个`、`参与判定的作用域（REV-3）：5537 个（0 越限时据此判断不是漏报）`；超限文件 / 超限函数 / 越限嵌套 当前 0、基线 0。
+- apicheck：`基线条目 2062 条，当前 2062 条。`、`导出 API 面与基线逐条一致。`
+- dockerfilecheck：`参与判定：必需文件 900 个（未被 COPY 覆盖 0，被忽略规则排除 0）；COPY 源不可用 0`。
+- 口径说明：`verify.sh` 不含 `-race` 与隔离 PG/Redis 的「0 跳过」断言；二者由 CI 的 `Race backend` 与 `Assert required integration tests ran` 步骤承担，见下。
+
+**CI（tag `v0.1.1`）**：`GHCR Image` run `38267217186`（event=push，ref=`v0.1.1`）**conclusion=success**。后端相关 step 全部 success：`Verify version carriers are aligned`、`Test backend`、`Assert required integration tests ran`（0 跳过断言）、`Race backend`、`Vet backend`、`Verify backend structure and API contract`、`Verify Dockerfile covers required inputs`、`Verify Swagger document`；前端与 E2E step（`Verify frontend`、`Run full-stack E2E`、`Assert required frontend tests ran`）同为 success。
+
+**镜像证据**：`ghcr.io/jasminetony/grok2api:v0.1.1` = `sha256:e0a2f395423afdcb097e1c5646cf4756e90cb3ca2ce68c1d4dbecec62d7e0f06`（`application/vnd.oci.image.index.v1+json`）；linux/amd64 = `sha256:7453a6efc7fdabb371dd4959bbc026103b535304266b58944f1bf3659426698a`、linux/arm64 = `sha256:1d040f5998fe5ce14a3712cea385620e70f723a3cf492c10970d20e3cb9f858f`；`v0.1.1-amd64` = `sha256:5f953a5c…`、`v0.1.1-arm64` = `sha256:a8fc0b44…`。容器包新实例 id `15829871`，`repository=JasmineTony/grok2api`（已正确链接）。
+
+**未收口项**：`main`/`latest` 镜像由后续文档提交的 push 触发，本次登记时尚未产出；`gpgsig` 剥离只影响本地上游提交对象（tree/parent/author/message 未变），上游 tag 从不推送；历史重写后的 sha 映射与完整证据见 `frontend/AUDIT.md` §39。

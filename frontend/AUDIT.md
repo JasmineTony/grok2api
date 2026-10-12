@@ -2108,3 +2108,45 @@ git ls-files --eol <抽查文件>                      # 全部 i/lf w/lf attr/t
 | `3e045dba` 及更早       | 不变                    | 重写范围之外                                           |
 
 **本轮边界**：不撤销 OAuth 授权；不修改、不推送 `upstream`；不重发 `v0.1.2` / `v0.1.3`（按指令仅重发 `v0.1.1`；远端现有 tag 与 Release 将随删库一并消失）。
+
+## 39. 2026-10-12（收口执行轮）远端重建、历史脱敏与 `v0.1.1` 重发证据（SEC-1 / 发布）
+
+**授权**：见 `AGENTS.md` §1「2026-10-12 维护线负责人授权（执行轮）」。**不撤销 OAuth 授权**；推送凭据只由本地凭据助手提供，本文件不登记任何凭据元数据（SEC-1）。
+
+**执行前外部依赖清点（SEC-4）**：REST 实测 `actions/secrets` 0 项、`actions/variables` 0 项、`hooks` 0 项、`keys` 0 项、`environments` 0 项、`branches/main/protection` 无保护、协作者仅仓库所有者、容器包 1 个（public）；删库前对远端做 `git clone --mirror` 留档（15 个 ref，含 PR #1–#4 ref）。删除范围：远端仓库与 GHCR 容器包。
+
+**本地历史脱敏重写（内容级，SEC-1）**
+
+- 触发：独立扫描发现「作用域枚举 / 令牌存储落地点 / 凭据类型」三类文本仍存在于 `main` 的祖先提交（209/1817 提交命中），而 HEAD 快照为 0 —— 上一轮的清理只覆盖 tip，`-s ours` 并入又把 pre-cleanup 提交挂回 `main` 的可达历史。
+- 方法：`git filter-branch --index-filter` + 预计算「旧 blob → 脱敏 blob」映射；映射用 Git Bash 字节级生成（PowerShell 管道会给原生命令注入 CRLF/编码，实测往返哈希不一致，已弃用），并验证未改动 blob 的往返哈希逐一致。
+- 结果：`main` 全 1819 个提交对上述三类串检索 **0 命中**；从远端独立 `git clone` 后再检索同样 **0 命中**；令牌字面量前缀、OAuth 客户端标识、私钥标记在远端 HEAD 上均 0 命中。
+- 副作用（如实登记）：`git filter-branch` 剥离 `gpgsig` 头，故上游已签名提交在**本地**换 sha（raw commit 对比显示 tree/parent/author/message 逐字未变，仅 gpgsig 段消失）；上游 tag 从不推送，故无远端影响。原对象已 `gc --prune=now` 剪除，重写前镜像留存于会话 scratch。
+- 口径边界：`credential.helper` 的**键名**在历史中保留（其值已脱敏）；键名本身不构成令牌存储位置信息。
+
+**本地工作树梳理**：`git worktree list --porcelain` 仅 1 个主工作树（`E:/grok2api`）；`.git/worktrees` 不存在；`git worktree prune --dry-run -v` 无输出；本地分支仅 `main`；`git branch --no-merged main` 为空；`git stash list` 为空；`.pi/worktrees` 为空；工作区无未跟踪的敏感文件。
+
+**发布前置门禁（在最终 tip `00120cea` 上执行）**
+
+- 前端 `pnpm verify` → **exit 0**，15/15 步通过，604s：`check:version`（`版本载体一致：v0.1.1`）、`format:check`、`oxlint`（552 文件 0 warning）、`lint`、`typecheck`、`typecheck:e2e`、`test`（126 用例全过、0 跳过）、`test:results:node`、`test:ui:coverage`（126 文件 / 1496 用例全过、0 跳过、0 flaky，per-file ≥76% 通过）、`test:results`、`check:architecture`（431 模块 / 2040 依赖）、`check:structure`（405 文件、参与判定作用域 2527 个、0 越限）、`test:gates`（90 用例，含 72 个必须失败用例）、`build`、`check:budget`。
+- 体积实测：首屏关键 JS 194.05 KiB gzip（阈值 260）；全部生产 JS 624.83 KiB gzip（阈值 650）；全部 CSS 16.65 KiB gzip（阈值 20）；最大 chunk 458.55 KiB 原始（阈值 500）；路由新增闭包最大 129.23 KiB gzip（阈值 180）。
+- 后端 `bash scripts/verify.sh` → **exit 0**，6/6 步通过，103.6s（详见 `backend/AUDIT.md` §37）。
+
+**远端重建与推送**
+
+- 仓库：旧实例（id `1413858145`，`created_at` 2026-10-11T02:37:22Z）已删除；新实例 id `1415744814`，`created_at` 2026-10-12T14:52:15Z，public、非 fork、默认分支 `main`、`has_issues=true`、`has_wiki=false`、`has_projects=false`、三种合并方式均允许、`delete_branch_on_merge=false`、Actions 默认 workflow 权限 `read` —— 与删库前快照逐项一致。
+- 容器包：旧实例（id `15784723`，删库后 `repository=null`）已删除；新实例 id `15829871`，`created_at` 2026-10-12T15:23:27Z，`repository=JasmineTony/grok2api`（**已正确链接**）。
+- `origin`：fetch = `https://github.com/JasmineTony/grok2api.git`，push = `git@github.com:JasmineTony/grok2api.git`；`upstream` 未改动、未推送。`main` 经 SSH 推送（exit 0，20s）。
+- 只推送 `main` 与 `refs/tags/v0.1.1`（逐 ref 指定，**未**使用 `--tags`/`--mirror`），故 53 个上游历史 tag 与本地 `v0.1.2`/`v0.1.3` 均未进入远端。
+
+**`v0.1.1` 重发**
+
+- tag：annotated `v0.1.1`（tag 对象 `692ce6a5`）指向 `main` tip `00120cea`（该提交上 `VERSION` = `v0.1.1`、`frontend/package.json` = `0.1.1`）。
+- Release：`https://github.com/JasmineTony/grok2api/releases/tag/v0.1.1`（非 draft、非 prerelease）。
+- CI：`GHCR Image` run `38267217186`（event=push，ref=`v0.1.1`）**conclusion=success**；关键 step 全部 success：`Verify version carriers are aligned`、`Test backend`、`Assert required integration tests ran`、`Race backend`、`Vet backend`、`Verify backend structure and API contract`、`Verify Dockerfile covers required inputs`、`Verify Swagger document`、`Verify frontend`、`Run full-stack E2E`、`Assert required frontend tests ran`；`Publish image (amd64)`、`Publish image (arm64)`、`Merge image` 全部 success。
+- 镜像：`ghcr.io/jasminetony/grok2api:v0.1.1` = `sha256:e0a2f395423afdcb097e1c5646cf4756e90cb3ca2ce68c1d4dbecec62d7e0f06`（`application/vnd.oci.image.index.v1+json`；linux/amd64 `sha256:7453a6efc7fdabb371dd4959bbc026103b535304266b58944f1bf3659426698a`、linux/arm64 `sha256:1d040f5998fe5ce14a3712cea385620e70f723a3cf492c10970d20e3cb9f858f`）；`v0.1.1-amd64` = `sha256:5f953a5c…`、`v0.1.1-arm64` = `sha256:a8fc0b44…`。
+
+**未收口项与残留风险**
+
+- 触发时点：`main` 的首次 push 与 tag push 都**早于工作流注册完成**到达，事件被丢弃（`actions/runs` 初始 `total_count=0`）；tag 以「删除远端 tag + 重推」重新触发（该操作会把 Release 置为 draft，已删除并重建关联）。`main`/`latest` 镜像由后续文档提交的 push 触发，本次登记时尚未产出。
+- GitHub 侧提交缓存/搜索索引、已克隆副本与 CI 日志无法保证清除（与 §38.5 同口径）；本轮**不得**声称「凭据元数据已彻底清除」。
+- 删除并重建后，原 PR #1–#4、Release 历史与旧 Actions run 再次丢失；旧镜像 tag（`main`/`latest`/`v0.1.2*`/`v0.1.3*`）随包删除消失。
