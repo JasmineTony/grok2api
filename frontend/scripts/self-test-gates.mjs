@@ -75,7 +75,9 @@ function relativeKey(file) {
 }
 
 function runGate(script, env, args = []) {
-  const result = spawnSync(process.execPath, [path.join(scriptsDir, script), ...args], {
+  // script 为绝对路径时直接执行（ALLOWED_SKIPS 正样本用 tmp 内的改写副本），否则按 scripts/ 下的脚本名解析。
+  const target = path.isAbsolute(script) ? script : path.join(scriptsDir, script);
+  const result = spawnSync(process.execPath, [target, ...args], {
     env: { ...process.env, ...env },
     encoding: "utf8",
   });
@@ -505,8 +507,8 @@ function playwrightJson(entries, startMs, shape) {
       spec(`${file} ${status} #${index + 1}`, file, status, projectName, expectedStatus),
     );
   /**
-   * 必填标题与异常用例（预期失败 / 未知状态 / flaky / skipped）都落在实例数够用的那个 project 上，其余
-   * project 只补该文件在该 project 下的实例数——与真实产物的分布一致，也保证文件实例总数不受影响。
+   * 必填标题与异常用例（预期失败 / 未知状态 / flaky / 运行时跳过 / 静态跳过）都落在实例数够用的那个 project
+   * 上，其余 project 只补该文件在该 project 下的实例数——与真实产物的分布一致，也保证文件实例总数不受影响。
    */
   const specsOf = (entry) => {
     const file = shape.fileOf(entry.file);
@@ -529,12 +531,16 @@ function playwrightJson(entries, startMs, shape) {
         ...filler(file, "weird", unknownStatus, project.name),
         ...filler(file, "flaky", entry.flaky ?? 0, project.name),
         ...filler(file, "skipped", entry.skipped ?? 0, project.name),
+        // 静态 test.skip() / test.describe.skip() / test.fixme()：status 与 expectedStatus 都是 "skipped"。
+        ...filler(file, "skipped", entry.skippedStatic ?? 0, project.name, "skipped"),
       );
     }
     return { title: entry.file, file, suites: [], specs };
   };
+  const suites = entries.map(specsOf);
+  const instanceCount = suites.reduce((total, suite) => total + suite.specs.length, 0);
   return `${JSON.stringify({
-    config: shape.rootDir === null ? {} : { rootDir: shape.rootDir },
+    config: playwrightConfigOf(shape),
     errors: [],
     stats: {
       startTime: new Date(startMs).toISOString(),
@@ -542,10 +548,17 @@ function playwrightJson(entries, startMs, shape) {
       expected: 0,
       unexpected: 0,
       flaky: 0,
-      skipped: 0,
+      // listOnly 形态复现 `playwright test --list`：收集清单里全部用例只出现在 stats.skipped。
+      skipped: shape.listOnly ? instanceCount : 0,
     },
-    suites: entries.map(specsOf),
+    suites,
   })}\n`;
+}
+
+/** 报告形态 → config：listOnly 形态带 argv（含 `--list`），其余只按 rootDir 是否存在构造。 */
+function playwrightConfigOf(shape) {
+  if (shape.listOnly) return { argv: ["playwright", "test", "--list"] };
+  return shape.rootDir === null ? {} : { rootDir: shape.rootDir };
 }
 
 /** 建一个报告根目录：写清单文件（mtime 固定）与可选的两份报告。 */
@@ -573,15 +586,16 @@ function buildReportRoot(name, options) {
 }
 
 /**
-/**
  * E2E 报告的形态：默认与真实产物一致（file 是纯文件名 + `config.rootDir` 指向 <dir>/e2e）；e2eAbsoluteShape
- * 构造绝对路径形态，e2eWithoutRootDir 构造缺 `config.rootDir` 形态，e2eProjects 覆盖 project 形态。
+ * 构造绝对路径形态，e2eWithoutRootDir 构造缺 `config.rootDir` 形态，e2eProjects 覆盖 project 形态，
+ * e2eListOnly 构造 `playwright test --list` 的收集清单形态（config.argv 含 `--list`、stats 只有 skipped）。
  */
 function e2eShapeOf(dir, options) {
   const projects = options.e2eProjects ?? E2E_PROJECTS;
-  if (options.e2eAbsoluteShape) return { rootDir: null, fileOf: (file) => path.join(dir, file), projects };
-  if (options.e2eWithoutRootDir) return { rootDir: null, fileOf: (file) => path.basename(file), projects };
-  return { rootDir: path.join(dir, "e2e"), fileOf: (file) => path.basename(file), projects };
+  const listOnly = options.e2eListOnly === true;
+  if (options.e2eAbsoluteShape) return { rootDir: null, fileOf: (file) => path.join(dir, file), projects, listOnly };
+  if (options.e2eWithoutRootDir) return { rootDir: null, fileOf: (file) => path.basename(file), projects, listOnly };
+  return { rootDir: path.join(dir, "e2e"), fileOf: (file) => path.basename(file), projects, listOnly };
 }
 
 const healthyReportRoot = buildReportRoot("report-healthy", {
@@ -658,6 +672,17 @@ const noRootDirE2eReportRoot = buildReportRoot("report-no-rootdir-e2e", {
   e2eStartMs: probeNow,
   e2eWithoutRootDir: true,
 });
+/**
+ * 夹具：`playwright test --list` 写出的收集清单（config.argv 含 `--list`、stats.skipped 等于用例总数、
+ * stats.expected = 0）。它不含任何执行结果，旧判定会把它当健康报告（清单齐、无失败、通过数够）放行。
+ */
+const listOnlyE2eReportRoot = buildReportRoot("report-e2e-list-only", {
+  vitest: vitestHealthyEntries,
+  vitestStartMs: probeNow,
+  e2e: e2eProbe,
+  e2eStartMs: probeNow,
+  e2eListOnly: true,
+});
 /** 夹具：首个 E2E 文件含一个 test.fail() 预期失败用例（status="expected" + expectedStatus="failed"）。 */
 const expectedFailureE2eEntries = e2eProbe.map((entry, index) =>
   index === 0 ? { ...entry, desktop: entry.desktop - 1, expectedFailure: 1 } : entry,
@@ -678,6 +703,38 @@ const unknownStatusE2eReportRoot = buildReportRoot("report-e2e-unknown-status", 
   e2e: unknownStatusE2eEntries,
   e2eStartMs: probeNow,
 });
+
+/**
+ * 夹具：`e2e/auth.e2e.ts` 含 1 个静态跳过实例——`test.skip()` / `test.describe.skip()` / `test.fixme()` 的
+ * 真实形态是 status 与 expectedStatus 都是 "skipped"（只有运行时 `test.skip(cond)` 才保留 expectedStatus
+ * "passed"）。该文件的通过数（12）与逐 project 通过数（21 + 21）都不变，只有「跳过」这一条判据能拦下它，
+ * 因此不靠数量棘轮兜底：旧判据把 expectedStatus !== "passed" 一律当成 test.fail()，会把这条跳过误报成
+ * 「预期失败」（诊断错误），同时让 tally.skipped 恒为 0，使 ALLOWED_SKIPS 登记通道在 E2E 侧失效。
+ */
+const staticSkipE2eEntries = e2eProbe.map((entry) =>
+  entry.file === "e2e/auth.e2e.ts" ? { ...entry, skippedStatic: 1 } : entry,
+);
+const staticSkipE2eReportRoot = buildReportRoot("report-e2e-static-skip", {
+  vitest: vitestHealthyEntries,
+  vitestStartMs: probeNow,
+  e2e: staticSkipE2eEntries,
+  e2eStartMs: probeNow,
+});
+/**
+ * 正样本：同一份含静态跳过的报告 + 把该跳过逐条登记进 ALLOWED_SKIPS 的门禁副本。副本由被测脚本逐字复制后
+ * 只替换 `const ALLOWED_SKIPS = [];` 一行（锚点未命中即抛错，不静默降级），与装置一起落在 os.tmpdir() 之下，
+ * 符合脚本自身对 TEST_REPORT_ROOT 的限制。判别力：旧判据把这条跳过算成 test.fail() 预期失败，登记通道对
+ * E2E 无效，本用例在旧实现下必然 exit 1。
+ */
+const allowedSkipGatePath = path.join(root, "check-test-results-allowlisted.mjs");
+const allowedSkipRegistration = { file: "e2e/auth.e2e.ts", title: "auth.e2e.ts skipped #1" };
+const gateSource = fs.readFileSync(path.join(scriptsDir, "check-test-results.mjs"), "utf8");
+const allowlistSource = gateSource.replace(
+  "const ALLOWED_SKIPS = [];",
+  `const ALLOWED_SKIPS = [${JSON.stringify(allowedSkipRegistration)}];`,
+);
+if (allowlistSource === gateSource) throw new Error("self-test 装置锚点未命中：ALLOWED_SKIPS 声明行已变更");
+writeFile(allowedSkipGatePath, allowlistSource);
 /** 夹具：只写报告、不写清单文件——新鲜度无法核对时旧报告不得放行。 */
 const absentFilesReportRoot = path.join(root, "report-absent-files");
 writeProbeFile(
@@ -1216,6 +1273,13 @@ const cases = [
     run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: healthyReportRoot }, ["--e2e"]),
   },
   {
+    name: "测试执行：E2E 报告来自 playwright test --list（收集清单）应报错退出（未运行不得称通过）",
+    expect: 2,
+    contains: ["playwright test --list", "请运行：pnpm test:e2e"],
+    absent: ["必需前端场景执行门禁通过"],
+    run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: listOnlyE2eReportRoot }, ["--e2e"]),
+  },
+  {
     name: "测试执行：E2E 报告早于清单文件 mtime 应失败",
     expect: 1,
     contains: ["E2E：报告可能过期"],
@@ -1282,6 +1346,20 @@ const cases = [
     expect: 1,
     contains: ["被标记为预期失败 test.fail()，不得用于必需场景", "E2E：e2e/auth.e2e.ts 有 1 个失败用例"],
     run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: expectedFailureE2eReportRoot }, ["--e2e"]),
+  },
+  {
+    name: "测试执行：E2E 静态跳过（expectedStatus=skipped）应报未登记跳过，不得误判为 test.fail()",
+    expect: 1,
+    contains: ["存在未登记跳过用例", "auth.e2e.ts skipped #1（skipped）"],
+    absent: ["预期失败", "少于要求的"],
+    run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: staticSkipE2eReportRoot }, ["--e2e"]),
+  },
+  {
+    name: "测试执行：E2E 静态跳过登记进 ALLOWED_SKIPS 后应通过（登记通道生效，旧实现 exit 1）",
+    expect: 0,
+    contains: ["必需前端场景执行门禁通过"],
+    absent: ["预期失败", "存在未登记跳过用例"],
+    run: () => runGate(allowedSkipGatePath, { TEST_REPORT_ROOT: staticSkipE2eReportRoot }, ["--e2e"]),
   },
   {
     name: "测试执行：E2E 用例出现未知状态应失败（fail-closed）",
