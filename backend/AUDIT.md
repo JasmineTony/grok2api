@@ -1819,4 +1819,4 @@ exit=0
 
 **镜像证据**：`ghcr.io/jasminetony/grok2api:v0.1.1` = `sha256:e0a2f395423afdcb097e1c5646cf4756e90cb3ca2ce68c1d4dbecec62d7e0f06`（`application/vnd.oci.image.index.v1+json`）；linux/amd64 = `sha256:7453a6efc7fdabb371dd4959bbc026103b535304266b58944f1bf3659426698a`、linux/arm64 = `sha256:1d040f5998fe5ce14a3712cea385620e70f723a3cf492c10970d20e3cb9f858f`；`v0.1.1-amd64` = `sha256:5f953a5c…`、`v0.1.1-arm64` = `sha256:a8fc0b44…`。容器包新实例 id `15829871`，`repository=JasmineTony/grok2api`（已正确链接）。
 
-**未收口项**：`main`/`latest` 镜像由后续文档提交的 push 触发，本次登记时尚未产出；`gpgsig` 剥离只影响本地上游提交对象（tree/parent/author/message 未变），上游 tag 从不推送；历史重写后的 sha 映射与完整证据见 `frontend/AUDIT.md` §39。
+**main 线镜像**：run `38270633539`（event=push，ref=`main`）**conclusion=success**；`ghcr.io/jasminetony/grok2api:main` = `application/vnd.oci.image.index.v1+json`（linux/amd64 `sha256:ca0dd2b564f3069d80a634ac002d194cd23f5a518d0e5101b2e1ac68d2934a73`、linux/arm64 `sha256:7de323904fadfa218960baa8fd362e90528d1dd140ef8148688a85c1a13225d2`），`latest` 同源。**未收口项**：`gpgsig` 剥离只影响本地上游提交对象（tree/parent/author/message 未变），上游 tag 从不推送；历史重写后的 sha 映射与完整证据见 `frontend/AUDIT.md` §39；按 §8 固有局限，本条登记提交自身的 run 不在本文件覆盖范围内。

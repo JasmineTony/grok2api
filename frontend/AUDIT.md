@@ -2147,6 +2147,6 @@ git ls-files --eol <抽查文件>                      # 全部 i/lf w/lf attr/t
 
 **未收口项与残留风险**
 
-- 触发时点：`main` 的首次 push 与 tag push 都**早于工作流注册完成**到达，事件被丢弃（`actions/runs` 初始 `total_count=0`）；tag 以「删除远端 tag + 重推」重新触发（该操作会把 Release 置为 draft，已删除并重建关联）。`main`/`latest` 镜像由后续文档提交的 push 触发，本次登记时尚未产出。
+- 触发时点：`main` 的首次 push 与 tag push 都**早于工作流注册完成**到达，事件被丢弃（`actions/runs` 初始 `total_count=0`）；tag 以「删除远端 tag + 重推」重新触发（该操作会把 Release 置为 draft，已删除并重建关联）。`main`/`latest` 镜像由本文件登记提交的 push 触发：run `38270633539`（event=push，ref=`main`）**conclusion=success**；`ghcr.io/jasminetony/grok2api:main` = `application/vnd.oci.image.index.v1+json`（linux/amd64 `sha256:ca0dd2b564f3069d80a634ac002d194cd23f5a518d0e5101b2e1ac68d2934a73`、linux/arm64 `sha256:7de323904fadfa218960baa8fd362e90528d1dd140ef8148688a85c1a13225d2`），`latest` 同源。按 §8 固有局限，本条登记提交自身的 run 不在本文件覆盖范围内。
 - GitHub 侧提交缓存/搜索索引、已克隆副本与 CI 日志无法保证清除（与 §38.5 同口径）；本轮**不得**声称「凭据元数据已彻底清除」。
 - 删除并重建后，原 PR #1–#4、Release 历史与旧 Actions run 再次丢失；旧镜像 tag（`main`/`latest`/`v0.1.2*`/`v0.1.3*`）随包删除消失。
