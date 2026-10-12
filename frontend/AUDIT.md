@@ -1667,3 +1667,108 @@ git ls-files --eol <抽查文件>                      # 全部 i/lf w/lf attr/t
 ⇒ 两次干净构建**同输入同输出**这一结论由这两份清单**直接佐证**（`outputHash` 即对产物文件集合逐文件哈希后的聚合值，见 `scripts/build-inputs.ts` 与 `vite.config.ts` 的清单插件）。
 
 **降级说明**：「89/89 逐文件 SHA256 全等」这一**逐文件**清单本身**未找到**（`manifest-*.json` 只存聚合哈希，该目录内无逐文件哈希清单文件）⇒ 逐文件等价性在本工作区**不可复现**，只能复现到「聚合 `outputHash` 相同」。原数字按 META-3 保留在 §19.4 与本节历史快照中，后续引用一律以本节的「聚合哈希相同 + 逐文件清单未找到」为准。
+
+## 30. 2026-10-12（续六）体积门禁硬化、路由错误边界与 E2E 覆盖缺口
+
+> 分支 `maint/acceptance-audit-20261012-registration-2`（基点 `77d4aa65`）。按 META-3 只追加，§1–§29 既有数字不改写（唯一例外是 §30.1 的 EVID-8 更正，以「原值 → 新值」格式保留原值）。本节登记第五批（2026-10-12 续）的**代码/测试改动**；计划条目本身的登记见 §29。**本节只改文档**：本工作树未安装前端 `node_modules`（实跑 `Test-Path frontend/node_modules` = `False`），故前端门禁数字一律**引用既有实测**并逐条标注出处（提交验证段 / 会话 scratch 日志），未在本工作树复跑；本工作树**实跑**的只有 `git show --numstat`/`git log`/`git merge-base`/`git diff`/`git rev-parse`、文件实读与 §30.4 的 prettier 整目录 check（逐条标注见下）。
+
+### 30.1 体积门禁硬化（分支 `maint/acceptance-audit-20261012-budget-gate`）
+
+**提交 `8e4ec3fc`（`fix(frontend): 体积门禁拒绝陈旧 dist（接入构建输入指纹）`）**——`--numstat`（本工作树实跑）：`frontend/package.json` +2/−2、`frontend/scripts/check-bundle-budget.mjs` +27/−2、`frontend/scripts/self-test-gates.mjs` +68/−2。
+
+- 新增 `assertBuildFresh()`（`check-bundle-budget.mjs:435-446`）并在 `main()` 首行调用（`:449`）⇒ `--update` 走同一入口、**同样被拒**（`:25` 与 `:431-433` 写明理由：否则陈旧数字会被冻结进基线）。
+- 复用既有指纹、不重写第二套：`import { isBuildFresh } from "./build-inputs.ts"`（`:38`）、判定 `:440`。两类陈旧一律 **exit 2** 并打印可操作原因：① 缺 `frontend/dist`（`:436-439`）；② 清单缺失/损坏、输入指纹变化、任一产物被改写（`:441-445`）。
+- `dist/index.html` 未引用任何 JS 入口时同样 exit 2（`:300-302`）。
+- `package.json` 的 `check:budget` 与 `test:gates` 显式传 `--experimental-strip-types`（否则无法加载 `build-inputs.ts`）。
+- **实测（引用既有实测）**：`pnpm test:gates` **78 → 81** 用例（必须失败 **63 → 66**），exit 0——出处：会话 scratch `gates-final2.log` 末行「门禁自测通过：81 个用例（含 66 个必须失败的用例）」。本工作树**实跑**对 `cases` 数组逐版本核对（`node $env:PI_SCRATCH_DIR\count-fail.cjs <rev> <worktree>`）：`e8f4fbd7` **81 / 66**、`c73434e0` **78 / 63**、`HEAD` **81 / 66**，与上述实跑一致。新增夹具：输入指纹不一致、缺清单、产物被改写三个陈旧样本；旧实现（该提交的父版本）在同一陈旧 dist 上实测 exit 0（出处：`8e4ec3fc` 提交信息）。
+
+**提交 `e8f4fbd7`（`fix(frontend): 首屏入口纳入非 assets 的同步脚本`）**——`--numstat`（本工作树实跑）：`frontend/scripts/check-bundle-budget.mjs` +43/−4、`frontend/scripts/self-test-gates.mjs` +44/−5。
+
+- 首屏入口由「只认 `/assets/` 前缀」改为解析 `dist/index.html` 里**静态声明**的 `script`/`link`：`indexEntryFiles()`（`:290-305`）先 `stripHtmlComments` 剥离 HTML 注释（`:291`），再按标签属性取 `src`/`href`（`:293-299`）；`resolveEntryReference`（`:277-281`）跳过站外协议、查询串与越出 dist 的相对路径。
+- 由此纳入 `public/` 原样拷贝的 `/runtime-config.js`（HTML 同步脚本），关闭 §19.5 第 2 项 / §29.7 ② 登记的**漏算通道**（量级 0.09 KiB）。
+- **实测（引用既有实测）**：首屏 **2 文件 193.59 KiB → 3 文件 193.68 KiB gzip**，仍远低于 REV-5 的 260 KiB——出处：`e8f4fbd7` 提交信息；会话 scratch `budget-final.log` 首屏行「首屏关键 JS 闭包：3 个文件，193.68 KiB gzip」。对照 §29.1 末行的 193.59；§29.7 ② 记的「193.58 → 193.67」与 193.68 属同一量级（差 0.01 KiB，gzip 取整），按 META-3 不改写原文。
+- `pnpm build && pnpm check:budget` **exit 0**——出处：`budget-final.log`「体积预算门禁通过。」；同次输出：全 JS 76 文件 624.43 KiB、CSS 16.65 KiB、最大 chunk 457.73 KiB 原始、13 个路由入口。
+- **指针**：§29.7（FB-02）② 的「**待并入**」状态由本节关闭——本工作树实跑 `git merge-base --is-ancestor 8e4ec3fc HEAD` 与 `… e8f4fbd7 HEAD` **均 exit 0**，分支经合并提交 `02ef4779` 并入最终 tip。
+
+**EVID-8 更正（本批早前登记的 `isBuildFresh` 结论）**
+
+- **原值**：本批早前登记/引用称「当前工作树 `isBuildFresh=false`」（据此把「dist 陈旧」当作现存事实）。
+- **新值（实测）**：真实 `dist` 上 **`isBuildFresh=true`**——`dist/.build-manifest.json` 的 `inputHash` 与 `buildInputHash(frontendDir)` 一致，值 `4995fb0d…`。
+- **根因**：把「陈旧夹具目录（门禁自测装置）的 `isBuildFresh=false`」误推广为「真实 `dist` 陈旧」。
+- **复现方式**：比对 `frontend/dist/.build-manifest.json` 的 `inputHash` 与 `scripts/build-inputs.ts` 的 `buildInputHash(frontendDir)`（需先 `pnpm build`）。本工作树**无 `dist`**（实跑 `Test-Path frontend/dist` = `False`），故未复跑。
+- **结论不变**：D4 缺口（`check:budget` 缺 dist 新鲜度校验、`--update` 可冻结陈旧数字）**依然成立**，已由 `8e4ec3fc` 修复；「实测 true」只说明该缺陷当时**未被触发**，不等于缺陷不存在。
+
+**如实登记（过程失真，EVID-8 留痕）**：该分支在验证 `--update` 拒绝逻辑时曾**误将 `frontend/bundle-budget.json` 重写**（对真实基线执行了 `--update`），已用 `git restore` 还原。最终核对（本工作树实跑）：`git diff --exit-code HEAD -- frontend/bundle-budget.json` **exit 0**；blob 仍为 `5d6aace3423404feea58a022a6a3c8936ade6380`（与基点 `0c23f902` 逐 blob 相同，见 §30.4）。
+
+**P3（既有行为，未改）**：`BUDGET_DIST_DIR`（`:45`）与 `BUDGET_CONFIG_PATH`（`:46`）仍是无约束环境变量覆盖，可让门禁读任意 dist / 任意基线文件；本节只登记，不扩大任务、不改代码。
+
+### 30.2 路由级错误边界（FE-19-13，分支 `maint/acceptance-audit-20261012-error-boundary`）
+
+| 提交       | 标题                                                                                         | 改动文件与 `--numstat`（本工作树实跑）                                                                                                                        |
+| ---------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `e457807b` | `test(frontend): 为路由级错误边界补失败路径用例（FE-19-13）`（用例先红）                     | `src/app/route-error-boundary.test.tsx` +182/−0；`scripts/check-test-results.mjs` +8/−3                                                                       |
+| `35ead625` | `feat(frontend): 新增路由级错误边界与可恢复错误界面（FE-19-13）`                             | `src/app/route-error-fallback.tsx` +45/−0；`src/app/router.tsx` +3/−0；`src/shared/i18n/resources/{zh-CN,en}/common.ts` 各 +3/−0；`resources.test.tsx` +10/−7 |
+| `c73434e0` | `test(frontend): 同步门禁自测的 Vitest 镜像清单（修复 FE-19-13 注册遗漏）`（**主代理修复**） | `scripts/self-test-gates.mjs` +7/−2                                                                                                                           |
+
+**实现（本工作树实读）**
+
+- `src/app/router.tsx`：两个顶层路由对象各加 `errorElement: <RouteErrorFallback />`——`:24` 对应 `element: <AnonymousBoundary />`（`:23`），`:29` 对应 `element: <AuthBoundary />`（`:28`）；import 见 `:18`。子路由抛错由最近的祖先 `errorElement` 捕获（React Router 语义），未逐子路由重复声明。
+- `src/app/route-error-fallback.tsx`（45 行）：`useRouteError()`（`:20`）+ `role="alert"`（`:29`）+ `aria-labelledby="route-error-title"`（`:30`，标题 `id="route-error-title"` 见 `:35`）+ `data-testid="route-error-fallback"`（`:31`）+ 复用 `components/ui/button`（`:5`、`:39`）+「重新加载」按钮调用 `window.location.reload()`（`:39`）。
+- **不静默吞错**：`useEffect` 中 `console.error("[route-error] 路由渲染失败，已展示可恢复错误界面", error)`（`:23-25`）。
+- **文案落在首屏同步资源**：`common.pageLoadFailedTitle` / `pageLoadFailedDescription` / `reloadPage` 加在 `resources/zh-CN/common.ts:25,26,38` 与 `resources/en/common.ts:25,26,38`（由 `resources/initial.ts` 的 common 领域聚合）；理由（组件注释 `:15-16`）：失败时 deferred 文案 chunk 可能恰好未加载成功，故 key 不能放进 deferred 资源。
+- 新增用例（`src/app/route-error-boundary.test.tsx`，3 条）：`:137` 懒加载页面模块加载失败时展示可恢复错误界面而不是空白页；`:160` 点击「重新加载」触发 `window.location.reload`；`:175` 懒加载页面正常解析时错误界面不出现。
+
+**验证（引用既有实测；出处：提交 `c73434e0` 验证段与会话 scratch `b11-fix-msg.txt`）**
+
+| 命令（cwd=`frontend/`）                                                        | 退出码 | 关键输出                                                                            |
+| ------------------------------------------------------------------------------ | ------ | ----------------------------------------------------------------------------------- |
+| `pnpm test:ui:coverage`                                                        | 0      | Test Files **126 passed**；Tests **1495 passed**；All files 98.01/94.32/98.29/98.69 |
+| `pnpm test:results`                                                            | 0      | Vitest 报告：参与判定的文件 **126** 个、用例 **1495** 个                            |
+| `pnpm test:gates`                                                              | 0      | 78 个用例（含 63 个必须失败的用例）                                                 |
+| `pnpm check:architecture`                                                      | 0      | no dependency violations found（**431** modules）                                   |
+| `pnpm check:structure`                                                         | 0      | 参与判定的作用域（REV-3）**2527** 个                                                |
+| `pnpm test`、`pnpm format:check`、`pnpm oxlint`、`pnpm lint`、`pnpm typecheck` | 0      | —                                                                                   |
+
+- 与父 tip 对照：§28.7 / §29.1 的 **125 文件 / 1492 用例 / 430 模块 / 2525 作用域** → 本批 **126 / 1495 / 431 / 2527**（+1 文件、+3 用例、+1 模块、+2 作用域），与「新增 1 个测试文件、3 条用例」一致。
+- **`c73434e0` 修复的缺陷**：`self-test-gates.mjs` 的 `vitestProbe` 未随 `check-test-results.mjs` 的 `REQUIRED_VITEST` 新增 `src/app/route-error-boundary.test.tsx`（`minPassed 3` + 1 条 `requiredTitles`），且 `MIN_VITEST_PROBE_FILES` 仍为 125 ⇒ `pnpm test:gates` **exit 1**（「清单文件不在磁盘上」/「报告只含 125 个文件，少于要求的 126 个」）。修复为同步镜像清单并把常量 125 → **126**、硬编码期望文案「124/125」→「125/126」，**未放宽任何断言**。本工作树实跑核对：`HEAD:frontend/scripts/self-test-gates.mjs` 中 `MIN_VITEST_PROBE_FILES = 126`。
+
+**性质与回滚**
+
+- 这是本批**新增的产品可见能力**（默认行为变化：路由渲染期异常此前落到 React Router 默认英文错误页，现为本地化可恢复界面）。可单独 revert：`git revert 35ead625`（实现）+ `git revert c73434e0`（门禁镜像）；用例提交 `e457807b` 必须一并 revert，否则用例必失败。
+- **仍未覆盖的边界（如实登记）**：同一 `React.lazy` 实例失败后 React 会缓存该 rejection ⇒ 同一会话内**不刷新**重试该 chunk 不会重新请求；可恢复路径只有整页重载（会重建模块图）。出处：会话 scratch `lazy-retry-probe.cjs` 的探针结论。另：`errorElement` 只挂在两个顶层路由对象上，`DeferredAppShell` 的子路由由最近祖先捕获（语义等价，未逐子路由固定）。
+
+### 30.3 E2E P1 覆盖缺口（分支 `maint/acceptance-audit-20261012-e2e-coverage`）
+
+| 提交       | 标题                                                               | 改动文件与 `--numstat`（本工作树实跑）                                                                                            |
+| ---------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `543de355` | `test(frontend): 补设置真实保存与 409 版本冲突 E2E（P1 覆盖缺口）` | `e2e/settings.e2e.ts` +116/−2；`scripts/check-test-results.mjs` +15/−10；`scripts/self-test-gates.mjs` +19/−15                    |
+| `b32ac08a` | `test(frontend): 补账号导入失败路径 E2E（P1 覆盖缺口）`            | `e2e/accounts.e2e.ts` +129/−0（新增文件，130 行）；`scripts/check-test-results.mjs` +17/−8；`scripts/self-test-gates.mjs` +23/−13 |
+
+- **新增用例**：`e2e/settings.e2e.ts` 两条——「设置页保存真实写入服务端：成功提示后刷新页面仍读到新值」「设置保存遇到 409 版本冲突时提示冲突并保留用户草稿」；`e2e/accounts.e2e.ts`（新增文件）两条——「导入非法账号文件：提示导入失败且真实服务端账号数不变」（`:54`）「导入合法账号文件：列表出现新账号且服务端可读回，随后清理恢复空号池」（`:83`）。
+- **棘轮同步（本工作树实读 `frontend/scripts/check-test-results.mjs`）**：`MIN_VITEST_FILES = 126`（`:90`）、`MIN_E2E_FILES = 7`（`:91`）、`MIN_E2E_PROJECT_PASSED = { chromium: 25, "mobile-chromium": 25 }`（`:153`）；对照本批起点 §29.1 的 6 文件与 21+21（=42）。分步口径：`543de355` 把 project 下限提到 **23/23**（settings `minPassed 10`），`b32ac08a` 再提到 **25/25** 并把 E2E 文件下限 6 → **7**（accounts 清单 `minPassed 4`）。`self-test-gates.mjs` 同步为 `E2E_EXPECTED_FILES = 7`、`E2E_EXPECTED_CASES = 50` 与逐文件 `minPassed`/`requiredTitles`；合并 `77d4aa65` 的冲突解决为「棘轮常量取更高值 126/7」（出处：会话 scratch `plan-progress.md` 第五批收敛状态表）。
+- **实测值待回填（EVID-1）**：`pnpm verify:full` 在最终 tip `77d4aa65` 上的真实通过数与耗时以主代理结果为唯一口径（会话 scratch `t4-verifyfull.out.log`；本节登记时该文件尚未收敛）。**回填前本节不得记为 `Passed`**。
+
+| 口径                 | 命令                    | 棘轮/期望                           | 实测   | 状态    |
+| -------------------- | ----------------------- | ----------------------------------- | ------ | ------- |
+| E2E 文件数           | `pnpm test:results:e2e` | ≥ 7                                 | 待回填 | Pending |
+| project 通过实例数   | `pnpm test:results:e2e` | chromium ≥ 25、mobile-chromium ≥ 25 | 待回填 | Pending |
+| 失败 / 跳过 / flaky  | `pnpm test:results:e2e` | 0 / 0 / 0                           | 待回填 | Pending |
+| `verify:full` 总耗时 | `pnpm verify:full`      | —（参照本批起点 §28.7 的 660.7s）   | 待回填 | Pending |
+
+### 30.4 装配、生成物与格式核对
+
+- **最终 tip = `77d4aa65`**（`maint/acceptance-audit-20261012-final`）。本工作树实跑 `git log -1 --format='%h %s' <sha>` 逐一核对，6 个合并提交标题命中：`0e8c02b7`（静态暴露测试）、`02ef4779`（体积门禁）、`e4e3dec7`（守卫可测化）、`9ec1e719`（§29/§33 登记）、`2cf4c548`（错误边界）、`77d4aa65`（E2E 覆盖缺口）。§30.1–§30.3 的 11 个改动提交（`8e4ec3fc`、`e8f4fbd7`、`e457807b`、`35ead625`、`c73434e0`、`543de355`、`b32ac08a`、`98cc6f06`、`b1d38714`、`186a7500`、`0f0be18d`）经 `git merge-base --is-ancestor <sha> HEAD` 全部 **exit 0**（本工作树实跑）。
+- **生成物逐 blob 对照（本工作树实跑，`git rev-parse 0c23f902:<path>` vs `git rev-parse HEAD:<path>`）**：
+
+| 文件                               | 基点 `0c23f902` | `HEAD`（`77d4aa65`） | 结论         |
+| ---------------------------------- | --------------- | -------------------- | ------------ |
+| `frontend/bundle-budget.json`      | `5d6aace34234…` | `5d6aace34234…`      | 逐 blob 相同 |
+| `backend/api-baseline.txt`         | `56913f1b1908…` | `56913f1b1908…`      | 逐 blob 相同 |
+| `frontend/structure-baseline.json` | `5e42451d8214…` | `5e42451d8214…`      | 逐 blob 相同 |
+| `backend/structure-baseline.json`  | `5e42451d8214…` | `5e42451d8214…`      | 逐 blob 相同 |
+| `VERSION`                          | `f4cacccee6c0…` | `f4cacccee6c0…`      | 逐 blob 相同 |
+
+⇒ 五项**逐 blob 相同**，符合 CHG-8（生成物不由本轮改动重写）；`bundle-budget.json` 的 blob 与 §30.1 的误重写还原结论一致。
+
+- `git diff --check` **exit 0**（本工作树实跑）；本工作树**只改** `frontend/AUDIT.md` 与 `backend/AUDIT.md`，两次提交后 `git status --porcelain` 为空（实跑，见下）。
+- **格式（CI 同口径，整目录）**：`cd frontend && node E:\grok2api\.pi\worktrees\acceptance-audit-20261011\frontend\node_modules\prettier\bin\prettier.cjs --check .` → **exit 0**（本工作树实跑；不传 `--config`、不传显式文件路径，避免上一批 §28.5 的漏检形态）。
