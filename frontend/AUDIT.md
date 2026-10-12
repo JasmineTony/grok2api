@@ -154,6 +154,8 @@
 
 这些是**存量债务**，按 `AGENTS.md` §5 分阶段消减；未完成阶段只允许持平或下降，新增代码不得引入新的超限项（门禁已强制）。
 
+- **（当前状态指针，2026-10-12 追加）** 上表的「102 个源码文件 / 18 个超过 600 行 / 80 个具名函数超过 50 行」是阶段 0 的**历史快照**（META-3，原值保留不改写）；当前状态见 §17.1：**0 超限文件 / 0 超限函数**（存量债务已清零）。复现：`cd frontend && pnpm check:structure`（输出含「扫描源码文件」与「参与判定的作用域（REV-3）」两行）。
+
 ### 4.3 已具备且不应重复建设的能力
 
 - 路由级懒加载（`app/deferred-pages.tsx`）与 `Suspense` 回退。
@@ -1021,7 +1023,7 @@ main 线的 AUDIT 章节（`backend/AUDIT.md` §20/§21（BE-18/BE-19）、`fron
 | FE-19-6 父检出 AGENTS 旧 12 步       | 需主人同步      | **仍成立**（原判定被本轮更正，见 §22.5） | 主检出 `E:\grok2api`（`main`，`13626e6c`）`AGENTS.md:85` 实测为「覆盖 **12 步**」；工作树版本为 13 步（含 `test:results`）；**已由 §28.5 关闭**（原判定成立 → 本批 `main` → 交付线合并解决） |
 | X-04 提交纪律                        | 待授权          | **部分关闭**                             | `closeout` 的 8 个提交 + 本轮单一目的提交 `83ff5ae7`、`339c53ca`；`main` 的 11 个提交仍待处理                                                                                                |
 | X-02 冻结预算基线                    | 需授权（CHG-5） | 仍开放（P3）                             | 需工作区静止 + 授权                                                                                                                                                                          |
-| FE-19-8 i18n 单例失败缓存            | 需单独授权      | 仍开放（P2）                             | 重试语义变更，本轮未改                                                                                                                                                                       |
+| FE-19-8 i18n 单例失败缓存            | 需单独授权      | **已关闭**（原值「仍开放（P2）」）       | 原值「仍开放（P2）」/「重试语义变更，本轮未改」→ 新值「已关闭」；提交 `5b85f92d`（失败不再缓存失败态）+ `874c4841`（用例），见 §28.3 与 §35                                                  |
 | BE-G3 `ports/security` 迁移          | 需单独批准      | 仍开放（P2）                             | 架构迁移，本轮未改                                                                                                                                                                           |
 | X-05 重打 tag                        | 逐次授权        | 未执行                                   | 不可逆，默认不做                                                                                                                                                                             |
 | FE-19-5-C 生产压缩配置               | 需外部事实      | 仍开放                                   | 本机无生产访问                                                                                                                                                                               |
@@ -1248,14 +1250,14 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 
 ### 23.3 未闭环项（本机不可完成 / 需授权）
 
-| 项                                                               | 状态            | 解除条件                                                  |
-| ---------------------------------------------------------------- | --------------- | --------------------------------------------------------- |
-| 交付分支 `maint/acceptance-audit-20261011-residual` 推送         | **Blocked**     | 需具备工作流作用域的推送凭据（实测 `git push` exit 1） |
-| 合并 `main` / tag / Release / 镜像推送                           | 需授权          | §8 不可逆操作，逐次单独授权                               |
-| 冻结预算基线 `--update`                                          | 需授权（CHG-5） | 工作区静止 + 记录 `git rev-parse HEAD`                    |
-| REV-5 预算口径（认证后首屏 282.30 KiB > 260 KiB）                | 需授权          | 改阈值或口径，依据见 §21.4                                |
-| FE-19-8（i18n 单例失败重试语义）、BE-G3（`ports/security` 迁移） | 需授权          | 本轮未改                                                  |
-| `main` 的 11 个未推送提交                                        | 待决策          | 本轮未改写其引用                                          |
+| 项                                                               | 状态                             | 解除条件                                                                                                      |
+| ---------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| 交付分支 `maint/acceptance-audit-20261011-residual` 推送         | **Blocked**                      | 需具备工作流作用域的推送凭据（实测 `git push` exit 1）                                                     |
+| 合并 `main` / tag / Release / 镜像推送                           | 需授权                           | §8 不可逆操作，逐次单独授权                                                                                   |
+| 冻结预算基线 `--update`                                          | 需授权（CHG-5）                  | 工作区静止 + 记录 `git rev-parse HEAD`                                                                        |
+| REV-5 预算口径（认证后首屏 282.30 KiB > 260 KiB）                | 需授权                           | 改阈值或口径，依据见 §21.4                                                                                    |
+| FE-19-8（i18n 单例失败重试语义）、BE-G3（`ports/security` 迁移） | FE-19-8 **已关闭**；BE-G3 需授权 | FE-19-8 原值「本轮未改」→ 新值「已关闭」（`5b85f92d` + `874c4841`，见 §28.3），根因：登记滞后；BE-G3 本轮未改 |
+| `main` 的 11 个未推送提交                                        | 待决策                           | 本轮未改写其引用                                                                                              |
 
 ### 23.4 探针 R3：最终内容的 CI 复跑（success）
 
@@ -1293,8 +1295,8 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 审查对象：`571a16fd`（F5）与 `f8145ff9`（移动 project 引入）。结论：**无 P1**；覆盖净增且无空洞。
 
 - **已核实无问题**：`isDrawerLayout` 两分支竞速在都不可见时**显式抛错**（15s 超时；调用点均在壳层挂载之后）；`accountControlScope` / `expectVisibleUsername` 正确限定到 Radix Sheet dialog（`getByRole` 过滤隐藏元素，而 `getByTestId`/`getByText` 不过滤）；唯一 `@desktop` 用例确为「断言桌面布局本身」，`grepInvert` 语义经 `--list` 实证；22 个 `test()` = chromium 21 + mobile 21 = 42，**不存在两个 project 都不跑的用例**；共享助手只依赖 `page`，桌面调用不会失误。
-- **P2-1（登记，待修）**：门禁无 project 维度——把 1 个跨端用例改标 `@desktop` 并新增 1 个无标签用例，同文件通过数不变而移动覆盖静默下降（单步改动会被现行 `minPassed` 抓到，组合改动不会）。
-- **P2-2**：该棘轮在 CI 未被执行（见 §23.2 第 3 条）。
+- **P2-1（已关闭）**：门禁无 project 维度——把 1 个跨端用例改标 `@desktop` 并新增 1 个无标签用例，同文件通过数不变而移动覆盖静默下降（单步改动会被现行 `minPassed` 抓到，组合改动不会）。**EVID-8：原值「登记，待修」→ 新值「已关闭」**（提交 `d109130c`，证据与判定落点见 §28.2）；根因：登记滞后。
+- **P2-2（登记不做 + 理由）**：该棘轮在 CI 未被执行（见 §23.2 第 3 条）。**EVID-8：原值 → 新值**：截至最终 tip 仍未变化——探针分支按设计保留 `origin/main` 的工作流定义，该 step 至今无 run 证据（§28.7 末段、§30.6 末段）。**登记不做 + 理由**：取证必须合并/推送 `main` 以触发该 step，属 `AGENTS.md` §8 不可逆操作，须维护线负责人逐次授权。**复现命令**：`git grep -n "Assert required frontend tests ran" -- .github/workflows/ghcr-image.yml` → 命中 `:175`（step 只存在于维护线工作流）；CI 侧「无该 step 的 run」需 `gh run view`/`gh run list`——**本机未安装 `gh`（`Get-Command gh` 无输出）**，故本轮不产 CI 侧数字，状态保持 `Blocked`（同 §28.6）。
 - **P3 清单**：`@desktop` 拼写漂移无门禁（改成 `@desk` 会让移动多跑 1 个实例，方向是多测而非少测）；`isDrawerLayout` 顶层错误信息未含 selector/URL；移动 project 缺「侧栏在移动布局应隐藏」的直接断言；实例翻倍使 worker 与后端并发翻倍；`mobile-device.e2e.ts` 仍会拉起 worker 后端。
 
 ## 25. 2026-10-11 独立审查发现的口径差异与规则失真更正（FE-12）
@@ -1585,7 +1587,8 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 - `vite.config.ts:45-48` 的 `build` 段**只设** `outDir: "dist"` 与 `sourcemap: false`；**没有** `target`、**没有** `esbuild`、**没有** `rollupOptions`（因而也没有 `manualChunks` / `cssCodeSplit` / `minify` 的显式覆盖）。
 - `frontend/package.json` **没有** `browserslist` 字段；`frontend/.browserslistrc` **不存在**（`build-inputs.ts` 把它作为可选输入跟踪，缺失时按 ENOENT 处理，见 §19.4）。
 - **结论：浏览器目标与 tree-shaking 沿用 Vite 默认，未单独记录**。默认值来源：Vite 的 `build.target` 默认 `'modules'`（面向支持原生 ESM 与动态 `import()` 的现代浏览器），`build.minify` 默认 `esbuild`；tree-shaking 由 Vite 底层的 Rollup 默认 dead-code elimination 承担。Vite 版本 `vite ^8.3.4`（`package.json:95`）。
-- **未做**：无 bundle 分析器记录、无「删除未用导出后体积变化」的专项测量 ⇒ 本节**不给出任何 tree-shaking 收益数字**（不臆造测量）。CSS/chunk 侧的可测结论已由 `check:budget` 覆盖（§29.1 末行、§19.5）。
+- **状态：登记不做 + 理由（本仓库无 bundle 分析器依赖）**：无 bundle 分析器记录、无「删除未用导出后体积变化」的专项测量 ⇒ 本节**不给出任何 tree-shaking 收益数字**（不臆造测量）。CSS/chunk 侧的可测结论已由 `check:budget` 覆盖（§29.1 末行、§19.5）。
+- **复现命令（可复制，cwd=`frontend/`）**：`pnpm build && pnpm check:budget`（`package.json:12` / `:29`）给出真实入口与体积总量，但**不做 tree-shaking 专项分解**；若需分解，必须**先安装分析器**：`pnpm add -D rollup-plugin-visualizer`，再在 `vite.config.ts:45-48` 的 `build` 段接入 `visualizer()`——**本仓库当前未安装该依赖**（复现：`git grep -n visualizer -- frontend/package.json` → exit 1，零命中），故本轮不产表。
 
 ### 29.4 计划 4-2：barrel 专项判定
 
@@ -1860,3 +1863,38 @@ git ls-files --eol <抽查文件>                      # 全部 i/lf w/lf attr/t
 | §30.6 CI 探针行（`38214762730`）   | 「`Verify frontend`（14 步…）」                         | 当次 CI 快照，保留原值                                                                                 |
 
 **当前 `pnpm verify` = 15 步**，命令原文见 `frontend/package.json:32`（复现：`node -e "console.log(require('./frontend/package.json').scripts.verify.split(' && ').length)"` → 15）。
+
+## 35. 2026-10-12（续七）计划编号映射、FT-01 覆盖率口径矩阵与登记指针收口（W1-2 / W1-3）
+
+来源：`.pi/plan/前后端验收审计与增量模块化优化计划-20261011-1936.md` 的 `FT-01` / `FT-02` / `FT-03` / `FP-01` 四条（只读引用，计划原文行号见下表）。本节同时为 §20.4 / §23.3 的 FE-19-8 与 §24.2 的 P2-1 / P2-2 补齐结论状态词与指针（EVID-8：登记滞后）。
+
+**改动前的事实（EVID-1）**：`git grep -nE "FT-0[1-3]|FP-01" 5625a857 -- frontend/AUDIT.md` → **exit 1（零命中）**，计划编号与本文件章节、测试文件之间无法相互追溯；本节补齐该映射。
+
+### 35.1 计划编号 ↔ 本文件章节 ↔ 测试/脚本（W1-2）
+
+| 计划编号（计划原文行号） | 主题（计划原文摘要）                                                                                  | 本文件章节                 | 测试 / 脚本 / 配置（本工作树实读）                                                                                                                                                                                                                                                | 状态                                                                                          |
+| ------------------------ | ----------------------------------------------------------------------------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `FT-01`（计划 `:29`）    | `vitest.config.ts` 未纳入 `src/features/auth/**`；须补登录页集成测试并建立全部业务目录的纳入/排除矩阵 | §19.2、§19.3、本节 §35.2   | `vitest.config.ts:46`（`src/features/auth/**` 已纳入，提交 `f97217d3`）、`src/features/auth/login-page.test.tsx`（同提交新增）；命令 `pnpm test:ui:coverage`（`package.json:23`）                                                                                                 | **已完成**                                                                                    |
+| `FT-02`（计划 `:30`）    | `deferred-pages.test.tsx` 的失败用例验证的是另外构造的 `React.lazy`，须驱动真实懒加载包装             | §19.2、§19.3               | `src/app/deferred-pages-loading.test.tsx`（真实 `import("@/app/deferred-pages")` 后渲染 `DeferredDashboardPage`，覆盖页面模块失败、文案失败、加载完成，提交 `f97217d3`）、`src/app/deferred-pages.test.tsx`（同提交改写）、`src/app/deferred-resources-failure.test.tsx`（§28.3） | **已完成**                                                                                    |
+| `FT-03`（计划 `:31`）    | `playwright.config.ts` 仅配置桌面 Chromium，移动视口 E2E 缺口                                         | §21.3、§22.6、§28.2、§30.3 | `playwright.config.ts:42-43`（`chromium` + `mobile-chromium`）、`e2e/mobile-device.e2e.ts`；命令 `pnpm test:e2e`（`package.json:22`）                                                                                                                                             | **已完成**（本轮涉及流程已补测；存量缺口按 §19.3 / §23.3 / §30.3 逐项登记，不声称全流程覆盖） |
+| `FP-01`（计划 `:34`）    | `deferred-pages.tsx:30-31` 先等待文案再加载页面，存在明确串行链                                       | §15、§19.3、§28.2          | `src/app/deferred-pages.tsx:22-32`（现为 `Promise.all([loadDeferredResources(), loader()])`，提交 `1f864ab0`）、`src/app/deferred-pages-loading.test.tsx:118-156`（断言两项各请求一次、另一项随后失败不产生未处理 rejection）                                                     | **已完成**（见下方 EVID-8 更正）                                                              |
+
+**EVID-8 更正（FP-01 与 §15 的表述冲突）**：§15 改动表（`5625a857:frontend/AUDIT.md:530`）写「`lazyNamed` 改为『先 `await loadDeferredResources()` 再解析页面导出』，顺序不可颠倒」，该表述是提交 `2d5530f6` 时点的快照；提交 `1f864ab0`（2026-10-11，`feat(frontend): 登录页内联错误提示与懒加载并发加载`）已把该顺序改为 `Promise.all` **并发**（`src/app/deferred-pages.tsx:30`），并在 `:22-25` 注释中记录「只有二者均成功后才交给 React 渲染」。**原值：串行、顺序不可颠倒 → 新值：并发（`Promise.all`）→ 根因：§15 未随 `1f864ab0` 同步**；历史快照按 META-3 保留不改写。复现：`git show 1f864ab0 -- frontend/src/app/deferred-pages.tsx`、`git log -1 --format='%h %s' -S 'Promise.all' -- frontend/src/app/deferred-pages.tsx`。
+
+**`FE-08`（双运行器）决策变更**：§5 问题清单的 `FE-08` 行（`5625a857:frontend/AUDIT.md:176`）原计划处置为「迁移后逐项核对用例与断言」，即**迁移到 Vitest**；实际**决策变更**为**保留双运行器**——`pnpm test` 运行纯逻辑 `src/**/*.test.ts`（node:test / Node 环境），`pnpm test:ui:coverage` 运行组件与集成 `src/**/*.test.tsx`（Vitest + jsdom）。理由：纯逻辑用例不需要 jsdom，迁移不产生新的行为证据，`AGENTS.md` TEST-4 允许两种环境分离，维护成本已由分层规则与报告门禁约束。指针：§5 的 `FE-08` 行（`:176`，结论已记 `Passed（决策关闭：保留双运行器）`）与 §6 的 `:184`（「`FE-07`/`FE-08` 为已关闭决策」）。复现：`git grep -n "双运行器" 5625a857 -- frontend/AUDIT.md`。
+
+### 35.2 FT-01 覆盖率「纳入 / 排除」矩阵与口径边界（W1-3）
+
+口径来源只读 `frontend/vitest.config.ts`（本工作树 240 行，逐行实读）；阈值来源仍是 `AGENTS.md` TEST-1 / TEST-2，本节不建立第二套阈值。
+
+| 项目                   | 实际内容（`frontend/vitest.config.ts` 行号）                                                                                                                                                                                                                                                                                     | 口径边界                                                                                                                                                         | 复现命令                                                                             |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| 运行器接管范围         | `include: ["src/**/*.test.tsx"]`（`:29`）                                                                                                                                                                                                                                                                                        | 只接管组件/集成测试；纯逻辑 `*.test.ts` 由 node:test（`pnpm test`）运行，两层不重叠                                                                              | `pnpm test:ui:coverage`（cwd=`frontend/`）                                           |
+| `coverage.include`     | **18 条**（`:40-59`）：`src/app/**`(`:41`)、`src/entities/**`(`:42`)、`src/features/**` 的 11 个业务目录 accounts/audits/client-keys/auth/creative-console/dashboard/docs/media/models/quality-guard/settings(`:43-53`)、`src/shared/**` 的 api/auth/hooks/i18n(`:54-57`)、`src/shared/components/virtual-table-body.tsx`(`:58`) | 按「已重构模块整目录」纳入，目录内新增文件自动受门槛约束；**`src/components/ui/**`（shadcn 基础原语）不在 include 内，即不纳入业务 UI 门槛**（AGENTS.md TEST-1） | `pnpm test:ui:coverage`（条目枚举见 `:40-59`；计数交叉核对见下方「条目数交叉核对」） |
+| `coverage.exclude`     | **14 条**（`:60-81`）：`src/**/*.d.ts`(`:61`)、测试分层 `src/**/*.test.ts`/`.test.tsx`(`:63-64`)、测试支撑 `src/**/*-test-support.ts(x)`(`:66-67`) 与 `src/test/**`(`:68`)、纯逻辑模块 7 条(`:72-78`)、纯 re-export barrel 1 条(`:80`)                                                                                           | 排除项只用于口径原因（测试分层 / barrel / 测试支撑），与「未达标登记」一一对应，不静默排除；`:69-71` 注释给出纯逻辑模块的分层依据                                | `pnpm test:ui:coverage`                                                              |
+| `thresholds` 全局      | `lines/functions/branches/statements = 76`（`:85-88`）且 `perFile: true`（`:91`）                                                                                                                                                                                                                                                | Vitest 5 的全局阈值默认只做聚合检查，`perFile` 必须显式开启才能逐文件校验（TEST-1「按文件约束」）；依据见 `:89-90` 注释与 §17.3                                  | `pnpm test:ui:coverage`（任一纳入文件四项 <76% 即非零退出）                          |
+| `thresholds` hook 条目 | **31 条**自定义 hook 逐文件 `100/100/100/100`（`:92-235`）                                                                                                                                                                                                                                                                       | TEST-2：纳入条目四项均须 100%；新增 hook 必须在同一次改动内加入阈值或登记未纳入原因（清单不在此复制，口径以该文件为准）                                          | `pnpm test:ui:coverage`（条目数交叉核对见下方）                                      |
+
+**条目数交叉核对（cwd=仓库根）**：`(Select-String -Path frontend/vitest.config.ts -Pattern '^\s+"src/').Count` → **63 = include 18 + exclude 14 + 100% hook 条目 31**（只读匹配行数，不改写文件）。单项复核：hook 条目 `git grep -c "lines: 100" 5625a857 -- frontend/vitest.config.ts` → `31`（exit 0）；FT-01 的纳入证据 `git grep -nE "src/features/auth" 5625a857 -- frontend/vitest.config.ts` → 命中 `:46`（`"src/features/auth/**",`）。
+
+**已登记的口径边界（只给指针，不新增结论）**：shadcn 基础原语的豁免只覆盖 ESLint / Oxlint（§29.2 的 `src/components/ui` 行），Prettier 与覆盖率口径各自独立；REV-3 两侧计数口径差异见 §25.1；前端存量未达标项（含 >600 行测试文件、未纳入 100% 阈值的 hook）见 §5 与 §17.5 / §19.7 / §23.3 的登记，本轮不扩张。
