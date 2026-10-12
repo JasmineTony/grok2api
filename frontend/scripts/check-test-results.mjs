@@ -18,6 +18,10 @@
  * 报告中且为 passed；④ 报告内文件总数不少于实测棘轮（防止整体删除测试文件绕过）；⑤ 报告不比清单文件旧
  * （报告开始时间不早于清单文件最新 mtime），避免沿用过期报告假通过。
  *
+ * 另有两条文件级失效判定，对清单内外的文件一视同仁、不降级为告警：① Vitest 报告里
+ * `testResults[].status !== "passed"`（收集期失败，`assertionResults` 为空——只读用例状态会让整个文件消失）；
+ * ② 某文件全部用例都未执行（跳过数 == 用例总数且 > 0），整文件跳过等于该文件对覆盖没有任何贡献。
+ *
  * E2E 报告的 `suite.file` / `spec.file` 相对报告自带 `config.rootDir`（Playwright 1.64 等于 testDir）解析，
  * 再相对 frontend/ 归一为 `e2e/xxx.e2e.ts`；`config.rootDir` 缺失时退回 `frontend/e2e`。
  *
@@ -36,12 +40,16 @@ const reportRoot = process.env.TEST_REPORT_ROOT ? path.resolve(process.env.TEST_
 const withE2e = process.argv.includes("--e2e");
 /**
  * 报告内必需文件最小总数（棘轮，防止整体删除测试文件绕过清单 / 标题检查）。
- * 实测值（2026-10-11，本工作树；复现：`pnpm test:ui:coverage && node scripts/check-test-results.mjs`
- * 输出「参与判定的文件 123 个」）：Vitest 123 个；E2E 5 个（`pnpm test:e2e && node scripts/check-test-results.mjs --e2e`）。
+ * 实测值（2026-10-12，本工作树；复现：`pnpm test:ui:coverage && node scripts/check-test-results.mjs`
+ * 输出「参与判定的文件 123 个」）：Vitest 123 个。
+ * E2E 的计数口径是 **(spec × project) 实例**，不是 spec 文件数：Playwright JSON 把每个 project 各展开一遍，
+ * 复现 `pnpm test:e2e && node scripts/check-test-results.mjs --e2e` 输出「参与判定的文件 6 个、用例 35 个」
+ * （chromium 21 + mobile-chromium 14）。删掉 `mobile-chromium` project 或把它的 `grepInvert` 收窄成 `/./` 后，
+ * 文件数回落 5、实例数回落 21，必须在这里失败——移动覆盖丧失不得静默通过。
  * 只增不减；确实需要下调时必须是可见改动并说明理由。
  */
 const MIN_VITEST_FILES = 123;
-const MIN_E2E_FILES = 5;
+const MIN_E2E_FILES = 6;
 
 /**
  * Vitest 组件/集成报告：文件 → 最少通过用例数 + 必填用例标题。新增必需场景必须在此登记。
@@ -75,13 +83,15 @@ const REQUIRED_VITEST = [
 
 /**
  * Playwright 全栈 E2E 报告：文件 → 最少通过用例数 + 必填用例标题（棘轮，语义同上）。
- * 计数口径为 spec 内 test() 实测（2026-10-11：auth 6 / client-keys 4 / navigation 5 / request-audits 3 / settings 3）；
+ * minPassed 同样是 (spec × project) 实例口径（2026-10-12 实测：auth 10 / client-keys 7 / navigation 7 /
+ * request-audits 5 / settings 5 / mobile-device 1，共 6 个文件、35 个实例）；移动 project 被移除或收窄后
+ * 这些数字会回落到桌面实例数（21 个），必须在门禁上失败。
  * requiredTitles 逐字取自对应 spec 的 test() 名称（按包含匹配）。
  */
 const REQUIRED_E2E = [
   {
     file: "e2e/auth.e2e.ts",
-    minPassed: 6,
+    minPassed: 10,
     requiredTitles: [
       "未登录访问受保护路由会被重定向到登录页",
       "正确凭据登录成功、进入受保护页面并在刷新后保持登录",
@@ -90,12 +100,12 @@ const REQUIRED_E2E = [
   },
   {
     file: "e2e/client-keys.e2e.ts",
-    minPassed: 4,
+    minPassed: 7,
     requiredTitles: ["创建密钥：表单校验失败后成功创建并展示一次性明文", "删除密钥：确认后行与真实服务端记录同时消失"],
   },
   {
     file: "e2e/navigation.e2e.ts",
-    minPassed: 5,
+    minPassed: 7,
     requiredTitles: [
       "侧栏导航到账号和设置，深链接刷新后保持页面与当前导航状态",
       "账号菜单切换英文和中文，导航与刷新后仍使用所选语言",
@@ -104,13 +114,18 @@ const REQUIRED_E2E = [
   },
   {
     file: "e2e/request-audits.e2e.ts",
-    minPassed: 3,
+    minPassed: 5,
     requiredTitles: ["状态筛选改变真实查询范围并显示激活计数，清除后恢复空态"],
   },
   {
     file: "e2e/settings.e2e.ts",
-    minPassed: 3,
+    minPassed: 5,
     requiredTitles: ["设置页分页可切换：Grok Build 与 Grok Web 面板按标签显隐"],
+  },
+  {
+    file: "e2e/mobile-device.e2e.ts",
+    minPassed: 1,
+    requiredTitles: ["移动 project 应用真实设备描述符：hasTouch、isMobile、DPR 与 UA"],
   },
 ];
 
@@ -172,19 +187,24 @@ function checkFreshness({ label, required, startMs, rerunCommand }) {
   const paths = required.map((entry) => path.join(reportRoot, entry.file));
   const present = paths.filter((file) => fs.existsSync(file));
   const absent = paths.filter((file) => !fs.existsSync(file)).map((file) => toRelative(file));
+  const failures = [];
   if (absent.length > 0) {
-    console.warn(`  ${label}：清单文件不在磁盘上，未参与新鲜度核对：${absent.join("、")}`);
+    // 只告警不够：删掉单个清单文件后，旧报告仍满足 requiredTitles，新鲜度又只按剩余文件算 → 静默通过。
+    failures.push(
+      `${label}：清单文件不在磁盘上（被删除或改名），旧报告不得放行：${absent.join("、")}，请先恢复清单文件：${rerunCommand}`,
+    );
   }
   if (present.length === 0) {
-    return [
+    failures.push(
       `${label}：清单文件全部不在磁盘上，无法核对报告新鲜度（旧报告不得放行），请先恢复清单文件或重新运行：${rerunCommand}`,
-    ];
+    );
   }
   const newest = Math.max(...present.map((file) => fs.statSync(file).mtimeMs));
-  if (startMs >= newest) return [];
-  return [
+  if (startMs >= newest) return failures;
+  failures.push(
     `${label}：报告可能过期——报告开始时间 ${formatMs(startMs)} 早于清单文件最新修改时间 ${formatMs(newest)}，请重新运行：${rerunCommand}`,
-  ];
+  );
+  return failures;
 }
 
 function emptyTally() {
@@ -197,6 +217,7 @@ function emptyTally() {
     failedTitles: [],
     skippedTitles: [],
     flakyTitles: [],
+    fileFailures: [],
   };
 }
 
@@ -213,15 +234,23 @@ function tallyStatus(tally, status, title) {
   }
 }
 
-/** Vitest JSON：testResults[].assertionResults[].status。 */
+/**
+ * Vitest JSON：文件级结果 `testResults[].status` 与用例级结果 `testResults[].assertionResults[].status`。
+ * 收集期失败（如导入报错）产出 `status: "failed"` 且 `assertionResults` 为空，只读用例状态会让整个文件消失。
+ */
 function summarizeVitest(report) {
   const files = new Map();
   for (const result of report.testResults ?? []) {
-    const tally = files.get(toRelative(result.name)) ?? emptyTally();
+    const file = toRelative(result.name);
+    const tally = files.get(file) ?? emptyTally();
+    // fail-closed：status 缺失同样视为文件级失效，不放行无法解释的报告。
+    if (result.status !== "passed") {
+      tally.fileFailures.push(`文件级状态为 ${result.status ?? "缺失"}，收集期失败，断言结果不可信`);
+    }
     for (const assertion of result.assertionResults ?? []) {
       tallyStatus(tally, assertion.status, assertion.fullName ?? assertion.title ?? "");
     }
-    files.set(toRelative(result.name), tally);
+    files.set(file, tally);
   }
   return files;
 }
@@ -302,7 +331,10 @@ function missingRequiredTitles(label, file, tally, requiredTitles) {
   return failures;
 }
 
-/** 逐文件断言：存在、通过数足够、必填用例标题通过、无失败、无未登记跳过；返回失败原因数组。 */
+/**
+ * 逐文件断言：存在、通过数足够、必填用例标题通过、无失败、无未登记跳过；并做文件级失效判定
+ * （清单内外的文件一视同仁，不得降级为告警）；返回失败原因数组。
+ */
 function checkRequired(label, files, required) {
   const failures = [];
   const skippedOutsideRequired = [];
@@ -327,9 +359,17 @@ function checkRequired(label, files, required) {
     }
   }
   for (const [file, tally] of files) {
+    // 文件级失效同样对清单外的文件生效：否则删掉清单外的用例文件、或把某个文件整体跳过，都不留痕迹。
+    for (const reason of tally.fileFailures) failures.push(`${label}：${file} ${reason}`);
+    const fileCases = tally.passed + tally.failed + tally.skipped + tally.flaky;
+    const wholeFileSkipped = fileCases > 0 && tally.skipped === fileCases;
+    if (wholeFileSkipped) {
+      failures.push(`${label}：${file} 整文件跳过（${fileCases} 个用例全部未执行），不得放行`);
+    }
     const registered = required.some((entry) => entry.file === file);
     const allowlisted = ALLOWED_SKIPS.some((entry) => entry.file === file);
-    if (tally.skipped > 0 && !registered && !allowlisted) {
+    // 只有「部分跳过」才降级为告警；整文件跳过已计入失败，不重复告警。
+    if (tally.skipped > 0 && !wholeFileSkipped && !registered && !allowlisted) {
       skippedOutsideRequired.push(`${file}：${tally.skippedTitles.join("、")}`);
     }
   }
@@ -362,7 +402,8 @@ function flakyEntries(files) {
 }
 
 /**
- * 单份报告的完整断言：清单命中 + 棘轮通过数 + 必填用例标题 + 报告文件总数下限 + 无未登记跳过 + 无 flaky + 报告新鲜度。
+ * 单份报告的完整断言：清单命中 + 棘轮通过数 + 必填用例标题 + 报告文件总数下限 + 无未登记跳过 + 无 flaky +
+ * 无文件级失效（收集期失败 / 整文件跳过）+ 报告新鲜度。
  * `totals` 与 `fileCount` 供汇总行自证门禁不是空转。
  */
 function checkReport({ label, files, required, minimumFiles, startMs, rerunCommand }) {
