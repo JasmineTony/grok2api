@@ -967,7 +967,7 @@ cd backend && go run ./tools/structurecheck          # exit 0
 结构门禁通过：未新增超限文件、超限函数或越限嵌套。
 ```
 
-REV-3 作用域 **5472 → 5475**（原值见 §20.7、§20.8 的旧工具口径）：工具修复了两处漏报通道，参与判定的作用域计数随之上升；结论仍为 0 越限。
+REV-3 作用域 **5472 → 5475**（原值出处更正：5472 记于 §19.5，§20.8 记的是 5473；均属旧工具口径）：工具修复了两处漏报通道后，参与判定的作用域计数上升；结论仍为 0 越限。
 
 ### 21.2 CI 证据闭环（更正 §20.13 的三项 Blocked）
 
@@ -1130,6 +1130,91 @@ PR #1（head `ci-probe/acceptance-audit-20261011`，`b59e5ff6`）上名为「Cod
 
 ① 穿越/编码别名（httptest + 哨兵文件，删守卫必失败）；② 缓存值精确断言 + `runtime-config.js`/`sponner`/`favicon.ico` 三行；③ 方法/前缀矩阵与 Content-Type 契约；④ 条件请求 304 语义（保留 mtime 场景写成特性化用例）；⑤ `frontendRoot` 失败矩阵；⑥ 静态根暴露边界（断言现行为 + 注释默认安全来自 Dockerfile）；⑦ 压缩：E2E 断言「带 `Accept-Encoding` 仍无 `Content-Encoding`、`content-length` = raw」，并在 AUDIT 登记「预算 = 磁盘 gzip、线上无传输压缩」。
 
-**更正（EVID-8）**：`backend/AUDIT.md:849` 引用 `isHiddenArtifact` 为 `frontend.go:94-99` → 现文件实际为 **`:99-101`**（行号漂移 3 行，由本轮前端改动引入，结论不变）。
+**更正（EVID-8）**：`backend/AUDIT.md:849` 引用 `isHiddenArtifact` 为 `frontend.go:94-99` → 现文件实际为 **`:99-101`**；本轮前端改动在此文件净增 11 行（起点前移 5 行、该函数末尾前移 2 行），其中 sink `os.Stat` 由 `origin/main` 的 `:76` 变为 `:80`（+4）；`origin/main` 版本并无 `isHiddenArtifact`（该函数是本轮新增的前置拦截），故此处以实测行号为准、结论不变。
 
 **未执行**：真实 Docker/Linux 镜像内探测（本机无 Docker）、反代/CDN 场景、浏览器对 `immutable` 的真实复用行为。
+
+## 26. 2026-10-12 后端最终验收与容器构建修复（BE-25）
+
+### 26.1 本机最终验收（`bash scripts/verify.sh`，exit 0）
+
+执行方式：`powershell -NoProfile -ExecutionPolicy Bypass -File runner-be.ps1`（内部 `cd backend; bash scripts/verify.sh *> be-verify-r1.out.log`，退出码写 `be-verify-r1.exit.txt`）→ **`be-verify-r1.exit.txt` = `0`**，耗时 **242.35s**。关键输出：
+
+```
+==> go build ./...
+==> go vet ./...
+==> go run ./tools/structurecheck
+扫描生产 Go 文件：478 个
+超限文件（> 600 行）：当前 0 个，基线 0 个
+超限函数（> 50 行）：当前 0 个，基线 0 个
+越限嵌套（> 3 层）：当前 0 个，基线 0 个
+参与判定的作用域（REV-3）：5475 个（0 越限时据此判断不是漏报）
+结构门禁通过：未新增超限文件、超限函数或越限嵌套。
+==> go run ./tools/apicheck
+基线条目 2062 条，当前 2062 条。
+导出 API 面与基线逐条一致。
+==> go test ./... -count=1
+（全部 ok，含 backend/tools/structurecheck、backend/tools/apicheck）
+全部通过
+```
+
+### 26.2 CI 上的后端门禁（两轮）
+
+| run | sha | 后端相关 step | 结论 |
+| --- | --- | --- | --- |
+| `38189282094` | `118a6ba0` | `Test backend`、`Assert required integration tests ran`、`Race backend`、`Vet backend`、`Verify Swagger document` | 全部 `success`——**Linux `go test -race` 与隔离 PostgreSQL/Redis「0 跳过」在 CI 上闭环**（本机无 cgo 工具链与隔离服务，仅能标记 Blocked） |
+| `38191324186` | `a59e0d43` | 同上 | 全部 `success`（容器构建修复后的复跑，整轮 success） |
+
+### 26.3 容器构建缺陷（P1，已修，只有 CI 能发现）
+
+失败现象与原始日志见 `frontend/AUDIT.md` §22.3：`Dockerfile:20` 只 COPY `frontend/scripts/build-inputs.ts`，而 `f8145ff9` 抽出的 `scripts/build-manifest-plugin.ts` 被 `vite.config.ts` 直接 import → 容器内 `pnpm build` 报 `TS2307` 并退出 2。修复提交 `05c616bd`（`COPY frontend/scripts ./scripts`；`.dockerignore` 白名单改为 `!frontend/scripts/**` 并排除测试文件）→ CI R2 整轮 success。本机无 Docker，**该缺陷只能由 CI 的镜像构建覆盖**。
+
+### 26.4 仍未闭环项（后端相关）
+
+| 项 | 状态 | 说明 |
+| --- | --- | --- |
+| `Verify backend structure and API contract` 的 **CI 侧** | 未闭环（登记） | 该 step 只存在于维护线工作流；探针分支必须保留 `origin/main` 工作流定义（本机凭据缺工作流作用域），故不在 run 中。本机侧已闭环（§26.1） |
+| BE-G3 `ports/security` 迁移 | 需单独批准 | 本轮未执行 |
+| BE-B4 benchmark 统计检验 | 仍开放（P3） | `benchstat` 未安装，维持「中位数 + 可比性限制」登记 |
+| 交付分支推送（含 `.github/workflows/**`） | Blocked（需凭据 scope） | 实测 `git push` exit 1；解除条件见 `frontend/AUDIT.md` §20.5 |
+
+## 27. CodeQL 告警存量判定补充证据（BE-26）
+
+**补充证据（2026-10-12，CI 双轮核对）**：仓库 `/code-scanning/alerts?state=open` 的 5 条告警 `created=2026-10-11`、`ref=refs/heads/main`（`go/clear-text-logging` × 4 → `service_request.go:635/637/647/789`；`go/path-injection` × 1 → `transport/http/frontend.go:76`）⇒ 属**存量**告警；名为「CodeQL」的 check-run 在 `b59e5ff6`、`118a6ba0`、`a59e0d43` 三个 sha 上均为 `failure` 且 annotations 完全相同；PR #1/#2 的 `mergeable_state=unstable`（非 `blocked`）⇒ 该 check 不是阻塞合并的必需检查。「同一批告警因重命名/指纹变化被计为 PR 新增」仍为**推断**（未取到 fingerprint 级证据）。
+
+## 28. 2026-10-12 benchmark 统计检验与基准缺陷修复（BE-27）
+
+### 28.1 benchstat 可得性与实际检验（关闭 BE-B4 的「工具未装」登记）
+
+`go install golang.org/x/perf/cmd/benchstat@latest` → exit 0（网络可达；工具装在会话 scratch，未入工作树）。执行 `go test <pkg> -run '^$' -bench . -benchmem -count=10` 两轮（R1/R2），4 包 / 15 个可比 leaf，全部 exit 0。基准实际所在包与 §20.10 一致；注意 `./internal/application/egress/` **不含**基准，egress 基准在 `internal/infra/egress/manager_test.go`。
+
+**结论：本机不具备判定 ns/op 变化的判别力（负面结论，如实登记）。** 同代码 R1 vs R2 的 45 个比较行中 **12 行被判显著（26.7%）**，α=0.05 名义期望仅 2.25 行；sec/op 的 95% CI 半宽（n=30）中位 **±36%**、最大 ±167%，**28/30 > ±10%**。测量窗口内 ambient 负载 2.34–6.14 CPU·s/s（8 核；来源为并发的 Playwright `chrome-headless-shell` 等），说明本轮**未能取得安静窗口**。
+
+**唯一稳定的量是分配指纹**（三轮逐字一致）：`Seg/3000/as64` 160/160/160 allocs、`SelectedCredentialHydration` 155/155/155、`RoutingAccountBaseProjection` 62,257/62,255/62,254 等；§20.10 记录的「legacy 首样本预热离群点」也获独立复现。
+
+### 28.2 发现并修复的基准缺陷（P2）
+
+`BenchmarkDashboardUsageAggregate`（`internal/infra/persistence/relational/dashboard_repository_test.go:143-185`）在建表并插入 50,000 行后**没有 `b.ResetTimer()`** ⇒ 负载下校准退化到 `b.N=1`，一次性初始化被摊进 ns/op（离群样本 1.02s–5.53s，benchstat 曾报 +1213.59%，p=0.000）。修复：在插入完成后加 `b.ResetTimer()`（并在注释里写明该陷阱）。
+
+**修复验证（本机实测）**：
+
+```
+cd backend && gofmt -l internal/infra/persistence/relational/dashboard_repository_test.go   # 无输出，exit 0
+cd backend && go vet ./internal/infra/persistence/relational/                                # exit 0
+cd backend && go test ./internal/infra/persistence/relational/ -run '^$' \
+    -bench BenchmarkDashboardUsageAggregate -benchtime=1x -benchmem                           # exit 0
+BenchmarkDashboardUsageAggregate/legacy-8           1   129555100 ns/op   70376 B/op   449 allocs/op
+BenchmarkDashboardUsageAggregate/performance-8      1   167337300 ns/op   23768 B/op   143 allocs/op
+```
+
+数字回到**百毫秒量级**（不再是秒级离群），说明修复直接消除了该异常来源；`-benchtime=1x` 下 n=1 仍不足以做分布结论，故**不声称**修复前后有性能差异。
+
+### 28.3 仍未执行与不可声称
+
+| 项 | 状态 | 说明 |
+| --- | --- | --- |
+| 跨 commit「旧 vs 新」A/B | 未执行 | 被基准覆盖的 Go 代码在测量窗口内**逐字节未变**（`git diff --name-only` 对 `backend/*.go`、`backend/internal/**`、`go.mod`、`go.sum` 为空），等价于空对照 |
+| `-race` 下的基准 | 未执行 | 本机 `CGO_ENABLED=0`（无 C 编译器） |
+| 隔离 PostgreSQL/Redis 上的基准 | 未执行 | 本机无隔离服务 |
+| 其余 16 个 leaf | 未执行 | 超出本轮范围 |
+| 「无性能回退」结论 | **不可声称** | 26.7% 假阳性率与 ±36% CI 中位宽度不支持该结论（与 §20.10 的自我声明一致） |

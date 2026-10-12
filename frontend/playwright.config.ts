@@ -9,8 +9,10 @@ import { defineConfig, devices } from "@playwright/test";
  * - `chromium` 使用 Desktop Chrome，运行全部用例，保持既有断言语义；
  * - `mobile-chromium` 使用 Pixel 5 设备描述符（isMobile/hasTouch/deviceScaleFactor/userAgent），
  *   而不是在桌面引擎上只改 viewport 宽度；
- * - 仅在桌面布局下成立的用例带 `@desktop` 标签（侧栏导航可见、账号控制常驻等断言），
- *   移动 project 以 grepInvert 明确排除；桌面 project 不过滤，用例数不减少。
+ * - 只有断言桌面布局本身成立的用例（常驻侧栏可见、移动端抽屉按钮隐藏）才带 `@desktop` 标签，
+ *   由移动 project 以 grepInvert 排除；其余用例改用与 project 无关的导航入口（`e2e/fixtures.ts` 的
+ *   `openNavigation` / `accountControlScope`：桌面取侧栏，移动先开抽屉），两个 project 都运行；
+ *   桌面 project 不过滤，用例数不减少。
  *
  * 隔离策略不变：每个 worker 启动独立后端进程，移动 project 只是多了一批 worker。
  */

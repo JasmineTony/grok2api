@@ -43,9 +43,9 @@ const withE2e = process.argv.includes("--e2e");
  * 实测值（2026-10-12，本工作树；复现：`pnpm test:ui:coverage && node scripts/check-test-results.mjs`
  * 输出「参与判定的文件 123 个」）：Vitest 123 个。
  * E2E 的计数口径是 **(spec × project) 实例**，不是 spec 文件数：Playwright JSON 把每个 project 各展开一遍，
- * 复现 `pnpm test:e2e && node scripts/check-test-results.mjs --e2e` 输出「参与判定的文件 6 个、用例 35 个」
- * （chromium 21 + mobile-chromium 14）。删掉 `mobile-chromium` project 或把它的 `grepInvert` 收窄成 `/./` 后，
- * 文件数回落 5、实例数回落 21，必须在这里失败——移动覆盖丧失不得静默通过。
+ * 复现 `pnpm test:e2e && node scripts/check-test-results.mjs --e2e` 输出「参与判定的文件 6 个、用例 42 个」
+ * （chromium 21 + mobile-chromium 21；仅断言桌面布局本身成立的用例保留 `@desktop`）。删掉 `mobile-chromium` project
+ * 或把它的 `grepInvert` 收窄成 `/./` 后，文件数回落 5、实例数回落 21，必须在这里失败——移动覆盖丧失不得静默通过。
  * 只增不减；确实需要下调时必须是可见改动并说明理由。
  */
 const MIN_VITEST_FILES = 123;
@@ -83,15 +83,16 @@ const REQUIRED_VITEST = [
 
 /**
  * Playwright 全栈 E2E 报告：文件 → 最少通过用例数 + 必填用例标题（棘轮，语义同上）。
- * minPassed 同样是 (spec × project) 实例口径（2026-10-12 实测：auth 10 / client-keys 7 / navigation 7 /
- * request-audits 5 / settings 5 / mobile-device 1，共 6 个文件、35 个实例）；移动 project 被移除或收窄后
- * 这些数字会回落到桌面实例数（21 个），必须在门禁上失败。
+ * minPassed 同样是 (spec × project) 实例口径（2026-10-12 实测：auth 12 / client-keys 8 / navigation 9 /
+ * request-audits 6 / settings 6 / mobile-device 1，共 6 个文件、42 个实例；chromium 21 + mobile-chromium 21）；
+ * 移动 project 被移除或收窄后这些数字回落到桌面实例数（auth 6 / client-keys 4 / navigation 5 / request-audits 3 /
+ * settings 3，共 21 个实例），必须在门禁上失败。
  * requiredTitles 逐字取自对应 spec 的 test() 名称（按包含匹配）。
  */
 const REQUIRED_E2E = [
   {
     file: "e2e/auth.e2e.ts",
-    minPassed: 10,
+    minPassed: 12,
     requiredTitles: [
       "未登录访问受保护路由会被重定向到登录页",
       "正确凭据登录成功、进入受保护页面并在刷新后保持登录",
@@ -100,12 +101,12 @@ const REQUIRED_E2E = [
   },
   {
     file: "e2e/client-keys.e2e.ts",
-    minPassed: 7,
+    minPassed: 8,
     requiredTitles: ["创建密钥：表单校验失败后成功创建并展示一次性明文", "删除密钥：确认后行与真实服务端记录同时消失"],
   },
   {
     file: "e2e/navigation.e2e.ts",
-    minPassed: 7,
+    minPassed: 9,
     requiredTitles: [
       "侧栏导航到账号和设置，深链接刷新后保持页面与当前导航状态",
       "账号菜单切换英文和中文，导航与刷新后仍使用所选语言",
@@ -114,12 +115,12 @@ const REQUIRED_E2E = [
   },
   {
     file: "e2e/request-audits.e2e.ts",
-    minPassed: 5,
+    minPassed: 6,
     requiredTitles: ["状态筛选改变真实查询范围并显示激活计数，清除后恢复空态"],
   },
   {
     file: "e2e/settings.e2e.ts",
-    minPassed: 5,
+    minPassed: 6,
     requiredTitles: ["设置页分页可切换：Grok Build 与 Grok Web 面板按标签显隐"],
   },
   {

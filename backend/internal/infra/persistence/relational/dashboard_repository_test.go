@@ -164,6 +164,9 @@ func BenchmarkDashboardUsageAggregate(b *testing.B) {
 	if err := database.db.WithContext(ctx).CreateInBatches(audits, 100).Error; err != nil {
 		b.Fatal(err)
 	}
+	// 建表与 50,000 行插入是一次性准备，必须排除在被测操作之外：否则在并发负载下
+	// 校准会退化到 b.N=1，把初始化成本摊进 ns/op（实测曾出现 1.02s–5.53s 的离群样本）。
+	b.ResetTimer()
 	start := now.Add(-24 * time.Hour)
 	legacySelect := "COUNT(*) AS requests, COALESCE(SUM(CASE WHEN status_code >= 200 AND status_code < 300 THEN 1 ELSE 0 END), 0) AS successful_requests, COALESCE(SUM(CASE WHEN status_code < 200 OR status_code >= 300 THEN 1 ELSE 0 END), 0) AS failed_requests, COALESCE(SUM(input_tokens), 0) AS input_tokens, COALESCE(SUM(cached_input_tokens), 0) AS cached_input_tokens, COALESCE(SUM(output_tokens), 0) AS output_tokens, COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens, COALESCE(SUM(total_tokens), 0) AS tokens, COALESCE(SUM(CASE WHEN cost_in_usd_ticks > 0 THEN cost_in_usd_ticks ELSE estimated_cost_in_usd_ticks END), 0) AS billed_cost_usd_ticks"
 	b.Run("legacy", func(b *testing.B) {

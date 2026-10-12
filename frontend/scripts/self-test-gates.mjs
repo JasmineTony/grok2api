@@ -292,7 +292,7 @@ const vitestProbe = [
 ];
 /**
  * 必填标题逐字取自真实 spec，与被测脚本的 REQUIRED_E2E.requiredTitles 保持一致。
- * `desktop` / `mobile` 是 project 展开后的 (spec × project) 实例数（2026-10-12 实测 21 + 14 = 35，6 个文件），
+ * `desktop` / `mobile` 是 project 展开后的 (spec × project) 实例数（2026-10-12 实测 21 + 21 = 42，6 个文件），
  * `passed` = desktop + mobile，即被测脚本的实例口径棘轮值；矩阵削回桌面后报告会回落到 `desktop` 列数字。
  */
 function withInstanceTotals(entries) {
@@ -302,7 +302,7 @@ const e2eProbe = withInstanceTotals([
   {
     file: "e2e/auth.e2e.ts",
     desktop: 6,
-    mobile: 4,
+    mobile: 6,
     titles: [
       "未登录访问受保护路由会被重定向到登录页",
       "正确凭据登录成功、进入受保护页面并在刷新后保持登录",
@@ -312,13 +312,13 @@ const e2eProbe = withInstanceTotals([
   {
     file: "e2e/client-keys.e2e.ts",
     desktop: 4,
-    mobile: 3,
+    mobile: 4,
     titles: ["创建密钥：表单校验失败后成功创建并展示一次性明文", "删除密钥：确认后行与真实服务端记录同时消失"],
   },
   {
     file: "e2e/navigation.e2e.ts",
     desktop: 5,
-    mobile: 2,
+    mobile: 4,
     titles: [
       "侧栏导航到账号和设置，深链接刷新后保持页面与当前导航状态",
       "账号菜单切换英文和中文，导航与刷新后仍使用所选语言",
@@ -328,13 +328,13 @@ const e2eProbe = withInstanceTotals([
   {
     file: "e2e/request-audits.e2e.ts",
     desktop: 3,
-    mobile: 2,
+    mobile: 3,
     titles: ["状态筛选改变真实查询范围并显示激活计数，清除后恢复空态"],
   },
   {
     file: "e2e/settings.e2e.ts",
     desktop: 3,
-    mobile: 2,
+    mobile: 3,
     titles: ["设置页分页可切换：Grok Build 与 Grok Web 面板按标签显隐"],
   },
   {
@@ -346,7 +346,8 @@ const e2eProbe = withInstanceTotals([
 ]);
 /**
  * 夹具（F1）：project 矩阵被削回桌面（删除 mobile-chromium project，或把它的 grepInvert 收窄成 /./）后的报告——
- * 5 个文件 / 21 个实例，恰好满足旧口径的 5 文件与 6/4/5/3/3 阈值，因此在旧实现下是 exit 0（假通过）。
+ * 5 个文件 / 21 个实例，恰好满足旧口径的 5 文件与 6/4/5/3/3 阈值，因此旧实现放行（假通过）；
+ * 当前棘轮为 6 文件与 12/8/9/6/6，本夹具必须失败。
  */
 const e2eDesktopOnlyProbe = e2eProbe
   .filter((entry) => entry.desktop > 0)
@@ -363,11 +364,12 @@ function padVitestEntries(entries, target = MIN_VITEST_PROBE_FILES) {
 const vitestHealthyEntries = padVitestEntries(vitestProbe);
 const vitestHealthyTotal = vitestHealthyEntries.reduce((total, entry) => total + entry.passed, 0);
 /**
- * 实例口径的固定期望（真实产物 2026-10-12：chromium 21 + mobile-chromium 14 = 35 个实例、6 个文件）。
+ * 实例口径的固定期望（真实产物 2026-10-12：chromium 21 + mobile-chromium 21 = 42 个实例、6 个文件；
+ * 仅断言桌面布局本身成立的用例保留 `@desktop`，其余用例在两个 project 都运行）。
  * 写死而不从 `e2eProbe` 推导：从探针推导的话，矩阵被削减时正样本会跟着缩水，等于没有棘轮。
  */
 const E2E_EXPECTED_FILES = 6;
-const E2E_EXPECTED_CASES = 35;
+const E2E_EXPECTED_CASES = 42;
 /** 一支用例重试后才通过：其余计数不变，用于验证 flaky 不被计入通过。 */
 const e2eProbeFlaky = e2eProbe.map((entry, index) => (index === 0 ? { ...entry, flaky: 1 } : entry));
 const vitestBelowRatchet = vitestProbe.map((entry, index) =>
@@ -600,8 +602,8 @@ writeProbeFile(
 );
 const missingReportRoot = path.join(root, "report-missing");
 /**
- * 夹具（F1）：project 矩阵被削回桌面后的 E2E 报告——5 个文件 / 21 个实例，恰好满足旧口径的 5 文件与
- * 6/4/5/3/3 阈值，所以在旧实现下 exit 0：移动覆盖丧失在门禁上不可见。
+ * 夹具（F1）：project 矩阵被削回桌面后的 E2E 报告——5 个文件 / 21 个实例，只满足移动矩阵加入前的旧口径
+ * （5 文件 + 6/4/5/3/3 通过数），在当前棘轮（6 文件 + 12/8/9/6/6）下必须失败：移动覆盖丧失不得静默通过。
  */
 const e2eDesktopOnlyReportRoot = buildReportRoot("report-e2e-desktop-only", {
   vitest: vitestHealthyEntries,
@@ -902,6 +904,8 @@ const cases = [
       "E2E 报告：参与判定的文件 5 个、用例 21 个",
       "E2E：必需文件未出现在报告中 e2e/mobile-device.e2e.ts",
       "E2E：报告只含 5 个文件，少于要求的 6 个（测试文件被删除或未运行）",
+      "E2E：e2e/auth.e2e.ts 通过 6 个，少于要求的 12 个",
+      "E2E：e2e/navigation.e2e.ts 通过 5 个，少于要求的 9 个",
     ],
     run: () => runGate("check-test-results.mjs", { TEST_REPORT_ROOT: e2eDesktopOnlyReportRoot }, ["--e2e"]),
   },

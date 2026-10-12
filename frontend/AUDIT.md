@@ -1008,23 +1008,23 @@ main 线的 AUDIT 章节（`backend/AUDIT.md` §20/§21（BE-18/BE-19）、`fron
 
 ### 20.4 剩余阻塞状态（本轮执行后）
 
-| 编号                                 | 上一轮状态      | 本轮状态                           | 证据                                                                                          |
-| ------------------------------------ | --------------- | ---------------------------------- | --------------------------------------------------------------------------------------------- |
-| X-03 GitHub Actions 真实 run         | 需授权          | **已关闭**                         | RUN `38147560751` / `38147560768`（§20.2）                                                    |
-| BE-B1 `go test -race`                | 仅 CI           | **已关闭**                         | step `Race backend` = `success`                                                               |
-| BE-B2 集成用例 0 跳过                | 仅 CI           | **已关闭**                         | step `Assert required integration tests ran` = `success`                                      |
-| BE-B3 Linux CI 行为                  | 仅 CI           | **已关闭**                         | JOB `Verify` = `success`（含 `Vet backend`）                                                  |
-| X-07 镜像与 `.dockerignore` 纳入判定 | 仅 CI           | **已关闭**                         | `Build image (amd64)` 与 `(arm64)` = `success`                                                |
-| X-09 前端报告门禁 CI 侧              | 仅 CI           | **已关闭**                         | step `Run full-stack E2E` 与 `Verify frontend` = `success`                                    |
-| X-08 Swagger 精确 diff               | P1 发布前置     | **本机与 CI 双侧闭环**             | §19.11 本机字节一致 + step `Verify Swagger document` = `success`                              |
-| FE-19-6 父检出 AGENTS 旧 12 步       | 需主人同步      | **已不成立（EVID-8 更正）**        | 主检出 `AGENTS.md` 的 DEV-4 已是 13 步；原登记基于更早快照                                    |
-| X-04 提交纪律                        | 待授权          | **部分关闭**                       | `closeout` 的 8 个提交 + 本轮单一目的提交 `83ff5ae7`、`339c53ca`；`main` 的 11 个提交仍待处理 |
-| X-02 冻结预算基线                    | 需授权（CHG-5） | 仍开放（P3）                       | 需工作区静止 + 授权                                                                           |
-| FE-19-8 i18n 单例失败缓存            | 需单独授权      | 仍开放（P2）                       | 重试语义变更，本轮未改                                                                        |
-| BE-G3 `ports/security` 迁移          | 需单独批准      | 仍开放（P2）                       | 架构迁移，本轮未改                                                                            |
-| X-05 重打 tag                        | 逐次授权        | 未执行                             | 不可逆，默认不做                                                                              |
-| FE-19-5-C 生产压缩配置               | 需外部事实      | 仍开放                             | 本机无生产访问                                                                                |
-| 交付分支推送与合并 `main`            | —               | **Blocked（需授权 + 凭据能力）** | 见 §20.5                                                                                      |
+| 编号                                 | 上一轮状态      | 本轮状态                                 | 证据                                                                                                                       |
+| ------------------------------------ | --------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| X-03 GitHub Actions 真实 run         | 需授权          | **已关闭**                               | RUN `38147560751` / `38147560768`（§20.2）                                                                                 |
+| BE-B1 `go test -race`                | 仅 CI           | **已关闭**                               | step `Race backend` = `success`                                                                                            |
+| BE-B2 集成用例 0 跳过                | 仅 CI           | **已关闭**                               | step `Assert required integration tests ran` = `success`                                                                   |
+| BE-B3 Linux CI 行为                  | 仅 CI           | **已关闭**                               | JOB `Verify` = `success`（含 `Vet backend`）                                                                               |
+| X-07 镜像与 `.dockerignore` 纳入判定 | 仅 CI           | **已关闭**                               | `Build image (amd64)` 与 `(arm64)` = `success`                                                                             |
+| X-09 前端报告门禁 CI 侧              | 仅 CI           | **已关闭**                               | step `Run full-stack E2E` 与 `Verify frontend` = `success`                                                                 |
+| X-08 Swagger 精确 diff               | P1 发布前置     | **本机与 CI 双侧闭环**                   | §19.11 本机字节一致 + step `Verify Swagger document` = `success`                                                           |
+| FE-19-6 父检出 AGENTS 旧 12 步       | 需主人同步      | **仍成立**（原判定被本轮更正，见 §22.5） | 主检出 `E:\grok2api`（`main`，`13626e6c`）`AGENTS.md:85` 实测为「覆盖 **12 步**」；工作树版本为 13 步（含 `test:results`） |
+| X-04 提交纪律                        | 待授权          | **部分关闭**                             | `closeout` 的 8 个提交 + 本轮单一目的提交 `83ff5ae7`、`339c53ca`；`main` 的 11 个提交仍待处理                              |
+| X-02 冻结预算基线                    | 需授权（CHG-5） | 仍开放（P3）                             | 需工作区静止 + 授权                                                                                                        |
+| FE-19-8 i18n 单例失败缓存            | 需单独授权      | 仍开放（P2）                             | 重试语义变更，本轮未改                                                                                                     |
+| BE-G3 `ports/security` 迁移          | 需单独批准      | 仍开放（P2）                             | 架构迁移，本轮未改                                                                                                         |
+| X-05 重打 tag                        | 逐次授权        | 未执行                                   | 不可逆，默认不做                                                                                                           |
+| FE-19-5-C 生产压缩配置               | 需外部事实      | 仍开放                                   | 本机无生产访问                                                                                                             |
+| 交付分支推送与合并 `main`            | —               | **Blocked（需授权 + 凭据能力）**       | 见 §20.5                                                                                                                   |
 
 ### 20.5 仍未闭环项（如实登记）
 
@@ -1058,9 +1058,9 @@ main 线的 AUDIT 章节（`backend/AUDIT.md` §20/§21（BE-18/BE-19）、`fron
 - 4 × `Clear-text logging of sensitive information` → `backend/internal/application/gateway/service_request_failure.go` 约 `:154`、`:180`、`:182`、`:284`；
 - 1 × `Uncontrolled data used in path expression` → `backend/internal/transport/http/frontend.go:80`。
 
-真/假阳性 triage 进行中（登记为**待裁定项**，不预判结论）。
+**triage 结论（2026-10-12）**：5 条**全部为假阳性**，完整证据见 `backend/AUDIT.md` §24。本轮 CI 双轮核对补充：该 check 在 `b59e5ff6`、`118a6ba0`、`a59e0d43` 三个 sha 上 `conclusion` 均为 `failure`、annotations 各 5 条且完全相同；仓库 `/code-scanning/alerts?state=open` 的 5 条告警 `created=2026-10-11`、`ref=refs/heads/main` ⇒ 属**存量**而非本轮引入；PR #1/#2 的 `mergeable_state=unstable`（非 `blocked`）⇒ 该 check 不是阻塞合并的必需检查。
 
-**附**：`Upload Playwright artifacts` 的 `skipped` 由该 step 的 `if: failure()` 决定（工作流 `:179-180`）；Verify job 无失败步骤 ⇒ 条件为假 ⇒ `skipped` 属预期，非缺陷。
+**附**：`Upload Playwright artifacts` 的 `skipped` 由该 step 的 `if: failure()` 决定；Verify job 无失败步骤 ⇒ 条件为假 ⇒ `skipped` 属预期，非缺陷。注意：这些 run 实际执行的是**远端版本**的工作流定义（base `1a510f5d` 与 head `a59e0d43` 的工作流内容哈希一致：13507 B / 354 行），与工作区文件（14094 B / 363 行）**不同**——引用行号时须用远端版本（`if: failure()` 位于远端 `:163`）。
 
 ## 21. 2026-10-11（续二）报告门禁强化、构建指纹与真实移动 E2E（FE-15）
 
@@ -1133,3 +1133,125 @@ pnpm test:e2e --list           → exit 0；Total: 35 tests in 6 files（新增 
 4. 缓存语义与预期一致：软导航档 shell 重取 0/26，`/accounts` 增量只差 2 个已缓存文件。
 
 **限制（不得当作门禁依据）**：loopback 无 RTT/TLS、未做 CPU 节流与移动视口、每档仅 2 次；测量窗口内有其它并行任务（8 逻辑核）。未验证生产反向代理/CDN 的压缩配置。
+
+## 22. 2026-10-12 最终验收、CI 双轮闭环与容器构建修复（FE-16）
+
+工作分支 `maint/acceptance-audit-20261011-residual`；本节所有结论附命令原文 + 退出码 + 关键输出。
+
+### 22.1 本机最终验收（`pnpm verify:full`，exit 0）
+
+执行方式：`powershell -NoProfile -ExecutionPolicy Bypass -File runner-r6.ps1`（内部 `cd frontend; pnpm verify:full *> verifyfull-r6.out.log`，并把 `$LASTEXITCODE` 写入 `verifyfull-r6.exit.txt`），起始 `2026-10-12T09:25:44`。
+
+- **`verifyfull-r6.exit.txt` = `0`**；日志中 `ELIFECYCLE` 计数 = **0**；
+- `Test Files  123 passed (123)`；
+- `test:results`：`Vitest 报告：参与判定的文件 123 个、用例 1488 个（通过 1488、失败 0、跳过 0、flaky 0）`；
+- `pnpm test:gates`：`门禁自测通过：46 个用例（含 34 个必须失败的用例）`；
+- `pnpm build`：`built in 1.78s`（`index-BLBEuSix.js` 468.71 kB / gzip 144.73 kB，与 §19.8 的产物一致）；`check:budget` 通过（阈值未变）；
+- `pnpm test:e2e`：**`35 passed (1.8m)`**（桌面 `chromium` + `mobile-chromium` 两个 project）；
+- 最后一步 `node scripts/check-test-results.mjs --e2e`：`E2E 报告：参与判定的文件 6 个、用例 35 个（通过 35、失败 0、跳过 0、flaky 0）`、`必需前端场景执行门禁通过`。
+
+更早一次同命令（r5，`verifyfull-r5.out.log`）日志以同一成功行结尾、`ELIFECYCLE` 计数 0，但**退出码未被可靠捕获**（`cmd` 的 `%ERRORLEVEL%` 是解析期展开），故不作为退出码证据。
+
+### 22.2 后端最终验收（`bash scripts/verify.sh`，exit 0）
+
+`powershell -NoProfile -File runner-be.ps1`（`cd backend; bash scripts/verify.sh`）→ **`be-verify-r1.exit.txt` = `0`**，耗时 **242.35s**：`结构门禁通过`、`参与判定的作用域（REV-3）：5475 个`、`基线条目 2062 条，当前 2062 条。导出 API 面与基线逐条一致。`、`go test ./...` 全部 ok、尾行 `全部通过`。
+
+### 22.3 CI 双轮闭环（含一次真实交付缺陷的发现与修复）
+
+| run           | sha        | 结论        | 说明                                                                                                                                                                                                                                                               |
+| ------------- | ---------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `38147560751` | `b59e5ff6` | success     | 上一轮探针（§20.2）                                                                                                                                                                                                                                                |
+| `38189282094` | `118a6ba0` | **failure** | **Verify job 全 step `success`**（含 `Test backend`、`Assert required integration tests ran`、`Race backend`、`Vet backend`、`Verify Swagger document`、`Verify frontend`、`Run full-stack E2E`），但 `Build image (amd64)` 与 `(arm64)` 的 `Build` step `failure` |
+| `38191324186` | `a59e0d43` | **success** | 容器构建修复后的复跑（本轮 R2）；`38191324190`（CodeQL Advanced）同为 success                                                                                                                                                                                      |
+
+**交付缺陷（P1，由 CI 捕获，本机无法复现）**——`Build image` 失败原始日志（`ci-build-amd64.log`）：
+
+```
+vite.config.ts(7,37): error TS2307: Cannot find module './scripts/build-manifest-plugin.ts' or its corresponding type declarations.
+ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not complete successfully: exit code: 2
+```
+
+根因：`Dockerfile:20` 只 COPY `frontend/scripts/build-inputs.ts`，而 `f8145ff9` 把 `buildManifestPlugin` 抽到 `scripts/build-manifest-plugin.ts` 且 `vite.config.ts` 直接 import。修复提交 `05c616bd`（`COPY frontend/scripts ./scripts`；`.dockerignore` 白名单改为 `!frontend/scripts/**` 并排除 `frontend/scripts/**/*.test.ts`）→ R2 复跑整轮 success。
+
+### 22.4 报告门禁棘轮与弱化修复（F1/F2/F3）
+
+提交 `844c355c`：
+
+- **F1（P1）**：E2E 棘轮原为移动 project 加入之前的（5 文件、minPassed 6/4/5/3/3），删掉 `mobile-chromium` 后计数回落 5/21 仍满足阈值 → 现为 **6 文件**、minPassed **10/7/7/5/5**，并把 `e2e/mobile-device.e2e.ts` 登记进 `REQUIRED_E2E`；
+- **F2（P2）**：清单文件「部分缺失」由告警改为失败；
+- **F3（P2）**：Vitest 收集期失败与非清单文件整文件跳过由「不可见/仅告警」改为失败（部分跳过维持告警）；
+- 判别力（EVID-3）：对修复前实现实跑，4 个新夹具全部「期望 exit 1、实际 0」。
+
+### 22.5 EVID-8 数字更正（原值 → 新值）
+
+| 位置                                 | 原值                                     | 新值                                          | 根因与复现                                                                                                                         |
+| ------------------------------------ | ---------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| §21.1                                | `pnpm test:gates` = 41 个用例            | **46 个用例（34 必须失败）**                  | `844c355c` 新增 5 个用例；复现 `cd frontend; pnpm test:gates`                                                                      |
+| §21.3                                | （未记录阈值）                           | `MIN_E2E_FILES = 6`、minPassed 10/7/7/5/5     | 棘轮对齐 (spec × project) 口径；见 `scripts/check-test-results.mjs` 常量与注释                                                     |
+| 历史记录中的 E2E 门禁输出            | 文件 5 个 / 用例 21 个                   | **文件 6 个 / 用例 42 个**                    | 移动 project（`844c355c`）与 F5 扩大覆盖（`571a16fd`）后的口径；中间态 35 个已被替代                                               |
+| §28 概览表 FE-A10 / FE-A13 / FE-A14  | 33 用例（22 必失败）；5 spec / 21 用例   | **46 用例（34 必失败）；6 spec / 42 用例**    | 真值取自当前配置（`self-test-gates.mjs` 的 `cases` 46 条、`pnpm test:e2e --list` = 42 tests in 6 files）；概览表按 EVID-8 保留原值 |
+| §22.4 / §22.6 的 minPassed 列表      | 12/8/9/6/6（5 个值）                     | **12/8/9/6/6 + `mobile-device` 1（共 6 条）** | `REQUIRED_E2E` 实为 6 条；复现 `Select-String frontend/scripts/check-test-results.mjs -Pattern 'minPassed'`                        |
+| §20.3                                | REV-3 作用域 5475                        | 5475（不变）                                  | `cd backend; go run ./tools/structurecheck`                                                                                        |
+| §19.8                                | 前端 REV-3 作用域 2524                   | **2525**                                      | 修复后的工具口径；复现 `cd frontend; node scripts/check-structure.mjs`                                                             |
+| §20.4                                | 「FE-19-6 已不成立（主检出已是 13 步）」 | **仍成立**：主检出 `AGENTS.md:85` = 12 步     | 上一版自我更正反向失真（EVID-8：记录更正之更正）；复现 `Select-String E:\grok2api\AGENTS.md -Pattern '覆盖.*步'`                   |
+| §14/§16 等历史章节的 `Dockerfile:66` | `Dockerfile:66`                          | **`Dockerfile:67`**                           | `COPY VERSION /app/VERSION` 现位于 `:67`（`:65`=二进制、`:66`=`dist`）；历史行保留原值，按本表指针更正                             |
+| §22.4                                | minPassed 10/7/7/5/5                     | **12/8/9/6/6**                                | F5 扩大移动覆盖后的实测真值（`571a16fd`）；复现 `node scripts/check-test-results.mjs --e2e`                                        |
+| §22.1                                | E2E `35 passed` / 用例 35                | **`42 passed` / 用例 42**                     | 同上；§22.1 是 2026-10-12 09:25 的快照，保留原值                                                                                   |
+
+### 22.6 移动端 E2E 覆盖扩大（F5）
+
+提交 `571a16fd`。`mobile-chromium` 实例数 **14 → 21**（总 35 → 42），`@desktop` 从 8 个用例降到 **1 个**（仅 `navigation.e2e.ts` 的侧栏布局用例——其断言对象就是桌面布局本身，理由写在用例注释里）。
+
+- 共享入口：`e2e/fixtures.ts` 新增 `openMobileNavigation` / `isDrawerLayout` / `accountControlScope` / `openNavigation` / `closeMobileNavigation` / `expectVisibleUsername`；注释写明 `getByTestId` / `getByText` **不过滤隐藏元素**，移动端侧栏虽 `display:none` 仍在 DOM，必须限定到抽屉 dialog 作用域。
+- 棘轮同步（取实测真值，非估算）：`MIN_E2E_FILES = 6` 不变，`minPassed` 10/7/7/5/5 → **12/8/9/6/6**；`self-test-gates.mjs` 的 `E2E_EXPECTED_CASES` 35 → **42**。
+- 验证（cwd = `frontend/`）：`pnpm test:e2e` → **exit 0**（`42 passed`，两次运行 1.3m / 2.0m，无 flaky）；`node scripts/check-test-results.mjs --e2e` → **exit 0**（`文件 6 个、用例 42 个`）；`pnpm test:gates` → **exit 0**（46 用例 / 34 必失败）；`pnpm test:e2e --list` → `Total: 42 tests in 6 files`；`prettier --check` / `eslint` / `oxlint` / `typecheck` / `typecheck:e2e` → exit 0。
+- 判别力：把真实报告裁剪为**仅桌面 project** 后用 `TEST_REPORT_ROOT` 指向副本 → 新阈值 **exit 1**，7 项失败全部指向移动覆盖丧失（auth 6<12 等 + `mobile-device.e2e.ts` 缺失 + 5<6 文件）；同一场景已固化为 `self-test-gates.mjs` 的 F1 用例。
+- 无断言弱化：`expect(` 净 **+2**、`test(` 净 **0**（22 个场景全保留）；负 delta 仅来自把断言搬入 fixtures 共享助手（每次调用仍执行，且现在两个 project 都跑）。
+- 未覆盖：F5 之后的全量验收由 §23.1 的 r7 覆盖（`verifyfull-r7.exit.txt` = 0）。**更正（EVID-5）**：本行原写「其余 12 步中受影响项已单独 exit 0」——该轮 sweep 日志仅有 PowerShell 的 `NativeCommandError` 噪音、无工具输出与退出码，**不作为证据**；一律以 §23.1 的全量运行为准。
+
+## 23. 2026-10-12（续二）F5 之后的最终全量验收、门禁差异清单与未闭环项（FE-18）
+
+### 23.1 最终全量验收（`pnpm verify:full`，在 F5 提交 `571a16fd` 与基准修复之后的快照上）
+
+执行：`powershell -NoProfile -ExecutionPolicy Bypass -File runner-r7.ps1`（内部 `cd frontend; pnpm verify:full *> verifyfull-r7.out.log`，退出码写 `verifyfull-r7.exit.txt`），起始 `2026-10-12T10:07:12`。
+
+- **`verifyfull-r7.exit.txt` = `0`**；
+- `Test Files  123 passed (123)`；`pnpm build`：`built in 1.64s`；
+- `test:results`：`Vitest 报告：参与判定的文件 123 个、用例 1488 个（通过 1488、失败 0、跳过 0、flaky 0）`；
+- `pnpm test:e2e`：**42 passed**（桌面 `chromium` + `mobile-chromium` 两个 project）；
+- `node scripts/check-test-results.mjs --e2e`：`E2E 报告：参与判定的文件 6 个、用例 42 个（通过 42、失败 0、跳过 0、flaky 0）`、`必需前端场景执行门禁通过`。
+
+至此：本分支在**当前快照**上满足 13 步门禁 + 全栈 E2E + 报告门禁；后端在同一快照上已由 `bash scripts/verify.sh` exit 0 覆盖（§22.2），其后仅新增基准 `b.ResetTimer()`，受影响门禁已重跑（`backend/AUDIT.md` §28.2）。
+
+### 23.2 门禁「本地 / CI」差异清单（交付核对用）
+
+**只有 CI 能跑**（本机物理不可行）：
+
+| 检查                                     | CI 步骤（工作区 workflow 行号）                                              | 本机缺失原因                                   |
+| ---------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------- |
+| Linux `go test -race ./...`              | `Race backend`（`ghcr-image.yml:109-111`）                                   | `CGO_ENABLED=0` 且无 C 编译器（`gcc` MISSING） |
+| 隔离 PostgreSQL/Redis「集成用例 0 跳过」 | `Assert required integration tests ran`（`:86-107`，依赖 services `:31-59`） | 无隔离服务；断言还依赖 `jq`                    |
+| 镜像构建 amd64/arm64                     | `Build image (amd64)/(arm64)`（`:197-230`，PR/dispatch 专用）                | 本机无 Docker；arm64 需 arm runner             |
+| Publish / Merge（多架构清单）            | `build_ghcr_image`（`:232-297`）、`merge`（`:299-370`），均仅 push 事件      | 同上，且属不可逆发布动作                       |
+| CodeQL（actions/go/js-ts）               | `codeql.yml:17-49`                                                           | 需 GitHub code scanning 后端                   |
+
+**只有本地跑**：`go build ./...`（CI 有意省略，由 `go test` / `-race` 隐式覆盖）、Husky `pre-commit`、仓库根 `git diff --check` / `--numstat` / `git remote -v`、`backend/scripts/verify.sh` 的 cwd 自检与退出码透传语义。
+
+**两侧都可能遗漏（登记为 P3 / 待决策）**：
+
+1. `pnpm test`（node:test）没有「必需用例确实执行」的报告门禁——`check-test-results.mjs` 只解析 Vitest 与 Playwright 报告；两侧都只依赖退出码，**整文件 `it.skip` 或删除文件不会被该门禁发现**。
+2. 仓库根级文件（`AGENTS.md`、`Makefile`、`Dockerfile`、`VERSION`、`.dockerignore`、`.github/**`）无 prettier/eslint/oxlint 覆盖（`format:check` 的 cwd 是 `frontend/`）。
+3. 维护线工作流新增的两步（`Verify backend structure and API contract`、`Assert required frontend tests ran`）在 CI 侧**从未执行**（探针分支必须保留 `origin/main` 工作流定义，否则推送被拒）；本机等价证据存在，但发布前置要求的「CI 真实跑完」对这两步尚无 run 证据。
+4. 维护分支推送不触发任何 CI（`on.push.branches: [main]` 等）——这正是上一条长期存在的原因。
+5. `Verify version carriers are aligned` 无本地自动接线（本地只能手工比对）。
+
+### 23.3 未闭环项（本机不可完成 / 需授权）
+
+| 项                                                               | 状态            | 解除条件                                                  |
+| ---------------------------------------------------------------- | --------------- | --------------------------------------------------------- |
+| 交付分支 `maint/acceptance-audit-20261011-residual` 推送         | **Blocked**     | 需具备工作流作用域的推送凭据（实测 `git push` exit 1） |
+| 合并 `main` / tag / Release / 镜像推送                           | 需授权          | §8 不可逆操作，逐次单独授权                               |
+| 冻结预算基线 `--update`                                          | 需授权（CHG-5） | 工作区静止 + 记录 `git rev-parse HEAD`                    |
+| REV-5 预算口径（认证后首屏 282.30 KiB > 260 KiB）                | 需授权          | 改阈值或口径，依据见 §21.4                                |
+| FE-19-8（i18n 单例失败重试语义）、BE-G3（`ports/security` 迁移） | 需授权          | 本轮未改                                                  |
+| `main` 的 11 个未推送提交                                        | 待决策          | 本轮未改写其引用                                          |

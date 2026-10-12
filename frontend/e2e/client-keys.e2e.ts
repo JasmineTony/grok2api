@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 
-import { apiLogin, expect, signIn, test, type E2EServer } from "./fixtures";
+import { apiLogin, expect, openNavigation, signIn, test, type E2EServer } from "./fixtures";
 
 // 界面文案默认语言为 zh-CN，英文仅作为语言切换后的兜底匹配；断言对象始终是用户可见结果。
 const keysNavName = /^(密钥|Client keys)$/;
@@ -72,11 +72,13 @@ test("未登录访问密钥页会被重定向到登录页", async ({ page, serve
   await expect(page.getByRole("heading", { name: /管理员登录|Admin sign in/ })).toBeVisible();
 });
 
-// @desktop：用例经侧栏导航链接进入密钥页（移动 project 下侧栏 display:none，链接不可见）。
-test("创建密钥：表单校验失败后成功创建并展示一次性明文", { tag: "@desktop" }, async ({ page, request, server }) => {
+// 入口按当前布局选择（桌面侧栏 / 移动抽屉）；密钥 CRUD 的业务断言与 project 无关，不放宽。
+test("创建密钥：表单校验失败后成功创建并展示一次性明文", async ({ page, request, server }) => {
   await signIn(page, server);
   const name = `e2e-创建-${Date.now().toString(36)}`;
-  await page.getByRole("link", { name: keysNavName }).click();
+  const navigation = await openNavigation(page);
+  await navigation.getByRole("link", { name: keysNavName }).click();
+  await expect(page).toHaveURL(/\/client-keys$/);
   await expect(page.getByRole("heading", { name: keysNavName })).toBeVisible();
 
   // 空态断言：用唯一搜索词收敛列表，不依赖同一 worker 内其它用例是否留下数据。

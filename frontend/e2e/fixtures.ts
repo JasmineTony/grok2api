@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 
-import { test as base, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test";
+import { test as base, type APIRequestContext, type BrowserContext, type Locator, type Page } from "@playwright/test";
 
 import { startBackendServer } from "./backend-process";
 import { buildManifestPath } from "./paths";
@@ -150,4 +150,84 @@ export async function apiLogin(request: APIRequestContext, server: E2EServer): P
   }
   cachedApiToken = accessToken;
   return accessToken;
+}
+
+/** 壳层导航在桌面侧栏与移动端抽屉中共用同一套可访问名称。 */
+const navigationName = /^(导航|Navigation)$/;
+const openNavigationName = /^(打开导航|Open navigation)$/;
+const shellDialogName = "Grok2API";
+const navigationTimeoutMs = 15_000;
+
+/**
+ * 打开移动端导航抽屉（顶栏菜单按钮 → Sheet），断言其可访问名称与键盘可用性后返回抽屉 dialog。
+ * 移动端侧栏仍留在 DOM 中、只是被 CSS 隐藏，因此 `getByTestId` / `getByText` 这类**不**过滤
+ * 隐藏元素的查询（`getByRole` 会过滤）必须限定在本作用域内，否则会命中外层侧栏的同一元素。
+ * 仅适用于已登录外壳（登录页没有抽屉入口）。
+ */
+export async function openMobileNavigation(page: Page): Promise<Locator> {
+  const trigger = page.getByRole("button", { name: openNavigationName });
+  await expect(trigger).toBeVisible();
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await trigger.focus();
+  await trigger.press("Enter");
+  const dialog = page.getByRole("dialog", { name: shellDialogName, exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAccessibleDescription(navigationName);
+  await expect(dialog.getByRole("navigation", { name: navigationName })).toBeVisible();
+  return dialog;
+}
+
+/** 已打开的抽屉 dialog；未打开返回 null（避免对已打开的抽屉重复触发按钮，导致 aria-expanded 断言自相矛盾）。 */
+async function openedShellDialog(page: Page): Promise<Locator | null> {
+  const dialog = page.getByRole("dialog", { name: shellDialogName, exact: true });
+  return (await dialog.isVisible()) ? dialog : null;
+}
+
+/**
+ * 当前 project 是否为移动抽屉布局：由「顶栏抽屉按钮」与「常驻侧栏导航」谁先可见竞速判定
+ * （同 restoreCachedSession 的竞速模式），不依赖 project 名称字符串。仅适用于已登录外壳。
+ */
+export async function isDrawerLayout(page: Page): Promise<boolean> {
+  const drawerTrigger = page.getByRole("button", { name: openNavigationName });
+  const sidebar = page.getByRole("navigation", { name: navigationName });
+  const first = await Promise.race([
+    drawerTrigger.waitFor({ state: "visible", timeout: navigationTimeoutMs }).then(() => "drawer" as const),
+    sidebar.waitFor({ state: "visible", timeout: navigationTimeoutMs }).then(() => "sidebar" as const),
+  ]).catch((error: unknown) => {
+    throw new Error(`导航入口在 ${navigationTimeoutMs}ms 内既未出现移动端抽屉按钮，也未出现常驻侧栏导航`, {
+      cause: error,
+    });
+  });
+  return first === "drawer";
+}
+
+/**
+ * 返回承载账号控制（用户名、账号菜单、设置入口）的可见作用域：
+ * 桌面 project 账号控制常驻侧栏，返回页面作用域；移动 project 先打开抽屉，返回抽屉 dialog。
+ */
+export async function accountControlScope(page: Page): Promise<Locator> {
+  const dialog = await openedShellDialog(page);
+  if (dialog !== null) return dialog;
+  if (!(await isDrawerLayout(page))) return page.locator("body");
+  return openMobileNavigation(page);
+}
+
+/** 打开当前布局的导航入口并返回其中的 navigation 作用域（桌面侧栏 / 移动抽屉，抽屉已开则复用）。 */
+export async function openNavigation(page: Page): Promise<Locator> {
+  const scope = await accountControlScope(page);
+  return scope.getByRole("navigation", { name: navigationName });
+}
+
+/** 收起移动端抽屉（桌面布局为 no-op）：抽屉打开时页面内容被 aria-hidden，收起后才能做页面级 role 断言。 */
+export async function closeMobileNavigation(page: Page): Promise<void> {
+  const dialog = await openedShellDialog(page);
+  if (dialog === null) return;
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+}
+
+/** 断言当前布局下管理员账号名对用户可见：桌面在常驻侧栏，移动在抽屉内（未打开时先打开抽屉）。 */
+export async function expectVisibleUsername(page: Page, username: string): Promise<void> {
+  const scope = await accountControlScope(page);
+  await expect(scope.getByText(username, { exact: true })).toBeVisible();
 }
