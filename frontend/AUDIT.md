@@ -1193,3 +1193,16 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 | §19.8                                | 前端 REV-3 作用域 2524                   | **2525**                                  | 修复后的工具口径；复现 `cd frontend; node scripts/check-structure.mjs`                                           |
 | §20.4                                | 「FE-19-6 已不成立（主检出已是 13 步）」 | **仍成立**：主检出 `AGENTS.md:85` = 12 步 | 上一版自我更正反向失真（EVID-8：记录更正之更正）；复现 `Select-String E:\grok2api\AGENTS.md -Pattern '覆盖.*步'` |
 | §14/§16 等历史章节的 `Dockerfile:66` | `Dockerfile:66`                          | **`Dockerfile:67`**                       | `COPY VERSION /app/VERSION` 现位于 `:67`（`:65`=二进制、`:66`=`dist`）；历史行保留原值，按本表指针更正           |
+| §22.4                                | minPassed 10/7/7/5/5                     | **12/8/9/6/6**                            | F5 扩大移动覆盖后的实测真值（`571a16fd`）；复现 `node scripts/check-test-results.mjs --e2e`                      |
+| §22.1                                | E2E `35 passed` / 用例 35                | **`42 passed` / 用例 42**                 | 同上；§22.1 是 2026-10-12 09:25 的快照，保留原值                                                                 |
+
+### 22.6 移动端 E2E 覆盖扩大（F5）
+
+提交 `571a16fd`。`mobile-chromium` 实例数 **14 → 21**（总 35 → 42），`@desktop` 从 8 个用例降到 **1 个**（仅 `navigation.e2e.ts` 的侧栏布局用例——其断言对象就是桌面布局本身，理由写在用例注释里）。
+
+- 共享入口：`e2e/fixtures.ts` 新增 `openMobileNavigation` / `isDrawerLayout` / `accountControlScope` / `openNavigation` / `closeMobileNavigation` / `expectVisibleUsername`；注释写明 `getByTestId` / `getByText` **不过滤隐藏元素**，移动端侧栏虽 `display:none` 仍在 DOM，必须限定到抽屉 dialog 作用域。
+- 棘轮同步（取实测真值，非估算）：`MIN_E2E_FILES = 6` 不变，`minPassed` 10/7/7/5/5 → **12/8/9/6/6**；`self-test-gates.mjs` 的 `E2E_EXPECTED_CASES` 35 → **42**。
+- 验证（cwd = `frontend/`）：`pnpm test:e2e` → **exit 0**（`42 passed`，两次运行 1.3m / 2.0m，无 flaky）；`node scripts/check-test-results.mjs --e2e` → **exit 0**（`文件 6 个、用例 42 个`）；`pnpm test:gates` → **exit 0**（46 用例 / 34 必失败）；`pnpm test:e2e --list` → `Total: 42 tests in 6 files`；`prettier --check` / `eslint` / `oxlint` / `typecheck` / `typecheck:e2e` → exit 0。
+- 判别力：把真实报告裁剪为**仅桌面 project** 后用 `TEST_REPORT_ROOT` 指向副本 → 新阈值 **exit 1**，7 项失败全部指向移动覆盖丧失（auth 6<12 等 + `mobile-device.e2e.ts` 缺失 + 5<6 文件）；同一场景已固化为 `self-test-gates.mjs` 的 F1 用例。
+- 无断言弱化：`expect(` 净 **+2**、`test(` 净 **0**（22 个场景全保留）；负 delta 仅来自把断言搬入 fixtures 共享助手（每次调用仍执行，且现在两个 project 都跑）。
+- 未覆盖：本轮未跑 `pnpm verify:full` 全量（其余 12 步中受影响项已单独 exit 0）；全量验收由 §23 覆盖。
