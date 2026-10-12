@@ -195,7 +195,10 @@ func TestRunWebAccountScriptsRejectsEmptyPlan(t *testing.T) {
 
 func TestWebAccountScriptsRejectConcurrentWorkForTheSameAccount(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// 本用例的建号与断言都会触达真实 SQLite；实测同机单跑 0.45~1.53s，而在全量并行负载下
+	// 建号写入可达 3.74s，3s 超时会把 IO 抖动误判为并发语义失败。超时余量按负载上限放宽；
+	// 并发语义的判别力由 ErrWebAccountScriptBusy 与 maxActive 断言保证，与超时值无关。
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	service, repo, _ := newWebAccountSettingsTestService(t)
 	credential := createWebAccountForScriptTest(t, ctx, repo, "serialized")
