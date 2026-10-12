@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strings"
 	"testing"
 	"time"
 )
@@ -118,7 +117,10 @@ func TestPinnedHTTPSClientSOCKS5HReceivesPinnedIP(t *testing.T) {
 	}
 	select {
 	case err := <-proxyDone:
-		if err != nil && !strings.Contains(strings.ToLower(err.Error()), "closed") && !strings.Contains(strings.ToLower(err.Error()), "reset by peer") {
+		// 仅忽略「连接被对端或本机中止」类错误（Windows loopback 高并发下内核 abort 已建立连接
+		// 属预期噪声）；断言目标（SOCKS 代理收到的 target host）不得因此被跳过，
+		// 非连接中止类错误仍然 t.Fatal。
+		if err != nil && !isClosedNetworkError(err) {
 			t.Fatal(err)
 		}
 	case <-time.After(2 * time.Second):

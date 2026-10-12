@@ -309,6 +309,31 @@ func readSOCKS5Host(reader io.Reader, addressType byte) (string, error) {
 	}
 }
 
+// connectionTerminatedMarkers 列出「连接被对端或本机中止」在各平台上可能出现的错误文本，
+// 全部按小写子串匹配。Windows 高并发 loopback 下内核会 abort 已建立的连接并返回
+// `wsarecv: An established connection was aborted by the software in your host machine.`
+// （WSAECONNABORTED / 10053），Linux 侧通常表现为 `use of closed network connection`
+// 或 `connection reset by peer`。
+var connectionTerminatedMarkers = []string{
+	"closed network connection",
+	"reset by peer",
+	"wsarecv",
+	"aborted",
+	"wsaeconnaborted",
+}
+
+// isClosedNetworkError 报告 err 是否只是「连接已被对端或本机中止」。
+// 该谓词仅用于忽略连接中止类错误：调用方不得据此跳过对收到的数据/状态的断言，
+// 任何非连接中止类错误仍必须由调用方上报（t.Fatal 或作为返回值传播）。
 func isClosedNetworkError(err error) bool {
-	return err == nil || strings.Contains(strings.ToLower(err.Error()), "closed network connection")
+	if err == nil {
+		return true
+	}
+	message := strings.ToLower(err.Error())
+	for _, marker := range connectionTerminatedMarkers {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
 }
