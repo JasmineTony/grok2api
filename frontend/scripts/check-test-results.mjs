@@ -79,11 +79,11 @@ const reportRoot = resolveReportRoot();
  * 实测值（2026-10-12，本工作树；复现：`pnpm test:ui:coverage && node scripts/check-test-results.mjs`
  * 输出「参与判定的文件 125 个」）：Vitest 125 个（原 123 + 本轮 FE-19-8 新增的 2 个用例文件）。
  * E2E 的计数口径是 **(spec × project) 实例**，不是 spec 文件数：Playwright JSON 把每个 project 各展开一遍。
- * 实测值来自 `pnpm test:e2e` 写出的 `.artifacts/playwright/results.json`（2026-10-12，stats.expected = 42）：
- * 参与判定的文件 6 个、用例 42 个（chromium 21 + mobile-chromium 21；仅断言桌面布局本身成立的用例保留
+ * 实测值来自 `pnpm test:e2e` 写出的 `.artifacts/playwright/results.json`（2026-10-12，stats.expected = 46）：
+ * 参与判定的文件 6 个、用例 46 个（chromium 23 + mobile-chromium 23；仅断言桌面布局本身成立的用例保留
  * `@desktop`）。`playwright test --list` 写出的是收集清单（config.argv 含 `--list`、stats.skipped 等于用例
  * 总数、stats.expected = 0），复现不出该计数，被 isListOnlyReport 显式拒绝（不得把未执行当通过）。
- * 删掉 `mobile-chromium` project 或把它的 `grepInvert` 收窄成 `/./` 后，文件数回落 5、实例数回落 21，
+ * 删掉 `mobile-chromium` project 或把它的 `grepInvert` 收窄成 `/./` 后，文件数回落 5、实例数回落 23，
  * 必须在这里失败——移动覆盖丧失不得静默通过。
  * 只增不减；确实需要下调时必须是可见改动并说明理由。
  */
@@ -137,14 +137,15 @@ const REQUIRED_VITEST = [
 /**
  * Playwright 全栈 E2E 报告：文件 → 最少通过用例数 + 必填用例标题 + project 维度棘轮（棘轮语义同 Vitest）。
  * minPassed / projectMinPassed 是 (spec × project) 实例口径，数字来源 `.artifacts/playwright/results.json`
- * （2026-10-12 10:53 的 42 实例报告）与 frontend/AUDIT.md §24.2：auth 6+6、client-keys 4+4、navigation 5+4、
- * request-audits 3+3、settings 3+3、mobile-device 0+1，合计 chromium 21 + mobile-chromium 21；移动 project
- * 被移除或收窄后回落到 21 个桌面实例，必须失败。requiredTitles 逐字取自对应 spec 的 test() 名称（包含匹配）。
+ * （2026-10-12 的 46 实例报告）与 frontend/AUDIT.md §24.2：auth 6+6、client-keys 4+4、navigation 5+4、
+ * request-audits 3+3、settings 5+5、mobile-device 0+1，合计 chromium 23 + mobile-chromium 23；
+ * 移动 project 被移除或收窄后回落到 23 个桌面实例，必须失败。requiredTitles 逐字取自对应 spec 的 test()
+ * 名称（包含匹配）。
  * project 清单显式登记而不解析 playwright.config.ts:40-44（本脚本零依赖，解析 TS 配置需额外依赖/加载器；
  * 未登记 project 一律 fail-closed，使配置变更成为必须登记的可见改动）。只增不减，缩减须可见并说明理由。
  */
 const REQUIRED_E2E_PROJECTS = ["chromium", "mobile-chromium"];
-const MIN_E2E_PROJECT_PASSED = { chromium: 21, "mobile-chromium": 21 };
+const MIN_E2E_PROJECT_PASSED = { chromium: 23, "mobile-chromium": 23 };
 const REQUIRED_E2E = [
   {
     file: "e2e/auth.e2e.ts",
@@ -180,9 +181,13 @@ const REQUIRED_E2E = [
   },
   {
     file: "e2e/settings.e2e.ts",
-    minPassed: 6,
-    projectMinPassed: { chromium: 3, "mobile-chromium": 3 },
-    requiredTitles: ["设置页分页可切换：Grok Build 与 Grok Web 面板按标签显隐"],
+    minPassed: 10,
+    projectMinPassed: { chromium: 5, "mobile-chromium": 5 },
+    requiredTitles: [
+      "设置页分页可切换：Grok Build 与 Grok Web 面板按标签显隐",
+      "设置页保存真实写入服务端：成功提示后刷新页面仍读到新值",
+      "设置保存遇到 409 版本冲突时提示冲突并保留用户草稿",
+    ],
   },
   {
     file: "e2e/mobile-device.e2e.ts",
