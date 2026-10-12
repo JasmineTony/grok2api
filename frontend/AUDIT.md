@@ -1517,3 +1517,22 @@ ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm build" did not
 | `38206150263`「CodeQL Advanced」 | `61f8f0a3` | **success** | 三个 Analyze job                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
 探针内容 `61f8f0a3` = 本文件所在分支 `bbd1d826` 的内容（唯一差异：`.github/workflows/**` 保持 `origin/main` 版本）。**结论**：14 步 `pnpm verify`（含新增的 node:test 报告门禁）与全栈 E2E、E2E 报告门禁**已在真实 CI 执行并通过**——§28.1 的 P1「门禁未接线」由此获得 CI 侧证据。仍未取得 run 证据的只有维护线工作流新增的两条 step（`Verify backend structure and API contract`、`Assert required frontend tests ran`），需合并/推送 `main` 才能触发（同 §23.2 第 3 条、§28.6）。
+
+### 28.8 E2E 报告门禁的跳过分类与 `--list` 产物识别（关闭 R17 复审发现）
+
+分支 `maint/acceptance-audit-20261012-e2e-skip-fix`（基点 `3d81ced2`），已并入装配分支（合并提交 `bbd1d826`）。
+
+| 提交       | 内容                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `62e6674d` | **P2**：`check-test-results.mjs` 的 `expectedFailure` 判据由 `(test.expectedStatus ?? "passed") !== "passed"` 收窄为 `=== "failed"`。原判据把 Playwright 对静态 `test.skip()`/`describe.skip()`/`fixme()` 置的 `expectedStatus: "skipped"` 也算成「预期失败 test.fail()」，导致诊断文案错误、`tally.skipped` 恒为 0 ⇒ **`ALLOWED_SKIPS` 在 E2E 路径上是死配置**、整文件跳过判定在 E2E 侧不可达（退出码仍为 1，故只是诊断错误 + 逃生口失效，不是放行） |
+| `cb9eff38` | **P3**：新增 `isListOnlyReport()`（`config.argv` 含 `--list`，或 `stats.expected === 0 && stats.skipped > 0`）→ 命中时打印明确错误并 **exit 2**（`playwright test --list` 产物不得当作执行结果）；同时修正 `check-test-results.mjs` 的「复现 42 通过」注释失真与 `TEST_REPORT_ROOT`/`NODE_TEST_REPORT_ROOT` 的「防重定向」注释（降级为「只拒绝 tmp 之外的覆盖」），**未改判定逻辑**                                                                   |
+| `40964da8` | **P3**：清理重复注释（`self-test-gates.mjs` 的重复 `/**`；`node-test-json-reporter.mjs` 逐字重复的 `"cases"` 说明行）。注：R17 报告的 `check-test-results.mjs:575-576` 行号有误，重复实际位于 `self-test-gates.mjs:588-589`                                                                                                                                                                                                                           |
+
+**夹具与判别力（TEST-7，实测）**：
+
+- `pnpm test:gates` 75 → **78** 个用例（含 **63** 个必须失败），exit 0；新增：静态跳过负样本（expect 1，输出须含「存在未登记跳过用例」且**不得**含「预期失败」）、`ALLOWED_SKIPS` 正样本（把被测脚本复制到 tmp 后仅替换 `const ALLOWED_SKIPS = [];` 一行，锚点未命中即抛错 → expect 0）、`--list` 产物负样本（expect 2）。
+- **把判据改回旧式 `!== "passed"`** → `pnpm test:gates` **exit 1**，两条用例失败，且夹具自报 `E2E 报告：参与判定的文件 6 个、用例 43 个（通过 42、失败 1、跳过 0、flaky 0）`——正是「跳过被计成失败、`tally.skipped` 恒 0」的失效形态。
+- **把 `--list` 守卫改为恒假** → `pnpm test:gates` **exit 1**（`期望 exit 2，实际 0`），且该夹具被当作健康报告放行（`用例 42 个（通过 42…）`）——即「未执行被当通过」。恢复后两者均 exit 0。
+- 真实报告路径：`node scripts/check-test-results.mjs --e2e` exit 0（`文件 6 个、用例 42 个`，`chromium 通过 21 个、mobile-chromium 通过 21 个`）；该结论在 §28.7 的最终 tip 复跑（`pnpm verify:full`）中再次覆盖。
+
+**已知边界（如实登记）**：`isListOnlyReport` 的 `expected === 0 && skipped > 0` 判据对「真实执行但全部用例被跳过」的报告同样返回 true——按设计 fail-closed（错误文案已覆盖该情形），未新增任何放宽。
