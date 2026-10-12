@@ -314,6 +314,51 @@ func TestImportBoundaryInfraTestFilesExempt(t *testing.T) {
 	checkImportBoundaryFixture(t, boundary, map[string]string{relative: source}, importBoundaryScan{skippedTests: 1})
 }
 
+// TestDirectoryCoverageGuardFixtures 自证 BE-G2 的目录覆盖守卫：旧实现（判定只内联在
+// TestInternalDirectoryCoverageBoundary 里）无法被夹具调用，此处直接断言纯函数。
+// 真实目录级负样本（可复现）：临时新增未登记目录后运行
+//
+//	New-Item -ItemType Directory internal/zz_probe_layer
+//	Set-Content internal/zz_probe_layer/probe.go 'package zz_probe_layer'
+//	cd backend; go test ./internal/ports/provider/ -run TestInternalDirectoryCoverageBoundary -count=1
+//
+// 期望 exit 1 且输出「internal/zz_probe_layer 未被任何规则或覆盖登记覆盖」；删除该目录后恢复 exit 0。
+func TestDirectoryCoverageGuardFixtures(t *testing.T) {
+	aligned := map[string]internalDirectoryCoverage{"app": {rule: "app 规则"}}
+	exempt := map[string]internalDirectoryCoverage{"app": {reason: "装配入口，禁入规则无意义"}}
+	cases := []struct {
+		name    string
+		present map[string]bool
+		ruled   map[string]string
+		entries map[string]internalDirectoryCoverage
+		want    []string
+	}{
+		{"new_directory_without_rule_or_exemption", map[string]bool{"app": true, "zz_new": true}, map[string]string{"app": "app 规则"}, aligned,
+			[]string{"internal/zz_new 未被任何规则或覆盖登记覆盖：请扩展 layerBoundaries 或登记豁免理由"}},
+		{"registered_rule_missing_in_boundaries", map[string]bool{"app": true}, nil, aligned,
+			[]string{`internal/app 覆盖登记规则 "app 规则"，但 layerBoundaries 无该规则`}},
+		{"rule_name_mismatch", map[string]bool{"app": true}, map[string]string{"app": "app 规则"}, map[string]internalDirectoryCoverage{"app": {rule: "旧规则"}},
+			[]string{`internal/app 覆盖登记 rule="旧规则"，实际规则="app 规则"`}},
+		{"entry_without_rule_and_reason", map[string]bool{"app": true}, nil, map[string]internalDirectoryCoverage{"app": {}},
+			[]string{"internal/app 的覆盖登记既不是规则也没有豁免理由"}},
+		{"rule_points_to_missing_directory", map[string]bool{"app": true}, map[string]string{"app": "app 规则", "gone": "gone 规则"}, aligned,
+			[]string{`规则 "gone 规则" 指向不存在的目录 internal/gone`}},
+		{"entry_for_missing_directory", map[string]bool{"app": true}, map[string]string{"app": "app 规则"},
+			map[string]internalDirectoryCoverage{"app": {rule: "app 规则"}, "gone": {reason: "已删除目录"}},
+			[]string{"覆盖登记 internal/gone 已消失：请删除该登记"}},
+		{"exemption_reason_covers_directory", map[string]bool{"app": true}, nil, exempt, nil},
+		{"aligned_rule_covers_directory", map[string]bool{"app": true}, map[string]string{"app": "app 规则"}, aligned, nil},
+	}
+	for _, fixture := range cases {
+		t.Run(fixture.name, func(t *testing.T) {
+			got := directoryCoverageViolations(fixture.present, fixture.ruled, fixture.entries)
+			if !slices.Equal(got, fixture.want) {
+				t.Fatalf("违规=%q, 期望=%q", got, fixture.want)
+			}
+		})
+	}
+}
+
 func importBoundaryFor(t *testing.T, directory string) layerBoundary {
 	t.Helper()
 	for _, boundary := range layerBoundaries {

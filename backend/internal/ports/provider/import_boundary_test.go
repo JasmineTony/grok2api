@@ -276,6 +276,41 @@ var internalDirectoryCoverageEntries = map[string]internalDirectoryCoverage{
 	"transport":   {rule: "transport 生产文件不直连 infra"},
 }
 
+// directoryCoverageViolations 判定 internal 一级目录覆盖完整性：存在的目录必须由规则或带理由的豁免登记
+// 覆盖，规则与登记必须双向一致，且不得指向已消失的目录。返回排序后的违规说明，空表示通过。
+// 抽成纯函数是为了让守卫本身可自证（夹具见 import_boundary_fixtures_test.go 的 TestDirectoryCoverageGuardFixtures）。
+func directoryCoverageViolations(present map[string]bool, ruled map[string]string, entries map[string]internalDirectoryCoverage) []string {
+	var violations []string
+	for directory := range present {
+		coverage, registered := entries[directory]
+		if registered && coverage.rule == "" && strings.TrimSpace(coverage.reason) == "" {
+			violations = append(violations, fmt.Sprintf("internal/%s 的覆盖登记既不是规则也没有豁免理由", directory))
+		}
+		if name, ok := ruled[directory]; ok && coverage.rule != name {
+			violations = append(violations, fmt.Sprintf("internal/%s 覆盖登记 rule=%q，实际规则=%q", directory, coverage.rule, name))
+		}
+		if _, ok := ruled[directory]; !ok {
+			if !registered {
+				violations = append(violations, fmt.Sprintf("internal/%s 未被任何规则或覆盖登记覆盖：请扩展 layerBoundaries 或登记豁免理由", directory))
+			} else if coverage.rule != "" {
+				violations = append(violations, fmt.Sprintf("internal/%s 覆盖登记规则 %q，但 layerBoundaries 无该规则", directory, coverage.rule))
+			}
+		}
+	}
+	for directory, name := range ruled {
+		if !present[directory] {
+			violations = append(violations, fmt.Sprintf("规则 %q 指向不存在的目录 internal/%s", name, directory))
+		}
+	}
+	for directory := range entries {
+		if !present[directory] {
+			violations = append(violations, fmt.Sprintf("覆盖登记 internal/%s 已消失：请删除该登记", directory))
+		}
+	}
+	slices.Sort(violations)
+	return violations
+}
+
 // TestInternalDirectoryCoverageBoundary 守卫 BE-G2：internal 下每个一级目录都必须由 layerBoundaries
 // 规则或 internalDirectoryCoverageEntries 的豁免登记覆盖；新目录未纳入判定时本测试失败。
 func TestInternalDirectoryCoverageBoundary(t *testing.T) {
@@ -297,31 +332,8 @@ func TestInternalDirectoryCoverageBoundary(t *testing.T) {
 	for _, boundary := range layerBoundaries {
 		ruled[boundary.directory] = boundary.name
 	}
-	for directory := range present {
-		coverage, registered := internalDirectoryCoverageEntries[directory]
-		if registered && coverage.rule == "" && strings.TrimSpace(coverage.reason) == "" {
-			t.Errorf("internal/%s 的覆盖登记既不是规则也没有豁免理由", directory)
-		}
-		if name, ok := ruled[directory]; ok && coverage.rule != name {
-			t.Errorf("internal/%s 覆盖登记 rule=%q，实际规则=%q", directory, coverage.rule, name)
-		}
-		if _, ok := ruled[directory]; !ok {
-			if !registered {
-				t.Errorf("internal/%s 未被任何规则或覆盖登记覆盖：请扩展 layerBoundaries 或登记豁免理由", directory)
-			} else if coverage.rule != "" {
-				t.Errorf("internal/%s 覆盖登记规则 %q，但 layerBoundaries 无该规则", directory, coverage.rule)
-			}
-		}
-	}
-	for directory, name := range ruled {
-		if !present[directory] {
-			t.Errorf("规则 %q 指向不存在的目录 internal/%s", name, directory)
-		}
-	}
-	for directory := range internalDirectoryCoverageEntries {
-		if !present[directory] {
-			t.Errorf("覆盖登记 internal/%s 已消失：请删除该登记", directory)
-		}
+	if violations := directoryCoverageViolations(present, ruled, internalDirectoryCoverageEntries); len(violations) > 0 {
+		t.Errorf("internal 一级目录覆盖不完整:\n%s", strings.Join(violations, "\n"))
 	}
 	t.Logf("internal 一级目录覆盖（BE-G2）：规则=%d、豁免=%d、参与判定=%d", len(ruled), len(internalDirectoryCoverageEntries)-len(ruled), len(present))
 }
