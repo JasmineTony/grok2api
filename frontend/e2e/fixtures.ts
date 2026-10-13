@@ -85,6 +85,12 @@ type StorageState = Awaited<ReturnType<BrowserContext["storageState"]>>;
 // 第 13 次起返回 429 loginRateLimited，表现为登录后停在 /login（CI 与本地单 worker
 // 均已实际复现）。因此按 worker 复用一次会话与一次 API 令牌，只有「尚未建立或已被
 // 注销」时才真正调用登录接口；登录流程本身仍由 auth.e2e 的 fresh 登录与错误密码用例覆盖。
+//
+// 复用要成立有两个前提（2026-10-13 实测补齐；此前 CI 2 worker 下稳定失败 4 个用例）：
+// 1. 刷新令牌每次使用即轮换，快照必须在轮换响应落地后采集（见 settleAuth），否则缓存到的是
+//    已被消费的旧令牌，复用时服务端必然 401；
+// 2. 应用启动时会先渲染登录页、鉴权引导完成后才进入仪表盘，瞬时的登录页不是「会话失效」，
+//    因此恢复流程在落到登录页后仍给一段宽限窗口（见 restoreCachedSession）。
 let cachedSession: StorageState | null = null;
 let cachedApiToken: string | null = null;
 
@@ -97,16 +103,34 @@ const loginHeadingName = /管理员登录|Admin sign in/;
  */
 export async function signIn(page: Page, server: E2EServer, options: { fresh?: boolean } = {}): Promise<void> {
   if (!options.fresh && cachedSession && (await restoreCachedSession(page, server))) {
+    cachedSession = await page.context().storageState();
     return;
   }
+  const authSettled = settleAuth(page, server);
   await page.goto(`${server.baseURL}/login`);
   await page.locator("#username").fill(server.username);
   await page.locator("#password").fill(server.password);
   await page.getByRole("button", { name: /^(登录|Sign in)$/ }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
   if (!options.fresh) {
+    await authSettled;
     cachedSession = await page.context().storageState();
   }
+}
+
+/**
+ * 等待应用启动期的鉴权引导（`/auth/refresh`）落定后再采集会话快照。
+ *
+ * 刷新令牌**每次使用即轮换**：若在轮换响应落地前采集 storageState，缓存到的是已被消费的旧令牌，
+ * 下一个用例复用时服务端必然 401（页面停在登录页），于是又走一次登录接口。登录接口按用户名硬编码
+ * 限流 12 次/分钟（`backend adminauth.checkLoginRate`），CI 2 worker 下会迅速触发 429 并使用例失败。
+ */
+async function settleAuth(page: Page, server: E2EServer, timeoutMs = 10_000): Promise<void> {
+  await page
+    .waitForResponse((response) => response.url().startsWith(`${server.baseURL}/api/admin/v1/auth/refresh`), {
+      timeout: timeoutMs,
+    })
+    .catch(() => undefined);
 }
 
 /** 复用缓存会话并等待应用解析登录状态；落到登录页说明该会话已被注销，返回 false。 */
@@ -114,21 +138,27 @@ async function restoreCachedSession(page: Page, server: E2EServer): Promise<bool
   if (cachedSession) {
     await page.context().addCookies(cachedSession.cookies);
   }
+  const authSettled = settleAuth(page, server);
   await page.goto(`${server.baseURL}/dashboard`);
-  const authenticated = await Promise.race([
-    page
-      .getByRole("heading", { name: dashboardHeadingName })
-      .waitFor({ state: "visible", timeout: 15000 })
-      .then(() => true),
-    page
-      .getByRole("heading", { name: loginHeadingName })
-      .waitFor({ state: "visible", timeout: 15000 })
-      .then(() => false),
-  ]).catch(() => false);
-  if (!authenticated) {
-    return false;
+  // 应用启动时会先渲染登录页、鉴权引导（/auth/refresh）完成后才进入仪表盘；瞬时的登录页不是「会话失效」。
+  // 因此先看两个标题谁先出现，落到登录页时再给一段宽限窗口，只有始终停在登录页才判定会话不可复用。
+  const dashboardHeading = page.getByRole("heading", { name: dashboardHeadingName });
+  const loginHeading = page.getByRole("heading", { name: loginHeadingName });
+  const outcome = await Promise.race([
+    dashboardHeading.waitFor({ state: "visible", timeout: 15000 }).then(() => "dashboard" as const),
+    loginHeading.waitFor({ state: "visible", timeout: 15000 }).then(() => "login" as const),
+  ]).catch(() => "timeout" as const);
+  if (outcome !== "dashboard") {
+    const recovered = await dashboardHeading
+      .waitFor({ state: "visible", timeout: 5000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!recovered) {
+      return false;
+    }
   }
   await expect(page).toHaveURL(/\/dashboard$/);
+  await authSettled;
   return true;
 }
 

@@ -50,10 +50,10 @@
 | FE-A13 | 门禁自证           | `pnpm test:gates`         | `Passed`（90 个用例，含 72 个必须失败的用例）                                                                                                                                                                     |
 | FE-A14 | 生产构建           | `pnpm build`              | `Passed`（冷构建 5.09s / 热构建 2.75s；`dist` 89 个文件 = 76 js + 1 css + `index.html` 等；**两次干净构建逐文件 SHA256 完全一致**，见 N-5）                                                                       |
 | FE-A15 | 产物体积预算       | `pnpm check:budget`       | `Passed`（见 B.3）                                                                                                                                                                                                |
-| FE-A16 | 真实全栈 E2E       | `pnpm test:e2e`           | `Passed`（64 passed / 0 failed / 0 skipped，2.1m；两个 project）                                                                                                                                                  |
+| FE-A16 | 真实全栈 E2E       | `pnpm test:e2e`           | `Passed`（64 passed / 0 failed / 0 skipped，2.0m；两个 project）                                                                                                                                                  |
 | FE-A17 | E2E 报告门禁       | `pnpm test:results:e2e`   | `Passed`（E2E 文件 11 个 / 用例 64 个；`chromium` 32 + `mobile-chromium` 32）                                                                                                                                     |
 
-- 上表 17 步 = `frontend/package.json` 的 `pnpm verify`（15 步）+ `pnpm verify:full` 追加的 `test:e2e` / `test:results:e2e`。**2026-10-13 以单条聚合命令 `pnpm verify:full` 在最终工作区复跑（cwd=`frontend/`）：exit 0，17/17 步全部实际执行并通过，总时长 712.1s**（Vitest 段报告 126 文件 / 1496 用例：通过 1496、失败 0、跳过 0、flaky 0；E2E 段 11 文件 / 64 用例：通过 64、失败 0、跳过 0，`chromium` 32 + `mobile-chromium` 32）。
+- 上表 17 步 = `frontend/package.json` 的 `pnpm verify`（15 步）+ `pnpm verify:full` 追加的 `test:e2e` / `test:results:e2e`。**2026-10-13 以单条聚合命令 `pnpm verify:full` 在最终工作区复跑（cwd=`frontend/`）：exit 0，17/17 步全部实际执行并通过，总时长 577.3s**（Vitest 段报告 126 文件 / 1496 用例：通过 1496、失败 0、跳过 0、flaky 0；E2E 段 11 文件 / 64 用例：通过 64、失败 0、跳过 0，`chromium` 32 + `mobile-chromium` 32）。另以 CI 口径（`--workers=2`）单独复跑 `pnpm exec playwright test --workers=2`：exit 0，64 passed / 0 failed，3.0m。
 
 ### B.2 门禁口径与唯一来源
 
@@ -77,7 +77,7 @@
 
 ### B.4 真实全栈 E2E 与隔离（2026-10-13 实测）
 
-- `pnpm test:e2e`：64 passed / 0 failed / 0 skipped，2.1m；两个 project（`chromium` 32 + `mobile-chromium` 32）；`retries: 0`（不用重试掩盖缺陷）。本轮新增 `e2e/account-password.e2e.ts`、`e2e/models.e2e.ts`、`e2e/egress.e2e.ts`（各 2 用例 × 2 project）与 `e2e/quality-guard.e2e.ts`（1 用例 × 2 project），必需用例清单与门禁自测棘轮已同步（11 文件 / 64 实例）。
+- `pnpm test:e2e`：64 passed / 0 failed / 0 skipped，2.0m；两个 project（`chromium` 32 + `mobile-chromium` 32）；`retries: 0`（不用重试掩盖缺陷）。本轮新增 `e2e/account-password.e2e.ts`、`e2e/models.e2e.ts`、`e2e/egress.e2e.ts`（各 2 用例 × 2 project）与 `e2e/quality-guard.e2e.ts`（1 用例 × 2 project），必需用例清单与门禁自测棘轮已同步（11 文件 / 64 实例）。**会话复用的两处竞态（刷新令牌轮换与瞬时登录页假阴性）已修复，见 C 区「E2E 会话复用缺陷」条目。**
 - 被测对象：生产 `frontend/dist` + 真实 Go HTTP / Auth / Application / SQLite / Memory；每 worker 独立后端进程与临时目录。
 - 隔离手段（证据在 `frontend/e2e/backend-process.ts`、`frontend/e2e/global-setup.ts`）：未知外呼经未监听端口快速失败、剔除 `GROK2API_*` / `TEST_*` 环境、`dist` 与构建输入指纹比对后按需重建。
 - 覆盖现状：登录 / 会话 / 注销、密钥 CRUD、账号导入（含失败路径）、**修改密码（含当前密码错误的失败路径）**、**模型封锁与批量封锁/解除**、**出口节点 CRUD 与批量启停**、**质量守护不可用显式可见（含路由直达刷新）**、设置真实保存与 409 版本冲突、审计空态与筛选、语言与主题持久化、移动视口与抽屉菜单均已有真实全栈用例并通过；仍缺的项登记在 C 区 FE-P2-6。
@@ -178,6 +178,10 @@
   - 实现中的必要偏离（均为实测确认，非降级）：① `GET /api/admin/v1/egress-nodes/<id>` **不存在**（后端只有列表 GET 与 `DELETE /egress-nodes/:id`），故服务端事实改用 `GET /api/admin/v1/egress-nodes?search=<唯一名>` 并要求 `total === 1`；② 单行删除无确认弹窗，故用 `egress-node-actions-<id>` → `egress-node-delete-<id>` 的 testid 点击；③ 批量启停的 UI 信号用批量 toast + 名称单元格的禁用弱化类（行上没有 `enabled` 专用 testid）。
   - **剩余未覆盖项与不可行理由（按 FE-P2-6 登记，附检索证据）**：① **批任务失败/取消 —— UI 不存在**：`frontend/src` 检索 `批任务|批量任务|task-run|任务已取消` 零命中，唯一「批」是额度同步/重置的确认弹窗（`src/features/accounts/account-quota-task-dialogs.tsx`），无运行中进度面板、无用户可见取消按钮；② **创作台/媒体流程 —— 不可构造**：媒体资产/任务为数据库记录，admin 侧只有 GET/DELETE、无 seed 接口，生成必须走真实 provider；③ **额度侧模型封锁 —— 无写入路径**：`src/features/accounts/account-quota.tsx` 只有展示 testid，数据来自服务端账号状态；④ **账号列表分页 —— 超出预算**：需先导入 ≥21 个账号才能触发翻页（默认每页 20，`src/shared/components/pagination.tsx`）。
   - 复现命令（cwd=`frontend/`）：`pnpm test:e2e`；`pnpm test:results:e2e`；`pnpm test:gates`。
+- **E2E 会话复用缺陷（2026-10-13，CI 首轮发现并修复；TEST-4 / EVID-8）**：v0.1.3 的 PR 首轮 CI（run `38350504532`，`GHCR Image` / `pull_request`）在 `Run full-stack E2E` 失败 4 个用例，全部表现为 `signIn` 后停在 `/login`。**根因（本机 `--workers=2` 稳定复现，探针实测取证）**：`frontend/e2e/fixtures.ts` 的会话缓存有两处竞态——① 刷新令牌**每次使用即轮换**，而 `storageState()` 快照在轮换响应落地前采集，缓存到的是**已被消费**的旧令牌，下一个用例复用时服务端 `/api/admin/v1/auth/refresh` 必然 401；② 恢复流程用「仪表盘 vs 登录页」竞速，应用启动时**瞬时的登录页**会先把竞速判为失败（假阴性）。两者叠加使缓存几乎不生效（探针实测：每 worker 复用 5 次 / 重新登录 44 次），登录速率超过登录接口**硬编码的按用户名 12 次/分钟**限流（`backend adminauth.checkLoginRate`），触发 429 并使用例失败。
+  - **修复**：新增 `settleAuth`（采集快照前等待 `/api/admin/v1/auth/refresh` 响应落地）；恢复流程改为「先看两个标题谁先出现，落到登录页后仍给 5s 宽限窗口，只有始终停在登录页才判定会话不可复用」；复用成功后回写轮换后的快照。
+  - **实测效果**：`pnpm exec playwright test --workers=2`（CI 口径）**exit 0，64 passed / 0 failed，3.0m**；`pnpm verify:full` **exit 0，577.3s**（E2E 64 passed / 2.0m）。登录速率降至约 3 次/分钟/worker，远低于限流阈值。
+  - **未做**（明确登记，避免过度声称）：未改动后端限流参数（安全控制、硬编码，与 `CHG-4` 同向）；未减少用例、未加 `test.skip`、未用重试掩盖。
 
 ## D. 发布登记（前端侧）
 
