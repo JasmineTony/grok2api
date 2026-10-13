@@ -9,7 +9,7 @@
 | 覆盖范围 | 产品定位、用户场景、范围与非目标、功能需求 FR-A…FR-L、非功能需求、度量指标、优先级与路线图；不含实现细节与门禁规则（分别见 TD 与 AGENTS.md） |
 | 文档状态 | 派生文档（非规则 SSOT）；规则以 `AGENTS.md` 为准，实测值以两个 `AUDIT.md` 为准 |
 | 基线提交 | `45838afe`（`main`，2026-10-12）；历史基线 `c6206d50` 因远端仓库重建/历史重写已不可解析，引用其行号时需按当前文件重新定位 |
-| 版本载体 | 仓库根 `VERSION` = `v0.1.1`；`frontend/package.json.version` = `0.1.1`（一致） |
+| 版本载体 | 唯一权威版本源是仓库根 `VERSION`（规则见 `AGENTS.md` §8）；`frontend/package.json.version` 须与之同线。本文不复制版本号，一致性以 `pnpm check:version` 当次输出为准 |
 | 生成日期 | 2026-10-12 |
 | 权威边界 | 本文件**不是**规则 SSOT。规则 SSOT 是 `AGENTS.md`；历史证据与逐轮实测 SSOT 是 `frontend/AUDIT.md`、`backend/AUDIT.md`。本文与它们冲突时，以那三者为权威。 |
 | 事实口径 | 文中 `文件:行` 引用相对基线提交（基线已前移，需按当前文件重新定位）；复现命令见 `docs/TD.md` §17.5 与 `AGENTS.md` §7 |
@@ -294,7 +294,7 @@ grok2api 是一个自托管的 **API 网关 + 管理控制台**：把多个 Grok
 | 质量 | 结构门禁越限数 | 0（棘轮只降不升） | 可测 |
 | 质量 | 契约基线差异 | 0 | 可测 |
 | 质量 | 业务 UI 逐文件覆盖率 | 达标（阈值唯一来源 `frontend/vitest.config.ts`，规则见 `AGENTS.md` 的 TEST-1/TEST-2） | 可测 |
-| 质量 | 首屏关键 JS | 达标（阈值唯一来源 `frontend/bundle-budget.json`，规则见 `AGENTS.md` 的 REV-5） | 可测；**认证后首屏当前 282.30 KiB 未纳入门禁**（见 §7 R-5） |
+| 质量 | 首屏关键 JS | 达标（阈值唯一来源 `frontend/bundle-budget.json`，规则见 `AGENTS.md` 的 REV-5） | 可测；**认证后首屏超阈值但未纳入门禁**（体积以 `pnpm check:budget` 与 `frontend/AUDIT.md` 的 FE-19-5 / §37.2 当次输出为准；见 §7 R-5） |
 | 运维 | 账号池可用率（非冷却/非降级账号占比） | 由运营目标设定 | 仪表盘 + 审计可观测 |
 | 运维 | 请求成功率与首字节延迟分位 | 由运营目标设定 | 审计可观测；**无后端指标导出端点**（见 §7 R-7） |
 | 运维 | 账本就绪率 | 100%（enforce 模式下阻塞放流量） | `/readyz` 可观测 |
@@ -305,20 +305,20 @@ grok2api 是一个自托管的 **API 网关 + 管理控制台**：把多个 Grok
 
 优先级口径沿用 `AGENTS.md` §6：P0 立即阻塞；P1 阶段验收阻塞；P2 已登记且不扩张的存量债务；P3 建议项。
 
-**当前状态（`main` @ `45838afe`）**：P0 = 0；交付阻塞类 4 项；P2 = 5 项；P3 = 6 项（各计数以本节表格条目数为准）。
+**当前状态（基线快照：`main` @ `45838afe`，2026-10-12；当前 tip 以 `git rev-parse HEAD` 为准）**：P0 = 0；交付阻塞类 4 项；P2 = 5 项；P3 = 6 项（**计数口径：本节表格中该优先级的条目数，P3 即 R-10…R-15**；`docs/implementation-plan.md` §1.3 已按同一口径对齐，其 EVID-8 留痕见该文 §10）。
 
 | 编号 | 需求 | 优先级 | 现状与缺口 | 验收标准 |
 | --- | --- | --- | --- | --- |
 | R-1 | 发布路径可获得真实远端证据 | P1（阻塞发布） | 交付分支从未推送，CI 的两条维护线新增断言 step 从未执行 | 远端 `ghcr-image.yml` 的 `verify` job 真实跑完，两个「Assert required … ran」step 为 success，并登记 run id |
-| R-2 | 版本载体与发布版本一致 | P1（阻塞发布） | `VERSION` 当前为 `v0.1.1`；历史计划中的 `v0.1.3` 与本轮「仅重发 `v0.1.1`」口径需在发布时明确 | `pnpm check:version` 通过且 tag 名与 `VERSION` 一致 |
-| R-3 | 远端仓库与推送凭据就绪 | P1（阻塞发布） | `origin`（fetch HTTPS / push SSH）与 `upstream`（只读参考，**禁止推送**）均已配置，`main` 跟踪 `origin/main`（事实 SSOT 是 `AGENTS.md` 的 BIND-1）；剩余缺口是推送凭据可用性与远端重建/`v0.1.1` 重发尚无实测登记 | `git remote -v` 显示 `origin` 指向维护线仓库且 `main` 跟踪 `origin/main`；推送通道可完成含工作流的提交推送 |
+| R-2 | 版本载体与发布版本一致 | P1（阻塞发布） | 当前版本载体以仓库根 `VERSION` 为准（唯一权威源，规则见 `AGENTS.md` §8；本文不复制版本号）；历史授权中的版本号与「仅重发某版本」口径见 `backend/AUDIT.md` D.5，需在发布时一次性明确 | `pnpm check:version` 通过且 tag 名与 `VERSION` 一致 |
+| R-3 | 远端仓库与推送凭据就绪 | P1（阻塞发布） | `origin`（fetch HTTPS / push SSH）与 `upstream`（只读参考，**禁止推送**）均已配置，`main` 跟踪 `origin/main`（事实 SSOT 是 `AGENTS.md` 的 BIND-1）；远端重建与重发的实测登记见 `backend/AUDIT.md` D.1/D.2，授权口径见 D.5；剩余缺口是推送凭据可用性的逐次实测 | `git remote -v` 显示 `origin` 指向维护线仓库且 `main` 跟踪 `origin/main`；推送通道可完成含工作流的提交推送 |
 | R-4 | CI 断言 step 首次真实执行 | P1（阻塞发布） | 依赖 R-1/R-3 | 见 R-1 |
-| R-5 | 体积预算口径收口 | P2 | 认证后首屏 282.30 KiB 超体积预算上限不入门禁；`runtime-config.js` 漏算；嵌套 `import()` 不可见；冻结基线陈旧 | 四项在 `frontend/bundle-budget.json` 与 `check-bundle-budget.mjs` 中显式覆盖或登记为豁免，且门禁口径可复现 |
+| R-5 | 体积预算口径收口 | P2 | 认证后首屏超体积预算上限但不入门禁（体积以 `pnpm check:budget` 与 `frontend/AUDIT.md` 的 FE-19-5 / §37.2 当次输出为准）；`runtime-config.js` 漏算；嵌套 `import()` 不可见；冻结基线陈旧 | 四项在 `frontend/bundle-budget.json` 与 `check-bundle-budget.mjs` 中显式覆盖或登记为豁免，且门禁口径可复现 |
 | R-6 | 多副本运行态一致性 | P2 | `memory` driver 在多副本下静默退化为每实例独立限流/粘滞/锁；`replicas > 1` 未强制要求 Redis | 多副本启动时对 `memory` + `replicas>1` 组合 fail-closed 或明确告警 |
 | R-7 | 可观测性补全 | P2 | 无请求级全链路 trace；`pkg/perfmetrics` 只写日志与内存 gauge，无导出端点；`/readyz` 只有二值状态 | 定义 SLO 与采集方案并落地至少一个导出端点；或登记为明确不做并说明替代手段 |
-| R-8 | 后端分层边界收敛 | P2 | application → infra 生产依赖 27 文件 / 29 对未收敛，仅冻结为门禁例外 | 例外数只降不升，且每项有收敛计划 |
+| R-8 | 后端分层边界收敛 | P2 | application → infra 生产依赖未收敛，仅冻结为只减不增的门禁例外（文件数与 (文件, 包路径) 对数以 `go test ./internal/ports/provider/ -count=1` 当次输出为准，实测值 SSOT 见 `backend/AUDIT.md` C 区 BE-P2-2） | 例外数只降不升，且每项有收敛计划 |
 | R-9 | 数据迁移版本化 | P2 | 无版本化迁移表、无 down/回滚路径、无迁移耗时/锁等待指标 | 引入迁移版本记录与回滚路径（或登记为明确不做的决策） |
-| R-10 | 网关包体量拆分 | P3 | `application/gateway` 单包 40+ 文件，多个 440+ 行文件 | 给出拆分边界与阶段计划，拆分后门禁仍全绿 |
+| R-10 | 网关包体量拆分 | P3 | `application/gateway` 单包文件数与单文件行数偏大（以 `go run ./tools/structurecheck` 与字节级行数当次输出为准，本文不复制数值） | 给出拆分边界与阶段计划，拆分后门禁仍全绿 |
 | R-11 | 文档矩阵补全 | P3 | 阶段验收矩阵、三工具差异表、FT-01 纳入/排除矩阵缺失 | 矩阵补齐且与实际门禁输出一致 |
 | R-12 | E2E 场景补全 | P3 | 账号导入/额度/模型封锁/出口/质量守护/创作台/文档场景未纳入 E2E | 按阶段纳入 `pnpm verify:full` 且断言真实执行 |
 | R-13 | 门禁接线补全 | P3 | 预算 artifact 上传、根级文件无三工具覆盖、版本一致性无本地接线（部分已落地为 `check:version`） | CI step 覆盖且本地命令等价 |
@@ -351,7 +351,7 @@ grok2api 是一个自托管的 **API 网关 + 管理控制台**：把多个 Grok
 
 - 门禁清单与步骤数：SSOT 是 `AGENTS.md` 的 BIND-4（清单）、DEV-4（前端）、TEST-6（后端）。
 - 阈值：体积见 `frontend/bundle-budget.json`、结构见两侧 `structure-baseline.json`、覆盖率见 `frontend/vitest.config.ts`（规则 `REV-1`/`REV-2`/`REV-3`/`REV-5`、`TEST-1`/`TEST-2`）。
-- 本文 §4/§7 的 `文件:行` 引用相对 §0 的基线提交；基线已前移，引用需按当前文件重新定位。
+- 本文 §1.3 / §3.2 的 `文件:行` 引用相对 §0 的基线提交；基线已前移，引用需按当前文件重新定位。
 
 ---
 
@@ -360,3 +360,4 @@ grok2api 是一个自托管的 **API 网关 + 管理控制台**：把多个 Grok
 | 日期 | 版本 | 说明 |
 | --- | --- | --- |
 | 2026-10-12 | 初稿 | 基于 `main` @ `45838afe` 反向梳理产品需求，并纳入当前已知缺口（R-1 ~ R-15）作为演进需求（历史基线 `c6206d50` 因远端仓库重建/历史重写已不可解析） |
+| 2026-10-13 | 修订 | 按 DOC-1 / META-2 收口复制项与计数口径：① §0 版本载体改为指向仓库根 `VERSION`（规则见 `AGENTS.md` §8），不再复制版本号；② §7 的 P3 计数保持 6（口径＝本节表格 R-10…R-15），并与 `docs/implementation-plan.md` §1.3 对齐（该文原写 5，EVID-8 留痕见其 §10）；③ 「认证后首屏 282.30 KiB」等会漂移的实测值改为「以 `pnpm check:budget` / `frontend/AUDIT.md` 当次输出为准」；④ R-2/R-3 的版本号与远端重建/重发证据改为指向 `backend/AUDIT.md` D.5 / D.1 / D.2。 |

@@ -581,5 +581,12 @@ make swagger
 ## Documentation
 
 - [简体中文 README](./README.zh-CN.md)
+- [Rules and acceptance contract (SSOT)](./AGENTS.md)
+- [Contributor entry index](./CLAUDE.md)
+- [Product requirements (PRD)](./docs/PRD.md)
+- [Technical design (TD)](./docs/TD.md)
+- [Implementation plan](./docs/implementation-plan.md)
+- [Frontend audit evidence](./frontend/AUDIT.md)
+- [Backend audit evidence](./backend/AUDIT.md)
 - [Backend guide](./backend/README.md)
 - [Frontend guide](./frontend/README.md)

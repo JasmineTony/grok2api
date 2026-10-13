@@ -524,5 +524,12 @@ make swagger
 ## 相关文档
 
 - [English README](./README.md)
+- [规则与验收契约（SSOT）](./AGENTS.md)
+- [贡献入口索引](./CLAUDE.md)
+- [产品需求文档（PRD）](./docs/PRD.md)
+- [技术设计文档（TD）](./docs/TD.md)
+- [实施计划](./docs/implementation-plan.md)
+- [前端审计证据](./frontend/AUDIT.md)
+- [后端审计证据](./backend/AUDIT.md)
 - [后端说明](./backend/README.md)
 - [前端说明](./frontend/README.md)

@@ -16,6 +16,10 @@ Thumbs.db
 /config.*.local.yaml
 /docs/*
 /docs/rules/*
+# docs/ 默认不入库；下面三份是交付用的派生文档（需求、设计、实施计划），需随仓库分发
+!/docs/PRD.md
+!/docs/TD.md
+!/docs/implementation-plan.md
 /backend/docs/goal/
 *.har
 *.pcap
