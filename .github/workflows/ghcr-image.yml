@@ -15,7 +15,7 @@ on:
 
 concurrency:
   group: ghcr-${{ github.workflow }}-${{ github.ref }}
-  # BE-11：tag 推送不得被取消 —— 同 ref 连推时若取消发生在 per-arch 推送之后、merge 之前，
+  # backend/AUDIT.md §5（BE-11）：tag 推送不得被取消 —— 同 ref 连推时若取消发生在 per-arch 推送之后、merge 之前，
   # 会短暂留下不完整的 <tag>-amd64/-arm64 标签；分支推送仍允许取消以节省 runner。
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
@@ -85,7 +85,7 @@ jobs:
 
       - name: Assert required integration tests ran
         run: |
-          # 双重断言（BE-13）：只按用例名 grep Postgres|Redis 时，命名不同的新增集成用例会被漏检，
+          # 双重断言（backend/AUDIT.md §5 BE-13）：只按用例名 grep Postgres|Redis 时，命名不同的新增集成用例会被漏检，
           # 因此同时按「包路径白名单内任何用例被 skip」断言。包路径是 go test -json 的稳定字段，
           # 不随用例命名漂移；任一命中即打印明细并失败。
           report="$RUNNER_TEMP/backend-test.json"
@@ -124,7 +124,7 @@ jobs:
           go run ./tools/structurecheck
           go run ./tools/apicheck
 
-      # AGENTS.md BE-28：Dockerfile 与 .dockerignore 必须覆盖全部必需输入。
+      # AGENTS.md TEST-6（backend/scripts/verify.sh 内的 dockerfilecheck 步）：Dockerfile 与 .dockerignore 必须覆盖全部必需输入。
       # 「本地构建通过、镜像缺文件」不会被其它门禁发现，故静态守卫必须随 CI 执行。
       - name: Verify Dockerfile covers required inputs
         working-directory: backend
