@@ -132,11 +132,24 @@ async function restoreCachedSession(page: Page, server: E2EServer): Promise<bool
   return true;
 }
 
-/** 直接调用管理 API 登录，返回 accessToken；失败时携带响应体，便于定位。按 worker 复用。 */
+/**
+ * 缓存令牌可能已被服务端撤销：修改密码会撤销该管理员的全部 refresh session（access JWT 绑定 session，
+ * 一并失效），注销同理。因此复用前先用一次受保护读请求确认服务端仍接受它；否则重新登录并覆盖缓存，
+ * 避免同一 worker 内后续 spec 拿着失效令牌得到 401。
+ */
+async function cachedTokenAccepted(request: APIRequestContext, server: E2EServer, token: string): Promise<boolean> {
+  const response = await request.get(`${server.baseURL}/api/admin/v1/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.ok();
+}
+
+/** 直接调用管理 API 登录，返回 accessToken；失败时携带响应体，便于定位。按 worker 复用（失效则重新登录）。 */
 export async function apiLogin(request: APIRequestContext, server: E2EServer): Promise<string> {
-  if (cachedApiToken) {
+  if (cachedApiToken !== null && (await cachedTokenAccepted(request, server, cachedApiToken))) {
     return cachedApiToken;
   }
+  cachedApiToken = null;
   const response = await request.post(`${server.baseURL}/api/admin/v1/auth/login`, {
     data: { username: server.username, password: server.password },
   });

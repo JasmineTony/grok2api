@@ -79,16 +79,18 @@ const reportRoot = resolveReportRoot();
  * 实测值（2026-10-12，本工作树；复现：`pnpm test:ui:coverage && node scripts/check-test-results.mjs`
  * 输出「参与判定的文件 126 个」）：Vitest 126 个（原 125 + 本轮 FE-19-13 新增的 1 个用例文件）。
  * E2E 的计数口径是 **(spec × project) 实例**，不是 spec 文件数：Playwright JSON 把每个 project 各展开一遍。
- * 实测值来自 `pnpm test:e2e` 写出的 `.artifacts/playwright/results.json`（2026-10-12，stats.expected = 50）：
- * 参与判定的文件 7 个、用例 50 个（chromium 25 + mobile-chromium 25；仅断言桌面布局本身成立的用例保留
+ * 实测值来自 `pnpm test:e2e` 写出的 `.artifacts/playwright/results.json`（2026-10-12 基线 stats.expected = 50；
+ * 本工作树新增 W5-1 / FE-P2-4 的改密与模型封锁用例后为 stats.expected = 58；本轮 N-3 新增 egress 2 用例与
+ * quality-guard 1 用例后为 stats.expected = 64）：
+ * 参与判定的文件 11 个、用例 64 个（chromium 32 + mobile-chromium 32；仅断言桌面布局本身成立的用例保留
  * `@desktop`）。`playwright test --list` 写出的是收集清单（config.argv 含 `--list`、stats.skipped 等于用例
  * 总数、stats.expected = 0），复现不出该计数，被 isListOnlyReport 显式拒绝（不得把未执行当通过）。
- * 删掉 `mobile-chromium` project 或把它的 `grepInvert` 收窄成 `/./` 后，文件数回落 6、实例数回落 25，
+ * 删掉 `mobile-chromium` project 或把它的 `grepInvert` 收窄成 `/./` 后，文件数回落、实例数回落 32，
  * 必须在这里失败——移动覆盖丧失不得静默通过。
  * 只增不减；确实需要下调时必须是可见改动并说明理由。
  */
 const MIN_VITEST_FILES = 126;
-const MIN_E2E_FILES = 7;
+const MIN_E2E_FILES = 11;
 
 /**
  * Vitest 组件/集成报告：文件 → 最少通过用例数 + 必填用例标题。新增必需场景必须在此登记。
@@ -144,13 +146,15 @@ const REQUIRED_VITEST = [
  * minPassed / projectMinPassed 是 (spec × project) 实例口径，数字来源 `.artifacts/playwright/results.json`
  * （2026-10-12 的 50 实例报告）与 frontend/AUDIT.md §24.2：auth 6+6、client-keys 4+4、navigation 5+4、
  * request-audits 3+3、settings 5+5、accounts 2+2、mobile-device 0+1，合计 chromium 25 + mobile-chromium 25；
- * 移动 project 被移除或收窄后回落到 25 个桌面实例，必须失败。requiredTitles 逐字取自对应 spec 的 test()
+ * 本轮 W5-1 / FE-P2-4 新增 account-password 2+2 与 models 2+2，合计 chromium 29 + mobile-chromium 29；
+ * 本轮 N-3 新增 egress 2+2 与 quality-guard 1+1，合计 chromium 32 + mobile-chromium 32；
+ * 移动 project 被移除或收窄后回落到 32 个桌面实例，必须失败。requiredTitles 逐字取自对应 spec 的 test()
  * 名称（包含匹配）。
  * project 清单显式登记而不解析 playwright.config.ts:40-44（本脚本零依赖，解析 TS 配置需额外依赖/加载器；
  * 未登记 project 一律 fail-closed，使配置变更成为必须登记的可见改动）。只增不减，缩减须可见并说明理由。
  */
 const REQUIRED_E2E_PROJECTS = ["chromium", "mobile-chromium"];
-const MIN_E2E_PROJECT_PASSED = { chromium: 25, "mobile-chromium": 25 };
+const MIN_E2E_PROJECT_PASSED = { chromium: 32, "mobile-chromium": 32 };
 const REQUIRED_E2E = [
   {
     file: "e2e/auth.e2e.ts",
@@ -208,6 +212,39 @@ const REQUIRED_E2E = [
     minPassed: 1,
     projectMinPassed: { "mobile-chromium": 1 },
     requiredTitles: ["移动 project 应用真实设备描述符：hasTouch、isMobile、DPR 与 UA"],
+  },
+  {
+    file: "e2e/account-password.e2e.ts",
+    minPassed: 4,
+    projectMinPassed: { chromium: 2, "mobile-chromium": 2 },
+    requiredTitles: [
+      "修改密码后旧密码失效、新密码可登录",
+      "当前密码错误的改密被拒绝：提示失败、会话保持、原密码仍然可用",
+    ],
+  },
+  {
+    file: "e2e/models.e2e.ts",
+    minPassed: 4,
+    projectMinPassed: { chromium: 2, "mobile-chromium": 2 },
+    requiredTitles: [
+      "封锁模型路由：状态标记为已禁用且不再属于启用列表",
+      "批量封锁与解除封锁：状态标记与服务端启用状态同步变化",
+    ],
+  },
+  {
+    file: "e2e/egress.e2e.ts",
+    minPassed: 4,
+    projectMinPassed: { chromium: 2, "mobile-chromium": 2 },
+    requiredTitles: [
+      "出口节点：表单新建后列表与服务端同时出现，删除后同时消失",
+      "出口节点：批量禁用/启用同步服务端 enabled",
+    ],
+  },
+  {
+    file: "e2e/quality-guard.e2e.ts",
+    minPassed: 2,
+    projectMinPassed: { chromium: 1, "mobile-chromium": 1 },
+    requiredTitles: ["质量守护：未配置守护状态时显式不可用，三个页签可达且路由刷新后仍可用"],
   },
 ];
 
