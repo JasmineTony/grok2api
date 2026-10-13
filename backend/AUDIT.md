@@ -1,7 +1,245 @@
 # 后端审计与验收报告
 
-本文件记录后端验收矩阵、测试与性能基线、架构审计结论与问题清单。
-规则唯一事实来源是根目录 [`AGENTS.md`](../AGENTS.md)；本文件只记录**实际证据**与状态。
+本文件是**后端证据与状态**的唯一登记处：**A–E 区**是当前状态入口，文末**历史档案区**（原编号 §1–§37）是 append-only 留痕。
+
+- 规则唯一事实来源是根目录 [`AGENTS.md`](../AGENTS.md)：本文件引用**规则编号**（`TEST-6` / `REV-3` / `SEC-1`…），不复述规则原文（DOC-4）。
+- 与 [`frontend/AUDIT.md`](../frontend/AUDIT.md) 同批、同结构；同一事实只在一侧登记，另一侧只放指针（DOC-1）。
+- 任何数字都必须能由命令复现，并附命令与日期（META-2）。A–E 区只放**最近一次实测**；旧值与当时结论保留在历史档案，不回改（DOC-2）。
+
+**读取顺序**：A（职责与编号约定）→ B（当前状态快照）→ C（未达标与未覆盖登记）→ D（发布与不可逆操作登记）→ E（主题索引）→ 需要追溯根因时才读历史档案。
+
+## A. 本文件职责与编号约定
+
+| 区       | 内容                                          | 更新时机               |
+| -------- | --------------------------------------------- | ---------------------- |
+| A        | 职责、结构与编号约定                          | 文档结构调整时         |
+| B        | 当前状态快照（命令 + 日期 + 结果）            | 每次真实复跑后         |
+| C        | 未达标与未覆盖登记（P2/P3、未闭环、Blocked）  | 状态变化时             |
+| D        | 发布与不可逆操作登记（tag / CI run / digest） | 每次发布或远端重建后   |
+| E        | 主题索引（按关注点查历史档案）                | 新增轮次时             |
+| 历史档案 | 原 §1–§37，逐字保留                           | append-only（DOC-2）   |
+
+- **编号约定**：历史档案沿用**原章节编号**（§1–§37）——这些编号被 `backend/internal/transport/http/frontend_exposure_test.go` 等代码注释引用（复现：`git grep -n "AUDIT.md §"`），不得重排、不得复用（META-5）。A–E 区使用字母，避免与档案编号冲突。
+- **状态语义**：`Passed` / `Failed` / `Skipped` / `Blocked` / `Pending` 的定义见 `AGENTS.md` §6 与 EVID-1；未实际执行的检查只能记 `Pending` / `Blocked`。
+- **本区不放**：新规则（进 `AGENTS.md`）、前端侧证据（进 `frontend/AUDIT.md`）、已闭环项的逐轮叙述（进历史档案）。
+
+## B. 当前状态快照（可复现）
+
+环境：Windows（本机），Go 工具链版本以 `go version` 为准，`CGO_ENABLED=0`；模块 `github.com/chenyme/grok2api/backend`。**所有命令均在 `backend/` 目录执行**（`scripts/verify.sh` 会校验 cwd，否则退出 2）。
+
+### B.1 验收矩阵
+
+| 编号   | 验收项             | 判定命令                                                     | 最近一次结果                                                                                                                                                |
+| ------ | ------------------ | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| BE-A1  | 编译               | `go build ./...`                                             | `Passed`（2026-10-13 复跑，exit 0）                                                                                                                         |
+| BE-A2  | 静态检查           | `go vet ./...`                                               | `Passed`（2026-10-13 复跑，exit 0）                                                                                                                         |
+| BE-A3  | 结构门禁 REV-1/2/3 | `go run ./tools/structurecheck`                              | `Passed`（2026-10-13 复跑：扫描生产 Go 文件 483 个；超限文件 / 超限函数 / 越限嵌套 当前 0、基线 0；`参与判定的作用域（REV-3）：5544 个`）                    |
+| BE-A4  | 导出 API 契约门禁  | `go run ./tools/apicheck`                                    | `Passed`（2026-10-13 复跑：`基线条目 2062 条，当前 2062 条`，逐条一致）                                                                                      |
+| BE-A5  | 容器构建输入守卫   | `go run ./tools/dockerfilecheck`                             | `Passed`（2026-10-13 复跑：必需文件 900 个；未被 COPY 覆盖 0、被忽略规则排除 0、COPY 源不可用 0）                                                            |
+| BE-A6  | 单元与集成测试     | `go test ./... -count=1`                                     | `Passed`（2026-10-13 最终代码：由 `verify.sh` 第 6 步执行，77.356s，无 FAIL / panic；包级 `ok` 67、`[no test files]` 11；跳过明细见 BE-B2）                    |
+| BE-A7  | 数据竞争           | `go test -race ./...`                                        | `Passed`（2026-10-13 最终代码：**exit 0**，517.9s；`ok` 67 包 / `FAIL` 0 / `DATA RACE` 0；本机 `CGO_ENABLED=1` 且 `gcc` 16.2.0 在 PATH，竞态检测器已用故意竞争探针验证生效） |
+| BE-A8  | 集成用例 0 跳过    | CI 步骤 `Assert required integration tests ran`              | `Passed`（CI run `38267217186`，tag `v0.1.1`，conclusion=success）                                                                                           |
+| BE-A9  | Swagger 精确 diff  | `make swagger` + `git diff --exit-code -- backend/docs/...`  | `Passed`（CI 步骤 `Verify Swagger document`，run `38267217186`）                                                                                             |
+| BE-A10 | 全栈 E2E（后端侧） | CI 步骤 `Run full-stack E2E`                                 | `Passed`（run `38267217186`）                                                                                                                                |
+| BE-A11 | 聚合入口           | `bash scripts/verify.sh`                                     | `Passed`（2026-10-13 最终代码：6/6 步通过，94.115s，打印 `全部通过`）。**口径**：本机默认 PATH 的 `bash` 是 WSL 启动器、其内无 Go 工具链，直接执行会 exit 127，须用 Git Bash `D:\softwares\Git\bin\bash.exe` |
+
+### B.2 基线与口径（唯一来源）
+
+- 结构基线：`backend/structure-baseline.json` 的 `files` / `functions` / `nesting` **均为空** → 存量 0 项，只允许持平或下降（REV-1 / REV-2 / REV-3）。
+- 契约基线：`backend/api-baseline.txt`（生成命令 `go run ./tools/apicheck --update`，须满足 CHG-5 / CHG-8）；条数以 `apicheck` 输出为准，不在文档复制（META-2）。
+- 口径边界（登记为 P2，不是漏报）：REV-2 按函数体行数（含签名）判定；REV-3 前后端深度基线不同，见 C 区 BE-P2-1。
+- `verify.sh` 不含 `-race` 与隔离 PG/Redis 的「0 跳过」断言，二者由 CI 承担（TEST-6）。
+
+### B.3 测试与性能基线
+
+- 测试：最近一次全量 `go test ./... -count=1` 见 BE-A6。2026-10-13 实测（两包定向 `-v`）：**SKIP 19**（17 个 `TestPostgres*` + 2 个 Redis）/ PASS 197 / FAIL 0 —— 本机缺 `TEST_POSTGRES_DSN` / `TEST_REDIS_ADDRESS`，按 TEST-6 记 `Blocked`，由 CI 隔离服务覆盖（复现：`go test ./internal/infra/persistence/relational ./internal/infra/runtime/redis -count=1 -v | Select-String "--- SKIP"`）。
+- 性能：`ns/op` / `B/op` / `allocs/op` 属**评审准则、无门禁**（REV-5）。已有基准与最近一次实测数值、`benchstat` 统计检验结论见历史档案 §13.2、§20.10、§28.1；其中 §28.1 的结论是**本机不具备 ns/op 判别力**（负面结论），稳定可比的是分配指纹。本区不复制数值（META-2）。
+
+### B.4 架构与边界（最近一次实测）
+
+- 分层与依赖方向由测试守卫：`internal/ports/provider/import_boundary_test.go`（`applicationInfraExceptions`）、`internal/infra/egress` 例外清单（`infraApplicationExceptions`）、`TestInternalDirectoryCoverageBoundary`（目录覆盖递归判定）。
+- 目录覆盖守卫已抽为纯函数 `directoryCoverageViolations` 并带自证夹具（EVID-3）；`internal/pkg` 亦有分层规则。
+- 静态托管契约的成立项与缺口见历史档案 §25.1 / §25.2，缺口登记在 C 区 BE-R1…BE-R3。
+
+## C. 未达标与未覆盖登记（P2/P3）
+
+> 只登记**未闭环**项；已闭环项的状态与证据在其历史档案章节。定级语义见 `AGENTS.md` §6；`Blocked` 必须写明恢复条件。
+
+| 编号    | 项                                                                        | 定级            | 状态与恢复条件                                                                                   | 依据                              |
+| ------- | ------------------------------------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------ | --------------------------------- |
+| BE-P2-1 | REV-3 前后端深度基线口径不同（同一输入两侧数值不同）                       | P2              | 已登记、不阻塞；两侧都会判失败，非漏报                                                           | §25.1 / §29.4                     |
+| BE-P2-2 | `application → infra` 存量依赖（29 处 / 27 文件）与冻结例外清单            | P2              | 冻结例外 `applicationInfraExceptions`（27 文件 / 29 对），只允许收缩；决策：默认冻结，待负责人批准后执行（见下方「C 区决策记录」） | §5 BE-02 / §20.2                  |
+| BE-P2-3 | `infra/egress` 8 个生产文件反向依赖 `application/egress`                   | P2              | 冻结例外 `infraApplicationExceptions`（8 文件），只允许收缩                                      | §31.1                             |
+| BE-P2-4 | 测试文件 >600 行（38 个，最大 `gateway/service_test.go` 4928 行）          | P2              | 既有约定，不在 REV-1 扫描范围（`*_test.go` 排除）                                                | §16.4                             |
+| BE-P3-1 | `backend/tools/structurecheck/main.go` 597 行，距 600 仅 3 行              | P3              | 门禁工具本体，不在 `structurecheck` 扫描范围；如需收紧可拆夹具 / 输出                             | §32.2                             |
+| BE-P3-2 | `gofmt -l ./cmd ./internal ./tools` 存量未格式化文件 | P3 | **已闭环（2026-10-13 本轮）**：`HEAD` 口径实测 4 个确为 gofmt 违规 + 1 个 EOF 空行清理，已修复并随本分支 `chore(gofmt)` 提交落地；**测量口径二次更正**见下方同名 EVID-8 条目 | §32.2 / §31.4 |
+| BE-G3   | `ports/security` 迁移（BA-02）                                             | P2              | 需单独批准；设计清单见 §20.6，执行时按 CHG-8 跑 `apicheck --update` 并留 §8 证据；决策：默认冻结，待负责人批准后执行（见下方「C 区决策记录」） | §20.9 / §26.4                     |
+| BE-B1   | 本机无 `-race` 工具链                                                      | 已闭环          | **2026-10-13 实测推翻**：本机 `CGO_ENABLED=1`、`gcc` 16.2.0 在 PATH，`go test -race ./... -count=1` **exit 0**（489.7s）；详见 BE-A7 与下方 EVID-8 条目 | §20.9 / BE-A7                     |
+| BE-B2   | 本机无隔离 PostgreSQL / Redis                                              | `Blocked`       | 恢复条件：`TEST_POSTGRES_DSN` / `TEST_REDIS_ADDRESS` 就绪后取「0 跳过」计数；CI 已覆盖            | §20.9 / §34.3                     |
+| BE-R1 | 静态托管暴露面：`staticPath` 误配置指向父目录可读取 `config.yaml` / `*.db` | P2（该形态 P1） | **已闭环（2026-10-13 本轮）**：启动期 fail-fast 已实现并随本分支 `fix(backend)` 提交落地（口径更正见下方 EVID-8 条目） | §25.2 / §32.1 / §33.3 |
+| BE-R2 | `index.html` 无 ETag / `must-revalidate`，保留 mtime 时返回 304 陈旧 HTML | P2 | **已闭环（2026-10-13 本轮）**：`ETag = sha256(内容)` + `Cache-Control: no-cache, must-revalidate` + 零 mtime（不发 `Last-Modified`），已实现并随本分支 `fix(backend)` 提交落地 | §25.2 |
+| BE-R3   | Go 侧零传输压缩 ⇒ 预算口径（磁盘 gzip）≠ 线上传输量                        | P2              | 已写入 `AGENTS.md` REV-5 的口径说明；如需改变须独立任务 + 实测收益                                | §25.2 / REV-5                     |
+| BE-R4   | 凭据元数据「彻底清除」不可保证（GitHub 缓存 / 索引、已克隆副本、CI 日志）  | —               | 残留风险，如实登记；**不得**声称已彻底清除                                                        | §36.4 / `frontend/AUDIT.md` §38.5 |
+| BE-R5   | 历史重写剥离 `gpgsig`（本地上游已签名提交换 sha；tree / parent / message 未变） | —          | 副作用登记；上游 tag 从不推送，无远端影响                                                         | §37                               |
+| BE-R6   | 历史档案 §31.4 / §31.5 登记的提交 `93954469` 不可解析（历史重写前谱系）   | —               | 事实登记：`git cat-file -t 93954469` → `fatal: Not a valid object name`（2026-10-13 本机实测）；该对象不在本仓库对象库，属历史重写前谱系；按 DOC-2 不改档案原文，仅在此登记 | §31.4 / §31.5                     |
+
+**C 区口径更正（EVID-8，条目 BE-R1 / BE-R2；原值保留不回改，DOC-2）**：两条原登记为「未实施 / 登记」，工作区**已实现**（相对 `HEAD` = `45838afe` 的新增代码，**未提交**）。
+
+- **BE-R1 原值 → 新值**：「未实施：启动期 fail-fast 或托管白名单」→「**已实现**：`registerFrontend` 在托管前调用 `staticRootExposureViolation`，命中即 `panic` 拒绝启动（fail-closed，不静默降级）」。判定覆盖四类：① 静态根**覆盖进程工作目录**（`workingDirCoverageViolation`，`staticPath` 为 `.` 或其上级）；② 敏感条目名（唯一判定入口 `isDeniedStaticRootName`：精确名单 `.env` / `.git` / `config.yaml` / `config.yml`，模式 `config.*.yaml|yml` 与 `.env*`，后缀 `.db` / `.sqlite` / `.sqlite3` / `.exe` 且比对前剥离 `-wal` / `-shm`）；③ **符号链接与 Windows 重解析点/junction**（`entry.Type()&fs.ModeSymlink` 或 `&fs.ModeIrregular`——`filepath.WalkDir` 不进入二者，不判即构成绕过）；④ 扫描条目数超过 `staticRootScanEntryBudget`（20000）。另有放行名单 `staticRootAllowedNames`（`thumbs.db` / `desktop.ini`）在最前短路：这两类是 Windows 系统垃圾文件、与秘密无关，误判会让服务无法启动（`frontend/dist` 含图片）。
+- **BE-R2 原值 → 新值**：「登记；正确性依赖『部署会改变 mtime』这一外部假设」→「**已实现**：`serveIndexHTML` 以 `sha256(文件内容)` 作为 `ETag`、`Cache-Control: no-cache, must-revalidate`，并给 `http.ServeContent` 传零 `mtime`（不发 `Last-Modified`，条件判定只看 ETag）；ETag 与响应体来自同一次 `os.ReadFile`」。
+- **根因**：C 区两条登记取自实现前的快照，未随本轮实现回填（登记滞后，EVID-8），不是实现缺口。
+- **落点**：`backend/internal/transport/http/frontend.go`（`registerFrontend`、`serveIndexHTML`、`staticRootExposureViolation`、`isDeniedStaticRootName`、`workingDirCoverageViolation`、`hasDotDotPathElement`）；测试 `backend/internal/transport/http/frontend_exposure_test.go`。
+- **验证（2026-10-13 本机实测，工作区含未提交改动）**：全量结果见 B 区（`bash scripts/verify.sh`、`go test -race ./...`）；定向 `cd backend && go test ./internal/transport/http/... -count=1 -v -run 'Frontend|Exposure|Static'` **exit 0**，包内 PASS 75 / FAIL 0 / SKIP 0。
+- **判别力（TEST-7，2026-10-13）**：用 `go test -overlay=` 注入 5 个变异（分别删掉模式判定、链接判定、`-wal`/`-shm` 剥离、放行名单短路、HEAD 的 `Cache-Control`），每个变异都至少有一个用例失败；注入副本只写在会话 scratch，工作区未被修改。
+- **复现**：`cd backend && go test ./internal/transport/http/... -count=1 -v -run 'Frontend|Exposure|Static'`。
+- **回滚**：`git checkout -- backend/internal/transport/http/frontend.go backend/internal/transport/http/frontend_exposure_test.go backend/internal/transport/http/server_test.go`（仅这三个文件；**不得**对整树执行 `reset --hard` / `restore`）。
+
+**C 区口径更正（EVID-8，条目 BE-B1；原值保留不回改，DOC-2）**：原登记「本机无 `-race` 工具链（`CGO_ENABLED=0`，Windows / 无 gcc）」**已被 2026-10-13 实测推翻**。
+
+- **原值 → 新值**：「`Blocked`：本机 `CGO_ENABLED=0` 无 race 工具链」→「**本机可执行**：`CGO_ENABLED=1`、`go env CC=gcc`、`gcc.exe (MinGW-W64 x86_64-ucrt-posix-seh) 16.2.0` 在 PATH，`go test -race ./... -count=1` **exit 0**（489.7s，`ok` 67 包 / `FAIL` 0 / `DATA RACE` 0）。竞态检测器已用「故意双 goroutine 无锁自增」探针验证确实生效（探针报 `WARNING: DATA RACE` 且 exit 1），故该 exit 0 可采信。
+- **残余事实（不得据此声称全覆盖）**：该运行对 17 个 `TestPostgres*` + 2 个 Redis 集成用例仍是 `SKIP`（`TEST_POSTGRES_DSN` / `TEST_POSTGRES_ADMIN_DSN` / `TEST_REDIS_ADDRESS` 为空），故本地 `-race` **不覆盖**这些用例；CI 步骤 `Race backend` 仍作为独立环境复核保留。
+- **同步修正的文档**：`backend/scripts/README.md` 的「本机不能覆盖、必须由 CI 承担的项」表中 `go test -race ./...` 一行（原写「race 检测需要 cgo 与 C 工具链，本机（Windows / 无 gcc）不可用」）已按实测改为「本机可执行」并附命令、日期与上述残余事实（DOC-1：与配置/脚本的实际行为一致）。
+- **复现**：`cd backend && go env CGO_ENABLED && gcc --version && go test -race ./... -count=1`。
+- **历史档案不改**：历史档案区（§20.8 的「本机限制」段与 §31.3 的命令表）仍含「本机 `CGO_ENABLED=0` / `-race` 不可执行」的原结论，按 DOC-2 **逐字保留、不回改**；当前状态一律以本区（A–E）为准。
+
+**C 区口径更正（EVID-8，条目 BE-P3-2；原值保留不回改，DOC-2）**：原登记的「`gofmt -l ./cmd ./internal ./tools` 存量 5 个未格式化文件」属 **LF 工作区口径**。本机 `git config core.autocrlf` = `true`，工作区 `.go` 多为 CRLF，直接运行该命令得到 **311** 个命中，差异全部来自行尾 —— 即该命令的原始输出**不得采信**（DEV-5）。正确判定链：字节级读取（`[System.IO.File]::ReadAllText($p, [System.Text.Encoding]::UTF8)` / `ReadAllBytes`，禁止用 `Get-Content` 判行数）→ CRLF 归一化为 LF 写入**工作区外**临时副本 → 对副本跑 `gofmt -l`。
+- 留痕更正：**原值 5（LF 工作区口径，历史档案 §32.2）→ 新值 0**（2026-10-13 本轮实测：`./cmd ./internal ./tools` 全量归一化副本，`gofmt -l` 无输出）。原「5」在本机不可复现（当时检出环境未登记）；「5 → 0」的成因不在本轮取证范围，不臆断，仅登记实测值。**根因**：CRLF 检出使 `gofmt -l` 产生约 300 个行尾假阳性（本轮实测 311 个）。
+- 复现（PowerShell，在 `backend/` 目录执行；只写 `$env:TEMP`，不触碰工作区）：
+```powershell
+$tmp = Join-Path $env:TEMP 'gofmt-lf-check'; Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+$root = (Get-Location).Path
+Get-ChildItem -Path .\cmd,.\internal,.\tools -Recurse -File -Filter *.go | ForEach-Object {
+  $dst = Join-Path $tmp $_.FullName.Substring($root.Length + 1)
+  New-Item -ItemType Directory -Force -Path (Split-Path $dst) | Out-Null
+  $lf = [System.IO.File]::ReadAllText($_.FullName, [System.Text.Encoding]::UTF8) -replace "`r`n", "`n"
+  [System.IO.File]::WriteAllText($dst, $lf, (New-Object System.Text.UTF8Encoding($false)))
+}
+@(gofmt -l $tmp).Count                      # 归一化口径：本轮实测 0
+@(gofmt -l .\cmd .\internal .\tools).Count  # CRLF 原始输出：本轮实测 311（假阳性，不可采信）
+```
+
+**C 区口径更正（EVID-8，条目 BE-P3-2 的二次更正；上一条更正文本保留不回改）**：上一条把「存量 5 → 0」记为「原值不可复现」，该结论建立在**错误的工作区口径**上，现更正。
+
+- **根因**：上一条的复现脚本用 `Get-ChildItem -Recurse -File` 读取**工作区**文件，而当时工作区**已经含有未提交的 gofmt 修复**（即 C 区 BE-P3-2 行所述的修复），因此测得 0 是「工作区已修」的结果，不是「`HEAD` 无债务」的证据。
+- **2026-10-13 本次实测（字节级归一化为 LF 后交给 `gofmt -l`，Go 1.26.1）**：`HEAD`（`45838afe`）上有 **4 个**文件确为 gofmt 违规——`backend/internal/application/gateway/selector_test.go`、`backend/internal/infra/provider/web/account_settings.go`、`backend/internal/infra/provider/web/sso_build_test.go`、`backend/internal/transport/http/swagger_annotations.go`；**工作区（含未提交修复）为 0 个**。第 5 个改动文件 `backend/internal/ports/provider/video_error.go` 只删除了文件末尾的多余空行，`gofmt -l` 不判定，属人工清理，不计入 gofmt 违规数。
+- **结论**：原登记「存量 5 个」在 `HEAD` 上**可复现**（本次测得 4 个；第 5 个口径不同，见上），**不是**「不可复现」；「5 → 0」的成因是**工作区已修复**，而非检出环境差异或工具版本差异。
+- **复现命令**（在 `backend/` 目录执行；只写 `$env:TEMP`，不触碰工作区）：
+```powershell
+$files = git ls-files -- '*.go'
+$work = Join-Path $env:TEMP 'gofmt-work'; $head = Join-Path $env:TEMP 'gofmt-head'
+Remove-Item $work,$head -Recurse -Force -ErrorAction SilentlyContinue
+foreach ($rel in $files) {
+  $text = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes((Join-Path (Get-Location) $rel)))
+  $dest = Join-Path $work ($rel -replace '/','\'); New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null
+  [System.IO.File]::WriteAllText($dest, ($text -replace "`r`n","`n"), (New-Object System.Text.UTF8Encoding($false)))
+  $destHead = Join-Path $head ($rel -replace '/','\'); New-Item -ItemType Directory -Force -Path (Split-Path $destHead) | Out-Null
+  [System.IO.File]::WriteAllText($destHead, ((git show "HEAD:$rel") -join "`n"), (New-Object System.Text.UTF8Encoding($false)))
+}
+"工作区口径（本轮实测 0）: " + @(gofmt -l $work).Count
+"HEAD 口径（本轮实测 4）: " + @(gofmt -l $head).Count
+```
+
+**C 区决策记录（BE-P2-2 / BE-G3；默认值推进，非已获授权的执行）**：默认决策为 **本轮不执行 `ports/security` 迁移**（`BE-G3` / `BA-02`）；`application → infra` 存量依赖（`BE-P2-2`）继续按 `applicationInfraExceptions` 冻结为**只减不增**的例外清单，本轮不新增例外、不扩大清单。
+- 依据（两条均为计划；计划位于 `.pi/plan/`，被 `.gitignore` 忽略 ⇒ **不入库、不可追溯**，按 DOC-3 在此说明文件名与定位）：
+  - `前后端验收审计与增量模块化优化计划-20261011-1936.md` §六「完成标准、剩余边界与回滚」→「不自动扩大的边界」：`ports/security` 全面迁移需要**构造签名和 API 基线的单独批准**；本轮可先完成边界约束、回归和迁移设计。
+  - `前后端全量审计与分阶段模块化升级计划-20261009-1947.md` §一「已对齐的需求与边界」→「保持不变」：数据迁移、公共协议变化若确有必要，须**单独说明证据并重新确认**，不夹带实施。
+- 执行条件（同时满足，缺一不可）：① 负责人对 `ports/security` 迁移的**单独批准**（构造签名与 API 基线影响面明确）；② 迁移落地后由生成命令改写 `backend/api-baseline.txt`（`go run ./tools/apicheck --update`，CHG-8；且须满足 CHG-5 的静止状态）；③ 走 §8 发布/不可逆流程并留 §8 证据。
+- 复现命令（确认现状未被改变）：`git ls-files backend/internal/ports/`（本轮实测只输出 `provider`，`ports/security` 未建立）；`git grep -n "infra/security" -- backend/internal/application ":(exclude)*_test.go"`（本轮实测 16 个生产文件，仅表示 `infra/security` 直接 import 面）；例外表全量计数（期望 27 文件 / 29 对）：
+```powershell
+$t = [System.IO.File]::ReadAllText('backend/internal/ports/provider/import_boundary_test.go', [System.Text.Encoding]::UTF8)
+$b = [regex]::Match($t, '(?s)var applicationInfraExceptions = map\[string\]\[\]string\{(.*?)\n\}').Groups[1].Value
+@([regex]::Matches($b, '(?m)^\s*"internal/application/[^"]+":')).Count      # 27 文件
+([regex]::Matches($b, 'internalModulePrefix \+ "')).Count                    # 29 对
+```
+  `go run ./tools/apicheck` 的条数以 B 区 BE-A4 为准（不得由迁移静默改写）。
+- 回滚方式：该决策的执行动作是「不执行」，故无代码、无数据、无基线副作用；回滚 = 不实施（无操作）。若日后按执行条件启动，回滚为 `git revert` 对应迁移提交，并由生成命令把 `api-baseline.txt` 恢复到上一版（不手改，CHG-8）。
+- 性质：本条是 **EXEC-7 默认值推进**下的假设登记，**不是已获授权的执行**；授权的唯一登记处是 D 区「授权登记」，未点名的新一轮不可逆操作仍需单独授权（CHG-9）。
+
+## D. 发布与不可逆操作登记
+
+> 登记项必须附 run id + step + conclusion（EVID-2）。**授权登记见本区 D.5**（`AGENTS.md` §1 只保留指针，依据 DOC-1 / META-3）。
+
+### D.1 当前发布状态
+
+| 版本     | tag / 提交                                                | Release            | CI run（GHCR Image）                        | 镜像 digest（manifest list）                                                                                                                                                                        |
+| -------- | --------------------------------------------------------- | ------------------ | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `v0.1.1` | annotated tag `v0.1.1`（tag 对象 `692ce6a5`）→ `00120cea` | 已创建（非 draft） | `38267217186`（`push`，ref `v0.1.1`）success | `sha256:e0a2f395423afdcb097e1c5646cf4756e90cb3ca2ce68c1d4dbecec62d7e0f06`                                                                                                                            |
+| `main`   | 当前 tip `45838afe`（与 `origin/main` 同步）              | —                  | `38270633539`（`push`，ref `main`）success  | linux/amd64 `sha256:ca0dd2b564f3069d80a634ac002d194cd23f5a518d0e5101b2e1ac68d2934a73`、linux/arm64 `sha256:7de323904fadfa218960baa8fd362e90528d1dd140ef8148688a85c1a13225d2`（`main` 与 `latest` 同源） |
+
+- `v0.1.1` 的 `Verify` job 关键 step 全部 `success`：`Verify version carriers are aligned`、`Test backend`、`Assert required integration tests ran`、`Race backend`、`Vet backend`、`Verify backend structure and API contract`、`Verify Dockerfile covers required inputs`、`Verify Swagger document`、`Verify frontend`、`Run full-stack E2E`、`Assert required frontend tests ran`；`Publish image (amd64)` / `Publish image (arm64)` / `Merge image` 同为 `success`。
+- `v0.1.1` 镜像明细：`ghcr.io/jasminetony/grok2api:v0.1.1`（`application/vnd.oci.image.index.v1+json`）linux/amd64 `sha256:7453a6efc7fdabb371dd4959bbc026103b535304266b58944f1bf3659426698a`、linux/arm64 `sha256:1d040f5998fe5ce14a3712cea385620e70f723a3cf492c10970d20e3cb9f858f`；`v0.1.1-amd64` `sha256:5f953a5c...`、`v0.1.1-arm64` `sha256:a8fc0b44...`。
+- 按 `AGENTS.md` §8 固有局限：本条登记提交自身的 run 不在本文件覆盖范围内；完整逐 step 证据见 `frontend/AUDIT.md` §39 与本文件 §37。
+
+### D.2 远端重建与容器包（不可逆操作，2026-10-12 执行轮）
+
+- 仓库：旧实例 id `1413858145` 已删除；新实例 id `1415744814`（public、非 fork、默认分支 `main`、Actions 默认权限 `read`）。
+- 容器包：旧实例 id `15784723` 已删除；新实例 id `15829871`，`repository=JasmineTony/grok2api`（**已正确链接**；未链接时 `GITHUB_TOKEN` 即使声明 `packages: write` 也会以 `permission_denied: write_package` 失败，见 §26.3）。
+- 只推送 `main` 与 `refs/tags/v0.1.1`（逐 ref 指定，未用 `--tags` / `--mirror`），故上游历史 tag 与本地 `v0.1.2` / `v0.1.3` 均未进入远端。
+
+### D.3 凭据与推送通道
+
+- 凭据一律由本地凭据助手提供，**不登记任何元数据**（SEC-1）；HTTPS 推送是否携带 `workflow` 权限必须逐次实测，不得据凭据名称或历史作用域推断。
+- 含工作流定义的推送走 SSH（`ssh -T git@github.com` 回显 `Hi <owner>!`）；SSH 不携带 OAuth scope，故不受该限制，且只改变推送通道、不改变被验证的提交内容。
+
+### D.4 未收口项与残留风险
+
+- 清除范围外的残留面（GitHub 侧提交缓存 / 搜索索引、已克隆副本、CI 日志与缓存、GHCR 旧镜像层）见 C 区 BE-R4 与 `frontend/AUDIT.md` §38.5。
+- 远端重建的代价：原 PR、Release 历史与旧 Actions run 丢失；`v0.1.1` 镜像需重新拉取（digest 与旧值不同）。
+
+### D.5 授权登记（决策记录，append-only）
+
+> 由 `AGENTS.md` §1 迁入（原表逐字保留）。依据 DOC-1 / META-3：**授权是决策记录而非规则**，唯一登记处在本区；`AGENTS.md` §1 只保留指针。本表只增不改，新增授权在末尾追加（META-5）；授权只覆盖被点名的动作与范围，未点名的新一轮不可逆操作仍需单独授权（CHG-9）。
+
+| 日期       | 授权范围                                                                                                                                                              | 证据                            |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| 2026-10-10 | 把 `maint/modular-quality-audit` 合并到 `main` 并发布 `v0.1.1`                                                                                                         | `frontend/AUDIT.md` D 区        |
+| 2026-10-11 | 合并到 `main` 并发布 `v0.1.2`（annotated tag + GitHub Release + GHCR 镜像）；同一授权内重建远端 `origin`、删除历史 GHCR 容器包                                          | `frontend/AUDIT.md` D 区        |
+| 2026-10-12 | 把交付线 `maint/release-v0-1-3`（并入 `maint/acceptance-audit-20261012-final`）合并到 `main` 并发布 **`v0.1.3`**（版本号由负责人指定，原计划 `v0.1.15` 作废，属决策变更） | `frontend/AUDIT.md` D 区        |
+| 2026-10-12 | **新规则，取代此前「不直接合并 `main`、不部署、不发布」的约束**：把本地**全部分支**并入 `main` 并发布；冲突时**以当前状态为准**（REL-1）                                | REL-1、`frontend/AUDIT.md` §20  |
+| 2026-10-12 | 推送凭据元数据清除与重发：删除并重建远端 `origin`，清除文档中已公开的推送凭据元数据（含历史重写），重发 `v0.1.1`，推送通道收紧为 SSH-only                              | `frontend/AUDIT.md` §38         |
+| 2026-10-12 | **收口轮（部分取代上一条的执行口径）**：**不撤销 OAuth 授权**；推送凭据只存放于本地凭据助手，不登记、不推送任何凭据元数据；重建后**仅重发 `v0.1.1`**                     | `frontend/AUDIT.md` §38.6       |
+| 2026-10-12 | **执行轮**：按「本地修改 → worktrees 梳理 → 删除远端 `origin` 仓库与 GHCR 容器包 → 重建同名仓库 → 仅重发 `v0.1.1`」执行；`origin` 以 HTTPS 取、SSH 推；远端不得出现任何凭据或凭据元数据 | `frontend/AUDIT.md` §39         |
+| 2026-10-13 | **v0.1.3 发布（本轮）**：在当前 `main` 线（`45838afe`）切维护分支 `maint/release-v0-1-3-20261013` 提交本轮工作区改动；**移动**本地 annotated tag `v0.1.3`（原 `fe209ccd` → `6b69e01e`，远端从未存在）到新的发布提交；fast-forward 合并 `main` 并推送 `origin`；创建非 draft GitHub Release；推送 tag 触发 `ghcr-image.yml` 产出 `ghcr.io/jasminetony/grok2api:v0.1.3` 的 amd64 + arm64 与 manifest list | 本条 + D.1 `v0.1.3` 行 |
+
+**授权与版本载体的当前差异（开放项，待负责人一次性决策）**：授权表已记录「发布 `v0.1.2`」「发布 `v0.1.3`」，但**远端当前只发布 `main` 与 `refs/tags/v0.1.1`**，且 `main` tip 的版本载体已由 `cb974efb`（`chore(release): 版本载体对齐到 v0.1.1`）回退为 `v0.1.1`。因此「已授权发布」不等于「已发布」：发布 `v0.1.2` 需要先明确目标提交与目标版本号，并处理已存在的本地 annotated tag `v0.1.2`（移动同名 tag 属不可逆操作，须单独授权，CHG-9）。
+
+- 复现命令：`git tag --list "v0.1.*"`、`git show v0.1.2:VERSION`、`git show v0.1.3:VERSION`、`git ls-remote --tags origin`、`git rev-parse HEAD`。
+- 事实（2026-10-13 实测）：`v0.1.2`（tag 对象 `5bb19073`）→ `6458e1c8`（该提交 `VERSION=v0.1.2`）；`v0.1.3`（tag 对象 `fe209ccd`）→ `6b69e01e`（`VERSION=v0.1.3`）；两者均为 `main` 的祖先提交；`main` tip `45838afe` 的 `VERSION=v0.1.1`。
+
+
+**2026-10-13 更新：上述「授权与版本载体差异」开放项已由负责人本轮指令关闭（原登记文本按 DOC-2 保留不回改）**
+
+- 决策：采用计划 §5.3 的**路径 P2** —— 在**当前 `main` 线**上提版本到 `v0.1.3`，并**移动同名本地 annotated tag** 到新的发布提交。依据：`.pi/plan/计划完成度核对与-v0-1-2-发布收敛计划-20261013.md` §5.3（该文件被 `.gitignore` 忽略 ⇒ 不入库、不可追溯，按 DOC-3 在此说明文件名与定位）；负责人本轮指令为「任务完成后发布新的版本 v0.1.3」。
+- 排除路径的理由：**P1**（直推既有 tag `v0.1.3` → `6b69e01e`）会发布不含 `v0.1.1` 重发之后全部修复与门禁的旧树；**P3**（改用未占用新号）与本轮指定的版本号不符。远端从未存在 `v0.1.2` / `v0.1.3`（`git ls-remote --tags origin` 只有 `refs/tags/v0.1.1`），故移动同名 tag **不涉及远端强推**。
+- 被移动 tag 的原值（2026-10-13 实测，保留留痕）：`v0.1.3` = tag 对象 `fe209ccd` → 提交 `6b69e01e`（该提交 `VERSION=v0.1.3`，为 `main` 的祖先；tag 于 2026-10-12 历史重写后重打，taggerdate `2026-10-12 19:43:31 +0800`）。`v0.1.2`（tag 对象 `5bb19073` → `6458e1c8`）**本轮不动**，保留为历史遗留 tag。
+- 版本载体：`VERSION` 与 `frontend/package.json:version` 在同一改动内对齐到 `v0.1.3`，由 `pnpm check:version`（`pnpm verify` 第 1 步）与 CI 步骤 `Verify version carriers are aligned` 双向强制（REL）。
+- 复现命令：`git tag --list "v0.1.*"`；`git for-each-ref --format='%(refname) %(objectname) %(taggerdate:iso)' refs/tags/v0.1.*`；`git ls-remote --tags origin`；`git rev-parse HEAD`。
+
+## E. 主题索引（按关注点查历史档案）
+
+| 关注点                                                        | 历史档案章节                                           |
+| ------------------------------------------------------------- | ------------------------------------------------------ |
+| 阶段 0–7 验收矩阵与阶段遗留                                    | §1–§13                                                 |
+| 发布登记（`v0.1.1` / `v0.1.2` / `v0.1.3` 授权与证据）          | §14、§15、§35–§37                                      |
+| 结构债务清零（REV-1 / REV-2 / REV-3）                          | §16、§17、§18.2、§31                                   |
+| 门禁工具与自证（structurecheck / apicheck / dockerfilecheck）  | §18.1、§29、§31.2、§34.5                               |
+| 判别力取证（TEST-7 变异注入）                                  | §20.3、§20.4、§22.3                                    |
+| 静态托管暴露面与表征测试                                       | §20.7、§25、§32.1、§33.3、§34.1、§34.2                 |
+| CodeQL 告警 triage                                             | §24、§27                                               |
+| 容器构建缺陷与镜像发布                                         | §15.2、§26.3、§37                                      |
+| benchmark 与统计检验                                           | §13.2、§20.10、§28                                     |
+| CI 证据与更正（EVID-8 / EVID-9）                               | §20.13、§21.2、§26.2、§35                              |
+| flaky 用例与收口                                               | §16.2、§30.2、§34.4                                    |
+| 凭据元数据清除与远端重建                                       | §35.3、§36、§37（并见 `frontend/AUDIT.md` §38、§39）   |
+| 授权登记（决策记录，append-only）                             | D.5                                                    |
+
+---
+
+## 历史档案（原编号 §1–§37，append-only）
+
+> **约定**：以下章节是历次轮次的原始登记，**编号与内容保持原样**（DOC-2）：编号被代码注释与门禁脚本引用（META-5），不得重排；被后续轮次取代的结论只在其所在章节追加指针，不回改。**当前状态一律以 A–E 区为准。**
+
+### 原文件头部（阶段 0 基线元信息，逐字保留）
 
 - 基线提交：`7c0493a2`
 - 维护分支：`maint/modular-quality-audit`
@@ -687,8 +925,8 @@ v0.1.2 发布后继续清空已登记存量：**BE-01 的 >1000 行文件类清�
 | `backend/scripts/README.md:6` | 「§7 验证入口的 backend 部分，是 §TEST-6 与 REV-1/2/3 的可执行入口」 | 成立 |
 | `backend/tools/structurecheck/main.go:1,43,56,62` | REV-1 / REV-2 / REV-3 与 §5 | 成立 |
 | `backend/structure-baseline.json:2` 的 `note` | 「存量债务冻结基线（AGENTS.md §5）」 | 成立（§5 仍为「债务与基线（棘轮）」，语义未变） |
-| `backend/AUDIT.md:161` | 「`AGENTS.md` §6 定义的 P2/P3」 | 成立 |
-| `backend/AUDIT.md:503,517` | 「按 `AGENTS.md` §8 流程执行」 | 成立 |
+| `backend/AUDIT.md` §5（原记行号 `:161`，已漂移） | 「`AGENTS.md` §6 定义的 P2/P3」 | 成立 |
+| `backend/AUDIT.md` §14、§15（原记行号 `:503,517`，已漂移） | 「按 `AGENTS.md` §8 流程执行」 | 成立 |
 | `.github/workflows/ghcr-image.yml:70,77,117` | §8 版本载体、REV-1/2/3 | 成立 |
 
 ### 19.2 与后端相关的文档失真更正
@@ -700,7 +938,7 @@ v0.1.2 发布后继续清空已登记存量：**BE-01 的 >1000 行文件类清�
 | C-39 | 「函数级 REV-2 仍为 7 项」「剩余 >600 行生产文件 12 个」 | 7 / 12 | **0 / 0** | 同上 → 超限文件 0 / 超限函数 0 / 越限嵌套 0 |
 | C-40 | `AGENTS.md` §7 的 `bash backend/scripts/verify.sh` | 从仓库根执行 | **exit 2**（`scripts/verify.sh:17-18` 校验 cwd） | 静态读取脚本守卫；§7 已改为 `cd backend && bash scripts/verify.sh` |
 
-> C-38/C-39 与 §16.4（`AGENTS.md:591`）的表述冲突，属**同一文档内自相矛盾**：§16.4 是 2026-10-11 当时的快照（按 §12 的 DOC-2 保留原值），但 `AGENTS.md` 的规则文本未随 §17/§18 同步。本轮随 §5 迁移一并更正，指向 §17 与 §18。
+> C-38/C-39 与 §16.4（`AGENTS.md` §5；原按行号引用 `AGENTS.md` 第 591 行，已越界，按 DOC-4 改为章节引用）的表述冲突，属**同一文档内自相矛盾**：§16.4 是 2026-10-11 当时的快照（按 §12 的 DOC-2 保留原值），但 `AGENTS.md` 的规则文本未随 §17/§18 同步。本轮随 §5 迁移一并更正，指向 §17 与 §18。
 
 ### 19.3 `structurecheck` 新增「参与判定的作用域」计数（EVID-3）
 
@@ -1135,7 +1373,7 @@ PR #1（head `ci-probe/acceptance-audit-20261011`，`b59e5ff6`）上名为「Cod
 
 **更正（EVID-8，独立复核 R20 F1/F5）**：① 的「删守卫必失败」是**预期**而非实测。实测修正——**原值**「删 `filepath.Rel` 守卫 ⇒ ① 的 HTTP 用例失败」→ **新值**「删守卫 ⇒ HTTP 层用例仍全绿，CI 无告警（覆盖洞，P2）」。根因：`path.Clean("/"+requestPath)` 已把根处的 `..` 消掉、`http.FileServer` 也把别名归一化回 root 内，故该守卫在 HTTP 层**不可观测**；其唯一触发形态（含 `filepath.Separator` 的别名路径）在 Linux 上不可达（`os.Stat` 先失败）。复现（本机 Windows，`backend/` 下）：把 `frontend.go:77` 改成只判 `err` 后 `go test ./internal/transport/http/ -run TestFrontendStaticExposureRejectsDirectoryTraversal -count=1` **仍 PASS**，同批 `TestFrontendFileRejectsResolvedPathsOutsideRoot` FAIL（该用例仅 Windows 有判别力）。收口：守卫已逐字等价抽出为纯谓词 `isRelativePathWithinRoot`（`frontend.go:92-94`，调用点 `frontend.go:77`），平台无关回归由 `TestIsRelativePathWithinRoot`（`server_test.go:193`）承担，判别力实测为「谓词体改恒 `true` ⇒ 该用例 FAIL」；残留口径边界：该单测覆盖谓词逻辑，删除**调用点**本身仍只由 `TestFrontendFileRejectsResolvedPathsOutsideRoot`（`frontend_exposure_test.go:213`）在 Windows 捕获（Linux 上不可达，同 §25.3 的既有别名口径）。
 
-**更正（EVID-8）**：`backend/AUDIT.md:849` 引用 `isHiddenArtifact` 为 `frontend.go:94-99` → 现文件实际为 **`:99-101`**；本轮前端改动在此文件净增 11 行（起点前移 5 行、该函数末尾前移 2 行），其中 sink `os.Stat` 由 `origin/main` 的 `:76` 变为 `:80`（+4）；`origin/main` 版本并无 `isHiddenArtifact`（该函数是本轮新增的前置拦截），故此处以实测行号为准、结论不变。
+**更正（EVID-8）**：`backend/AUDIT.md` §20.7（原记行号 `:849`，已漂移）引用 `isHiddenArtifact` 为 `frontend.go:94-99` → 现文件实际为 **`:99-101`**；本轮前端改动在此文件净增 11 行（起点前移 5 行、该函数末尾前移 2 行），其中 sink `os.Stat` 由 `origin/main` 的 `:76` 变为 `:80`（+4）；`origin/main` 版本并无 `isHiddenArtifact`（该函数是本轮新增的前置拦截），故此处以实测行号为准、结论不变。
 
 **未执行**：真实 Docker/Linux 镜像内探测（本机无 Docker）、反代/CDN 场景、浏览器对 `immutable` 的真实复用行为。
 

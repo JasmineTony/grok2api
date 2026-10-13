@@ -1,13 +1,241 @@
 # 前端审计与验收报告
 
-本文件记录前端验收矩阵、质量门禁现状、架构审计结论、性能基线与问题清单。
-规则唯一事实来源是根目录 [`AGENTS.md`](../AGENTS.md)；本文件只记录**实际证据**与状态。
+本文件是**前端证据与状态**的唯一登记处：**A–E 区**是当前状态入口，文末**历史档案区**（原编号 §1–§39）是 append-only 留痕。
+
+- 规则唯一事实来源是根目录 [`AGENTS.md`](../AGENTS.md)：本文件引用**规则编号**（`TEST-1` / `REV-5` / `DEV-3`…），不复述规则原文（DOC-4）。
+- 与 [`backend/AUDIT.md`](../backend/AUDIT.md) 同批、同结构；同一事实只在一侧登记，另一侧只放指针（DOC-1）。
+- 任何数字都必须能由命令复现，并附命令与日期（META-2）。A–E 区只放**最近一次实测**；旧值与当时结论保留在历史档案，不回改（DOC-2）。
+
+**读取顺序**：A（职责与编号约定）→ B（当前状态快照）→ C（未达标与未覆盖登记）→ D（发布登记）→ E（主题索引）→ 需要追溯根因时才读历史档案。
+
+## A. 本文件职责与编号约定
+
+| 区       | 内容                                         | 更新时机             |
+| -------- | -------------------------------------------- | -------------------- |
+| A        | 职责、结构与编号约定                         | 文档结构调整时       |
+| B        | 当前状态快照（命令 + 日期 + 结果）           | 每次真实复跑后       |
+| C        | 未达标与未覆盖登记（P2/P3、未闭环、Blocked） | 状态变化时           |
+| D        | 发布登记（前端侧专属项与指针）               | 每次发布后           |
+| E        | 主题索引（按关注点查历史档案）               | 新增轮次时           |
+| 历史档案 | 原 §1–§39，逐字保留                          | append-only（DOC-2） |
+
+- **编号约定**：历史档案沿用**原章节编号**（§1–§39）——这些编号被 `frontend/scripts/check-test-results.mjs` 与 `frontend/scripts/self-test-gates.mjs` 的注释（两者均引用 §24.2）以及 `frontend/vitest.config.ts` 的两处无编号注释引用（复现：`git grep -n "AUDIT.md §"`），不得重排、不得复用（META-5）。A–E 区使用字母，避免与档案编号冲突。EVID-8 更正：原表述「…等脚本注释引用」夸大了引用面，实测除两个 `AUDIT.md` 自身外仅上述 2 个脚本 + `vitest.config.ts`。
+- **已知编号缺口（事实登记，非缺陷）**：历史档案不存在 `## 32.` / `## 33.` / `## 34.` 三个顶层标题（编号从 §31 直接跳到 §35）；§33 仅作为提交标题出现，`§34.4` 被 §30.6 正文引用、`§21.5` 被 §21.3 正文引用，但两者都不存在（§21 只有 21.1–21.4）。按 META-5 缺口不得复用，引用 §21.5 / §33 / §34.x 前必须先确认其实际落点（复现：`git grep -nE '^##+ 3[234]\.' frontend/AUDIT.md`；`git grep -nE '^#+ 21\.' frontend/AUDIT.md`）。
+- **规则编号命名空间的形态碰撞（事实登记，非缺陷）**：历史档案 `## 5. 问题清单` 内的问题项 ID `DOC-01` 与 `AGENTS.md` 的规则编号 `DOC-1`…`DOC-4`（§12 文档分层）形态相近但语义无关。按 DOC-2 **不回改档案原文**，仅在此登记；引用 `DOC-01` 时必须显式说明它是档案内的问题项 ID，不得与规则编号 `DOC-1` 混用（复现：`git grep -n "DOC-01" -- frontend/AUDIT.md`）。
+- **状态语义**：`Passed` / `Failed` / `Skipped` / `Blocked` / `Pending` 的定义见 `AGENTS.md` §6 与 EVID-1；未实际执行的检查只能记 `Pending` / `Blocked`。
+- **本区不放**：新规则（进 `AGENTS.md`）、后端侧证据（进 `backend/AUDIT.md`）、已闭环项的逐轮叙述（进历史档案）。
+
+## B. 当前状态快照（可复现）
+
+环境（本机，Windows）：Node `24.0.1`、pnpm `12.3.4`（`frontend/package.json` 的 `packageManager` 声明 `pnpm@12.10.1`）、Vite `8.3.4`、Vitest `5.0.3`；**所有命令的工作目录是 `frontend/`**。
+
+单位约定：KiB = 1024 B；gzip 使用 `zlib` level 9；Vite 自身输出的 “kB” 按 1000 B 计，两者不可混用。
+
+### B.1 验收矩阵（2026-10-13 单条聚合复跑：`pnpm verify:full`）
+
+| 编号   | 验收项             | 判定命令                  | 最近一次结果                                                                                                                                                                                                      |
+| ------ | ------------------ | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FE-A1  | 版本载体一致性     | `pnpm check:version`      | `Passed`（`版本载体一致：v0.1.3`）                                                                                                                                                                                |
+| FE-A2  | 格式一致           | `pnpm format:check`       | `Passed`（`All matched files use Prettier code style!`）                                                                                                                                                          |
+| FE-A3  | Oxlint correctness | `pnpm oxlint`             | `Passed`（0 warnings / 0 errors；552 文件 / 96 规则）                                                                                                                                                             |
+| FE-A4  | ESLint 语义        | `pnpm lint`               | `Passed`（无输出，exit 0）                                                                                                                                                                                        |
+| FE-A5  | 类型契约           | `pnpm typecheck`          | `Passed`（无输出，exit 0）                                                                                                                                                                                        |
+| FE-A6  | E2E 类型契约       | `pnpm typecheck:e2e`      | `Passed`（无输出，exit 0）                                                                                                                                                                                        |
+| FE-A7  | 纯逻辑单测         | `pnpm test`（node:test）  | `Passed`（`tests 126 / suites 43 / pass 126 / fail 0 / skipped 0 / todo 0`，4.29s）                                                                                                                               |
+| FE-A8  | node:test 报告门禁 | `pnpm test:results:node`  | `Passed`（参与判定文件 14 个、用例 126 个；磁盘测试文件与清单完全相等）                                                                                                                                           |
+| FE-A9  | 组件单测 + 覆盖率  | `pnpm test:ui:coverage`   | `Passed`（126 文件 / 1496 用例全过；覆盖率由 `coverage/lcov.info` 汇总：行 **98.69%**（7026/7119）、分支 **94.34%**（5564/5898）、函数 **98.29%**（2997/3049）；`perFile` 76% 与 **32 条** hook 100% 阈值全通过） |
+| FE-A10 | Vitest 报告门禁    | `pnpm test:results`       | `Passed`（文件 126 个 / 用例 1496 个：通过 1496、失败 0、跳过 0、flaky 0）                                                                                                                                        |
+| FE-A11 | 依赖边界与循环     | `pnpm check:architecture` | `Passed`（`no dependency violations found (431 modules, 2040 dependencies cruised)`）                                                                                                                             |
+| FE-A12 | 结构约束           | `pnpm check:structure`    | `Passed`（扫描源码文件 405 个；超限文件 / 超限函数 / 越限嵌套 当前 0、基线 0；`参与判定的作用域（REV-3）：2527 个`）                                                                                              |
+| FE-A13 | 门禁自证           | `pnpm test:gates`         | `Passed`（90 个用例，含 72 个必须失败的用例）                                                                                                                                                                     |
+| FE-A14 | 生产构建           | `pnpm build`              | `Passed`（冷构建 5.09s / 热构建 2.75s；`dist` 89 个文件 = 76 js + 1 css + `index.html` 等；**两次干净构建逐文件 SHA256 完全一致**，见 N-5）                                                                       |
+| FE-A15 | 产物体积预算       | `pnpm check:budget`       | `Passed`（见 B.3）                                                                                                                                                                                                |
+| FE-A16 | 真实全栈 E2E       | `pnpm test:e2e`           | `Passed`（64 passed / 0 failed / 0 skipped，2.1m；两个 project）                                                                                                                                                  |
+| FE-A17 | E2E 报告门禁       | `pnpm test:results:e2e`   | `Passed`（E2E 文件 11 个 / 用例 64 个；`chromium` 32 + `mobile-chromium` 32）                                                                                                                                     |
+
+- 上表 17 步 = `frontend/package.json` 的 `pnpm verify`（15 步）+ `pnpm verify:full` 追加的 `test:e2e` / `test:results:e2e`。**2026-10-13 以单条聚合命令 `pnpm verify:full` 在最终工作区复跑（cwd=`frontend/`）：exit 0，17/17 步全部实际执行并通过，总时长 712.1s**（Vitest 段报告 126 文件 / 1496 用例：通过 1496、失败 0、跳过 0、flaky 0；E2E 段 11 文件 / 64 用例：通过 64、失败 0、跳过 0，`chromium` 32 + `mobile-chromium` 32）。
+
+### B.2 门禁口径与唯一来源
+
+- 覆盖率：`frontend/vitest.config.ts` 的 `coverage.include` / `exclude` / `thresholds`（全局 76 + `perFile: true` + hook 逐文件 100%）；条目清单直接读该文件，不在本文档复制。
+- 结构 / 体积 / 架构：`scripts/check-structure.mjs`（基线 `frontend/structure-baseline.json`，当前 `files` / `functions` / `nesting` 均为空）、`scripts/check-bundle-budget.mjs`（基线 `frontend/bundle-budget.json`）、`.dependency-cruiser.cjs`（`frozenCrossFeatureDebt` 为空对象）。
+- 报告门禁：`scripts/check-test-results.mjs`（Vitest / Playwright 报告）与 `scripts/check-node-test-results.mjs`（node:test 报告）；门禁自身的正/负样本夹具在 `scripts/self-test-gates.mjs`（EVID-3）。
+- 测试分层（既定现状，不迁移）：`src/**/*.test.ts` 由 node:test 运行；`src/**/*.test.tsx` 由 Vitest（jsdom，`maxWorkers: 2`、`testTimeout: 20000`）运行。理由见 C 区 FE-08。
+
+### B.3 生产产物与体积预算（2026-10-13 实测）
+
+| 指标                                            |            实测 |    阈值 | 结果 |
+| ----------------------------------------------- | --------------: | ------: | ---- |
+| 首屏关键 JS 闭包（3 文件）                      | 194.06 KiB gzip | 260 KiB | 通过 |
+| 全部生产 JS（76 文件去重）                      | 624.82 KiB gzip | 650 KiB | 通过 |
+| 全部生产 CSS（1 文件）                          |  16.65 KiB gzip |  20 KiB | 通过 |
+| 最大单 chunk（`assets/index-_mFix3U9.js`）      | 458.55 KiB 原始 | 500 KiB | 通过 |
+| 最大路由新增闭包（`dashboard-page`，13 个路由） | 129.23 KiB gzip | 180 KiB | 通过 |
+
+- 阈值与容差的唯一来源：`frontend/bundle-budget.json` 的 `thresholds` 与 `growthTolerancePercent`（5%）；冻结基线 `generatedAt = 2026-10-12T09:07:19.809Z`（按 CHG-5 在静止窗口重定，前后值与理由见历史档案 §37.1）。
+- 口径边界：本预算按构建产物在**磁盘上的 gzip 体积**计算，**不代表线上传输量**（Go 侧零传输压缩，见 `backend/AUDIT.md` C 区 BE-R3）；「认证后首屏」不进门禁（C 区 FE-19-5）。
+
+### B.4 真实全栈 E2E 与隔离（2026-10-13 实测）
+
+- `pnpm test:e2e`：64 passed / 0 failed / 0 skipped，2.1m；两个 project（`chromium` 32 + `mobile-chromium` 32）；`retries: 0`（不用重试掩盖缺陷）。本轮新增 `e2e/account-password.e2e.ts`、`e2e/models.e2e.ts`、`e2e/egress.e2e.ts`（各 2 用例 × 2 project）与 `e2e/quality-guard.e2e.ts`（1 用例 × 2 project），必需用例清单与门禁自测棘轮已同步（11 文件 / 64 实例）。
+- 被测对象：生产 `frontend/dist` + 真实 Go HTTP / Auth / Application / SQLite / Memory；每 worker 独立后端进程与临时目录。
+- 隔离手段（证据在 `frontend/e2e/backend-process.ts`、`frontend/e2e/global-setup.ts`）：未知外呼经未监听端口快速失败、剔除 `GROK2API_*` / `TEST_*` 环境、`dist` 与构建输入指纹比对后按需重建。
+- 覆盖现状：登录 / 会话 / 注销、密钥 CRUD、账号导入（含失败路径）、**修改密码（含当前密码错误的失败路径）**、**模型封锁与批量封锁/解除**、**出口节点 CRUD 与批量启停**、**质量守护不可用显式可见（含路由直达刷新）**、设置真实保存与 409 版本冲突、审计空态与筛选、语言与主题持久化、移动视口与抽屉菜单均已有真实全栈用例并通过；仍缺的项登记在 C 区 FE-P2-6。
+
+### B.5 架构与结构（2026-10-13 实测）
+
+- dependency-cruiser：431 模块 / 2040 依赖；0 循环、0 不可解析导入、0 下层反向依赖、0 未冻结跨 feature 依赖。
+- 结构门禁：405 个源码文件；REV-1 / REV-2 / REV-3 当前 0 越限、基线 0；参与判定的作用域 2527 个（证明「0 越限」不是漏报通道，EVID-3）。
+- 已具备且不应重复建设的能力（路由懒加载、大表虚拟化、TanStack Query、统一 API 客户端与解码器）见历史档案 §4.3。
+
+### B.6 构建可复现性与产物
+
+- 本轮：`pnpm build` exit 0、1.89s、`dist` 89 个文件（Vite 列表打印 77 条，未列 `runtime-config.js`）。
+- 历史实测（冷构建三次、86 个产物文件逐文件 SHA256 零差异）见历史档案 §3「构建可复现性」；本轮**未**重跑逐文件哈希比对，不得据此声称已复现。
+
+## C. 未达标与未覆盖登记（P2/P3）
+
+> 只登记**未闭环**项；已闭环项的状态与证据在其历史档案章节。定级语义见 `AGENTS.md` §6；`Blocked` 必须写明恢复条件。
+
+| 编号    | 项                                                                                                                                                      | 定级       | 状态与恢复条件                                                                                                                                                                                                                                                                                                                                                                                                                             | 依据                     |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------ |
+| FE-08   | 双测试运行器（node:test + Vitest 分层）                                                                                                                 | P2         | **已决策接受**、不迁移；理由与替代覆盖见历史档案                                                                                                                                                                                                                                                                                                                                                                                           | §5 / §17.3               |
+| FE-13-1 | 逐文件 <76% 已归零；仍不可驱动的是死分支 / 工具语义不可达分支（逐项清单）                                                                               | P2 / P3    | 登记；未伪造覆盖率、未改生产代码                                                                                                                                                                                                                                                                                                                                                                                                           | §13.3                    |
+| FE-13-2 | TEST-2 仍有 1 个 hook 未纳入 100% 阈值（`accounts/use-account-cleanup-flow.ts` 分支 97.06）                                                             | P2         | **已闭环（2026-10-13）**：行为等价的收窄改写消除了逻辑不可达的 `?? null` 兜底分支，并把该文件纳入逐文件 100% 阈值；定向实测四项 100%（`BRF:34 BRH:34`，无 0 计数分支），详见下方 EVID-8 更正                                                                                                                                                                                                                                               | §13.3                    |
+| FE-P2-1 | 存量 >600 行测试文件（9 个）                                                                                                                            | P2         | 不在 REV-1 扫描范围（测试文件排除）                                                                                                                                                                                                                                                                                                                                                                                                        | §17.5 / §35.2            |
+| FE-P2-2 | 体积门禁缺 `dist` 新鲜度校验（`--update` 可把陈旧 `dist` 冻结进基线）                                                                                   | P2（口径） | 原「未实施」→ **已实现（2026-10-13 复核）**；`assertBuildFresh` 已在读取 `dist` 前生效，证据与复现命令见下方 EVID-8 更正                                                                                                                                                                                                                                                                                                                   | §28.5 / §30.1            |
+| FE-P2-3 | `/runtime-config.js` 未被首屏采集（实测差额 193.58 → 193.67 KiB）                                                                                       | P2（口径） | 原「未实施」→ **已实现（2026-10-13 复核）**；首屏入口采集已不限 `/assets/`，证据与复现命令见下方 EVID-8 更正                                                                                                                                                                                                                                                                                                                               | §28.5 / §30.1            |
+| FE-19-5 | 「认证后首屏」282.30 KiB 不进门禁                                                                                                                       | P2（口径） | **登记不做**（决策）；不得调高 `initialJsGzipKiB`（CHG-4）                                                                                                                                                                                                                                                                                                                                                                                 | §37.2                    |
+| FE-19-6 | 文档漂移（旧步数表述）                                                                                                                                  | P3         | **已关闭**（由 `main` → 交付线合并解决）                                                                                                                                                                                                                                                                                                                                                                                                   | §28.5                    |
+| FE-P3-1 | shadcn 基础原语豁免只覆盖 ESLint / Oxlint；Prettier 与覆盖率口径各自独立                                                                                | P3         | 已登记口径边界，不扩张                                                                                                                                                                                                                                                                                                                                                                                                                     | §35.2                    |
+| FE-R1   | 报告门禁残余绕过面：能在 CI / 包装层写系统临时目录的仍可放伪造报告                                                                                      | P2         | 已登记；重定向逃生口（`TEST_REPORT_ROOT` 越界）已关闭为 exit 2                                                                                                                                                                                                                                                                                                                                                                             | `backend/AUDIT.md` §35.7 |
+| FE-R2   | 「认证后首屏」缺真实浏览器瀑布实测                                                                                                                      | —          | **部分（2026-10-13）**：本轮 FE-P2-5 交叉核对已用真实登录态浏览器采集 11 条路由的 JS 请求集与体积（见下方「FE-P2-5 交叉核对结论」）；仍缺渲染提交 / DOM 数量 / 长任务实测，**不得声称达标**                                                                                                                                                                                                                                                | §37.2                    |
+| FE-P1-1 | E2E 覆盖缺口：设置真实保存 + 409 版本冲突、账号导入（含失败路径）                                                                                       | P1         | **已关闭（2026-10-13 实测）**：`settings.e2e.ts` 的两条与 `accounts.e2e.ts` 的两条真实全栈用例均 `ok`                                                                                                                                                                                                                                                                                                                                      | §28.5 / §30.3 + B.4      |
+| FE-P2-4 | E2E 覆盖缺口：修改密码流程、模型封锁（移动视口已由 `mobile-chromium` project 覆盖）                                                                     | P2         | **已关闭（2026-10-13 实测）**：`e2e/account-password.e2e.ts`（2 用例）与 `e2e/models.e2e.ts`（2 用例）在两个 project 各 `ok`，`pnpm test:results:e2e` exit 0                                                                                                                                                                                                                                                                               | §28.5 / §30.3            |
+| FE-P2-5 | 预算「路由新增闭包」口径未与**真实浏览器请求集**交叉核对（嵌套 `import()` 静态不可见）                                                                  | P2（口径） | **已执行交叉核对（2026-10-13 实测）**：全集 76/76 一致、逐路由**系统性少算 64.05–79.34 KiB**，`/dashboard` 真实 208.57 KiB > 180 阈值；三种口径与处置见下方「FE-P2-5 交叉核对结论」，**未改任何阈值**（CHG-4）                                                                                                                                                                                                                             | §29.7 / §37.2            |
+| FE-P3-2 | 历史档案中的不可解析 sha（事实登记，非缺陷）                                                                                                            | P3         | **已登记（2026-10-13 实测）**：`:2195` 的 `5d6aace3…` 是 blob 非 commit、`:1932` 的三个短 sha 不可解析；按 DOC-2 不改档案原文，等价写法见下方                                                                                                                                                                                                                                                                                              | §37.1 / §30.2            |
+| FE-P2-6 | E2E 覆盖缺口（剩余）：账号列表/搜索/分页、额度侧模型封锁、批任务失败与取消、模型页、出口页、Quality Guard 状态、创作台/媒体流程、路由直达刷新与键盘操作 | P2         | **部分闭环（2026-10-13）**：新增 `e2e/egress.e2e.ts`（2 用例：出口节点真实 UI 新建/删除 + 批量启停同步服务端）与 `e2e/quality-guard.e2e.ts`（1 用例：守护不可用显式可见 + 三页签 + 路由直达刷新），定向运行 6/6 实例全过；**剩余未覆盖项**中「批任务失败/取消」「额度侧模型封锁」「创作台/媒体流程」「账号分页」经检索判定为 **UI 不存在或不可构造**，逐条理由与检索证据见下方 EVID-8 更正；「账号搜索」「模型页」「键盘操作」已有等价覆盖 | §28.5 / §30.3            |
+
+**未达标项的证据定位（可核对，补 C 区表缺的 `file:line` 落点）**
+
+- FE-08：`frontend/package.json` 的 `test` / `test:ui:coverage` 两个脚本 + `frontend/vitest.config.ts` 的 `include` / `thresholds`（分层配置）。
+- FE-13-2（**已闭环 2026-10-13**）：`frontend/src/features/accounts/use-account-cleanup-flow.ts`（已纳入 100% 阈值）+ `frontend/vitest.config.ts` 的 hook 阈值条目（本轮由 31 条增至 32 条）。
+- FE-P2-1：9 个 >600 行**测试文件**（不在 REV-1 扫描范围；清单见「依据」指向的章节）。
+- FE-P2-2（**已实现**）：`frontend/scripts/check-bundle-budget.mjs:490`（`assertBuildFresh()`）、`:495`（调用 `isBuildFresh`）、`:504`（读取 `dist` 前调用）；负样本 `frontend/scripts/self-test-gates.mjs:299`（F1 输入指纹不一致）、`:302`（F2 无构建清单）、`:306`（F3 产物被改写），夹具清单登记见同文件 `:9`。
+- FE-P2-3（**已实现**）：`frontend/scripts/check-bundle-budget.mjs:346`（`indexEntryFiles()`；`:342` 注释明确「只认 `/assets/` 会静默漏算」）、`:406`（用于首屏闭包）；`frontend/bundle-budget.json:28`（首屏 `files` 已含 `runtime-config.js`）；负样本 `frontend/scripts/self-test-gates.mjs:256-267`、`:312-390`（含 `:376-382`「旧正则必须采集不到 `/runtime-config.js`」的反证）。
+- FE-19-5：`frontend/bundle-budget.json` 的 `initialJsGzipKiB`（**不得**调高，CHG-4）。
+- FE-P3-1：`frontend/eslint.config.js`、`frontend/.oxlintrc.json`、`frontend/.prettierrc`、`frontend/vitest.config.ts` 四处豁免口径。
+- FE-R1：`frontend/scripts/check-test-results.mjs`（报告根越界已 exit 2）。
+- FE-P1-1（已关闭）：`frontend/e2e/settings.e2e.ts`、`frontend/e2e/accounts.e2e.ts`。
+- FE-P2-4（**已关闭**）：`frontend/e2e/account-password.e2e.ts`（改密成功 + 当前密码错误的失败路径）、`frontend/e2e/models.e2e.ts`（封锁 + 批量封锁/解除）；移动视口已由 `frontend/e2e/mobile-device.e2e.ts` + `mobile-chromium` project 覆盖。
+- FE-P2-6（**部分闭环 2026-10-13**）：新增 `frontend/e2e/egress.e2e.ts`（出口节点，2 用例）与 `frontend/e2e/quality-guard.e2e.ts`（守护状态 + 路由直达刷新，1 用例）；报告门禁棘轮同步至 11 文件 / 64 实例（`chromium` 32 + `mobile-chromium` 32），`frontend/scripts/self-test-gates.mjs` 同批同步。**剩余未覆盖**：账号列表分页、额度侧模型封锁、批任务失败与取消、创作台/媒体流程（逐条理由见下方 EVID-8 更正），未补前不得声称 E2E 覆盖完整。
+- FE-P2-5（**已执行交叉核对**）：`frontend/scripts/check-bundle-budget.mjs` 的 `collectRouteEntries`（把 `app-shell` / `deferred` 也登记为独立「路由入口」）、`incremental` 计算（只减未认证首屏闭包）与 180 KiB 比较处；业务侧 `frontend/src/app/router.tsx` 的 `DeferredAppShell`、`frontend/src/app/deferred-pages.tsx` 的 `loadDeferredResources()`。
+- FE-R2（**部分**）：同一文件的 `collectRouteMetrics`（`:391`）只覆盖未认证首屏与静态路由闭包；认证后首屏的真实登录态**请求集**已由本轮 FE-P2-5 交叉核对覆盖（见下），但渲染提交 / DOM 数量 / 长任务仍未实测（§37.2），不得声称达标。
+- FE-P3-2（事实登记，非缺陷）：历史档案 `frontend/AUDIT.md:2195`（§37.1）的 `git checkout 5d6aace3423404feea58a022a6a3c8936ade6380 -- frontend/bundle-budget.json` 中该对象实测为 **blob**（非 commit/tree），命令不可执行（沙箱实测 `git checkout <blob> -- <path>` → `fatal: unable to read tree`，exit 128）。等价可执行写法：`git checkout 90513aea1710a0881eb185c51c0174c757a837d4 -- frontend/bundle-budget.json`（该 commit 的 `bundle-budget.json` blob 正是 `5d6aace3…`，已由 `docs/implementation-plan.md` 采用）。同文件 `:1932`（§30.2）的 `git revert 35ead625` / `c73434e0` / `e457807b` 三个短 sha 在本检出实测均 `Not a valid object name`（对象不在本对象库；§30.4 记这些提交在**当时的工作树**里 `git merge-base --is-ancestor <sha> HEAD` = exit 0，故本条只登记「本检出不可解析」这一事实，不推翻 §30.4 原结论，也不改档案原文）。按 DOC-2 **不改历史档案原文**，本条只作事实登记与指针。
+
+**EVID-8 更正（2026-10-13 只读复核；条目 FE-P2-2 / FE-P2-3，原值保留不回改，DOC-2）**
+
+- **原值 → 新值**：FE-P2-2「未实施；最小修复设计见历史档案（复用 `scripts/build-inputs.ts` 的 `isBuildFresh` + 负样本）」→「**已实现（2026-10-13 复核）**」；FE-P2-3「未实施；入口采集需纳入 HTML 同步脚本并补负样本」→「**已实现（2026-10-13 复核）**」。两条的表内原文「未实施」字样按 DOC-2 保留，只在同格内追加更正后的状态。
+- **根因（两条同一根因）**：C 区登记是从 §28.5 的**修复前快照**原样抄入的，未随 §30.1 的并入回填——§30.1 已记 `e8f4fbd7`（含 D4 新鲜度断言 + 非 `assets` 入口采集）经合并提交 `02ef4779` 并入最终 tip（`git merge-base --is-ancestor e8f4fbd7 HEAD` → exit 0），§29.7 ② 的「待并入」也已由 §30.1 关闭。属**登记滞后**（EVID-8），不是实现缺口。
+- **复现命令**（只读静态复核；`pnpm` / 门禁**本轮未执行**，其它子代理在跑前端门禁，EVID-1）：
+  - `git grep -n "assertBuildFresh\|isBuildFresh" -- frontend/scripts/check-bundle-budget.mjs` → 命中 `:42` / `:488` / `:490` / `:495` / `:497` / `:504`；
+  - `git grep -n "陈旧夹具" -- frontend/scripts/self-test-gates.mjs` → 命中 `:299`（F1）/ `:302`（F2）/ `:306`（F3）；
+  - `git grep -n "runtime-config" -- frontend/bundle-budget.json` → 命中 `:28`；
+  - 判别力（由 `pnpm test:gates` 承担，本轮未跑）：三个陈旧夹具在 `frontend/scripts/self-test-gates.mjs:1387-1424` 断言 `expect: 2` + `contains: ["dist 早于当前构建输入（isBuildFresh=false）"]`，夹具名自带「旧实现 exit 0」的反证。
+
+**FE-P2-5 交叉核对结论（2026-10-13 实测：真实浏览器请求集 vs 门禁静态闭包口径）**
+
+- **方法**：复用 `frontend/e2e/backend-process.ts` 起真实 Go 二进制（动态 loopback 端口、`%TEMP%` 内一次性 `config.yaml` + SQLite + media、合成凭据、剔除 `GROK2API_*` 与代理变量），用 Playwright（已装 chromium，未下载）对 `frontend/src/app/router.tsx` 的 11 条业务路由各做一次整页冷加载，采集 `page.on("request")` 的 script 请求集合；门禁侧用 `check-bundle-budget.mjs` 的闭包算法（在会话 scratch 内克隆，闭包算法零改动、输出与门禁逐位一致）计算静态闭包。两次真实采集逐路由文件集合完全相同；11 条路由 `pageerror` 0、非 200 脚本 0。
+- **全集层面：一致**。静态集合 76 个文件 = 真实集合 76 个文件，双向差集 0，`extra-in-static` 逐路由全为 0（门禁**未**多算）。
+- **逐路由层面：门禁系统性少算**。11/11 条业务路由的 `missing-in-static` 为 9–20 个文件；按 gzip 计，门禁的「路由新增闭包」比真实冷启动增量**少 64.05–79.34 KiB**。最大路由 `/dashboard`：**真实 208.57 KiB vs 门禁 129.23 KiB**（1.61×）。
+- **归因（11/11 机械验证，未解释项 0）**：每条路由的 missing 文件**全部 ⊆（`app-shell` 增量 23 文件 31.50 KiB ∪ `deferred` 增量 1 文件 57.25 KiB）**。门禁把这两个**共享认证壳层**也登记为独立「路由入口」（13 个入口 = 11 页面 + 2 壳层），且 `incremental = reachable − initialClosure` 只减未认证首屏闭包、不减共享壳层。因此本条原假设「嵌套 `import()` 静态不可见」**未被本轮证据支持**——漏算全部可归因于共享壳层归属，无未解释项。
+- **判定（不改阈值，CHG-4）**：三种口径给出三个数，须由负责人一次性明确 REV-5 的「基础资源」定义——① **现行门禁口径**（只减未认证首屏闭包）：`/dashboard` 129.23 KiB，**通过**；② **真实冷启动相对未认证基线**：208.57 KiB，**已超 `routeIncrementGzipKiB` 180 阈值**；③ **按 REV-5 字面**（把共享认证壳层也视为「基础资源」并扣除，即 208.57 − 88.75）：约 119.82 KiB，**在预算内**。本条目**不**据此调整任何阈值或基线，只登记口径分歧与三个可复现数字。
+- **处置**：待「基础资源」定义明确后，或把 `app-shell` / `deferred` 移出「路由入口」列表、或把二者并入减数集合，并在同一次改动内补口径负样本（EVID-3）；定义明确前，门禁数字**不得**被当作「路由真实冷启动代价」引用（`FE-19-5` 的「认证后首屏不进门禁」口径不变）。
+- **复现命令**：门禁数字 `cd frontend && pnpm check:budget`；真实请求集需 scratch 内的 `static-closure.mjs` / `real-requests.mjs` / `analyze.mjs` / `verify-attribution.mjs`——**脚本未入库**，按 DOC-3 该复现不可追溯；若要长期可复现，须把脚本落进仓库并补负样本。
+- **未执行**：只测冷加载首屏（未测交互后二次懒加载的 chunk）；未测 `mobile-chromium` project 与 `/login` 之外的未认证路径；未在 Linux/CI 复核。
+
+**EVID-8 更正与 N-6 处置（2026-10-13 只读核对；历史档案原值保留不回改，DOC-2）**
+
+> 定位约定：本节一律用 `git grep -n` 可复现的定位式引用，不写会随本区增删而漂移的历史档案行号。
+
+- **N-6（浏览器目标 / tree-shaking 独立核对）→ 处置：登记「不做」+ 证据**。核对为只读（**未**运行 `pnpm build`；`dist` 已由内容指纹证明新鲜，逐文件按门禁同口径 `zlib.gzipSync(buf, {level: 9})` 计算）。产物与冻结基线逐项一致：全部 JS 76 文件 / 原始 2225038 B / gzip 639821 B（基线 2225034 / 639820，差 **+4 B / +1 B**，落在 `dist/runtime-config.js`），CSS 与首屏闭包与基线完全相同，**无可见死代码**。
+  - 生效构建目标**不是**显式配置：`frontend/vite.config.ts:45-48` 的 `build` 段只有 `outDir` 与 `sourcemap`，**无** `build.target` / `esbuild.target` / `rollupOptions`；`frontend/package.json` **无** `browserslist`、**无** `sideEffects`、**无** `@vitejs/plugin-legacy`（`frontend/.browserslistrc` 不存在）。实际生效值 = Vite **8.3.4** 的默认 `baseline-widely-available`（展开为 `chrome111 / edge111 / firefox114 / safari16.4 / ios16.4`），打包器为 **Rolldown**（`vite` 的依赖 `rolldown: ~1.2.12`），**不是** Rollup。
+  - tree-shaking 侧：`frontend/src/**/*.ts` 中 `export *` 仅 4 条（全部在 `src/features/accounts/accounts-api.ts:22-25`）；目录级 barrel 仅 2 个且为具名 re-export；`lodash` / `moment` / `@mui` / `echarts` / `antd` 零命中；唯一 `import * as` 大库是 `src/components/ui/chart.tsx:2`（shadcn 标准写法）。依赖侧 `sideEffects: false` 由 `lucide-react` / `recharts` 各自声明。
+  - **不做的理由**：① 无旧浏览器兼容诉求，显式写死目标需维护浏览器清单，且会进入 `scripts/build-inputs.ts` 的构建指纹；② `@vitejs/plugin-legacy` 只为旧浏览器降级，增体积增依赖，与 REV-5 方向相反；③ 无 barrel、无整包大库、产物无死代码，最大 chunk 458.55 KiB（阈值 500）、全 JS 624.83 KiB（阈值 650）均在预算内；④ 仓库未安装任何 bundle 分析器（`rollup-plugin-visualizer` 零命中），按「不臆造测量」不出收益数字。
+  - **原值 → 新值（历史档案 §29.3；定位 `git grep -n "build.minify" -- frontend/AUDIT.md`；按 DOC-2 不改原文）**：`build.target` 默认原记 `'modules'` → 实测 **`baseline-widely-available`**；`build.minify` 默认原记 `esbuild` → 实测 **`oxc`**；tree-shaking 归因原记 Rollup → 实测 **Rolldown**（Vite 8 的底层打包器）。§29.3 其余结论（未安装分析器、不产收益数字）**不变**。
+  - 复现命令（cwd=`frontend/`，只读）：`node -p "require('./node_modules/vite/package.json').version"`；`Select-String -Path node_modules/vite/dist/node/chunks/node.js -Pattern 'baseline-widely-available'`；`node -p "require('./node_modules/vite/package.json').dependencies.rolldown"`。
+- **失效 sha 登记（历史档案 §38；定位 `git grep -n "45dd2447" -- frontend/AUDIT.md`；按 DOC-2 不改原文）**：该行记「本地 `v0.1.3` 重指向重写后同内容提交（`934627d1` → `45dd2447`）」并称 `git rev-parse v0.1.3^{commit}` = `45dd2447`。2026-10-13 实测：`git cat-file -t 45dd2447` 与 `git cat-file -t 934627d1` 均返回 `fatal: Not a valid object name`；`v0.1.3` 实测为 tag 对象 `fe209ccd` → 提交 `6b69e01e`（`VERSION=v0.1.3`，为 `main` 的祖先）。本条只登记「这两个 sha 在本检出不可解析」这一事实，不推翻 §38 的其余结论。
+- **授权登记指针过期（历史档案 §38.3 与 `backend/AUDIT.md` 历史档案 §36.2；定位 `git grep -n "AGENTS.md" -- frontend/AUDIT.md backend/AUDIT.md`；按 DOC-2 不改原文）**：两处记「`v0.1.3` 发布授权的唯一登记处是 `AGENTS.md` §1」。按 DOC-1 / META-3，**授权登记的唯一处已迁至 `backend/AUDIT.md` D.5**，`AGENTS.md` §1 只保留指针；2026-10-13 实测 `AGENTS.md` 与 `CLAUDE.md` 对 `v0.1.[0-9]` 的命中数均为 **0**。v0.1.3 的发布授权与证据登记一律以 `backend/AUDIT.md` D.1 / D.5 为准。
+- **环境事实更正（`backend/AUDIT.md` 历史档案中「镜像构建（本机无 docker 且 WSL 无发行版）」与「本机无 WSL 发行版、无 docker」两处；定位 `git grep -n "WSL" -- backend/AUDIT.md`；按 DOC-2 不改原文）**：2026-10-13 实测 `wsl -l -v` 显示存在 `Ubuntu`（VERSION 2，Stopped）。**结论不变**：该发行版内无 `docker` / `podman`、无 `/var/run/docker.sock`，Windows PATH 亦无 docker，故「本机无法构建镜像、镜像产出由 CI 覆盖」仍成立。
+- **FE-13-2 闭环（2026-10-13；原值保留不回改，DOC-2）**：原登记「`accounts/use-account-cleanup-flow.ts` 分支 97.06，1 个不可驱动分支」→ **已闭环**。做法是**行为等价的收窄改写**（不新增测试、不加 `v8 ignore`、不放宽阈值）：把「条件为真 ⇒ `preview` 非空」的事实收敛成对象变量 `freshPreview`，从而消除 `preview?.data ?? null` 这条**逻辑不可达**的兜底分支；同时在 `frontend/vitest.config.ts` 把该文件纳入逐文件 100% 阈值（条目由 31 条增至 32 条）。
+  - 改动落点：`frontend/src/features/accounts/use-account-cleanup-flow.ts`（3 行换 3 行，函数体仍 49 行 ≤ REV-2 上限）、`frontend/vitest.config.ts`（新增 1 条 100% 条目）。对外类型 `AccountsCleanupFlow` 与字段名未变。
+  - 定向实测（2026-10-13）：`npx vitest run --coverage --coverage.include="src/features/accounts/use-account-cleanup-flow.ts" <6 个 accounts 测试文件>` → **exit 0**，6 文件 / 107 用例全过；该文件 `% Stmts / % Branch / % Funcs / % Lines` 均为 **100**；lcov 块 `LF:73 LH:73 FNF:29 FNH:29 BRF:34 BRH:34`，**无 0 计数 `BRDA`**（原 `BRDA:169,15,1,0` 已消除；分支总数 34 未减少）。
+  - 门禁口径以最终 `pnpm test:ui:coverage` 为准（见本区 B.1 的该次运行结果）。
+  - 复现命令（cwd=`frontend/`）：`pnpm test:ui:coverage`；定向复核见上一条 `npx vitest run --coverage --coverage.include=...`（**CLI 临时 include 不是门禁口径**，TEST-1）。
+- **N-3 / N-4 闭环与剩余不可行项（2026-10-13）**：新增两个真实全栈 spec，并把新增实例同步进报告门禁棘轮（`frontend/scripts/check-test-results.mjs`：`MIN_E2E_FILES` 9→11、`MIN_E2E_PROJECT_PASSED` 29/29→32/32、`REQUIRED_E2E` 追加 2 条）与门禁自测装置（`frontend/scripts/self-test-gates.mjs`：`E2E_EXPECTED_FILES` 9→11、`E2E_EXPECTED_CASES` 58→64、逐文件棘轮与四处期望串——该装置写死同一批数字，未同步会让 `pnpm test:gates` 变红）。
+  - 新增用例（标题逐字，均无 `@desktop`，两个 project 都跑）：`e2e/egress.e2e.ts`「出口节点：表单新建后列表与服务端同时出现，删除后同时消失」「出口节点：批量禁用/启用同步服务端 enabled」；`e2e/quality-guard.e2e.ts`「质量守护：未配置守护状态时显式不可用，三个页签可达且路由刷新后仍可用」（后者同时覆盖 N-4 的「路由直达刷新」）。
+  - 定向实测（2026-10-13）：`pnpm typecheck:e2e` **exit 0**；`pnpm exec playwright test e2e/egress.e2e.ts e2e/quality-guard.e2e.ts --reporter=line` → **exit 0，6 passed / 0 failed / 0 skipped**（2 spec × 2 project）；`pnpm test:gates` **exit 0**（90 用例，含 72 个必须失败）。全量口径以最终 `pnpm test:e2e` + `pnpm test:results:e2e` 为准（见本区 B.1）。
+  - 实现中的必要偏离（均为实测确认，非降级）：① `GET /api/admin/v1/egress-nodes/<id>` **不存在**（后端只有列表 GET 与 `DELETE /egress-nodes/:id`），故服务端事实改用 `GET /api/admin/v1/egress-nodes?search=<唯一名>` 并要求 `total === 1`；② 单行删除无确认弹窗，故用 `egress-node-actions-<id>` → `egress-node-delete-<id>` 的 testid 点击；③ 批量启停的 UI 信号用批量 toast + 名称单元格的禁用弱化类（行上没有 `enabled` 专用 testid）。
+  - **剩余未覆盖项与不可行理由（按 FE-P2-6 登记，附检索证据）**：① **批任务失败/取消 —— UI 不存在**：`frontend/src` 检索 `批任务|批量任务|task-run|任务已取消` 零命中，唯一「批」是额度同步/重置的确认弹窗（`src/features/accounts/account-quota-task-dialogs.tsx`），无运行中进度面板、无用户可见取消按钮；② **创作台/媒体流程 —— 不可构造**：媒体资产/任务为数据库记录，admin 侧只有 GET/DELETE、无 seed 接口，生成必须走真实 provider；③ **额度侧模型封锁 —— 无写入路径**：`src/features/accounts/account-quota.tsx` 只有展示 testid，数据来自服务端账号状态；④ **账号列表分页 —— 超出预算**：需先导入 ≥21 个账号才能触发翻页（默认每页 20，`src/shared/components/pagination.tsx`）。
+  - 复现命令（cwd=`frontend/`）：`pnpm test:e2e`；`pnpm test:results:e2e`；`pnpm test:gates`。
+
+## D. 发布登记（前端侧）
+
+> 发布事实（tag / 提交 / CI run / 镜像 digest / 远端重建）与**授权登记**统一登记在 `../backend/AUDIT.md` 的 D 区（授权表见其 **D.5**），本节只放**前端侧专属项与指针**（DOC-1）。EVID-8 更正：原相对链接 `[backend/AUDIT.md](backend/AUDIT.md)` 指向不存在的 `frontend/backend/AUDIT.md`，已改为正确相对路径 `../backend/AUDIT.md`。
+
+| 项                                  | 值 / 证据                                                                                                                                        |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 发布目标提交                        | `00120cea`（annotated tag `v0.1.1` 指向；该提交上 `VERSION` = `v0.1.1`、`frontend/package.json` version = `0.1.1`，`pnpm check:version` exit 0） |
+| 前端发布前置（该提交）              | `pnpm verify` exit 0，15/15 步，604s（历史档案 §39）；2026-10-13 在等价步骤上逐条复跑通过（B.1）                                                 |
+| CI 前端侧 step（run `38267217186`） | `Verify frontend`、`Run full-stack E2E`、`Assert required frontend tests ran` 均 `success`                                                       |
+| 远端与凭据                          | 见 `backend/AUDIT.md` D.2 / D.3（SSH 推送通道；**不登记任何凭据元数据**，SEC-1）                                                                 |
+| 残留风险                            | 见 `backend/AUDIT.md` D.4 与 C 区 BE-R4                                                                                                          |
+| 授权登记（决策记录，append-only）   | 见 `backend/AUDIT.md` D.5（**唯一登记处**；`AGENTS.md` §1 只保留指针）                                                                           |
+
+## E. 主题索引（按关注点查历史档案）
+
+| 关注点                                     | 历史档案章节                                    |
+| ------------------------------------------ | ----------------------------------------------- |
+| 阶段 0–7 验收矩阵与阶段遗留                | §1–§13                                          |
+| 发布登记（`v0.1.1` / `v0.1.2` / `v0.1.3`） | §14、§16、§38、§39                              |
+| 覆盖率口径演进与 ratchet                   | §11.2、§13.1、§13.2、§17.3、§35.2               |
+| hook 100% 阈值收敛                         | §13.1、§13.3、§17.3                             |
+| 结构债务清零（REV-1 / REV-2）              | §17.1、§17.4                                    |
+| 跨 feature 依赖清零                        | §17.2                                           |
+| 体积预算与基线重定                         | §3、§15、§15.6、§30.1、§37.1                    |
+| i18n 首屏闭包（FE-10）                     | §15、§37.3                                      |
+| 报告门禁与绕过面                           | §19.2、§21.1、§22.4、§28.1、§28.8               |
+| E2E 扩展与隔离缺陷                         | §12.1、§13.6、§13.7、§21.3、§22.6、§28.2、§30.3 |
+| 构建指纹与可复现性                         | §19.4、§21.2、§29.8                             |
+| 独立审查、判别力与更正                     | §18、§19.9、§25、§29                            |
+| CI 证据与更正（EVID-8 / EVID-9）           | §19.12、§20.2、§20.6、§22.3、§23、§36           |
+| 凭据元数据清除与远端重建                   | §37.4、§37.5、§38、§39                          |
+| 授权登记（决策记录，append-only）          | `backend/AUDIT.md` D.5                          |
+
+---
+
+## 历史档案（原编号 §1–§39，append-only）
+
+> **约定**：以下章节是历次轮次的原始登记，**编号与内容保持原样**（DOC-2）：编号被门禁脚本注释引用（META-5），不得重排；被后续轮次取代的结论只在其所在章节追加指针，不回改。**当前状态一律以 A–E 区为准。**
+
+### 原文件头部（阶段 0 基线元信息，逐字保留）
 
 - 基线提交：`7c0493a2`；阶段 0 提交：`7636acca`
 - 维护分支：`maint/modular-quality-audit`
 - 环境：Windows 11 Pro (10.0.26300)，Node `24.0.1`，pnpm `12.10.1`，TypeScript `6.0.3`，Vite `8.3.4`，Vitest `5.0.3`，CPU Intel i5-10210U（8 逻辑核）
 - 锁文件：`frontend/pnpm-lock.yaml` SHA256 `E0819D57485E3353C99C160B7EF7FFED39BC33D25057E4EC156543178AB64CAF`（阶段 0 基线值；阶段 1 新增 `dependency-cruiser` 后变更）
 - 单位约定：KiB = 1024 B；gzip 使用 `zlib` level 9；Vite 自身输出的 “kB” 按 1000 B 计，两者不可混用
+
+### 本轮从 `AGENTS.md` 迁出的取证事实（逐字保留，2026-10-13）
+
+> 本轮重写 `AGENTS.md` 时，按 DOC-1 / META-3 把规则内的历史取证数字移到证据文档；原值逐字保留在此，规则文本不再复制这些会过期的数字。
+
+- `DEV-4`「改动落地即验」原取证：一个会话内 `结构门禁失败` 出现 32 次、累计 97 个新增超限文件 / 函数。
+- `EXEC-6`「断点可续跑」原取证：一次会话内出现 9 个连续空响应与 3 次 `EMPTY_MODEL_RESPONSE`，用户随后连续 25 次「继续执行」；本批取证未观察到压缩记录，但该要求对压缩同样适用。
+- `EVID-9`「CI 通过 ≠ 已交付」原取证：用户投诉「CI 已经完成，且正确，没有合并，当前 main 分支 CI 有报错」，而当时该 run 的 `conclusion=success`。
+- `SEC-2`「供应链」原复现数字：CI 的 `uses:` 已全部固定到 commit SHA（22/22）。
+- `REL` 版本载体原引用：`Dockerfile:67` 的 `COPY VERSION /app/VERSION`（行号会漂移，规则文本已改为只引用文件本身）。
+- `CHG-12` 反例原取证：验收审计轮把三批改动全部留在同一个 `maint/acceptance-audit-20261011` 分支上且始终未提交（逐项见本文件 §19.11）。
 
 ## 1. 验收矩阵
 

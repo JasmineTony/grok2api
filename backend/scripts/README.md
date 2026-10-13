@@ -44,7 +44,7 @@ CI 侧统一位于 `.github/workflows/ghcr-image.yml` 的 `Verify` job；下表�
 
 | 项 | 原因与 CI 步骤 |
 | --- | --- |
-| `go test -race ./...` | race 检测需要 cgo 与 C 工具链，本机（Windows / 无 gcc）不可用。CI 步骤 `Race backend`。 |
+| `go test -race ./...` | **本机可执行**（2026-10-13 实测：`CGO_ENABLED=1`、`gcc` 16.2.0 在 PATH，`go test -race ./... -count=1` **exit 0**，562.7s；竞态检测器另用故意竞争探针验证确实生效）。CI 步骤 `Race backend` 仍作为独立环境复核保留。**注意**：本机该命令对 17 个 Postgres + 2 个 Redis 集成用例是 `SKIP`（缺 `TEST_POSTGRES_*` / `TEST_REDIS_*`），故本地 `-race` 通过**不覆盖**这些用例。 |
 | PostgreSQL 集成用例 | 需要 `TEST_POSTGRES_DSN`，CI 另用 `TEST_POSTGRES_ADMIN_DSN` 建临时库。未配置时用例 `t.Skip`（`backend/internal/infra/persistence/relational/postgres_integration_test.go`），因此本地绿色**不代表**这些用例通过。 |
 | Redis 集成用例 | 需要 `TEST_REDIS_ADDRESS`，可选 `TEST_REDIS_DATABASE` / `TEST_REDIS_USERNAME` / `TEST_REDIS_PASSWORD`（`backend/internal/infra/runtime/redis/store_integration_test.go`）。未配置即跳过，同样不代表通过。 |
 | 「必需集成用例被跳过」断言 | CI 步骤 `Assert required integration tests ran` 把白名单包内任何 skip 判为失败，本脚本不做该断言。 |
