@@ -128,6 +128,7 @@ type webAccountSettingRequest struct {
 	clientHints bool
 	withoutCF   bool
 }
+
 func (a *Adapter) runWebAccountSettings(ctx context.Context, credential account.Credential, inputs ...webAccountSettingRequest) error {
 	if credential.Provider != account.ProviderWeb || credential.AuthType != account.AuthTypeSSO {
 		return fmt.Errorf("仅 Grok Web SSO 账号支持资料设置")

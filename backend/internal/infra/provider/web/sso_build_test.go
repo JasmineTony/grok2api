@@ -214,8 +214,8 @@ func TestParseConsentTokenExtractsHiddenField(t *testing.T) {
 
 func TestSSOOriginDerivesSchemeAndHost(t *testing.T) {
 	tests := map[string]string{
-		"https://accounts.x.ai/oauth2/device/consent": "https://accounts.x.ai",
-		"https://auth.x.ai/oauth2/device/consent?x=1": "https://auth.x.ai",
+		"https://accounts.x.ai/oauth2/device/consent":  "https://accounts.x.ai",
+		"https://auth.x.ai/oauth2/device/consent?x=1":  "https://auth.x.ai",
 		"https://auth.x.ai:8443/oauth2/device/consent": "https://auth.x.ai:8443",
 		"/oauth2/device/consent":                       "",
 		"":                                             "",

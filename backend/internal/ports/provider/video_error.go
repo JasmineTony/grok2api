@@ -100,4 +100,3 @@ func WrapVideoStage(stage VideoStage, status int, err error) error {
 	}
 	return &VideoStageError{Stage: stage, Status: status, Err: err}
 }
-
