@@ -111,8 +111,8 @@ func TestFrontendStaticFilesAndSPAFallback(t *testing.T) {
 	deps.Logger = slog.Default()
 	deps.FrontendStaticPath = root
 	router := New(deps)
-	// 隐藏产物的 404 判定链（frontend.go）：frontendFile(:70-85) 把请求路径解析为相对路径，
-	// isHiddenArtifact(:27-30) 拦截根级点文件；解析失败时由 path.Ext 兜底(:40-42) 对带扩展名的缺失路径返回 404。
+	// 隐藏产物的 404 判定链（frontend.go）：frontendFile(:234-249) 把请求路径解析为相对路径，
+	// isHiddenArtifact(:94-97) 拦截根级点文件；解析失败时由 path.Ext 兜底(:107-110) 对带扩展名的缺失路径返回 404。
 	// 别名路径被哪条分支拦下取决于 root 所在卷的路径归一化语义，两个平台覆盖的分支不同：
 	//   - 归一化平台（Windows/NTFS 等大小写不敏感卷）：os.Stat 命中 .build-manifest.json，404 来自 isHiddenArtifact；
 	//   - 非归一化平台（CI 的 Linux 大小写敏感卷）：os.Stat 直接失败，404 来自 path.Ext 兜底。
@@ -123,7 +123,7 @@ func TestFrontendStaticFilesAndSPAFallback(t *testing.T) {
 		case resolved && isHiddenArtifact(relative):
 			t.Logf("别名 %s 归一到 %q，404 由 isHiddenArtifact 拦截", alias, relative)
 		case !resolved:
-			t.Logf("别名 %s 未被 os.Stat 归一化，404 依赖 path.Ext 兜底（frontend.go:40-42）", alias)
+			t.Logf("别名 %s 未被 os.Stat 归一化，404 依赖 path.Ext 兜底（frontend.go:107-110）", alias)
 		default:
 			t.Fatalf("别名 %s 解析为 %q 却未被 isHiddenArtifact 拦截，隐藏产物守卫失效", alias, relative)
 		}
@@ -163,7 +163,7 @@ func TestFrontendStaticFilesAndSPAFallback(t *testing.T) {
 	}
 }
 
-// TestIsHiddenArtifactOnResolvedAliases 固定 isHiddenArtifact 的平台无关语义（frontend.go:108-110）：
+// TestIsHiddenArtifactOnResolvedAliases 固定 isHiddenArtifact 的平台无关语义（frontend.go:272-275）：
 // 判定输入是 os.Stat 解析后的相对路径，因此别名一旦被文件系统归一化（大小写变化、`x\..` 折叠），
 // 仍然必须按根级点文件拦截。Linux CI 上 os.Stat 对这类别名直接失败、HTTP 层覆盖不到该归一化结果，回归只能靠这里。
 func TestIsHiddenArtifactOnResolvedAliases(t *testing.T) {
@@ -183,7 +183,7 @@ func TestIsHiddenArtifactOnResolvedAliases(t *testing.T) {
 	}
 }
 
-// TestIsRelativePathWithinRoot 固定 frontendFile 的包含性守卫（frontend.go:76-79 调用的 isRelativePathWithinRoot）
+// TestIsRelativePathWithinRoot 固定 frontendFile 的包含性守卫（frontend.go:240-243 调用的 isRelativePathWithinRoot）
 // 的平台无关语义：输入是 filepath.Rel 归一化后的相对路径，判定本身是纯字符串逻辑，不经过 HTTP 与文件系统。
 // 这是 CI(Linux) 上唯一能覆盖该守卫的用例：HTTP 层拿不到越界输入（path.Clean 已把根处的 ".." 消掉），
 // 唯一触发形态是含 filepath.Separator 的别名路径，而非归一化平台（Linux）上 "\" 是普通文件名字符 ⇒
