@@ -187,14 +187,14 @@
 
 > 发布事实（tag / 提交 / CI run / 镜像 digest / 远端重建）与**授权登记**统一登记在 `../backend/AUDIT.md` 的 D 区（授权表见其 **D.5**），本节只放**前端侧专属项与指针**（DOC-1）。EVID-8 更正：原相对链接 `[backend/AUDIT.md](backend/AUDIT.md)` 指向不存在的 `frontend/backend/AUDIT.md`，已改为正确相对路径 `../backend/AUDIT.md`。
 
-| 项                                  | 值 / 证据                                                                                                                                        |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 发布目标提交                        | `00120cea`（annotated tag `v0.1.1` 指向；该提交上 `VERSION` = `v0.1.1`、`frontend/package.json` version = `0.1.1`，`pnpm check:version` exit 0） |
-| 前端发布前置（该提交）              | `pnpm verify` exit 0，15/15 步，604s（历史档案 §39）；2026-10-13 在等价步骤上逐条复跑通过（B.1）                                                 |
-| CI 前端侧 step（run `38267217186`） | `Verify frontend`、`Run full-stack E2E`、`Assert required frontend tests ran` 均 `success`                                                       |
-| 远端与凭据                          | 见 `backend/AUDIT.md` D.2 / D.3（SSH 推送通道；**不登记任何凭据元数据**，SEC-1）                                                                 |
-| 残留风险                            | 见 `backend/AUDIT.md` D.4 与 C 区 BE-R4                                                                                                          |
-| 授权登记（决策记录，append-only）   | 见 `backend/AUDIT.md` D.5（**唯一登记处**；`AGENTS.md` §1 只保留指针）                                                                           |
+| 项                                  | 值 / 证据                                                                                                                                                                |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 发布目标提交                        | `ca31f056`（annotated tag `v0.1.3` 指向，与 `main` tip 同一提交；该提交上 `VERSION` = `v0.1.3`、`frontend/package.json` version = `0.1.3`，`pnpm check:version` exit 0） |
+| 前端发布前置（该提交）              | `pnpm verify:full` exit 0，17/17 步，577.3s（E2E 64 passed / 2.0m）；CI 口径 `--workers=2` 单跑 64 passed / 3.0m（B.1）                                                  |
+| CI 前端侧 step（run `38359230140`） | `Verify frontend`、`Run full-stack E2E`、`Assert required frontend tests ran` 均 `success`（PR 轮 `38357136129` 同）                                                     |
+| 远端与凭据                          | 见 `backend/AUDIT.md` D.2 / D.3（SSH 推送通道；**不登记任何凭据元数据**，SEC-1）                                                                                         |
+| 残留风险                            | 见 `backend/AUDIT.md` D.4 与 C 区 BE-R4                                                                                                                                  |
+| 授权登记（决策记录，append-only）   | 见 `backend/AUDIT.md` D.5（**唯一登记处**；`AGENTS.md` §1 只保留指针）                                                                                                   |
 
 ## E. 主题索引（按关注点查历史档案）
 
