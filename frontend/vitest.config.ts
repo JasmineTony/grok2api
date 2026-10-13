@@ -166,6 +166,12 @@ export default mergeConfig(
             branches: 100,
             statements: 100,
           },
+          "src/features/accounts/use-account-cleanup-flow.ts": {
+            lines: 100,
+            functions: 100,
+            branches: 100,
+            statements: 100,
+          },
           // 2026-10-11 REV-2/TEST-2 拆分新增的 hook：实测四项 100%，加入逐文件门槛锁定。
           "src/features/settings/use-egress-node-actions.ts": {
             lines: 100,

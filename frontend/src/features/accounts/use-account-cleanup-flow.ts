@@ -160,15 +160,15 @@ export function useAccountCleanupFlow(ctx: AccountsFlowContext): AccountsCleanup
     selection.reset();
   });
   const previewKey = `${provider}|${selection.statusesKey}|${selection.targetsKey}`;
-  const previewFresh = !previewError && preview?.key === previewKey;
+  const freshPreview = !previewError && preview?.key === previewKey ? preview : null;
   return {
     open,
     provider,
     statuses: selection.statuses,
     targets: selection.targets,
-    previewTotals: previewFresh ? (preview?.data ?? null) : null,
+    previewTotals: freshPreview ? freshPreview.data : null,
     previewError,
-    previewFresh,
+    previewFresh: freshPreview !== null,
     pending: mutation.isPending,
     onOpenChange: (next) => {
       setOpen(next);
